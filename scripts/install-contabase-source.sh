@@ -1,0 +1,475 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
+  GREEN="$(tput setaf 2)"
+  RED="$(tput setaf 1)"
+  YELLOW="$(tput setaf 3)"
+  BLUE="$(tput setaf 4)"
+  NC="$(tput sgr0)"
+else
+  GREEN=""
+  RED=""
+  YELLOW=""
+  BLUE=""
+  NC=""
+fi
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_TEMPLATE="${REPO_ROOT}/docs/binario/contabase.env.example"
+ENV_FILE="/etc/contabase/contabase.env"
+SERVICE_FILE="/etc/systemd/system/contabase.service"
+APP_DIR="/opt/contabase"
+DATA_DIR="${DATA_DIR:-/var/lib/contabase}"
+UPLOADS_DIR="${UPLOADS_DIR:-${DATA_DIR}/uploads}"
+PROFILE_UPLOADS_DIR="${UPLOADS_DIR}/profile"
+WORKSPACE_UPLOADS_DIR="${UPLOADS_DIR}/workspaces"
+BACKUPS_DIR="${DATA_DIR}/backups"
+TMP_BINARY="/tmp/contabase"
+HEALTH_URL="http://127.0.0.1:8080/health"
+APP_VERSION=""
+
+error_handler() {
+  echo ""
+  echo -e "${RED}ERRO: instalacao binaria publica falhou.${NC}"
+  echo -e "${YELLOW}Revise a saida acima antes de tentar novamente.${NC}"
+}
+trap 'error_handler' ERR
+
+usage() {
+  cat <<'EOF'
+Uso:
+  ./scripts/install-contabase-source.sh
+
+Descricao:
+  Instala o ContaBase em Linux/systemd sem Docker, usando o clone local
+  do repositório público e gravando o bundle em /opt/contabase.
+EOF
+}
+
+log_step() {
+  echo ""
+  echo -e "${BLUE}$1${NC}"
+}
+
+log_ok() {
+  echo -e "${GREEN}$1${NC}"
+}
+
+log_warn() {
+  echo -e "${YELLOW}$1${NC}"
+}
+
+log_error() {
+  echo -e "${RED}$1${NC}"
+}
+
+require_root() {
+  if [ "$(id -u)" -ne 0 ]; then
+    log_error "Erro: este script deve ser executado como root."
+    exit 1
+  fi
+}
+
+require_repo_root() {
+  cd "$REPO_ROOT"
+  if [ ! -d .git ] || [ ! -f go.mod ] || [ ! -f scripts/build-css.sh ]; then
+    log_error "Erro: execute este script na raiz do repositório ContaBase."
+    exit 1
+  fi
+}
+
+detect_app_version() {
+  APP_VERSION="${CONTABASE_VERSION:-}"
+  if [ -z "$APP_VERSION" ] && [ -f VERSION ]; then
+    APP_VERSION="$(tr -d '[:space:]' < VERSION)"
+  fi
+  APP_VERSION="${APP_VERSION:-dev}"
+}
+
+check_linux_systemd() {
+  if [ "$(uname -s)" != "Linux" ]; then
+    log_error "Erro: este script suporta apenas Linux."
+    exit 1
+  fi
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    log_error "Erro: systemctl nao encontrado."
+    exit 1
+  fi
+
+  local pid1_comm=""
+  if [ -r /proc/1/comm ]; then
+    pid1_comm="$(tr -d '[:space:]' < /proc/1/comm)"
+  fi
+  if [ "$pid1_comm" != "systemd" ]; then
+    log_error "Erro: PID 1 nao e systemd."
+    exit 1
+  fi
+
+  if [ -f /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    OS_ID="${ID:-}"
+    OS_PRETTY_NAME="${PRETTY_NAME:-}"
+    unset ID PRETTY_NAME VERSION 2>/dev/null || true
+    case "${OS_ID:-}" in
+      debian|ubuntu)
+        log_ok "Distribuicao detectada: ${OS_PRETTY_NAME:-desconhecida}."
+        ;;
+      *)
+        log_warn "Aviso: distribuicao fora de Debian/Ubuntu detectada (${OS_PRETTY_NAME:-desconhecida}). Prosseguindo porque systemd esta funcional."
+        ;;
+    esac
+  fi
+}
+
+require_commands() {
+  local cmd
+  local missing=()
+  for cmd in git go node npm curl systemctl sqlite3 openssl tar install; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      missing+=("$cmd")
+    fi
+  done
+
+  if [ "${#missing[@]}" -gt 0 ]; then
+    log_error "Erro: comandos obrigatorios ausentes: ${missing[*]}"
+    exit 1
+  fi
+}
+
+require_node_version() {
+  local node_version major
+  node_version="$(node --version 2>/dev/null | sed 's/^v//')"
+  if [ -z "$node_version" ]; then
+    log_error "Erro: node nao encontrado. Instale Node.js 20 ou superior."
+    exit 1
+  fi
+
+  major="${node_version%%.*}"
+  if ! [ "$major" -ge 20 ] 2>/dev/null; then
+    log_error "Erro: Node.js ${node_version} detectado, mas o build do CSS (Tailwind 4) exige Node.js 20 ou superior."
+    log_error "O apt do Debian 12 instala Node 18, que faz o npm pular o binario nativo @tailwindcss/oxide e quebra o build."
+    log_error "Instale Node.js 20+ (ex.: via NodeSource) antes de continuar. Veja docs/instalacao-lxc-vps.md."
+    exit 1
+  fi
+}
+
+require_go_version() {
+  local required have smallest
+  required="$(awk '$1 == "go" { print $2; exit }' go.mod 2>/dev/null)"
+  if [ -z "$required" ]; then
+    log_error "Erro: nao foi possivel ler a versao minima do Go em go.mod."
+    exit 1
+  fi
+
+  have="$(go version 2>/dev/null | sed -nE 's/.*go([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/p')"
+  if [ -z "$have" ]; then
+    log_error "Erro: nao foi possivel determinar a versao do Go instalada (go version)."
+    exit 1
+  fi
+
+  smallest="$(printf '%s\n%s\n' "$required" "$have" | sort -V | head -n1)"
+  if [ "$smallest" != "$required" ]; then
+    log_error "Erro: Go ${have} detectado, mas o go.mod exige Go ${required} ou superior."
+    log_error "O apt do Debian 12 instala Go 1.19 (golang-go), incompativel com este projeto."
+    log_error "Instale Go ${required}+ via tarball oficial (https://go.dev/dl/) ou gerenciador externo confiavel antes de continuar. Veja docs/instalacao-lxc-vps.md."
+    exit 1
+  fi
+}
+
+warn_if_dev_version() {
+  if [ "$APP_VERSION" = "dev" ]; then
+    log_warn "Aviso: VERSION efetiva = dev. Se quiser um rodape de release, ajuste o arquivo VERSION ou exporte VERSION antes da instalacao."
+  fi
+}
+
+ensure_group_user() {
+  if ! getent group contabase >/dev/null 2>&1; then
+    groupadd --system contabase
+  fi
+
+  if ! id -u contabase >/dev/null 2>&1; then
+    useradd --system --gid contabase --home-dir "$DATA_DIR" --shell /usr/sbin/nologin contabase
+  fi
+}
+
+ensure_directories() {
+  install -d -o root -g root -m 0755 "$APP_DIR"
+  install -d -o root -g root -m 0755 /etc/contabase
+  install -d -o contabase -g contabase -m 0750 "$DATA_DIR"
+  install -d -o contabase -g contabase -m 0750 "$UPLOADS_DIR"
+  install -d -o contabase -g contabase -m 0750 "$PROFILE_UPLOADS_DIR"
+  install -d -o contabase -g contabase -m 0750 "$WORKSPACE_UPLOADS_DIR"
+  install -d -o contabase -g contabase -m 0750 "$BACKUPS_DIR"
+}
+
+render_default_env() {
+  cat > "$ENV_FILE" <<'EOF'
+# ContaBase binary/systemd defaults
+APP_ENV=production
+APP_DEBUG=false
+PORT=8080
+DATABASE_URL=file:/var/lib/contabase/contabase.db
+DATA_DIR=/var/lib/contabase
+DB_FILE=/var/lib/contabase/contabase.db
+UPLOADS_DIR=/var/lib/contabase/uploads
+APP_BASE_URL=https://financeiro.seu-dominio.com
+ALLOWED_HOSTS=financeiro.seu-dominio.com
+TRUSTED_PROXIES=
+CONTABASE_SETUP_TOKEN=__PREENCHA_APENAS_NO_SETUP_INICIAL__
+AUTH_ENCRYPTION_KEY=
+SECURITY_MASTER_KEY=
+EOF
+}
+
+ensure_env_file() {
+  if [ ! -f "$ENV_FILE" ]; then
+    if [ -f "$ENV_TEMPLATE" ]; then
+      cp "$ENV_TEMPLATE" "$ENV_FILE"
+    else
+      render_default_env
+    fi
+  fi
+
+  chown root:root "$ENV_FILE"
+  chmod 0600 "$ENV_FILE"
+}
+
+generate_setup_token() {
+  openssl rand -base64 48 | tr -d '\n'
+}
+
+generate_auth_key() {
+  openssl rand -base64 32 | tr -d '\n'
+}
+
+generate_master_key() {
+  openssl rand -hex 16 | tr -d '\n'
+}
+
+get_env_value() {
+  local key="$1"
+  awk -F= -v key="$key" '$1 == key { value = substr($0, index($0, "=") + 1) } END { print value }' "$ENV_FILE"
+}
+
+normalize_env_value() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d "[:space:]'\""
+}
+
+is_invalid_secret_value() {
+  local normalized
+  normalized="$(normalize_env_value "$1")"
+
+  case "$normalized" in
+    ""|"change_me"|"change-me"|"changeme"|"placeholder"|"todo"|"example"|"examples"|"exemplo"|"exemplos"|"documentation"|"documentacao"|"example/documentation"|"exemplo/documentacao"|"__preencha_apenas_no_setup_inicial__")
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+set_env_value_if_missing() {
+  local key="$1"
+  local value="$2"
+
+  if grep -Eq "^${key}=" "$ENV_FILE"; then
+    return 0
+  fi
+
+  printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+}
+
+set_secret_value_if_missing_or_invalid() {
+  local key="$1"
+  local value="$2"
+  local current_value
+
+  if grep -Eq "^${key}=" "$ENV_FILE"; then
+    current_value="$(get_env_value "$key")"
+    if is_invalid_secret_value "$current_value"; then
+      sed -i.bak "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+      rm -f "${ENV_FILE}.bak"
+    fi
+    return 0
+  fi
+
+  printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+}
+
+ensure_env_values() {
+  set_env_value_if_missing "APP_ENV" "production"
+  set_env_value_if_missing "APP_DEBUG" "false"
+  set_env_value_if_missing "PORT" "8080"
+  set_env_value_if_missing "DATABASE_URL" "file:/var/lib/contabase/contabase.db"
+  set_env_value_if_missing "DATA_DIR" "/var/lib/contabase"
+  set_env_value_if_missing "DB_FILE" "/var/lib/contabase/contabase.db"
+  set_env_value_if_missing "UPLOADS_DIR" "/var/lib/contabase/uploads"
+  set_env_value_if_missing "APP_BASE_URL" "https://financeiro.seu-dominio.com"
+  set_env_value_if_missing "ALLOWED_HOSTS" "financeiro.seu-dominio.com"
+  set_env_value_if_missing "TRUSTED_PROXIES" ""
+  set_secret_value_if_missing_or_invalid "CONTABASE_SETUP_TOKEN" "$(generate_setup_token)"
+  set_secret_value_if_missing_or_invalid "AUTH_ENCRYPTION_KEY" "$(generate_auth_key)"
+  set_secret_value_if_missing_or_invalid "SECURITY_MASTER_KEY" "$(generate_master_key)"
+  chown root:root "$ENV_FILE"
+  chmod 0600 "$ENV_FILE"
+}
+
+run_local_validations() {
+  npm ci
+  ./scripts/build-css.sh
+  go test ./...
+  go build ./...
+}
+
+build_release_binary() {
+  rm -f "$TMP_BINARY"
+  go build \
+    -ldflags "-X github.com/contabase-app/contabase/internal/version.Version=${APP_VERSION}" \
+    -o "$TMP_BINARY" \
+    ./cmd/server
+}
+
+install_bundle() {
+  install -o root -g root -m 0755 "$TMP_BINARY" "${APP_DIR}/contabase"
+  rm -rf "${APP_DIR}/templates" "${APP_DIR}/assets"
+  cp -R templates "${APP_DIR}/templates"
+  cp -R assets "${APP_DIR}/assets"
+  chown -R root:root "$APP_DIR"
+  find "${APP_DIR}/templates" -type d -exec chmod 0755 {} +
+  find "${APP_DIR}/templates" -type f -exec chmod 0644 {} +
+  find "${APP_DIR}/assets" -type d -exec chmod 0755 {} +
+  find "${APP_DIR}/assets" -type f -exec chmod 0644 {} +
+  chmod 0755 "${APP_DIR}/contabase"
+}
+
+render_service_file() {
+  cat > "$SERVICE_FILE" <<'EOF'
+[Unit]
+Description=ContaBase - Base Financeira Privada
+After=network.target
+
+[Service]
+Type=simple
+User=contabase
+Group=contabase
+WorkingDirectory=/opt/contabase
+EnvironmentFile=/etc/contabase/contabase.env
+ExecStart=/opt/contabase/contabase
+Restart=on-failure
+RestartSec=5
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/var/lib/contabase
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  chown root:root "$SERVICE_FILE"
+  chmod 0644 "$SERVICE_FILE"
+}
+
+wait_for_healthcheck() {
+  local max_attempts=30
+  local attempt=1
+  local health=""
+
+  while [ "$attempt" -le "$max_attempts" ]; do
+    health="$(curl -fsS --max-time 2 "$HEALTH_URL" 2>/dev/null || true)"
+    if [ "$health" = '{"status":"healthy"}' ]; then
+      return 0
+    fi
+    log_warn "Aguardando healthcheck... tentativa ${attempt}/${max_attempts}"
+    sleep 1
+    attempt=$((attempt + 1))
+  done
+
+  return 1
+}
+
+start_and_check_service() {
+  systemctl daemon-reload
+  systemctl enable contabase
+  systemctl start contabase
+
+  if ! wait_for_healthcheck; then
+    log_warn "Healthcheck nao retornou healthy em ${HEALTH_URL}."
+    systemctl status contabase --no-pager || true
+    journalctl -u contabase -n 100 --no-pager || true
+    exit 1
+  fi
+}
+
+print_summary() {
+  echo ""
+  echo -e "${BLUE}Resumo final:${NC}"
+  echo "Commit fonte:      $(git log --oneline -1)"
+  echo "Versao:            ${APP_VERSION}"
+  echo "Binario:           ${APP_DIR}/contabase"
+  echo "Env:               ${ENV_FILE}"
+  echo "Servico:           ${SERVICE_FILE}"
+  echo "Healthcheck:       ${HEALTH_URL}"
+  echo "Status do servico: $(systemctl is-active contabase 2>/dev/null || echo desconhecido)"
+  echo ""
+  log_warn "Edite ${ENV_FILE} para ajustar APP_BASE_URL, ALLOWED_HOSTS e TRUSTED_PROXIES."
+  log_warn "Apos concluir o setup inicial, remova ou comente CONTABASE_SETUP_TOKEN em ${ENV_FILE} e reinicie o servico."
+  log_warn "Configure backup regular antes de operar com dados reais."
+}
+
+main() {
+  if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+    usage
+    exit 0
+  fi
+
+  require_root
+  require_repo_root
+  detect_app_version
+
+  log_step "[1/8] Preflight de sistema e comandos"
+  check_linux_systemd
+  require_commands
+  require_node_version
+  require_go_version
+  warn_if_dev_version
+  log_ok "Preflight basico concluido."
+
+  log_step "[2/8] Preparando usuario e diretorios"
+  ensure_group_user
+  ensure_directories
+  log_ok "Usuario e diretorios preparados."
+
+  log_step "[3/8] Preparando ${ENV_FILE}"
+  ensure_env_file
+  ensure_env_values
+  log_ok "Arquivo de ambiente preparado sem sobrescrever valores validos."
+
+  log_step "[4/8] Validacoes locais de build"
+  run_local_validations
+  log_ok "npm ci, build CSS, go test e go build concluidos."
+
+  log_step "[5/8] Compilando binario final"
+  build_release_binary
+  log_ok "Binario final compilado em ${TMP_BINARY}."
+
+  log_step "[6/8] Instalando bundle da aplicacao"
+  install_bundle
+  log_ok "Binario, templates e assets instalados em ${APP_DIR}."
+
+  log_step "[7/8] Renderizando unit systemd"
+  render_service_file
+  log_ok "Unit escrita em ${SERVICE_FILE}."
+
+  log_step "[8/8] Ativando servico e validando healthcheck"
+  start_and_check_service
+  log_ok "ContaBase instalado e saudavel."
+
+  print_summary
+}
+
+main "$@"

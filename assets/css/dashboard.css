@@ -1,0 +1,74 @@
+/* ContaBase Dashboard Styles */
+
+/* Balance card — visual emphasis */
+#dashboard-balance {
+    background-color: color-mix(in srgb, var(--cb-surface-1) 94%, var(--cb-accent));
+    border-color: color-mix(in srgb, var(--cb-border-subtle) 72%, var(--cb-accent));
+    transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+}
+#dashboard-balance:hover {
+    border-color: color-mix(in srgb, var(--cb-border-strong) 65%, var(--cb-accent));
+}
+
+.dashboard-balance-icon {
+    background-color: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.dashboard-balance-secondary {
+    background-color: var(--cb-border-subtle);
+}
+
+.dashboard-balance-secondary > div {
+    background-color: color-mix(in srgb, var(--cb-surface-2) 90%, transparent);
+}
+
+/* Scrollbar hide para mobile */
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* Progress bar com cor dinâmica via CSS custom property */
+.progress-fill {
+    width: calc(var(--pct, 0) * 1%);
+    transition: width 0.5s ease;
+}
+
+.progress-fill-colored {
+    width: calc(var(--pct, 0) * 1%);
+    transition: width 0.5s ease;
+    background-color: var(--ic, #8b5cf6);
+}
+
+.progress-fill-capped {
+    width: clamp(0%, calc(var(--pct, 0) * 1%), 100%);
+    transition: width 0.5s ease;
+}
+
+/* Blob colorido para cards de crédito */
+.blob-colored {
+    background-color: var(--ic, #8b5cf6);
+}
+
+/* Emblema com cor sólida */
+.emblem-wrap-solid {
+    background-color: var(--ic, #8b5cf6);
+}
+
+/* Ícone colorido via CSS custom property */
+.icon-colored {
+    color: var(--ic, #8b5cf6);
+}
+
+/* --- Credit Card: integrated limit bar --- */
+/* Bar fills card width edge-to-edge via negative margins, clipped by overflow-hidden */
+.credit-card-item .-mx-3 {
+    /* negative margin breaks padding so bar extends full card width */
+}
+
+/* Goal progress fill — capped at 100% with gradient */
+.goal-progress-fill {
+    width: clamp(0%, calc(var(--pct, 0) * 1%), 100%);
+    background: linear-gradient(90deg, var(--ic, #8b5cf6), color-mix(in srgb, var(--ic, #8b5cf6) 70%, white));
+}
+.dark .goal-progress-fill {
+    background: linear-gradient(90deg, var(--ic, #8b5cf6), color-mix(in srgb, var(--ic, #8b5cf6) 60%, black));
+}

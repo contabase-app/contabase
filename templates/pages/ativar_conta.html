@@ -1,0 +1,58 @@
+{{define "activation-page"}}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0a0b0f">
+    <title>Ativar Conta — ContaBase</title>
+
+    <!-- Favicons & Manifest -->
+    <link rel="shortcut icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+    <link rel="manifest" href="/assets/manifest.json">
+
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="stylesheet" href="/assets/css/geist-sans.css">
+</head>
+<body class="min-h-screen bg-[#0a0b0f] font-sans text-white antialiased">
+    <main class="mx-auto flex min-h-screen max-w-md items-center px-5 py-10">
+        <section class="w-full rounded-3xl border border-white/10 bg-white/[0.03] p-6 shadow-2xl shadow-black/50">
+            <div class="mb-6">
+                <span class="font-['Geist_Sans',sans-serif] font-bold text-2xl tracking-tight select-none">
+                    <span class="text-[#6744f1]">Conta</span><span class="text-white">Base</span>
+                </span>
+                <h1 class="mt-4 text-2xl font-bold text-white">Ativar conta</h1>
+                <p class="mt-1 text-sm text-white/50">Defina sua senha inicial para liberar o acesso.</p>
+            </div>
+            {{if .Error}}
+            <div class="mb-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-100">
+                {{.Error}}
+            </div>
+            {{end}}
+            <form method="post" action="/ativar-conta" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <input type="hidden" name="token" value="{{.Token}}">
+                <label class="block space-y-1.5">
+                    <span class="text-sm text-white/60">Nova senha</span>
+                    <input type="password" name="password" required autocomplete="new-password"
+                        class="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-zinc-700/60"
+                        placeholder="Mínimo de 8 caracteres">
+                </label>
+                <label class="block space-y-1.5">
+                    <span class="text-sm text-white/60">Confirmar senha</span>
+                    <input type="password" name="password_confirm" required autocomplete="new-password"
+                        class="h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-white outline-none placeholder:text-white/30 focus:border-zinc-700/60"
+                        placeholder="Repita a senha">
+                </label>
+                <button type="submit" class="h-11 w-full rounded-xl bg-indigo-600 text-sm font-semibold text-white transition hover:bg-indigo-500">
+                    Ativar conta
+                </button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>
+{{end}}

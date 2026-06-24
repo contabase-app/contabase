@@ -1,0 +1,328 @@
+/* ContaBase Design System — Tokens & Components
+   Extracted from layout.css (Phase D.0)
+   Do not add page-specific styles here. This file is the single source of truth
+   for all --cb-* tokens and .cb-* component classes. */
+
+/* --- Design System Tokens --- */
+:root {
+  --cb-bg: #F2F4F7;
+  --cb-bg-soft: #EEF1F5;
+
+  --cb-surface-1: #F8FAFC;
+  --cb-surface-2: #F1F5F9;
+  --cb-surface-3: #E9EEF5;
+  --cb-surface-overlay: rgba(248, 250, 252, 0.92);
+
+  --cb-border-subtle: #DDE3EC;
+  --cb-border-strong: #C9D2DF;
+  --cb-border-focus: #7C5CFF;
+
+  --cb-text-main: #1F2937;
+  --cb-text-muted: #64748B;
+  --cb-text-subtle: #94A3B8;
+  --cb-text-inverse: #F8FAFC;
+
+  --cb-accent: #7C5CFF;
+  --cb-accent-solid: #6D28D9;
+  --cb-accent-hover: #7C3AED;
+  --cb-accent-text: #FFFFFF;
+  --cb-accent-soft: rgba(124, 92, 255, 0.12);
+
+  --cb-success: #22C55E;
+  --cb-danger: #EF4444;
+  --cb-warning: #F59E0B;
+  --cb-info: #38BDF8;
+}
+
+.dark {
+  --cb-bg: #0F131A;
+  --cb-bg-soft: #121720;
+
+  --cb-surface-1: #151A22;
+  --cb-surface-2: #1C222C;
+  --cb-surface-3: #232B36;
+  --cb-surface-overlay: rgba(21, 26, 34, 0.94);
+
+  --cb-border-subtle: #2A313D;
+  --cb-border-strong: #3A4453;
+  --cb-border-focus: #7C5CFF;
+
+  --cb-text-main: #E6E9EE;
+  --cb-text-muted: #97A1AE;
+  --cb-text-subtle: #6F7A89;
+  --cb-text-inverse: #0F131A;
+
+  --cb-accent: #7C5CFF;
+  --cb-accent-solid: #6D28D9;
+  --cb-accent-hover: #7C3AED;
+  --cb-accent-text: #FFFFFF;
+  --cb-accent-soft: rgba(124, 92, 255, 0.18);
+
+  --cb-success: #22C55E;
+  --cb-danger: #EF4444;
+  --cb-warning: #F59E0B;
+  --cb-info: #38BDF8;
+}
+
+/* --- Component Classes --- */
+
+/* Page shell */
+.cb-page {
+  background-color: var(--cb-bg);
+  color: var(--cb-text-main);
+}
+
+/* Cards */
+.cb-card {
+  background-color: var(--cb-surface-1);
+  border: 1px solid var(--cb-border-subtle);
+  border-radius: 12px;
+  padding: 1rem;
+}
+.cb-card-muted {
+  background-color: var(--cb-surface-2);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+/* Rows */
+.cb-row {
+  background-color: var(--cb-surface-1);
+  border: 1px solid var(--cb-border-subtle);
+  border-radius: 12px;
+  padding: 0.875rem;
+  transition: all 0.2s;
+}
+.cb-row:hover {
+  border-color: var(--cb-border-strong);
+  transform: translateY(-2px);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+/* Tabs */
+.cb-tabs {
+  background-color: var(--cb-surface-2);
+  border: 1px solid var(--cb-border-strong);
+  border-radius: 12px;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.cb-tab {
+  flex: 1;
+  padding: 0.375rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.cb-tab-active {
+  background-color: var(--cb-accent-solid);
+  color: var(--cb-accent-text);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  border-color: transparent;
+}
+.cb-tab-inactive {
+  background-color: transparent;
+  color: var(--cb-text-muted);
+}
+.cb-tab-inactive:hover {
+  background-color: var(--cb-surface-3);
+  color: var(--cb-text-main);
+}
+
+/* Buttons */
+.cb-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.cb-button-primary {
+  background-color: var(--cb-accent-solid);
+  color: var(--cb-accent-text);
+  border-color: transparent;
+}
+.cb-button-primary:hover {
+  background-color: var(--cb-accent-hover);
+}
+.cb-button-secondary {
+  background-color: var(--cb-surface-2);
+  border: 1px solid var(--cb-border-strong);
+  color: var(--cb-text-main);
+}
+.cb-button-secondary:hover {
+  background-color: var(--cb-surface-3);
+}
+.cb-button-ghost {
+  background-color: transparent;
+  color: var(--cb-text-muted);
+}
+.cb-button-ghost:hover {
+  background-color: var(--cb-surface-3);
+  color: var(--cb-text-main);
+}
+
+/* FAB (Floating Action Button) */
+.cb-fab {
+  background-color: var(--cb-accent-solid);
+  color: var(--cb-accent-text);
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s;
+}
+.cb-fab:hover {
+  background-color: var(--cb-accent-hover);
+}
+
+/* Segmented Control */
+.cb-segmented {
+  background-color: var(--cb-surface-2);
+  border: 1px solid var(--cb-border-subtle);
+  border-radius: 14px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.cb-segmented button {
+  flex: 1;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: var(--cb-text-muted) !important;
+  background: transparent;
+  border: 1px solid transparent;
+  font-weight: 600;
+  font-size: 0.75rem;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+.cb-segmented button:hover {
+  background-color: var(--cb-surface-3);
+  color: var(--cb-text-main) !important;
+}
+/* Active styles: both the JS-generated classes (form-meta.js) and standard active class */
+.cb-segmented button.bg-violet-500\/20,
+.cb-segmented button.bg-orange-500\/20,
+.cb-segmented button.cb-segmented-option-active {
+  background-color: var(--cb-accent-solid) !important;
+  color: var(--cb-accent-text) !important;
+  border-color: transparent !important;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+/* Phase E — Override tabs.js injected utility classes inside .cb-segmented
+   tabs.js applies bg-white / dark:bg-zinc-900 / text-indigo-650 on active
+   dashboard tabs. These scoped overrides force Design System colors. */
+.cb-segmented button.bg-white {
+  background-color: var(--cb-accent-solid) !important;
+  color: var(--cb-accent-text) !important;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+.dark .cb-segmented button.dark\:bg-zinc-900 {
+  background-color: var(--cb-accent-solid) !important;
+  color: var(--cb-accent-text) !important;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+/* Input */
+.cb-input {
+  background-color: var(--cb-surface-2);
+  border: 1px solid var(--cb-border-strong);
+  color: var(--cb-text-main);
+  height: 2.5rem;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.2s;
+  width: 100%;
+}
+.cb-input-search {
+  padding-left: 2.5rem !important;
+}
+.cb-input:focus {
+  border-color: var(--cb-border-focus);
+}
+.cb-input::placeholder {
+  color: var(--cb-text-subtle);
+}
+
+/* Label */
+.cb-label {
+  color: var(--cb-text-muted);
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: block;
+  margin-bottom: 0.375rem;
+}
+
+/* Empty State */
+.cb-empty-state {
+  background-color: color-mix(in srgb, var(--cb-surface-1) 50%, transparent);
+  border: 1px dashed var(--cb-border-subtle);
+  border-radius: 12px;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Divider */
+.cb-divider {
+  border-top: 1px solid var(--cb-border-subtle);
+  width: 100%;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+/* Metric row — subtle internal indicator lines for financial metric cards (Phase E.2) */
+.cb-metric-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  background-color: var(--cb-surface-2);
+  border: 1px solid var(--cb-border-subtle);
+}
+
+/* Modal */
+.cb-modal-wrapper {
+  background-color: var(--cb-surface-overlay);
+}
+.cb-modal {
+  background-color: var(--cb-surface-1);
+  border: 1px solid var(--cb-border-strong);
+}
+
+/* Text utilities */
+.cb-text-main { color: var(--cb-text-main); }
+.cb-text-muted { color: var(--cb-text-muted); }
+.cb-text-subtle { color: var(--cb-text-subtle); }

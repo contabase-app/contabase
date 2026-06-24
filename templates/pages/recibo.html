@@ -1,0 +1,58 @@
+{{define "transacao-recibo-page"}}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Recibo #{{.TransactionID}}</title>
+    <link rel="stylesheet" href="/assets/css/recibo.css">
+</head>
+<body>
+    <main class="sheet">
+        <header class="top">
+            <div class="brand">
+                {{if .WorkspaceLogoLightURL}}
+                <img src="{{.WorkspaceLogoLightURL}}" alt="Logo da empresa" class="brand-logo" data-avatar-fallback>
+                <span data-avatar-text class="brand-fallback" style="display:none">{{.WorkspaceInitials}}</span>
+                {{else if .WorkspaceLogoURL}}
+                <img src="{{.WorkspaceLogoURL}}" alt="Logo da empresa" class="brand-logo" data-avatar-fallback>
+                <span data-avatar-text class="brand-fallback" style="display:none">{{.WorkspaceInitials}}</span>
+                {{else}}
+                <span class="brand-fallback">{{.WorkspaceInitials}}</span>
+                {{end}}
+                <div>
+                    <h1 class="title">Recibo</h1>
+                    <p class="meta">Emissão: {{.IssueDateLabel}} · Referência: {{.TransactionID}}</p>
+                </div>
+            </div>
+            <div class="company">
+                <strong>{{.WorkspaceName}}</strong><br>
+                {{if .WorkspaceDocument}}CNPJ/CPF: {{.WorkspaceDocument}}<br>{{end}}
+                {{if .WorkspacePhone}}{{.WorkspacePhone}}<br>{{end}}
+                {{if .WorkspaceAddress}}{{.WorkspaceAddress}}{{end}}
+            </div>
+        </header>
+
+        <p class="text">
+            Declaramos para os devidos fins que <strong>{{.DeclarationVerb}}</strong> {{.DeclarationPrep}} <strong>{{.ContactName}}</strong>, inscrito no CNPJ/CPF
+            <strong>{{.ContactDocument}}</strong>, a importância de <strong>{{.AmountLabel}}</strong> referente a
+            <strong>{{.Description}}</strong> na data de <strong>{{.DateLabel}}</strong>.
+        </p>
+
+        {{if .WarningMessage}}
+        <div class="warning">{{.WarningMessage}}</div>
+        {{end}}
+
+        <div class="sign">
+            {{.WorkspaceName}} · {{.IssueDateLabel}}
+        </div>
+
+        <div class="actions">
+            <a href="/lancamentos" class="btn">Voltar ao Fluxo de Caixa</a>
+            {{if .CanPrint}}<button class="btn primary" data-onclick="print">Imprimir Recibo</button>{{end}}
+        </div>
+    </main>
+    <script src="/assets/js/recibo.js"></script>
+</body>
+</html>
+{{end}}

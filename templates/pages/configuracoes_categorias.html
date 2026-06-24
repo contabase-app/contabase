@@ -1,0 +1,241 @@
+{{define "configuracoes-categorias-page"}}
+{{template "layout-start" .}}
+<div class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pb-28 pt-5 md:pb-10 md:pt-8 relative">
+    <!-- Background base + blobs (DS pattern) -->
+    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden">
+        <div class="absolute inset-0 cb-page"></div>
+        <div class="absolute top-[-30%] left-[-20%] w-[60vw] h-[60vw] rounded-full bg-violet-500/[0.05] dark:bg-violet-500/[0.03] blur-[80px]"></div>
+        <div class="absolute bottom-[-20%] right-[-20%] w-[50vw] h-[50vw] rounded-full bg-indigo-500/[0.03] dark:bg-indigo-500/[0.02] blur-[80px]"></div>
+    </div>
+
+    <!-- Desktop View: SaaS Split Layout -->
+    <div class="hidden md:flex gap-8 w-full max-w-full">
+        <!-- Sidebar Navigation -->
+        <aside class="md:w-64 flex-none border-r border-[var(--cb-border-subtle)] pr-6">
+            <div class="mb-6">
+                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
+                <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Painel de Controle</h2>
+            </div>
+            {{template "configuracoes-sidebar" .}}
+        </aside>
+
+        <!-- Dynamic Content Area -->
+        <div id="settings-content" class="flex-1 pl-4">
+            {{template "configuracoes-categorias-content" .}}
+        </div>
+    </div>
+
+    <!-- Mobile View -->
+    <div class="block md:hidden">
+        {{template "configuracoes-categorias-content" .}}
+    </div>
+</div>
+{{template "layout-end" .}}
+{{end}}
+
+{{define "configuracoes-categorias-content"}}
+<div id="settings-dynamic-payload" class="w-full" data-cat-root data-cat-default-tab="EXPENSE" data-cat-default-macro="{{if .IsBusiness}}Custos Operacionais{{else}}Essencial{{end}}" data-cat-is-business="{{if .IsBusiness}}true{{else}}false{{end}}">
+    <!-- Header Mobile Only -->
+    <header class="sticky top-14 z-20 bg-[var(--cb-surface-overlay)] backdrop-blur-xl border-b border-[var(--cb-border-subtle)] transition-colors md:hidden w-full">
+        <div class="mx-auto flex max-w-7xl items-center gap-4 px-4 pt-4 pb-3">
+            <button type="button" hx-get="/configuracoes" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] btn-tactile">
+                <i data-lucide="arrow-left" class="h-4 w-4"></i>
+            </button>
+            <div class="min-w-0 flex-1">
+                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
+                <h1 class="mt-0.5 text-lg font-bold text-[var(--cb-text-main)] md:text-xl capitalize">categorias</h1>
+            </div>
+        </div>
+    </header>
+
+    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative">
+        <!-- Background base + blobs for mobile -->
+        <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden md:hidden">
+            <div class="absolute inset-0 cb-page"></div>
+            <div class="absolute top-[-30%] left-[-20%] w-[60vw] h-[60vw] rounded-full bg-violet-500/[0.05] dark:bg-violet-500/[0.03] blur-[80px]"></div>
+            <div class="absolute bottom-[-20%] right-[-20%] w-[50vw] h-[50vw] rounded-full bg-indigo-500/[0.03] dark:bg-indigo-500/[0.02] blur-[80px]"></div>
+        </div>
+        
+
+        {{if .FlashError}}<div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-100">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100">{{.FlashSuccess}}</div>{{end}}
+
+        <div class="md:bg-[var(--cb-surface-1)] md:border md:border-[var(--cb-border-subtle)] md:shadow-sm md:rounded-xl p-0 md:p-8">
+            <div class="mb-6 flex items-start justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Categorias</h2>
+                        <a href="/ajuda#categorias-hierarquia" hx-get="/ajuda" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="text-[var(--cb-text-subtle)] hover:text-[var(--cb-text-main)]" title="Ajuda sobre Hierarquia de Categorias">
+                            <i data-lucide="help-circle" class="w-4 h-4"></i>
+                        </a>
+                    </div>
+                    <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Gerencie as categorias de despesas e receitas do workspace.</p>
+                </div>
+            </div>
+            
+            <!-- Cadastro Superior Form -->
+            <form class="cb-card mb-8 p-4 md:p-5" hx-post="/configuracoes/categorias" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
+                    <div class="md:col-span-2">
+                        <span class="cb-label">Nome da categoria</span>
+                        <input type="text" name="name" placeholder="Ex: Alimentação, Transporte..." class="cb-input">
+                    </div>
+                    <div>
+                        <span class="cb-label">Tipo</span>
+                        <select name="type" data-cat-type-select class="cb-input">
+                            <option value="EXPENSE">Despesa</option>
+                            <option value="INCOME">Receita</option>
+                        </select>
+                    </div>
+                    <div>
+                        <span class="cb-label">Categoria Pai (Opcional)</span>
+                        <div class="relative" data-cat-combobox>
+                            <button type="button" data-cat-combobox-toggle
+                                class="cb-input flex items-center justify-between cursor-pointer text-left">
+                                <span data-cat-combobox-label class="truncate">Nenhuma (categoria raiz)</span>
+                                <i data-lucide="chevrons-up-down" class="w-4 h-4 shrink-0 text-[var(--cb-text-subtle)] ml-2"></i>
+                            </button>
+                            <div data-cat-combobox-panel
+                                class="hidden opacity-0 scale-95 absolute z-50 left-0 right-0 mt-1.5 w-full rounded-xl border bg-[var(--cb-surface-overlay)] border-[var(--cb-border-strong)] shadow-xl max-h-64 overflow-hidden flex flex-col">
+                                <div class="p-2 border-b border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)]">
+                                    <input type="text" data-cat-combobox-search placeholder="Buscar categoria pai..."
+                                        class="w-full h-9 rounded-lg border bg-[var(--cb-surface-1)] border-[var(--cb-border-strong)] px-3 text-sm text-[var(--cb-text-main)] placeholder:text-[var(--cb-text-subtle)] outline-none focus:border-[var(--cb-accent)] transition-colors">
+                                </div>
+                                <ul class="overflow-y-auto max-h-48 py-1">
+                                    <li data-cat-combobox-option data-cat-option-value="" data-cat-option-name="Nenhuma (categoria raiz)"
+                                        data-cat-option-active="text-[var(--cb-accent)] bg-[var(--cb-accent-soft)]"
+                                        data-cat-option-inactive="text-[var(--cb-text-muted)]"
+                                        class="cursor-pointer px-4 py-2.5 text-sm transition-colors hover:bg-[var(--cb-surface-3)] flex items-center gap-2 text-[var(--cb-text-muted)]">
+                                        <span class="text-xs opacity-50">&mdash;</span>
+                                        <span>Nenhuma (categoria raiz)</span>
+                                    </li>
+                                    {{range .Categorias}}{{if not .IsChild}}
+                                    <li data-cat-combobox-option data-cat-option-value="{{.ID}}" data-cat-option-name="{{.Name}}" data-cat-option-type="{{.Type}}" data-cat-option-macro="{{.MacroGroup}}"
+                                        data-cat-option-active="text-[var(--cb-accent)] bg-[var(--cb-accent-soft)]"
+                                        data-cat-option-inactive="text-[var(--cb-text-muted)]"
+                                        class="cursor-pointer px-4 py-2.5 text-sm transition-colors hover:bg-[var(--cb-surface-3)] flex items-center gap-2 text-[var(--cb-text-muted)]">
+                                        <i data-lucide="{{if eq .Type "EXPENSE"}}arrow-down-right{{else}}arrow-up-right{{end}}" class="w-3.5 h-3.5 {{if eq .Type "EXPENSE"}}text-[var(--cb-danger)]{{else}}text-[var(--cb-success)]{{end}} shrink-0"></i>
+                                        <span class="truncate">{{.Name}}</span>
+                                    </li>
+                                    {{end}}{{end}}
+                                </ul>
+                            </div>
+                            <input type="hidden" name="parent_id" data-cat-combobox-hidden value="">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Segunda linha condicional para macro grupos (oculta se tiver pai selecionado) -->
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-4 mt-4" data-cat-macro-section>
+                    <div class="md:col-span-2">
+                        <span class="cb-label">Grupo macro</span>
+                        <select name="macro_group" data-cat-macro-select class="cb-input">
+                            <option value="" data-cat-macro-for-type="EXPENSE,INCOME">Nenhum</option>
+                            {{if .IsBusiness}}
+                            <option value="Receitas Operacionais" data-cat-macro-for-type="INCOME">Receitas Operacionais</option>
+                            <option value="Deduções/Impostos" data-cat-macro-for-type="EXPENSE">Deduções/Impostos</option>
+                            <option value="Custos Operacionais" data-cat-macro-for-type="EXPENSE">Custos Operacionais</option>
+                            <option value="Despesas Administrativas" data-cat-macro-for-type="EXPENSE">Despesas Administrativas</option>
+                            <option value="Despesas Comerciais" data-cat-macro-for-type="EXPENSE">Despesas Comerciais</option>
+                            <option value="Equipe e Prestadores" data-cat-macro-for-type="EXPENSE">Equipe e Prestadores</option>
+                            <option value="Financeiro" data-cat-macro-for-type="EXPENSE">Financeiro</option>
+                            <option value="Investimentos/Outros" data-cat-macro-for-type="EXPENSE">Investimentos/Outros</option>
+                            {{else}}
+                            <option value="Essencial" data-cat-macro-for-type="EXPENSE">Essencial</option>
+                            <option value="Receitas" data-cat-macro-for-type="INCOME">Receitas</option>
+                            <option value="Estilo de Vida" data-cat-macro-for-type="EXPENSE">Estilo de Vida</option>
+                            {{end}}
+                            <option value="custom" data-cat-macro-for-type="EXPENSE,INCOME">Outro grupo...</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-2 hidden" data-cat-macro-custom>
+                        <span class="cb-label">Nome do Novo Grupo Macro</span>
+                        <input type="text" name="macro_group_custom" placeholder="Digite o novo grupo macro" class="cb-input">
+                    </div>
+                </div>
+
+                <div data-cat-sub-info class="hidden mt-3 text-xs text-[var(--cb-text-subtle)]">
+                    <i data-lucide="info" class="w-3.5 h-3.5 inline mr-1"></i> Subcategoria herda automaticamente o Grupo Macro da categoria pai.
+                </div>
+
+                <button class="cb-button cb-button-primary h-11 px-6 text-sm mt-4">Criar categoria</button>
+            </form>
+
+            {{$incomeCats := filterCategories .Categorias "INCOME"}}
+            {{$expenseCats := filterCategories .Categorias "EXPENSE"}}
+
+            <!-- Search -->
+            <div class="mt-6">
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <i data-lucide="search" class="h-4 w-4 text-[var(--cb-text-subtle)]"></i>
+                    </span>
+                    <input type="text" data-cat-search placeholder="Buscar categorias..." class="cb-input pl-9 pr-4 w-full !pl-9">
+                </div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="mt-4">
+                <div class="flex border-b border-[var(--cb-border-subtle)] mb-6 pb-px">
+                    <button type="button" data-cat-tab="EXPENSE"
+                        data-cat-tab-active="border-[var(--cb-danger)] text-[var(--cb-danger)]"
+                        data-cat-tab-inactive="border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]"
+                        data-cat-tab-icon-active="bg-red-500/10 text-[var(--cb-danger)]"
+                        data-cat-tab-icon-inactive="bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)]"
+                        class="flex items-center gap-2 border-b-2 py-3 px-4 text-sm font-semibold transition-all btn-tactile border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]">
+                        <span data-cat-tab-icon class="flex h-5 w-5 items-center justify-center rounded-md transition-colors bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)]">
+                            <i data-lucide="arrow-down-right" class="h-3.5 w-3.5"></i>
+                        </span>
+                        <span>Despesas</span>
+                        <span class="text-xs opacity-60">({{len $expenseCats}})</span>
+                    </button>
+                    <button type="button" data-cat-tab="INCOME"
+                        data-cat-tab-active="border-[var(--cb-success)] text-[var(--cb-success)]"
+                        data-cat-tab-inactive="border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]"
+                        data-cat-tab-icon-active="bg-emerald-500/10 text-[var(--cb-success)]"
+                        data-cat-tab-icon-inactive="bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)]"
+                        class="flex items-center gap-2 border-b-2 py-3 px-4 text-sm font-semibold transition-all btn-tactile border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]">
+                        <span data-cat-tab-icon class="flex h-5 w-5 items-center justify-center rounded-md transition-colors bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)]">
+                            <i data-lucide="arrow-up-right" class="h-3.5 w-3.5"></i>
+                        </span>
+                        <span>Receitas</span>
+                        <span class="text-xs opacity-60">({{len $incomeCats}})</span>
+                    </button>
+                </div>
+
+                <!-- Expenses Tab Content -->
+                <div data-cat-tab-panel="EXPENSE" class="space-y-2">
+                    {{if $expenseCats}}
+                    {{range $.CategoryTree}}{{if eq .Type "EXPENSE"}}
+                    {{template "config-categorias-tree-node" .}}
+                    {{end}}{{end}}
+                    {{else}}
+                    <div class="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-dashed border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)]/50">
+                        <div class="w-12 h-12 rounded-xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-3">
+                            <i data-lucide="tags" class="w-5 h-5 text-[var(--cb-text-subtle)]"></i>
+                        </div>
+                        <p class="text-sm text-[var(--cb-text-muted)]">Nenhuma categoria de despesa cadastrada</p>
+                    </div>
+                    {{end}}
+                </div>
+
+                <!-- Incomes Tab Content -->
+                <div data-cat-tab-panel="INCOME" class="hidden space-y-2">
+                    {{if $incomeCats}}
+                    {{range $.CategoryTree}}{{if eq .Type "INCOME"}}
+                    {{template "config-categorias-tree-node" .}}
+                    {{end}}{{end}}
+                    {{else}}
+                    <div class="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-dashed border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)]/50">
+                        <div class="w-12 h-12 rounded-xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-3">
+                            <i data-lucide="tags" class="w-5 h-5 text-[var(--cb-text-subtle)]"></i>
+                        </div>
+                        <p class="text-sm text-[var(--cb-text-muted)]">Nenhuma categoria de receita cadastrada</p>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

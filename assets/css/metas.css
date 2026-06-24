@@ -1,0 +1,34 @@
+/* ContaBase Metas Styles */
+
+/* === SCROLLBAR HIDE === */
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* === BUTTONS === */
+.btn-tactile { transition: all 0.15s ease; }
+.btn-tactile:active { transform: scale(0.97); }
+
+/* === PROGRESS BARS === */
+.progress-fill {
+    width: calc(var(--pct, 0) * 1%);
+    transition: width 0.5s ease;
+}
+
+.progress-fill-capped {
+    width: clamp(0%, calc(var(--pct, 0) * 1%), 100%);
+    transition: width 0.5s ease;
+}
+
+/* === GOAL PROGRESS BAR === */
+.goal-progress-fill {
+    background: linear-gradient(to right, #8b5cf6, #a78bfa);
+}
+
+/* === ICONE COLORIDO === */
+.icon-colored {
+    color: var(--ic, #8b5cf6);
+}
+
+/* === DETAILS SUMMARY (inline forms) === */
+details > summary::-webkit-details-marker { display: none; }
+details > summary::marker { display: none; content: ""; }

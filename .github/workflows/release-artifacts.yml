@@ -1,0 +1,284 @@
+name: Release Artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Public version to package (for example: v0.1.0-beta.1)"
+        required: true
+        type: string
+      publish_image:
+        description: "Publish the multi-arch image to GHCR"
+        required: true
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-artifacts-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Validate public release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish_image: ${{ steps.version.outputs.publish_image }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Resolve and validate public version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_VERSION: ${{ inputs.version }}
+          DISPATCH_PUBLISH_IMAGE: ${{ inputs.publish_image }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            version="$REF_NAME"
+            publish_image="true"
+          else
+            version="$DISPATCH_VERSION"
+            publish_image="${DISPATCH_PUBLISH_IMAGE:-false}"
+          fi
+
+          if [[ "$version" == *-internal* ]]; then
+            echo "Internal versions cannot produce public release artifacts." >&2
+            exit 1
+          fi
+          if [[ ! "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
+            echo "Invalid public SemVer tag: $version" >&2
+            exit 1
+          fi
+
+          snapshot_version="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$snapshot_version" != "$version" ]]; then
+            echo "VERSION mismatch: snapshot=$snapshot_version requested=$version" >&2
+            exit 1
+          fi
+          if [[ "$publish_image" == "true" && ! "$version" =~ -beta\.[0-9]+($|\+) ]]; then
+            echo "This workflow only publishes the mutable beta channel for Beta versions." >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish_image=$publish_image" >> "$GITHUB_OUTPUT"
+
+  artifacts:
+    name: Build and validate Linux release artifacts
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build CSS
+        run: ./scripts/build-css.sh
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Run Go vet
+        run: go vet ./...
+
+      - name: Build and package amd64 and arm64
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          rm -rf release-dist release-work
+          mkdir -p release-dist release-work
+
+          for arch in amd64 arm64; do
+            bundle_root="release-work/${arch}/contabase"
+            mkdir -p "$bundle_root"
+
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
+              -trimpath \
+              -ldflags="-s -w -X github.com/contabase-app/contabase/internal/version.Version=${RELEASE_VERSION}" \
+              -o "$bundle_root/contabase" \
+              ./cmd/server
+
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
+              -trimpath \
+              -ldflags="-s -w" \
+              -o "$bundle_root/admin" \
+              ./cmd/admin
+
+            cp -R templates assets "$bundle_root/"
+            cp LICENSE "$bundle_root/LICENSE"
+            cp docs/binario/contabase.env.example "$bundle_root/contabase.env.example"
+            cp docs/binario/contabase.service.example "$bundle_root/contabase.service.example"
+            printf '%s\n' "$RELEASE_VERSION" > "$bundle_root/VERSION"
+
+            tar -czf "release-dist/contabase-linux-${arch}.tar.gz" \
+              -C "release-work/${arch}" \
+              contabase
+          done
+
+      - name: Generate checksums
+        working-directory: release-dist
+        run: |
+          set -euo pipefail
+          sha256sum \
+            contabase-linux-amd64.tar.gz \
+            contabase-linux-arm64.tar.gz \
+            > checksums.txt
+
+      - name: Validate package contents and checksums
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          required_paths=(
+            contabase
+            contabase/contabase
+            contabase/admin
+            contabase/templates
+            contabase/assets
+            contabase/VERSION
+            contabase/LICENSE
+            contabase/contabase.env.example
+            contabase/contabase.service.example
+          )
+
+          for arch in amd64 arm64; do
+            archive="release-dist/contabase-linux-${arch}.tar.gz"
+            listing="release-dist/contents-${arch}.txt"
+            verbose_listing="release-dist/contents-${arch}-verbose.txt"
+
+            tar -tzf "$archive" | sed 's#/$##' > "$listing"
+            tar -tvzf "$archive" > "$verbose_listing"
+
+            if awk 'substr($0,1,1) == "/" { bad=1 } END { exit bad ? 0 : 1 }' "$listing"; then
+              echo "Absolute path found in $archive." >&2
+              exit 1
+            fi
+            if awk -F/ '{ for (i=1; i<=NF; i++) if ($i == ".." || $i == ".") bad=1 } END { exit bad ? 0 : 1 }' "$listing"; then
+              echo "Path traversal found in $archive." >&2
+              exit 1
+            fi
+            if awk '$0 != "contabase" && index($0, "contabase/") != 1 { bad=1 } END { exit bad ? 0 : 1 }' "$listing"; then
+              echo "Path outside contabase/ found in $archive." >&2
+              exit 1
+            fi
+            if awk 'substr($1,1,1) != "-" && substr($1,1,1) != "d" { bad=1 } END { exit bad ? 0 : 1 }' "$verbose_listing"; then
+              echo "Link or special file found in $archive." >&2
+              exit 1
+            fi
+
+            for required in "${required_paths[@]}"; do
+              grep -Fxq "$required" "$listing" || {
+                echo "Required path missing from $archive: $required" >&2
+                exit 1
+              }
+            done
+
+            if grep -E '(^|/)(\.docs|\.git|\.github|\.impeccable|data|uploads|backups|logs)(/|$)|(^|/)(PRODUCT|DESIGN)\.md$|(^|/)\.env($|\.)|\.db(-wal|-shm)?$' "$listing"; then
+              echo "Forbidden path found in $archive." >&2
+              exit 1
+            fi
+
+            extracted_version="$(tar -xOzf "$archive" contabase/VERSION | tr -d '[:space:]')"
+            if [[ "$extracted_version" != "$RELEASE_VERSION" ]]; then
+              echo "Artifact VERSION mismatch in $archive." >&2
+              exit 1
+            fi
+          done
+
+          expected_names=$'contabase-linux-amd64.tar.gz\ncontabase-linux-arm64.tar.gz'
+          actual_names="$(awk '{print $2}' release-dist/checksums.txt)"
+          if [[ "$actual_names" != "$expected_names" ]]; then
+            echo "checksums.txt contains unexpected paths or ordering." >&2
+            exit 1
+          fi
+
+          (
+            cd release-dist
+            sha256sum -c checksums.txt
+          )
+
+          rm -f release-dist/contents-*.txt
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: contabase-release-${{ needs.prepare.outputs.version }}
+          path: |
+            release-dist/contabase-linux-amd64.tar.gz
+            release-dist/contabase-linux-arm64.tar.gz
+            release-dist/checksums.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  ghcr:
+    name: Publish multi-arch image to GHCR
+    needs:
+      - prepare
+      - artifacts
+    if: needs.prepare.outputs.publish_image == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Beta image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+          tags: |
+            ghcr.io/contabase-app/contabase:${{ needs.prepare.outputs.version }}
+            ghcr.io/contabase-app/contabase:beta

@@ -1,0 +1,55 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Nunca exportar para o público
+.env export-ignore
+.env.local export-ignore
+.env.production export-ignore
+.env.staging export-ignore
+.env.docker export-ignore
+.env.development export-ignore
+.env.example export-ignore
+*.db export-ignore
+*.db-wal export-ignore
+*.db-shm export-ignore
+*.sqlite export-ignore
+*.sqlite3 export-ignore
+*.log export-ignore
+data/*.db-wal export-ignore
+data/*.db-shm export-ignore
+data/backups/*.db export-ignore
+
+# Backups / temporários / dados locais
+backups/ export-ignore
+logs/ export-ignore
+tmp/ export-ignore
+storage/ export-ignore
+uploads/ export-ignore
+data/ export-ignore
+
+# Documentação interna — todo .docs/ e AGENTS.md bloqueados do export público
+# Documentação pública vai em docs/ (exportado separadamente)
+.docs/ export-ignore
+AGENTS.md export-ignore
+AGENTS.private.md export-ignore
+
+# Docker dev (build, hot-reload, entrypoint)
+.docker/ export-ignore
+
+# Arquivos locais/dev
+docker-compose.local.yml export-ignore
+docker-compose.override.yml export-ignore
+compose.local.yaml export-ignore
+compose.local.yml export-ignore
+scripts/dev/ export-ignore
+scripts/local/ export-ignore
+init-dev.sh export-ignore
+tailwindcss export-ignore
+
+# Workflows privados/dev, se existirem
+.github/workflows/dev-* export-ignore
+
+# Impeccable design tooling
+.impeccable/ export-ignore
+PRODUCT.md export-ignore
+DESIGN.md export-ignore

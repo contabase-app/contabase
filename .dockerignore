@@ -1,0 +1,66 @@
+# Git
+.git/
+.gitattributes
+.gitignore
+.gitmodules
+
+# Documentacao interna (DEV-only)
+.docs/
+
+# Dados e persistencia (NUNCA entram na imagem)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Backups e uploads
+backups/
+uploads/
+tmp/
+storage/
+
+# Configuracoes de ambiente (NUNCA entram na imagem)
+.env
+.env.*
+!.env.example
+!.env.docker.example
+
+# Docker dev
+.docker/
+compose.local.yaml
+compose.local.yml
+docker-compose.local.yml
+
+# Node modules (se existirem localmente)
+node_modules/
+
+# Binarios compilados localmente
+bin/
+dist/
+main
+/server
+/admin
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Tailwind CLI standalone local
+tailwindcss
+tailwindcss-linux-*
+
+# CSS compilado local (sera gerado no build)
+assets/css/style.css
+
+# Scripts locais e temporarios
+patch_role.sh
+revert_patch.sh
+*-TEMPORARIO.md
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db

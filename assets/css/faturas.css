@@ -1,0 +1,16 @@
+/* ContaBase Faturas Styles */
+
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+.btn-tactile { transition: all 0.15s ease; }
+.btn-tactile:active { transform: scale(0.97); }
+
+.blob-colored { background-color: var(--ic, #8b5cf6); }
+.emblem-wrap-solid { background-color: var(--ic, #8b5cf6); }
+.icon-colored { color: var(--ic, #8b5cf6); }
+
+[data-swipe-row="true"] { position: relative; overflow: hidden; }
+
+/* Fat card items — visual match with /lancamentos, no icons */
+[data-swipe-content] { -webkit-user-select: none; user-select: none; }

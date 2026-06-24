@@ -1,0 +1,492 @@
+{{define "field-class"}}cb-input{{end}}
+
+{{define "field-label"}}cb-label{{end}}
+
+{{define "admin-auditoria-table-rows"}}
+{{range .SecurityLogs}}
+<tr class="border-t border-[var(--cb-border-subtle)]">
+    <td class="px-2 py-2 whitespace-nowrap">{{.OccurredAt}}</td>
+    <td class="px-2 py-2">
+        <p class="whitespace-nowrap">{{.EventType}}</p>
+        {{if .TargetEmail}}<p class="text-[11px] text-[var(--cb-text-muted)]">alvo: {{.TargetEmail}}</p>{{end}}
+    </td>
+    <td class="px-2 py-2 whitespace-nowrap">{{.Severity}}</td>
+    <td class="px-2 py-2 whitespace-nowrap">{{.IPAddress}}</td>
+    <td class="px-2 py-2 whitespace-nowrap">{{.Status}}</td>
+</tr>
+{{else}}
+<tr>
+    <td colspan="5" class="px-2 py-5 text-center text-[var(--cb-text-muted)]">Sem eventos de auditoria nos últimos 14 dias.</td>
+</tr>
+{{end}}
+{{end}}
+
+{{define "config-categorias-tree-node"}}
+{{if .IsChild}}
+{{template "config-categorias-row" .}}
+{{else}}
+<section class="border-b border-[var(--cb-border-subtle)] last:border-b-0" data-cat-parent-block data-cat-parent-id="{{.ID}}">
+    <div class="flex items-center justify-between py-2.5 md:py-3 group" data-cat-parent-header>
+        <button type="button" class="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer btn-tactile" data-cat-toggle aria-label="Expandir subcategorias" aria-expanded="false">
+            <span class="flex items-center justify-center w-4 h-4 shrink-0 transition-transform duration-200" data-cat-chevron style="transform: rotate(-90deg)">
+                <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-[var(--cb-text-muted)]"></i>
+            </span>
+            <span class="flex h-7 w-7 items-center justify-center rounded-md transition-colors
+                {{if eq .Type "INCOME"}}
+                    bg-emerald-500/10 text-[var(--cb-success)]
+                {{else}}
+                    bg-red-500/10 text-[var(--cb-danger)]
+                {{end}} shrink-0">
+                <i data-lucide="{{if eq .Type "INCOME"}}arrow-up-right{{else}}arrow-down-right{{end}}" class="h-3.5 w-3.5"></i>
+            </span>
+            <p class="text-sm font-semibold text-[var(--cb-text-main)] truncate" data-cat-name>{{.Name}}</p>
+            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wider border border-violet-500/20 bg-violet-500/5 text-violet-500 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/25 truncate max-w-[130px]" data-cat-macro>
+                {{if .MacroGroup}}{{.MacroGroup}}{{else}}{{if eq .Type "INCOME"}}Receita{{else}}Despesa{{end}}{{end}}
+            </span>
+            {{if .Children}}
+            <span class="text-[11px] font-medium text-[var(--cb-text-muted)] shrink-0" data-cat-child-count>({{len .Children}})</span>
+            {{end}}
+        </button>
+        <div class="flex items-center gap-1 shrink-0 ml-2">
+            <button type="button" class="md:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 h-7 w-7 rounded-md border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-[var(--cb-text-main)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile"
+                hx-get="/configuracoes/categorias/{{.ID}}/formulario"
+                hx-target="closest section" hx-swap="outerHTML"
+                aria-label="Editar {{.Name}}">
+                <i data-lucide="pencil" class="h-3 w-3"></i>
+            </button>
+            <button type="button" class="md:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 h-7 w-7 rounded-md border border-red-500/20 bg-red-500/10 flex items-center justify-center text-[var(--cb-danger)] transition-all hover:bg-red-500/20 active:scale-95 btn-tactile"
+                hx-delete="/configuracoes/categorias/{{.ID}}"
+                hx-target="#settings-dynamic-payload" hx-swap="outerHTML"
+                hx-confirm="Excluir categoria '{{.Name}}'?"
+                aria-label="Excluir {{.Name}}">
+                <i data-lucide="trash-2" class="h-3 w-3"></i>
+            </button>
+        </div>
+    </div>
+    {{if .Children}}
+    <div data-cat-children data-cat-parent-id="{{.ID}}" class="hidden">
+        <div class="pb-2 space-y-0.5">
+        {{range .Children}}
+        {{template "config-categorias-tree-node" .}}
+        {{end}}
+        </div>
+    </div>
+    {{end}}
+</section>
+{{end}}
+{{end}}
+
+{{define "config-categorias-row"}}
+<article class="group flex items-center justify-between pl-5 md:pl-7 pr-2 py-1.5" data-cat-name="{{.Name}}">
+    <div class="flex items-center gap-2 min-w-0">
+        <span class="w-1.5 h-full min-h-[16px] rounded-full bg-[var(--cb-border-subtle)] shrink-0 self-stretch" aria-hidden="true"></span>
+        <p class="text-[13px] text-[var(--cb-text-muted)] truncate" data-cat-name>{{.Name}}</p>
+    </div>
+    <div class="flex items-center gap-1 shrink-0 ml-2">
+        <button type="button" class="md:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 h-6 w-6 rounded-md border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-[var(--cb-text-main)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile"
+            hx-get="/configuracoes/categorias/{{.ID}}/formulario"
+            hx-target="closest article" hx-swap="outerHTML"
+            aria-label="Editar {{.Name}}">
+            <i data-lucide="pencil" class="h-3 w-3"></i>
+        </button>
+        <button type="button" class="md:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 h-6 w-6 rounded-md border border-red-500/20 bg-red-500/10 flex items-center justify-center text-[var(--cb-danger)] transition-all hover:bg-red-500/20 active:scale-95 btn-tactile"
+            hx-delete="/configuracoes/categorias/{{.ID}}"
+            hx-target="#settings-dynamic-payload" hx-swap="outerHTML"
+            hx-confirm="Excluir categoria '{{.Name}}'?"
+            aria-label="Excluir {{.Name}}">
+            <i data-lucide="trash-2" class="h-3 w-3"></i>
+        </button>
+    </div>
+</article>
+{{end}}
+
+
+{{define "config-categorias-row-edit"}}
+<article class="py-3 md:py-4 {{if .IsChild}}pl-5 md:pl-7 pr-2{{end}} border-b border-[var(--cb-border-subtle)] last:border-b-0">
+    <form data-parent-select hx-post="/configuracoes/categorias/{{.ID}}/salvar" hx-target="closest article" hx-swap="outerHTML" class="space-y-3">
+        <div>
+            <label class="cb-label">Nome da categoria</label>
+            <input type="text" name="name" value="{{.Name}}" placeholder="Nome da categoria" class="cb-input">
+        </div>
+        <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <label class="space-y-1 block">
+                <span class="cb-label">Categoria Pai (Opcional)</span>
+                <select name="parent_id" data-parent-value class="cb-input">
+                    <option value="">Nenhuma</option>
+                    {{range .ParentOptions}}
+                    <option value="{{.ID}}" {{if eq $.ParentID .ID}}selected{{end}}>{{.Name}}</option>
+                    {{end}}
+                </select>
+            </label>
+            <label class="space-y-1 block">
+                <span class="cb-label">Grupo Macro</span>
+                <select name="macro_group" data-parent-dependent class="cb-input">
+                    <option value="" {{if eq .MacroGroup ""}}selected{{end}}>Nenhum</option>
+                    {{if .IsBusiness}}
+                    {{if eq .Type "INCOME"}}
+                    <option value="Receitas Operacionais" {{if eq .MacroGroup "Receitas Operacionais"}}selected{{end}}>Receitas Operacionais</option>
+                    {{else}}
+                    <option value="Deduções/Impostos" {{if eq .MacroGroup "Deduções/Impostos"}}selected{{end}}>Deduções/Impostos</option>
+                    <option value="Custos Operacionais" {{if eq .MacroGroup "Custos Operacionais"}}selected{{end}}>Custos Operacionais</option>
+                    <option value="Despesas Administrativas" {{if eq .MacroGroup "Despesas Administrativas"}}selected{{end}}>Despesas Administrativas</option>
+                    <option value="Despesas Comerciais" {{if eq .MacroGroup "Despesas Comerciais"}}selected{{end}}>Despesas Comerciais</option>
+                    <option value="Equipe e Prestadores" {{if eq .MacroGroup "Equipe e Prestadores"}}selected{{end}}>Equipe e Prestadores</option>
+                    <option value="Financeiro" {{if eq .MacroGroup "Financeiro"}}selected{{end}}>Financeiro</option>
+                    <option value="Investimentos/Outros" {{if eq .MacroGroup "Investimentos/Outros"}}selected{{end}}>Investimentos/Outros</option>
+                    {{end}}
+                    {{else}}
+                    {{if eq .Type "INCOME"}}
+                    <option value="Receitas" {{if eq .MacroGroup "Receitas"}}selected{{end}}>Receitas</option>
+                    {{else}}
+                    <option value="Essencial" {{if eq .MacroGroup "Essencial"}}selected{{end}}>Essencial</option>
+                    <option value="Estilo de Vida" {{if eq .MacroGroup "Estilo de Vida"}}selected{{end}}>Estilo de Vida</option>
+                    {{end}}
+                    {{end}}
+                </select>
+                <input type="text" name="macro_group_custom" placeholder="Ou digite um novo grupo macro" data-parent-dependent class="mt-2 cb-input">
+            </label>
+        </div>
+        <p data-parent-hint class="hidden text-xs text-[var(--cb-text-subtle)]">Subcategoria herda automaticamente o Grupo Macro da categoria pai.</p>
+        <div class="flex items-center gap-2 justify-end">
+            <button type="button"
+                class="cb-button cb-button-secondary h-9 px-3 text-xs"
+                hx-get="/configuracoes/categorias/{{.ID}}"
+                hx-target="closest article" hx-swap="outerHTML">
+                Cancelar
+            </button>
+            <button type="submit" class="cb-button cb-button-primary h-9 px-4 text-xs flex items-center gap-1">
+                <i data-lucide="check" class="h-3.5 w-3.5"></i>Salvar
+            </button>
+        </div>
+    </form>
+</article>
+{{end}}
+
+{{define "config-contas-row"}}
+<article class="group flex items-center justify-between rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 transition-all hover:border-[var(--cb-border-strong)] hover:-translate-y-0.5 hover:shadow-sm">
+    <div class="flex items-center gap-3 min-w-0">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+            {{template "financial-emblem" .}}
+        </span>
+        <div class="min-w-0">
+            <p class="text-sm font-medium text-[var(--cb-text-main)] truncate">{{.Name}}</p>
+            <p class="text-xs text-[var(--cb-text-muted)]">{{.TypeLabel}}</p>
+        </div>
+    </div>
+    <div class="flex items-center gap-1 shrink-0">
+        <p class="text-sm font-semibold text-[var(--cb-text-main)] mr-2" data-sensitive>{{.Balance}}</p>
+        <button type="button" class="h-6 w-6 rounded-md border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-subtle)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile"
+            hx-post="/configuracoes/contas/{{.ID}}/subir"
+            hx-target="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            aria-label="Mover {{.Name}} para cima">
+            <i data-lucide="chevron-up" class="h-3 w-3"></i>
+        </button>
+        <button type="button" class="h-6 w-6 rounded-md border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-subtle)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile mr-1"
+            hx-post="/configuracoes/contas/{{.ID}}/descer"
+            hx-target="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            aria-label="Mover {{.Name}} para baixo">
+            <i data-lucide="chevron-down" class="h-3 w-3"></i>
+        </button>
+        <button type="button" class="h-8 w-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile"
+            hx-get="/configuracoes/contas/{{.ID}}/formulario"
+            hx-target="closest article" hx-swap="outerHTML"
+            aria-label="Editar {{.Name}}">
+            <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+        </button>
+        <button type="button" class="h-8 w-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-amber-600 hover:border-amber-300 active:scale-95 dark:hover:text-amber-400 dark:hover:border-amber-600 btn-tactile"
+            hx-post="/configuracoes/contas/{{.ID}}/arquivar"
+            hx-target="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            hx-confirm="Arquivar esta conta? Ela deixará de aparecer no dashboard e nos formulários, mas o histórico será mantido."
+            aria-label="Arquivar {{.Name}}">
+            <i data-lucide="archive" class="h-3.5 w-3.5"></i>
+        </button>
+    </div>
+</article>
+{{end}}
+
+{{define "config-contas-row-archived"}}
+<article class="group flex items-center justify-between rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 opacity-60 transition-all hover:opacity-80">
+    <div class="flex items-center gap-3 min-w-0">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid grayscale select-none" style="--ic: {{.Color}}">
+            {{template "financial-emblem" .}}
+        </span>
+        <div class="min-w-0">
+            <p class="text-sm font-medium text-[var(--cb-text-muted)] truncate">{{.Name}}</p>
+            <div class="flex items-center gap-2">
+                <p class="text-xs text-[var(--cb-text-muted)]">{{.TypeLabel}}</p>
+                <span class="inline-flex items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-[0.6rem] font-semibold text-amber-600 ring-1 ring-inset ring-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/15">Arquivado</span>
+            </div>
+        </div>
+    </div>
+    <div class="flex items-center gap-3 shrink-0">
+        <p class="text-sm font-semibold text-[var(--cb-text-muted)]" data-sensitive>{{.Balance}}</p>
+        <button type="button" class="h-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-3 text-xs font-medium text-emerald-600 transition-all hover:bg-emerald-50 hover:border-emerald-300 active:scale-95 dark:hover:bg-emerald-500/10 dark:hover:border-emerald-500/30 flex items-center gap-1 dark:text-emerald-400"
+            hx-post="/configuracoes/contas/{{.ID}}/reativar"
+            hx-target="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            aria-label="Reativar {{.Name}}">
+            <i data-lucide="archive-restore" class="h-3.5 w-3.5"></i>Reativar
+        </button>
+    </div>
+</article>
+{{end}}
+
+{{define "config-contas-row-edit"}}
+<article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4">
+    <form hx-post="/configuracoes/contas/{{.ID}}/salvar" hx-target="closest article" hx-swap="outerHTML" class="space-y-3">
+        <div>
+            <label class="cb-label">Nome da conta</label>
+            <div class="flex items-center gap-2">
+                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+                    {{template "financial-emblem" .}}
+                </span>
+                <input type="text" name="name" value="{{.Name}}" placeholder="Nome da conta"
+                    class="cb-input flex-1">
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="cb-label">Tipo da conta</label>
+                <select name="type" class="cb-input">
+                    <option value="CHECKING" {{if eq .Type "CHECKING"}}selected{{end}}>Conta Corrente</option>
+                    <option value="SAVINGS" {{if eq .Type "SAVINGS"}}selected{{end}}>Poupança</option>
+                    <option value="INVESTMENT" {{if eq .Type "INVESTMENT"}}selected{{end}}>Investimento</option>
+                    <option value="WALLET" {{if eq .Type "WALLET"}}selected{{end}}>Carteira / Dinheiro</option>
+                </select>
+            </div>
+            <div>
+                <label class="cb-label">Saldo atual</label>
+                <input type="text" name="balance" inputmode="decimal" value="{{.Balance}}" placeholder="0,00"
+                    data-money-mask
+                    class="cb-input">
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="cb-label">Ícone</label>
+                <select name="icon" class="cb-input">
+                    <option value="">Padrão</option>
+                    <option value="landmark" {{if eq .Icon "landmark"}}selected{{end}}>Banco (landmark)</option>
+                    <option value="building-2" {{if eq .Icon "building-2"}}selected{{end}}>Prédio (building)</option>
+                    <option value="wallet" {{if eq .Icon "wallet"}}selected{{end}}>Carteira (wallet)</option>
+                    <option value="credit-card" {{if eq .Icon "credit-card"}}selected{{end}}>Cartão (credit-card)</option>
+                    <option value="piggy-bank" {{if eq .Icon "piggy-bank"}}selected{{end}}>Cofrinho (piggy-bank)</option>
+                    <option value="briefcase" {{if eq .Icon "briefcase"}}selected{{end}}>Maleta (briefcase)</option>
+                    <option value="circle-dollar-sign" {{if eq .Icon "circle-dollar-sign"}}selected{{end}}>Dinheiro (dollar)</option>
+                    <option value="receipt" {{if eq .Icon "receipt"}}selected{{end}}>Recibo (receipt)</option>
+                    <option value="banknote" {{if eq .Icon "banknote"}}selected{{end}}>Cédula (banknote)</option>
+                    <option value="coins" {{if eq .Icon "coins"}}selected{{end}}>Moedas (coins)</option>
+                    <option value="hand-coins" {{if eq .Icon "hand-coins"}}selected{{end}}>Mão com Moedas</option>
+                </select>
+            </div>
+            <div>
+                <label class="cb-label">Cor</label>
+                <input type="color" name="color" value="{{.Color}}"
+                    class="h-10 w-full rounded-xl border border-[var(--cb-border-strong)] p-1.5 bg-[var(--cb-surface-2)]">
+            </div>
+        </div>
+        <div class="flex items-center gap-2 justify-end pt-1">
+            <button type="button"
+                class="cb-button cb-button-secondary h-9 px-3 text-xs"
+                hx-get="/configuracoes/contas/{{.ID}}"
+                hx-target="closest article" hx-swap="outerHTML">
+                Cancelar
+            </button>
+            <button type="submit" class="cb-button cb-button-primary h-9 px-4 text-xs flex items-center gap-1">
+                <i data-lucide="check" class="h-3.5 w-3.5"></i>Salvar
+            </button>
+        </div>
+    </form>
+</article>
+{{end}}
+
+{{define "config-cartoes-row"}}
+<article class="group rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 transition-all hover:border-[var(--cb-border-strong)] hover:-translate-y-0.5 hover:shadow-sm">
+    <div class="flex items-center justify-between gap-3 mb-2">
+        <div class="flex items-center gap-3 min-w-0">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+                {{template "financial-emblem" .}}
+            </span>
+            <p class="text-sm font-medium text-[var(--cb-text-main)] truncate">{{.Name}}</p>
+        </div>
+        <div class="flex items-center gap-1 shrink-0">
+            <button type="button" class="h-6 w-6 rounded-md border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-subtle)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile"
+                hx-post="/configuracoes/cartoes/{{.AccountID}}/subir"
+                hx-target="#settings-dynamic-payload"
+                hx-swap="outerHTML"
+                aria-label="Mover {{.Name}} para cima">
+                <i data-lucide="chevron-up" class="h-3 w-3"></i>
+            </button>
+            <button type="button" class="h-6 w-6 rounded-md border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-subtle)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile mr-1"
+                hx-post="/configuracoes/cartoes/{{.AccountID}}/descer"
+                hx-target="#settings-dynamic-payload"
+                hx-swap="outerHTML"
+                aria-label="Mover {{.Name}} para baixo">
+                <i data-lucide="chevron-down" class="h-3 w-3"></i>
+            </button>
+            <button type="button" class="h-8 w-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile"
+                hx-get="/configuracoes/cartoes/{{.AccountID}}/formulario"
+                hx-target="closest article" hx-swap="outerHTML"
+                aria-label="Editar {{.Name}}">
+                <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+            </button>
+            <button type="button" class="h-8 w-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-amber-600 hover:border-amber-300 active:scale-95 dark:hover:text-amber-400 dark:hover:border-amber-600 btn-tactile"
+                hx-post="/configuracoes/cartoes/{{.AccountID}}/arquivar"
+                hx-target="#settings-dynamic-payload"
+                hx-swap="outerHTML"
+                hx-confirm="Arquivar este cartão? Ele deixará de aparecer no dashboard e nos formulários, mas faturas e histórico serão mantidos e novos lançamentos serão bloqueados."
+                aria-label="Arquivar {{.Name}}">
+                <i data-lucide="archive" class="h-3.5 w-3.5"></i>
+            </button>
+        </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-3 text-xs text-[var(--cb-text-muted)]">
+        <span>Limite: <span class="text-[var(--cb-text-main)]">{{.CreditLimit}}</span></span>
+        <span>Fecha dia <span class="text-[var(--cb-text-main)]">{{.ClosingDay}}</span></span>
+        <span>Vence dia <span class="text-[var(--cb-text-main)]">{{.DueDay}}</span></span>
+    </div>
+</article>
+{{end}}
+
+{{define "config-cartoes-row-archived"}}
+<article class="group rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 opacity-60 transition-all hover:opacity-80">
+    <div class="flex items-center justify-between gap-3 mb-2">
+        <div class="flex items-center gap-3 min-w-0">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+                {{template "financial-emblem" .}}
+            </span>
+            <div class="min-w-0">
+                <p class="text-sm font-medium text-[var(--cb-text-muted)] truncate">{{.Name}}</p>
+                <span class="inline-flex items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-[0.6rem] font-semibold text-amber-600 ring-1 ring-inset ring-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/15">Arquivado</span>
+            </div>
+        </div>
+        <button type="button" class="h-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-3 text-xs font-medium text-emerald-600 transition-all hover:bg-emerald-50 hover:border-emerald-300 active:scale-95 dark:hover:bg-emerald-500/10 dark:hover:border-emerald-500/30 flex items-center gap-1 shrink-0 dark:text-emerald-400"
+            hx-post="/configuracoes/cartoes/{{.AccountID}}/reativar"
+            hx-target="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            aria-label="Reativar {{.Name}}">
+            <i data-lucide="archive-restore" class="h-3.5 w-3.5"></i>Reativar
+        </button>
+    </div>
+    <div class="flex flex-wrap items-center gap-3 text-xs text-[var(--cb-text-muted)]">
+        <span>Limite: <span>{{.CreditLimit}}</span></span>
+        <span>Fecha dia <span>{{.ClosingDay}}</span></span>
+        <span>Vence dia <span>{{.DueDay}}</span></span>
+    </div>
+</article>
+{{end}}
+
+{{define "config-cartoes-row-edit"}}
+<article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4">
+    <form hx-post="/configuracoes/cartoes/{{.AccountID}}/salvar" hx-target="closest article" hx-swap="outerHTML" class="space-y-3">
+        <div>
+            <label class="cb-label">Nome do cartão</label>
+            <div class="flex items-center gap-2">
+                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+                    {{template "financial-emblem" .}}
+                </span>
+                <input type="text" name="name" value="{{.Name}}" placeholder="Nome do cartão"
+                    class="cb-input flex-1">
+            </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+            <div>
+                <label class="cb-label">Limite de crédito</label>
+                <input type="text" name="credit_limit" inputmode="decimal" value="{{.CreditLimit}}" placeholder="Limite"
+                    data-money-mask
+                    class="cb-input">
+            </div>
+            <div>
+                <label class="cb-label">Dia de fechamento</label>
+                <input type="number" name="closing_day" min="1" max="31" value="{{.ClosingDay}}" placeholder="Fecha dia"
+                    class="cb-input">
+            </div>
+            <div>
+                <label class="cb-label">Dia de vencimento</label>
+                <input type="number" name="due_day" min="1" max="31" value="{{.DueDay}}" placeholder="Vence dia"
+                    class="cb-input">
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="cb-label">Ícone</label>
+                <select name="icon" class="cb-input">
+                    <option value="">Padrão</option>
+                    <option value="credit-card" {{if eq .Icon "credit-card"}}selected{{end}}>Cartão (credit-card)</option>
+                    <option value="wallet-cards" {{if eq .Icon "wallet-cards"}}selected{{end}}>Carteiras (wallet-cards)</option>
+                    <option value="contactless" {{if eq .Icon "contactless"}}selected{{end}}>Contactless</option>
+                    <option value="landmark" {{if eq .Icon "landmark"}}selected{{end}}>Banco (landmark)</option>
+                    <option value="wallet" {{if eq .Icon "wallet"}}selected{{end}}>Carteira (wallet)</option>
+                    <option value="circle-dollar-sign" {{if eq .Icon "circle-dollar-sign"}}selected{{end}}>Dinheiro (dollar)</option>
+                </select>
+            </div>
+            <div>
+                <label class="cb-label">Cor</label>
+                <input type="color" name="color" value="{{.Color}}"
+                    class="h-10 w-full rounded-xl border border-[var(--cb-border-strong)] p-1.5 bg-[var(--cb-surface-2)]">
+            </div>
+        </div>
+        <div class="flex items-center gap-2 justify-end pt-1">
+            <button type="button"
+                class="cb-button cb-button-secondary h-9 px-3 text-xs"
+                hx-get="/configuracoes/cartoes/{{.AccountID}}"
+                hx-target="closest article" hx-swap="outerHTML">
+                Cancelar
+            </button>
+            <button type="submit" class="cb-button cb-button-primary h-9 px-4 text-xs flex items-center gap-1">
+                <i data-lucide="check" class="h-3.5 w-3.5"></i>Salvar
+            </button>
+        </div>
+    </form>
+</article>
+{{end}}
+
+{{define "perfil-2fa-setup"}}
+<div class="mt-4 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-4">
+    <p class="text-sm text-[var(--cb-text-main)]">Escaneie o QR Code no app autenticador e confirme com o código de 6 dígitos.</p>
+    {{if .QRCode}}<img src="data:image/png;base64,{{.QRCode}}" alt="QR Code TOTP" class="mt-3 h-44 w-44 rounded bg-white p-2">{{end}}
+    <p class="mt-3 text-xs text-[var(--cb-text-muted)]">Chave manual: <code class="text-[var(--cb-text-main)]">{{.TOTPSecret}}</code></p>
+    <form class="mt-4 space-y-3" hx-post="/configuracoes/seguranca/totp/confirmar" hx-target="#totp-area" hx-swap="innerHTML">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="totp_secret" value="{{.TOTPSecret}}">
+        <label class="block text-sm text-[var(--cb-text-main)]">Código de 6 dígitos</label>
+        <input type="text" name="code" maxlength="6" inputmode="numeric" class="cb-input w-44" placeholder="123456">
+        <div class="flex items-center gap-2">
+            <button class="cb-button cb-button-primary h-10 px-4 text-xs">Confirmar e ativar</button>
+            <button type="button" class="cb-button cb-button-secondary h-10 px-4 text-xs"
+                hx-get="/configuracoes/seguranca/totp/cancelar" hx-target="#totp-area" hx-swap="innerHTML">
+                Cancelar
+            </button>
+        </div>
+    </form>
+</div>
+{{end}}
+
+{{define "perfil-2fa-enabled"}}
+<div class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+    {{if .Success}}<p class="text-sm text-emerald-700 dark:text-emerald-100">{{.Success}}</p>{{end}}
+    <p class="mt-1 text-xs text-emerald-600 dark:text-emerald-200/90">2FA ativo.</p>
+    {{if .BackupCodes}}
+    <p class="mt-3 text-xs font-semibold text-amber-700 dark:text-amber-200">Códigos de recuperação (salve offline):</p>
+    <ul class="mt-2 grid grid-cols-2 gap-2 text-xs text-amber-700 dark:text-amber-50">
+        {{range .BackupCodes}}<li class="rounded bg-white px-2 py-1 dark:bg-black/30">{{.}}</li>{{end}}
+    </ul>
+    {{end}}
+</div>
+{{end}}
+
+{{define "perfil-2fa-disabled"}}
+<div class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-4">
+    {{if .Success}}<p class="text-sm text-[var(--cb-text-muted)]">{{.Success}}</p>{{end}}
+    <button type="button"
+        class="cb-button cb-button-primary h-10 px-4 text-xs mt-3"
+        hx-get="/configuracoes/seguranca/totp/setup"
+        hx-target="#totp-area"
+        hx-swap="innerHTML">
+        Configurar 2FA
+    </button>
+</div>
+{{end}}

@@ -1,0 +1,49 @@
+# ==============================================================================
+# docker-compose.override.example.yml — Exemplo de customização local
+#
+# Copie para docker-compose.override.yml e ajuste para seu ambiente.
+# docker-compose.override.yml NÃO é rastreado pelo Git (está no .gitignore)
+# e é carregado automaticamente pelo Docker Compose junto com o docker-compose.yml.
+# ==============================================================================
+
+services:
+  contabase:
+    # Revise este arquivo antes de expor o ContaBase publicamente.
+    # Nao edite docker-compose.yml para customizacoes locais.
+
+    # Exemplo seguro para proxy no mesmo host:
+    # publica a porta apenas no loopback, impedindo acesso direto pela internet.
+    # ports:
+    #   - "127.0.0.1:8080:8080"
+
+    # Evite expor 0.0.0.0:8080 em VPS publica sem firewall/proxy.
+    # Use "8080:8080" apenas quando souber que a rede/firewall esta protegida.
+
+    # Exemplo: labels para um reverse proxy (Traefik/Caddy)
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.contabase.rule=Host(`fin.seudominio.com`)"
+
+    # Exemplo: Adicionando volumes adicionais ou alterando o local do banco
+    # volumes:
+    #   - /caminho/absoluto/no/host:/app/data
+
+    # Exemplo: Variáveis adicionais ou override de segurança
+    # environment:
+    #   - TZ=America/Sao_Paulo
+
+    # Exemplo: conectando o container a uma rede externa de proxy.
+    # Depois configure TRUSTED_PROXIES no .env.docker com o IP/CIDR real
+    # do proxy, por exemplo 172.16.0.0/12 ou o IP fixo do proxy.
+    # networks:
+    #   - rede_proxy_externa
+
+    # Exemplo avancado: IP fixo em uma rede externa ja criada.
+    # networks:
+    #   rede_proxy_externa:
+    #     ipv4_address: 172.20.0.10
+
+# Exemplo: declarando a rede externa de proxy.
+# networks:
+#   rede_proxy_externa:
+#     external: true

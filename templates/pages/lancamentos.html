@@ -1,0 +1,461 @@
+{{define "lancamentos-page"}}
+{{template "layout-start" .}}
+{{template "lancamentos-content" .}}
+{{template "layout-end" .}}
+{{end}}
+
+{{define "lancamentos-content"}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/lancamentos.css"}}">
+
+<main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative" data-page-title="Lançamentos">
+    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
+
+    <!-- Seletor de Meses -->
+    {{template "seletor_meses" .}}
+
+    <!-- Filtros -->
+    <form id="lancamentosFilters" class="contents"
+        hx-get="/lancamentos"
+        hx-target="#lancamentos-list-wrapper"
+        hx-select="#lancamentos-list-wrapper"
+        hx-swap="outerHTML"
+        hx-replace-url="true"
+        hx-trigger="change, refreshFinancials from:body"
+        hx-include="#lancamentosFilters">
+        {{template "lancamentos-filter-period" .}}
+        <input type="hidden" name="partial" value="lista">
+        {{if .FilterAccountID}}<input type="hidden" name="conta" value="{{.FilterAccountID}}">{{end}}
+
+    <div class="flex items-center gap-2 mb-3 mt-2">
+        <!-- Busca Premium -->
+        <div class="relative flex-1">
+            <i data-lucide="search" class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--cb-text-muted)] z-10"></i>
+            <input type="search" name="q" value="{{.Filters.Busca}}" placeholder="Buscar descrição ou categoria..."
+                hx-get="/lancamentos"
+                hx-target="#lancamentos-list-wrapper"
+                hx-select="#lancamentos-list-wrapper"
+                hx-swap="outerHTML"
+                hx-replace-url="true"
+                hx-trigger="keyup delay:400ms, search"
+                hx-include="#lancamentosFilters"
+                class="search-input">
+        </div>
+        <!-- Botão Filtros -->
+        <button type="button" data-onclick="toggleLancamentosFilters" class="shrink-0 h-11 px-3 sm:px-4 flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-xs sm:text-sm font-semibold text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] transition-all btn-tactile">
+            <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
+            <span>Filtros</span>
+        </button>
+    </div>
+
+    <!-- Painel de Filtros -->
+    <section id="lancamentosFilterPanel" data-contabase-overlay data-overlay-priority="120" data-overlay-close-method="hidden" class="hidden fixed inset-0 z-[120] bg-zinc-950/60 p-0 sm:p-4 flex items-end sm:items-center justify-center" data-onclick-self="closeLancamentosFilters">
+        <div class="sheet-in w-full sm:max-w-lg rounded-t-xl sm:rounded-xl border-t sm:border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-overlay)] shadow-xl max-h-[90vh] sm:max-h-[85vh] flex flex-col filter-panel">
+            <div class="sticky top-0 bg-[var(--cb-surface-overlay)] backdrop-blur p-5 border-b border-[var(--cb-border-subtle)] flex items-center justify-between z-10 shrink-0">
+                <div>
+                    <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--cb-text-muted)]">Mais Opções</p>
+                    <h2 class="text-base font-bold text-[var(--cb-text-main)]">Filtros Avançados</h2>
+                </div>
+                <button type="button" class="w-9 h-9 flex items-center justify-center rounded-full bg-[var(--cb-surface-2)] hover:bg-[var(--cb-surface-3)]" data-onclick="toggleLancamentosFilters">
+                    <i data-lucide="x" class="w-4 h-4 text-[var(--cb-text-muted)]"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-5 space-y-3 scrollbar-hide">
+                <!-- Filtro de Situação (aberto por padrão) -->
+                <details open class="group rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)]">
+                    <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-xs font-semibold text-[var(--cb-text-main)]">
+                        <span class="flex items-center gap-2">
+                            <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+                            Situação
+                        </span>
+                        <i data-lucide="chevron-down" class="w-4 h-4 text-[var(--cb-text-muted)] transition-transform group-open:rotate-180"></i>
+                    </summary>
+                    <div class="border-t border-[var(--cb-border-subtle)] px-4 py-3">
+                        <div class="flex flex-wrap gap-1.5">
+                        <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
+                            {{if .StatusPendenteOn}}border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-400/50 dark:bg-amber-500/20 dark:text-amber-200
+                            {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-amber-300{{end}}">
+                            <i data-lucide="clock" class="w-3 h-3"></i>
+                            <input class="hidden" type="checkbox" name="situacao" value="pendente" {{if .StatusPendenteOn}}checked{{end}}>
+                            Pendente
+                        </label>
+                        <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
+                            {{if .StatusVencidoOn}}border-red-500/30 bg-red-500/10 text-red-500 dark:border-red-400/50 dark:bg-red-500/20 dark:text-red-300
+                            {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-red-300{{end}}">
+                            <i data-lucide="alert-triangle" class="w-3 h-3"></i>
+                            <input class="hidden" type="checkbox" name="situacao" value="vencido" {{if .StatusVencidoOn}}checked{{end}}>
+                            Vencido
+                        </label>
+                        <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
+                            {{if .StatusPagoOn}}border-emerald-600/30 bg-emerald-600/10 text-emerald-600 dark:border-emerald-400/50 dark:bg-emerald-500/20 dark:text-emerald-200
+                            {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-emerald-300{{end}}">
+                            <i data-lucide="check-circle-2" class="w-3 h-3"></i>
+                            <input class="hidden" type="checkbox" name="situacao" value="pago" {{if .StatusPagoOn}}checked{{end}}>
+                            Pago
+                        </label>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- Filtro de Tipo (fechado por padrão) -->
+                <details class="group rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)]">
+                    <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-xs font-semibold text-[var(--cb-text-main)]">
+                        <span class="flex items-center gap-2">
+                            <i data-lucide="arrow-left-right" class="w-3.5 h-3.5"></i>
+                            Tipo
+                        </span>
+                        <i data-lucide="chevron-down" class="w-4 h-4 text-[var(--cb-text-muted)] transition-transform group-open:rotate-180"></i>
+                    </summary>
+                    <div class="border-t border-[var(--cb-border-subtle)] px-4 py-3">
+                        <div class="flex flex-wrap gap-1.5">
+                        <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
+                            {{if hasString .Filters.Tipos "receita"}}border-emerald-600/30 bg-emerald-600/10 text-emerald-600 dark:border-emerald-400/50 dark:bg-emerald-500/20 dark:text-emerald-200
+                            {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-emerald-300{{end}}">
+                            <i data-lucide="arrow-down-left" class="w-3 h-3"></i>
+                            <input class="hidden" type="checkbox" name="tipo" value="receita" {{if hasString .Filters.Tipos "receita"}}checked{{end}}>
+                            Receita
+                        </label>
+                        <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
+                            {{if hasString .Filters.Tipos "despesa"}}border-red-500/30 bg-red-500/10 text-red-500 dark:border-red-400/50 dark:bg-red-500/20 dark:text-red-300
+                            {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-red-300{{end}}">
+                            <i data-lucide="arrow-up-right" class="w-3 h-3"></i>
+                            <input class="hidden" type="checkbox" name="tipo" value="despesa" {{if hasString .Filters.Tipos "despesa"}}checked{{end}}>
+                            Despesa
+                        </label>
+                        <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
+                            {{if hasString .Filters.Tipos "transferencia"}}border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-400/40 dark:bg-blue-500/20 dark:text-blue-200
+                            {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-blue-300{{end}}">
+                            <i data-lucide="arrow-left-right" class="w-3 h-3"></i>
+                            <input class="hidden" type="checkbox" name="tipo" value="transferencia" {{if hasString .Filters.Tipos "transferencia"}}checked{{end}}>
+                            Transf.
+                        </label>
+                        </div>
+                    </div>
+                </details>
+
+                <!-- Filtro de Contas (fechado por padrão) -->
+                {{if .FilterAccounts}}
+                <details class="group rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)]">
+                    <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-xs font-semibold text-[var(--cb-text-main)]">
+                        <span class="flex items-center gap-2">
+                            <i data-lucide="wallet" class="w-3.5 h-3.5"></i>
+                            Contas
+                        </span>
+                        <i data-lucide="chevron-down" class="w-4 h-4 text-[var(--cb-text-muted)] transition-transform group-open:rotate-180"></i>
+                    </summary>
+                    <div class="flex flex-wrap gap-1.5 border-t border-[var(--cb-border-subtle)] px-4 py-3">
+                        {{range .FilterAccounts}}<label data-filter-chip class="inline-flex cursor-pointer items-center rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold {{if hasString $.Filters.OrigemIDs .ID}}border-violet-500 bg-violet-500/10 text-violet-700 dark:border-violet-400/50 dark:bg-violet-500/15 dark:text-violet-200{{else}}border-[var(--cb-border-strong)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)]{{end}}"><input class="hidden" type="checkbox" name="origem" value="{{.ID}}" {{if hasString $.Filters.OrigemIDs .ID}}checked{{end}}>{{.Name}}</label>{{end}}
+                    </div>
+                </details>
+                {{end}}
+
+                <!-- Filtro de Ordenação -->
+                <div class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-4">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)] mb-3 block">Ordenação</span>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border-2 px-3 py-2.5 text-xs font-semibold transition-all
+                            {{if eq .SortOrder "asc"}}border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200
+                            {{else}}border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:border-[var(--cb-border-strong)] dark:text-[var(--cb-text-muted)]{{end}}">
+                            <i data-lucide="arrow-down-narrow-wide" class="w-3.5 h-3.5"></i>
+                            <input class="hidden" type="radio" name="ordem" value="asc" {{if eq .SortOrder "asc"}}checked{{end}}>
+                            Vencimentos
+                        </label>
+                        <label class="flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border-2 px-3 py-2.5 text-xs font-semibold transition-all
+                            {{if eq .SortOrder "desc"}}border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300
+                            {{else}}border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:border-[var(--cb-border-strong)] dark:text-[var(--cb-text-muted)]{{end}}">
+                            <i data-lucide="arrow-up-narrow-wide" class="w-3.5 h-3.5"></i>
+                            <input class="hidden" type="radio" name="ordem" value="desc" {{if eq .SortOrder "desc"}}checked{{end}}>
+                            Recentes
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Filtro de Categorias -->
+                {{if .FilterCategories}}
+                <div class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)]">
+                    <div class="flex items-center justify-between px-4 py-3">
+                        <span class="text-xs font-semibold text-[var(--cb-text-main)] flex items-center gap-2">
+                            <i data-lucide="folder" class="w-3.5 h-3.5"></i>
+                            Categorias
+                        </span>
+                    </div>
+                    <div class="border-t border-[var(--cb-border-subtle)] px-4 py-3">
+                        <div class="relative mb-2">
+                            <i data-lucide="search" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
+                            <input type="search" id="lancamentosCategorySearch" placeholder="Buscar categoria..." data-oninput="filterLancamentosCategoriesInput" class="h-9 w-full rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] pl-9 pr-3 text-[11px] text-[var(--cb-text-main)] outline-none focus:border-[var(--cb-border-focus)] dark:focus:border-[var(--cb-border-focus)]">
+                        </div>
+                        <div id="lancamentosCategoryList" class="max-h-40 space-y-0.5 overflow-y-auto scrollbar-hide" data-onclick-ev="handleLancamentosCategorySelect">
+                            {{range .FilterCategories}}
+                            <button type="button" data-category-id="{{.ID}}" data-category-name="{{.Name}}" data-category-type="{{.Type}}" class="lancamentos-category-item flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left {{if hasString $.Filters.Categorias .ID}}bg-violet-500/10 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
+                                <span class="block w-2.5 h-2.5 rounded-full shrink-0 bg-slate-500"></span>
+                                <span class="flex-1 truncate text-[11px] font-medium">{{.Name}}</span>
+                                <span class="text-[10px] {{if eq .Type "INCOME"}}text-emerald-600 dark:text-emerald-400{{else}}text-red-600 dark:text-red-400{{end}}">{{if eq .Type "INCOME"}}R{{else}}D{{end}}</span>
+                            </button>
+                            {{end}}
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+            <div class="sticky bottom-0 bg-[var(--cb-surface-overlay)] backdrop-blur p-5 border-t border-[var(--cb-border-subtle)] grid grid-cols-2 gap-2.5 shrink-0">
+                <button type="button" class="h-11 rounded-xl border-2 border-red-200 bg-red-50 text-xs font-bold text-red-600 active:scale-95 transition-all dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300" data-onclick="resetLancamentosFiltersFromForm">
+                    Redefinir
+                </button>
+                <button type="button" class="h-11 rounded-xl bg-[var(--cb-accent-solid)] text-white text-xs font-bold active:scale-95 transition-all border border-transparent" data-onclick="toggleLancamentosFilters">
+                    Aplicar
+                </button>
+            </div>
+        </div>
+    </section>
+    </form>
+
+    <!-- Resumo Financeiro Redesenhado -->
+    {{template "lancamentos-resumo" .}}
+
+    <!-- Lista -->
+    {{template "lancamentos-list" .}}
+</main>
+{{end}}
+
+{{define "lancamentos-filter-period"}}
+<span id="lancamentos-filter-period" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}>
+    <input type="hidden" name="mes" value="{{.MesAtual}}">
+    <input type="hidden" name="ano" value="{{.AnoAtual}}">
+</span>
+{{end}}
+
+{{define "lancamentos-resumo"}}
+<section id="lancamentosResumo" class="mt-2 mb-5" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}>
+    <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-4 py-2.5 text-xs font-semibold shadow-sm">
+        <div class="flex items-center gap-1.5 text-[var(--cb-text-main)]">
+            <i data-lucide="calendar" class="w-3.5 h-3.5 text-violet-500 shrink-0"></i>
+            <span class="tracking-tight">{{.MonthLabel}}</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[11px]">
+            <div class="flex items-center gap-1.5">
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                <span class="text-[var(--cb-text-muted)] font-medium">Entradas</span>
+                <span class="font-bold text-emerald-600 dark:text-emerald-400" data-sensitive>{{.ResumoEntradas}}</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+                <span class="inline-block w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                <span class="text-[var(--cb-text-muted)] font-medium">Saídas</span>
+                <span class="font-bold text-red-600 dark:text-red-400" data-sensitive>{{.ResumoSaidas}}</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+                <span class="inline-block w-1.5 h-1.5 rounded-full {{if .ResumoNegativo}}bg-red-500{{else}}bg-violet-500{{end}}"></span>
+                <span class="text-[var(--cb-text-muted)] font-medium">Saldo</span>
+                <span class="font-extrabold {{if .ResumoNegativo}}text-red-600 dark:text-red-400{{else}}text-violet-600 dark:text-violet-400{{end}}" data-sensitive>{{.ResumoSaldo}}</span>
+            </div>
+            {{if .ResumoAcumulado}}
+            <div class="flex items-center gap-1.5">
+                <span class="inline-block w-1.5 h-1.5 rounded-full {{if .AcumuladoNegativo}}bg-red-500{{else}}bg-blue-500{{end}}"></span>
+                <span class="text-[var(--cb-text-muted)] font-medium">Acumulado</span>
+                <span class="font-bold {{if .AcumuladoNegativo}}text-red-600 dark:text-red-400{{else}}text-blue-600 dark:text-blue-400{{end}}" data-sensitive>{{.ResumoAcumulado}}</span>
+            </div>
+            {{end}}
+        </div>
+    </div>
+</section>
+{{end}}
+
+{{define "lancamentos-list"}}
+<div id="lancamentos-list-wrapper">
+    {{if .HasActiveFilters}}
+    <div class="flex flex-wrap items-center gap-1.5 mb-3 -mt-1">
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-[var(--cb-text-muted)]">Filtros:</span>
+        {{range .FilterLabels}}
+        <span class="inline-flex items-center gap-0.5 rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">{{.Label}}</span>
+        {{end}}
+        <a href="{{$.ClearFiltersURL}}" hx-get="{{$.ClearFiltersURL}}" hx-target="#lancamentos-list-wrapper" hx-select="#lancamentos-list-wrapper" hx-swap="outerHTML" hx-vals='{"partial":"lista"}' hx-push-url="{{$.ClearFiltersURL}}" id="clearFiltersBtn" class="inline-flex items-center gap-0.5 rounded-full bg-[var(--cb-surface-2)] px-2 py-0.5 text-[10px] font-semibold text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] transition-colors">
+            <i data-lucide="x" class="w-2.5 h-2.5"></i>Limpar
+        </a>
+    </div>
+    {{end}}
+
+    <div id="transactions-list" class="group" data-bulk-select>
+        {{if or .Transactions .Invoices}}
+            <div class="mb-3 flex items-center justify-between rounded-lg border border-[var(--cb-border-subtle)] px-3 py-2 text-xs text-[var(--cb-text-muted)] transition-all group-[.bulk-mode]:border-violet-500/25 group-[.bulk-mode]:bg-violet-500/[0.05] dark:group-[.bulk-mode]:border-violet-500/30 dark:group-[.bulk-mode]:bg-violet-500/[0.08]">
+                <label class="bulk-mode-label items-center gap-2 text-[var(--cb-text-muted)] font-medium cursor-pointer">
+                    <input type="checkbox" class="w-4 h-4 rounded border-2 border-zinc-300 text-violet-600 focus:ring-violet-500 cursor-pointer" data-bulk-toggle-all>
+                    <span>Selecionar todos</span>
+                </label>
+                <button type="button" class="text-violet-600 hover:text-violet-700 dark:text-violet-300 dark:hover:text-violet-200 font-medium" data-bulk-toggle-mode>Selecionar</button>
+                <span class="text-[var(--cb-text-muted)] font-medium" data-bulk-count></span>
+            </div>
+            {{template "lancamentos-table-body" .}}
+            <div class="bulk-action-bar bg-[var(--cb-surface-overlay)] border border-[var(--cb-border-subtle)] backdrop-blur hidden" data-bulk-bar>
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs font-bold text-[var(--cb-text-main)]">
+                        <span class="text-violet-600 dark:text-violet-400" data-bulk-count-num>0</span> selecionados
+                    </span>
+                    <div class="flex items-center gap-1.5">
+                        <form hx-post="/transacoes/bulk/update" hx-target="#lancamentos-table-body" hx-swap="outerHTML" hx-confirm="Marcar como pagos?" data-hx-after="resetBulkSelection" class="contents">
+                            <input type="hidden" name="status_pagamento" value="paid">
+                            <input type="hidden" name="ids[]" value="" data-bulk-form-ids data-action="paid">
+                            <button type="submit" data-bulk-mark-paid class="inline-flex h-9 items-center gap-1.5 rounded-xl border-2 border-emerald-500 bg-emerald-500/10 px-3 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20">
+                                <i data-lucide="check" class="w-3.5 h-3.5"></i>Pago
+                            </button>
+                        </form>
+                        <form hx-post="/transacoes/bulk/update" hx-target="#lancamentos-table-body" hx-swap="outerHTML" hx-confirm="Marcar como pendentes?" data-hx-after="resetBulkSelection" class="contents">
+                            <input type="hidden" name="status_pagamento" value="pending">
+                            <input type="hidden" name="ids[]" value="" data-bulk-form-ids data-action="pending">
+                            <button type="submit" data-bulk-mark-pending class="inline-flex h-9 items-center gap-1.5 rounded-xl border-2 border-amber-500 bg-amber-500/10 px-3 text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-500/20">
+                                <i data-lucide="clock" class="w-3.5 h-3.5"></i>Pend.
+                            </button>
+                        </form>
+                        <form data-bulk-delete-form hx-post="/transacoes/bulk/delete" hx-target="#lancamentos-table-body" hx-swap="outerHTML" data-hx-after="resetBulkSelectionDel" class="contents">
+                            <input type="hidden" name="bulk_scope" value="selected_only" data-bulk-delete-scope>
+                            <input type="hidden" name="ids[]" value="" data-bulk-form-ids data-action="delete">
+                            <button type="button" data-bulk-delete-btn class="inline-flex h-9 w-9 items-center justify-center rounded-xl border-2 border-red-500 bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <div class="fixed inset-0 z-50 items-center justify-center bg-black/70 p-4 hidden" data-bulk-modal>
+                <div class="w-full max-w-xs rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-1)] p-5 shadow-xl">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i data-lucide="alert-circle" class="w-4 h-4 text-rose-400"></i>
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-rose-400">Recorrencia detectada</p>
+                    </div>
+                    <h3 class="text-sm font-bold text-[var(--cb-text-main)]">Excluir serie?</h3>
+                    <div class="mt-3 space-y-2">
+                        <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-2.5">
+                            <input type="radio" name="bulk_delete_scope" value="selected_only" data-bulk-delete-choice checked class="accent-rose-500">
+                            <span class="text-[11px] text-[var(--cb-text-main)]">So selecionados</span>
+                        </label>
+                        <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-2.5">
+                            <input type="radio" name="bulk_delete_scope" value="with_future" data-bulk-delete-choice class="accent-rose-500">
+                            <span class="text-[11px] text-[var(--cb-text-main)]">+ futuros</span>
+                        </label>
+                    </div>
+                    <div class="mt-4 flex justify-end gap-2">
+                        <button type="button" class="h-9 rounded-lg border border-[var(--cb-border-subtle)] px-3 text-[11px] font-semibold text-[var(--cb-text-muted)]" data-action="cancel-delete">Cancelar</button>
+                        <button type="button" class="h-9 rounded-lg bg-rose-600 px-4 text-[11px] font-bold text-white hover:bg-rose-700 active:scale-95 transition-all" data-action="confirm-delete">Confirmar</button>
+                    </div>
+                </div>
+            </div>
+        {{end}}
+    </div>
+</div>
+<script src="/assets/js/filter-chips.js"></script>
+<script src="/assets/js/bulk-select.js"></script>
+{{end}}
+
+{{define "lancamentos-table-body"}}
+<div id="lancamentos-table-body">
+    {{if or .Transactions .Invoices}}
+        {{if .Invoices}}
+            <div class="mb-4 space-y-2">{{range .Invoices}}{{template "invoice-row" .}}{{end}}</div>
+        {{end}}
+        {{if .Transactions}}
+            {{$currentDate := ""}}
+            {{range .Transactions}}
+                {{if ne .DateLabel $currentDate}}
+                    {{$currentDate = .DateLabel}}
+                    <div class="flex items-center gap-3 mb-3 mt-6 first:mt-0">
+                        <h3 class="text-[10px] font-semibold text-[var(--cb-text-muted)] uppercase tracking-wider whitespace-nowrap">{{.DateLabel}}</h3>
+                        <div class="flex-1 h-px bg-[var(--cb-border-subtle)]"></div>
+                    </div>
+                {{end}}
+                {{template "lancamento-row" .}}
+            {{end}}
+        {{end}}
+    {{else}}
+        <div class="flex flex-col items-center justify-center py-12 text-center">
+            <div class="w-16 h-16 rounded-xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-3">
+                <i data-lucide="inbox" class="w-6 h-6 text-[var(--cb-text-subtle)]"></i>
+            </div>
+            <p class="text-sm font-semibold text-[var(--cb-text-muted)]">Nenhum lançamento</p>
+            <p class="text-[11px] text-[var(--cb-text-subtle)] mt-1">Tente ajustar os filtros ou adicione um novo</p>
+        </div>
+    {{end}}
+</div>
+{{end}}
+
+{{define "lancamento-row"}}
+<article id="tx-{{.ID}}" class="tx-row relative mb-1.5 overflow-hidden rounded-xl {{if .IsOverdue}}overdue{{else if .IsPending}}pending{{end}}"
+    data-tx-id="{{.ID}}"
+    {{- if .IsSeries}} data-is-series="true"{{end}}
+    data-swipe-row="true">
+    <div data-swipe-bg-left><i data-lucide="trash-2" class="swipe-icon"></i></div>
+    <div data-swipe-bg-right class="{{if or .IsOverdue .IsPending}}bg-emerald-500{{else}}bg-red-500{{end}}"><i data-lucide="{{if or .IsOverdue .IsPending}}check-circle-2{{else}}clock{{end}}" class="swipe-icon"></i></div>
+    <div data-swipe-content class="tx-content">
+        <input type="checkbox" class="bulk-checkbox h-4 w-4 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 shrink-0" data-tx-checkbox data-ignore-select value="{{.ID}}">
+        <button type="button" data-ignore-select data-stop-propagation hx-post="/transacoes/{{.ID}}/status-pagamento" hx-target="closest .tx-row" hx-swap="outerHTML" hx-confirm="{{.PaymentConfirm}}"
+            class="tx-status" title="{{.PaymentTitle}}" aria-label="{{.PaymentTitle}}">
+            <i data-lucide="{{.PaymentIcon}}" class="w-5 h-5"></i>
+        </button>
+        <button type="button" data-ignore-select class="flex flex-1 min-w-0 items-center gap-3 text-left" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false">
+            <span class="flex-1 min-w-0">
+                <h4 class="text-sm font-medium text-[var(--cb-text-main)] truncate">{{.Description}}</h4>
+                <p class="text-xs text-[var(--cb-text-muted)] mt-0.5 whitespace-normal break-words leading-snug">
+                    {{if .IsBusiness}}{{if .ContactName}}{{.ContactName}} · {{end}}{{.AccountName}}{{if .CategoryName}} · {{.CategoryName}}{{end}}{{else}}{{.AccountName}}{{if .CategoryName}} · {{.CategoryName}}{{end}}{{end}}
+                </p>
+                {{if .UsesDueDate}}<p class="mt-1"><span class="badge badge-warning">Vencimento: {{.DisplayDateLabel}}</span></p>{{end}}
+                {{if .HasInstallmentInfo}}
+                    <p class="mt-1">
+                        {{if and .IsSeries (le .TotalInstallments 1)}}
+                        <span class="badge badge-info">Recorrente</span>
+                        {{else}}
+                        <span class="badge badge-installment">{{.InstallmentNumber}}/{{.TotalInstallments}}</span>
+                        {{end}}
+                    </p>
+                {{end}}
+            </span>
+        </button>
+        <div class="flex flex-col items-end shrink-0">
+            <p class="text-sm font-semibold {{if eq .Type "INCOME"}}text-emerald-600 dark:text-emerald-400{{else if eq .Type "EXPENSE"}}text-red-600 dark:text-red-400{{else}}text-blue-600 dark:text-blue-400{{end}}" data-sensitive>{{.AmountDisplay}}</p>
+            <span class="text-[0.62rem] text-[var(--cb-text-muted)] mt-0.5">{{if .UsesDueDate}}{{.DisplayDateLabel}}{{else}}{{.DateLabel}}{{end}}</span>
+        </div>
+        <span class="tx-desktop-actions">
+            <button type="button" data-ignore-select class="btn-tactile tx-action-btn" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Editar">
+                <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+            </button>
+            {{if .CanGenerateReceipt}}
+            <a href="/transacoes/{{.ID}}/recibo" target="_blank" rel="noopener" class="btn-tactile tx-action-btn hover:text-violet-600 hover:bg-violet-50/80 dark:hover:text-violet-400 dark:hover:bg-violet-500/10" aria-label="Recibo">
+                <i data-lucide="receipt" class="h-3.5 w-3.5"></i>
+            </a>
+            {{end}}
+            <button type="button" data-ignore-select class="btn-tactile tx-action-btn hover:text-red-600 hover:bg-red-50/80 dark:hover:text-red-400 dark:hover:bg-red-500/10" data-row-delete="{{.ID}}"{{if .IsSeries}} data-row-is-series="true"{{end}} aria-label="Excluir">
+                <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+            </button>
+        </span>
+    </div>
+</article>
+{{end}}
+
+{{define "invoice-row"}}
+<article id="invoice-{{.ID}}" class="invoice-row relative mb-2 overflow-hidden rounded-xl"
+    data-invoice-id="{{.ID}}"
+    data-swipe-row="true"
+    data-swipe-left-url="/transacoes/bulk/delete"
+    data-swipe-left-method="POST"
+    data-swipe-left-target="#invoice-{{.ID}}"
+    data-swipe-left-swap="delete"
+    data-swipe-left-confirm="Remover esta fatura?"
+    data-swipe-right-url="{{.FaturaURL}}"
+    data-swipe-right-method="GET"
+    data-swipe-right-target="#main-content"
+    data-swipe-right-swap="innerHTML">
+    <div data-swipe-bg-left><i data-lucide="trash-2" class="swipe-icon"></i></div>
+    <div data-swipe-bg-right class="bg-indigo-500"><i data-lucide="external-link" class="swipe-icon"></i></div>
+    <div data-swipe-content hx-get="{{.FaturaURL}}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
+        class="invoice-content relative z-10 flex items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 cursor-pointer hover:bg-[var(--cb-surface-2)]">
+        <span class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.CardColor}}">
+            {{if .CardProviderMark}}<span class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .CardProviderMark}}" style="color: var(--emblem-color, {{.CardColor}})">{{.CardProviderMark}}</span>{{else}}<i data-lucide="{{if .CardIcon}}{{.CardIcon}}{{else}}credit-card{{end}}" class="w-5 h-5 icon-colored" style="--ic: var(--emblem-color, {{.CardColor}})"></i>{{end}}
+        </span>
+        <span class="flex-1 min-w-0">
+            <h4 class="text-sm font-medium text-[var(--cb-text-main)] truncate">Fatura {{.AccountName}} - {{.ReferenceLabel}}</h4>
+            <p class="text-xs text-[var(--cb-text-muted)] mt-0.5">Vence em {{.DateLabel}} · {{.ItemCount}} {{if eq .ItemCount 1}}item{{else}}itens{{end}}</p>
+        </span>
+        <div class="flex flex-col items-end shrink-0">
+            <p class="text-sm font-semibold {{if .IsOverdue}}text-red-500{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.TotalMoney.Reais}}{{.TotalMoney.Cents}}</p>
+            <span class="badge {{if eq .Status "PAID"}}badge-success{{else if .IsOverdue}}badge-error{{else if eq .Status "CLOSED"}}badge-error{{else}}badge-warning{{end}}">
+                {{if eq .Status "PAID"}}Paga{{else if .IsOverdue}}Vencida{{else if eq .Status "CLOSED"}}Fechada{{else}}Aberta{{end}}
+            </span>
+        </div>
+    </div>
+</article>
+{{end}}

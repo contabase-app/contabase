@@ -1,0 +1,1 @@
+module.exports = { darkMode: "class", content: ["./templates/**/*.html", "./templates/*.html", "./internal/environments/**/*.go"], theme: { extend: { fontFamily: { sans: ["\"Geist Sans\"", "system-ui", "sans-serif"] }, screens: { "xs": "480px", "xxs": "360px" } } }, plugins: [] }

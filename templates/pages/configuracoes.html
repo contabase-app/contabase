@@ -1,0 +1,267 @@
+{{define "configuracoes-page"}}
+{{template "layout-start" .}}
+{{template "configuracoes-content" .}}
+{{template "layout-end" .}}
+{{end}}
+
+{{define "configuracoes-content"}}
+<link rel="stylesheet" href="/assets/css/configuracoes.css">
+<main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative">
+    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden">
+        <div class="absolute inset-0 cb-page"></div>
+        <div class="absolute top-[-30%] left-[-20%] w-[60vw] h-[60vw] rounded-full bg-violet-500/[0.05] dark:bg-violet-500/[0.03] blur-[80px]"></div>
+        <div class="absolute bottom-[-20%] right-[-20%] w-[50vw] h-[50vw] rounded-full bg-indigo-500/[0.03] dark:bg-indigo-500/[0.02] blur-[80px]"></div>
+    </div>
+
+    <!-- Mobile: Lista de navegacao (botoes full-page) -->
+    <div class="flex flex-col gap-3 md:hidden w-full pb-28">
+        <button type="button" hx-get="/configuracoes/perfil" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
+            class="btn-tactile flex items-center justify-between w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 text-left transition-all hover:border-[var(--cb-border-strong)]">
+            <div class="flex items-center gap-3">
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
+                    <i data-lucide="user" class="h-5 w-5"></i>
+                </span>
+                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Meu Perfil</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)]"></i>
+        </button>
+        {{if .CanManageWorkspaceProfile}}
+        <button type="button" hx-get="/configuracoes/workspace" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
+            class="btn-tactile flex items-center justify-between w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 text-left transition-all hover:border-[var(--cb-border-strong)]">
+            <div class="flex items-center gap-3">
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                    <i data-lucide="building-2" class="h-5 w-5"></i>
+                </span>
+                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Perfil corporativo</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)]"></i>
+        </button>
+        {{end}}
+        {{if .CanManageOps}}
+        <button type="button" hx-get="/configuracoes/categorias" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
+            class="btn-tactile flex items-center justify-between w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 text-left transition-all hover:border-[var(--cb-border-strong)]">
+            <div class="flex items-center gap-3">
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                    <i data-lucide="tags" class="h-5 w-5"></i>
+                </span>
+                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Categorias</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)]"></i>
+        </button>
+        <button type="button" hx-get="/configuracoes/contas" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
+            class="btn-tactile flex items-center justify-between w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 text-left transition-all hover:border-[var(--cb-border-strong)]">
+            <div class="flex items-center gap-3">
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                    <i data-lucide="wallet" class="h-5 w-5"></i>
+                </span>
+                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Contas</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)]"></i>
+        </button>
+        <button type="button" hx-get="/configuracoes/cartoes" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
+            class="btn-tactile flex items-center justify-between w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 text-left transition-all hover:border-[var(--cb-border-strong)]">
+            <div class="flex items-center gap-3">
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                    <i data-lucide="credit-card" class="h-5 w-5"></i>
+                </span>
+                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Cartões</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)]"></i>
+        </button>
+        {{end}}
+        {{if .CanManageGlobal}}
+        <div class="pt-2 mt-2 border-t border-[var(--cb-border-subtle)]"></div>
+        <p class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-subtle)] px-1">Administração</p>
+        <button type="button" hx-get="/admin/usuarios" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
+            class="btn-tactile flex items-center justify-between w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 text-left transition-all hover:border-[var(--cb-border-strong)]">
+            <div class="flex items-center gap-3">
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                    <i data-lucide="shield" class="h-5 w-5"></i>
+                </span>
+                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Usuários</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)]"></i>
+        </button>
+        <button type="button" hx-get="/admin/workspaces" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
+            class="btn-tactile flex items-center justify-between w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 text-left transition-all hover:border-[var(--cb-border-strong)]">
+            <div class="flex items-center gap-3">
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400">
+                    <i data-lucide="layers" class="h-5 w-5"></i>
+                </span>
+                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Workspaces</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)]"></i>
+        </button>
+        <button type="button" hx-get="/admin/backups" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
+            class="btn-tactile flex items-center justify-between w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 text-left transition-all hover:border-[var(--cb-border-strong)]">
+            <div class="flex items-center gap-3">
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                    <i data-lucide="database" class="h-5 w-5"></i>
+                </span>
+                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Backups</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)]"></i>
+        </button>
+        <button type="button" hx-get="/admin/auditoria" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
+            class="btn-tactile flex items-center justify-between w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 text-left transition-all hover:border-[var(--cb-border-strong)]">
+            <div class="flex items-center gap-3">
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
+                    <i data-lucide="eye" class="h-5 w-5"></i>
+                </span>
+                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Auditoria</span>
+            </div>
+            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)]"></i>
+        </button>
+        {{end}}
+    </div>
+
+    <!-- Desktop: SaaS Split Layout -->
+    <div class="hidden md:flex gap-8 w-full max-w-full">
+        <aside class="md:w-64 flex-none border-r border-[var(--cb-border-subtle)] pr-6">
+            <div class="mb-6">
+                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
+                <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Painel de Controle</h2>
+            </div>
+            {{template "configuracoes-sidebar" .}}
+        </aside>
+
+        <div id="settings-content" class="flex-1 pl-4">
+            {{if eq .Section "perfil"}}
+                {{template "configuracoes-perfil-content" .}}
+            {{else if eq .Section "workspace"}}
+                {{template "configuracoes-workspace-content" .}}
+            {{else if eq .Section "categorias"}}
+                {{template "configuracoes-categorias-content" .}}
+            {{else if eq .Section "contas"}}
+                {{template "configuracoes-contas-content" .}}
+            {{else if eq .Section "cartoes"}}
+                {{template "configuracoes-cartoes-content" .}}
+            {{else if eq .Section "admin-users"}}
+                {{template "configuracoes-admin_users-content" .}}
+            {{else if eq .Section "admin-workspaces"}}
+                {{template "configuracoes-admin_workspaces-content" .}}
+            {{else if eq .Section "admin-backups"}}
+                {{template "configuracoes-admin_backups-content" .}}
+            {{else if eq .Section "admin-auditoria"}}
+                {{template "configuracoes-admin_auditoria-content" .}}
+            {{end}}
+        </div>
+    </div>
+</main>
+{{end}}
+
+{{define "configuracoes-sidebar"}}
+<nav class="md:w-56 shrink-0 space-y-1" data-config-sidebar>
+    <div class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-3 space-y-0.5">
+        <p class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-subtle)] px-2 mb-2">Configurações</p>
+        <a href="/configuracoes/perfil"
+            hx-get="/configuracoes/perfil"
+            hx-target="#settings-dynamic-payload"
+            hx-select="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+            data-config-section="perfil"
+            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
+                {{if eq .Section "perfil"}}bg-violet-500/10 text-violet-700 dark:text-violet-300{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
+            <i data-lucide="user" class="w-4 h-4"></i>Meu Perfil
+        </a>
+        {{if .CanManageWorkspaceProfile}}
+        <a href="/configuracoes/workspace"
+            hx-get="/configuracoes/workspace"
+            hx-target="#settings-dynamic-payload"
+            hx-select="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+            data-config-section="workspace"
+            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
+                {{if eq .Section "workspace"}}bg-violet-500/10 text-violet-700 dark:text-violet-300{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
+            <i data-lucide="building-2" class="w-4 h-4"></i>Perfil corporativo
+        </a>
+        {{end}}
+        {{if .CanManageOps}}
+        <div class="pt-2 mt-2 border-t border-[var(--cb-border-subtle)]"></div>
+        <a href="/configuracoes/categorias"
+            hx-get="/configuracoes/categorias"
+            hx-target="#settings-dynamic-payload"
+            hx-select="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+            data-config-section="categorias"
+            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
+                {{if eq .Section "categorias"}}bg-violet-500/10 text-violet-700 dark:text-violet-300{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
+            <i data-lucide="tags" class="w-4 h-4"></i>Categorias
+        </a>
+        <a href="/configuracoes/contas"
+            hx-get="/configuracoes/contas"
+            hx-target="#settings-dynamic-payload"
+            hx-select="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+            data-config-section="contas"
+            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
+                {{if eq .Section "contas"}}bg-violet-500/10 text-violet-700 dark:text-violet-300{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
+            <i data-lucide="wallet" class="w-4 h-4"></i>Contas
+        </a>
+        <a href="/configuracoes/cartoes"
+            hx-get="/configuracoes/cartoes"
+            hx-target="#settings-dynamic-payload"
+            hx-select="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+            data-config-section="cartoes"
+            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
+                {{if eq .Section "cartoes"}}bg-violet-500/10 text-violet-700 dark:text-violet-300{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
+            <i data-lucide="credit-card" class="w-4 h-4"></i>Cartões
+        </a>
+        {{end}}
+        {{if .CanManageGlobal}}
+        <div class="pt-2 mt-2 border-t border-[var(--cb-border-subtle)]"></div>
+        <p class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-subtle)] px-2 mb-1">Administração</p>
+        <a href="/admin/usuarios"
+            hx-get="/admin/usuarios"
+            hx-target="#settings-dynamic-payload"
+            hx-select="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+            data-config-section="admin-users"
+            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
+                {{if eq .Section "admin-users"}}bg-violet-500/10 text-violet-700 dark:text-violet-300{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
+            <i data-lucide="shield" class="w-4 h-4"></i>Usuários
+        </a>
+        <a href="/admin/workspaces"
+            hx-get="/admin/workspaces"
+            hx-target="#settings-dynamic-payload"
+            hx-select="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+            data-config-section="admin-workspaces"
+            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
+                {{if eq .Section "admin-workspaces"}}bg-violet-500/10 text-violet-700 dark:text-violet-300{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
+            <i data-lucide="layers" class="w-4 h-4"></i>Workspaces
+        </a>
+        <a href="/admin/backups"
+            hx-get="/admin/backups"
+            hx-target="#settings-dynamic-payload"
+            hx-select="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+            data-config-section="admin-backups"
+            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
+                {{if eq .Section "admin-backups"}}bg-violet-500/10 text-violet-700 dark:text-violet-300{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
+            <i data-lucide="database" class="w-4 h-4"></i>Backups
+        </a>
+        <a href="/admin/auditoria"
+            hx-get="/admin/auditoria"
+            hx-target="#settings-dynamic-payload"
+            hx-select="#settings-dynamic-payload"
+            hx-swap="outerHTML"
+            hx-push-url="true"
+            data-config-section="admin-auditoria"
+            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
+                {{if eq .Section "admin-auditoria"}}bg-violet-500/10 text-violet-700 dark:text-violet-300{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
+            <i data-lucide="eye" class="w-4 h-4"></i>Auditoria
+        </a>
+        {{end}}
+    </div>
+</nav>
+{{end}}

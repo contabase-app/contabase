@@ -1,0 +1,62 @@
+{{define "modal-picker-create"}}
+<div class="flex flex-col gap-4 p-4">
+    <div class="flex items-center gap-2.5">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
+            <i data-lucide="plus-circle" class="h-4 w-4"></i>
+        </span>
+        <div>
+            <p class="text-sm font-semibold text-[var(--cb-text-main)]">Criar categoria</p>
+            <p class="text-[0.65rem] text-[var(--cb-text-subtle)]">{{if eq .Tipo "despesa"}}Despesa{{else}}Receita{{end}}</p>
+        </div>
+    </div>
+    {{if .Error}}
+    <div class="rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-xs text-rose-400">{{.Error}}</div>
+    {{end}}
+    <form hx-post="/api/categorias" hx-target="#picker-list-container" hx-swap="innerHTML" class="flex flex-col gap-3">
+        <input type="hidden" name="tipo" value="{{.Tipo}}">
+        <label class="block">
+            <span class="cb-label text-[0.65rem] font-medium text-[var(--cb-text-subtle)] uppercase tracking-wider">Nome</span>
+            <input type="text" name="name" placeholder="Nome da categoria" autofocus required maxlength="80"
+                value="{{.Name}}"
+                class="w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-4 py-3 text-sm text-[var(--cb-text-main)] placeholder:text-[var(--cb-text-subtle)] focus:border-indigo-500/50 outline-none transition-colors">
+        </label>
+        {{if .ParentOptions}}
+        <label class="block">
+            <span class="cb-label text-[0.65rem] font-medium text-[var(--cb-text-subtle)] uppercase tracking-wider">Categoria pai</span>
+            <select name="parent_id" data-meta-parent-select
+                class="w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-4 py-3 text-sm text-[var(--cb-text-main)] focus:border-indigo-500/50 outline-none transition-colors">
+                <option value="">Nenhuma (categoria raiz)</option>
+                {{range .ParentOptions}}
+                <option value="{{.ID}}" data-macro-group="{{.MacroGroup}}" {{if eq .ID $.SelectedParentID}}selected{{end}}>{{.Name}}</option>
+                {{end}}
+            </select>
+        </label>
+        {{end}}
+        {{if .MacroGroups}}
+        <label class="block">
+            <span class="cb-label text-[0.65rem] font-medium text-[var(--cb-text-subtle)] uppercase tracking-wider">Macro grupo</span>
+            <select name="macro_group" data-meta-macro-select
+                class="w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-4 py-3 text-sm text-[var(--cb-text-main)] focus:border-indigo-500/50 outline-none transition-colors">
+                {{range .MacroGroups}}
+                <option value="{{.}}" {{if eq . $.SelectedMacro}}selected{{else if and (not $.SelectedMacro) (eq . $.DefaultMacro)}}selected{{end}}>{{.}}</option>
+                {{end}}
+            </select>
+            <p class="macro-inherit-help hidden text-[0.65rem] text-[var(--cb-text-muted)] mt-1.5">O grupo macro será herdado da categoria pai.</p>
+        </label>
+        {{end}}
+        <div class="flex gap-2 pt-2">
+            <button type="submit" class="cb-button cb-button-primary inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold flex-1">
+                <i data-lucide="check" class="h-3.5 w-3.5"></i>
+                Criar
+            </button>
+            <button type="button"
+                hx-get="/api/categorias/seletor?q=&tipo={{.Tipo}}"
+                hx-target="#picker-list-container"
+                hx-swap="innerHTML"
+                class="cb-button cb-button-secondary inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold flex-1">
+                Cancelar
+            </button>
+        </div>
+    </form>
+</div>
+{{end}}

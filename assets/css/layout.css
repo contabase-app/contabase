@@ -1,0 +1,200 @@
+/* ContaBase Layout Styles — extracted from templates/layout.html */
+
+html { font-size: 106.25%; } /* 17px base for improved legibility (scales all rem-based Tailwind sizes) */
+
+:root {
+    --ws-accent-rgb: 5 150 105;
+    --ws-accent-soft-rgb: 6 78 59;
+    --ws-accent-text-rgb: 209 250 229;
+    --money-positive: #009866;
+    --money-negative: #E7000B;
+    --limit-healthy: #10B981;
+    --limit-warning: #F59E0B;
+    --limit-danger:  #EF4444;
+    --goal-fill:  #818CF8;
+}
+.nav-link.is-active {
+    background: rgba(103, 68, 241, 0.12) !important;
+    color: #6744F1 !important;
+    font-weight: 600;
+}
+.dark .nav-link.is-active {
+    background: rgba(103, 68, 241, 0.18) !important;
+    color: #A78BFA !important;
+}
+.workspace-theme-active [data-bottom-nav] {
+    background: rgb(var(--ws-accent-soft-rgb) / 0.34);
+    border-top-color: rgb(var(--ws-accent-rgb) / 0.4);
+}
+[data-bottom-nav] a:not(.is-active) {
+    color: #52525b;
+}
+.dark [data-bottom-nav] a:not(.is-active) {
+    color: #a1a1aa;
+}
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.filter-scroll-hint {
+    -webkit-mask-image: linear-gradient(to right, black 80%, transparent 100%);
+    mask-image: linear-gradient(to right, black 80%, transparent 100%);
+}
+@media (min-width: 768px) {
+    .filter-scroll-hint {
+        -webkit-mask-image: none;
+        mask-image: none;
+    }
+}
+.premium-card {
+    transition: transform 250ms ease, border-color 250ms ease, box-shadow 250ms ease !important;
+}
+.premium-card:hover {
+    border-color: rgba(113, 113, 122, 0.25) !important;
+    box-shadow: 0 8px 20px -6px rgba(0, 0, 0, 0.06), 0 4px 8px -4px rgba(0, 0, 0, 0.04) !important;
+    transform: translateY(-1px);
+}
+.dark .premium-card:hover {
+    border-color: rgba(82, 82, 91, 0.40) !important;
+    box-shadow: 0 16px 28px -8px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0,0,0,0.2) !important;
+    transform: translateY(-1px);
+}
+.premium-card-interactive:hover {
+    border-color: rgba(113, 113, 122, 0.45) !important;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03) !important;
+    transform: translateY(-2px);
+}
+.dark .premium-card-interactive:hover {
+    border-color: rgba(113, 113, 122, 0.3) !important;
+    box-shadow: 0 20px 30px -10px rgba(0, 0, 0, 0.7), 0 0 20px 2px rgba(255, 255, 255, 0.02) !important;
+    transform: translateY(-2px);
+}
+.htmx-indicator { opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator { opacity: 1; pointer-events: auto; }
+.htmx-request [data-hx-disable] { opacity: 0.55; pointer-events: none; }
+[data-swipe-content] { will-change: transform; touch-action: pan-y; }
+[data-swipe-bg-left],
+[data-swipe-bg-right] { transform: scaleX(0.88); transition: opacity 160ms ease, transform 160ms ease; }
+.dashboard-tab {
+    border-color: rgb(120 120 130 / 0.14);
+    background: rgb(120 120 130 / 0.06);
+    color: rgb(120 120 130 / 0.6);
+}
+.dashboard-tab.is-active {
+    border-color: rgb(var(--ws-accent-rgb) / 0.42);
+    background: rgb(var(--ws-accent-rgb) / 0.12);
+    color: rgb(var(--ws-accent-rgb));
+    font-weight: 600;
+}
+.dark .dashboard-tab.is-active {
+    background: rgb(var(--ws-accent-soft-rgb) / 0.35);
+    color: rgb(var(--ws-accent-text-rgb));
+}
+.dark .dashboard-tab:not(.is-active) {
+    border-color: rgb(255 255 255 / 0.06);
+    background: rgb(255 255 255 / 0.03);
+    color: rgb(255 255 255 / 0.45);
+}
+.privacy-enabled [data-sensitive],
+.privacy-enabled [data-sensitive-graph] {
+    filter: blur(0.55rem);
+    user-select: none;
+    pointer-events: none;
+    transition: filter 160ms ease;
+}
+.dark input[type="date"], .dark input[type="month"] { color-scheme: dark; }
+.badge { display: inline-flex; align-items: center; gap: 0.125rem; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.625rem; font-weight: 600; line-height: 1; white-space: nowrap; }
+.badge-success { background: rgba(0, 152, 102, 0.12); color: #009866; }
+.badge-warning { background: rgba(245, 158, 11, 0.12); color: #F59E0B; }
+.badge-error   { background: rgba(231, 0, 11, 0.12); color: #E7000B; }
+.badge-info    { background: rgba(103, 68, 241, 0.12); color: #6744F1; }
+.badge-installment { background: rgba(6, 182, 212, 0.12); color: #0891b2; }
+.badge-neutral { background: rgb(113 113 122 / 0.15); color: rgb(161 161 170); }
+
+.dark .badge-success { background: rgba(0, 152, 102, 0.18); color: #34d399; }
+.dark .badge-warning { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+.dark .badge-error   { background: rgba(231, 0, 11, 0.18); color: #f87171; }
+.dark .badge-info    { background: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+.dark .badge-installment { background: rgba(6, 182, 212, 0.2); color: #22d3ee; }
+.dark .badge-neutral { background: rgb(113 113 122 / 0.2); color: rgb(212 212 216); }
+
+/* Money color utilities */
+.text-money-positive { color: var(--money-positive); }
+.text-money-negative { color: var(--money-negative); }
+
+/* Limit progress bar states */
+.limit-progress-healthy { background-image: linear-gradient(to right, rgb(16, 185, 129), rgb(20, 184, 166)); }
+.limit-progress-warning { background-image: linear-gradient(to right, rgb(245, 158, 11), rgb(249, 115, 22)); }
+.limit-progress-danger  { background-image: linear-gradient(to right, rgb(239, 68, 68), rgb(244, 63, 94)); }
+
+/* Goal/box progress bar — neutral system color */
+.goal-progress-fill { background-image: linear-gradient(to right, rgb(99, 102, 241), rgb(139, 92, 246)); }
+
+/* Dynamic Color Utilities (Phase 9.9.4b) — replaces style= with CSS variables */
+/* Usage: style="--ic: {{.Color}}" class="icon-colored" */
+.icon-colored { color: var(--ic); }
+.icon-wrap-colored {
+    border-color: var(--ic);
+    background-color: color-mix(in srgb, var(--ic) 13%, transparent);
+}
+.emblem-wrap-solid {
+    border-color: var(--ic) !important;
+    background-color: var(--ic) !important;
+    --emblem-color: #ffffff;
+}
+.emblem-wrap-solid .icon-colored,
+.emblem-wrap-solid i,
+.emblem-wrap-solid .emblem-text {
+    --ic: #ffffff !important;
+    color: #ffffff !important;
+}
+.badge-colored {
+    border-color: var(--ic);
+    background-color: var(--ic);
+}
+.bg-colored { background-color: var(--ic); }
+.blob-colored { background-color: var(--ic); }
+.progress-fill { width: clamp(0%, calc(var(--pct, 0) * 1%), 100%); }
+.progress-fill-colored {
+    width: clamp(0%, calc(var(--pct, 0) * 1%), 100%);
+    background-color: var(--ic);
+}
+.progress-fill-capped { width: clamp(0%, calc(var(--pct, 0) * 1%), 100%); }
+.card-gradient {
+    background: linear-gradient(135deg, var(--ic), color-mix(in srgb, var(--ic) 87%, transparent));
+}
+
+/* Emblem textual adjustments */
+.emblem-text {
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    display: inline-block;
+    max-width: 100%;
+}
+.emblem-len-1 { font-size: 0.75rem; }
+.emblem-len-2 { font-size: 0.72rem; }
+.emblem-len-3 { font-size: 0.62rem; }
+.emblem-len-4 { font-size: 0.54rem; }
+.emblem-len-5 { font-size: 0.46rem; }
+
+/* === MONTH SELECTOR === */
+.month-btn{min-width:4rem;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:.5rem;border:1px solid transparent;padding:.375rem .625rem;font-size:.625rem;font-weight:600;transition:all .15s}
+@media(min-width:640px){.month-btn{min-width:4.5rem;border-radius:.75rem;padding:.625rem 1rem;font-size:.75rem}}
+@media(min-width:768px){.month-btn{font-size:.875rem}}
+
+/* === FAB SAFE GUTTER (P.28.e.fix B2) === */
+/* On >=md the floating action button is tucked into the page gutter so it does
+   not overlap right-aligned controls (e.g. select chevrons, sort toggles) that
+   sit at the edge of the centered max-w-7xl content column. Falls back to a
+   small corner inset on narrower desktops; mobile placement is untouched. */
+@media (min-width: 768px) {
+    #fab-primary {
+        right: max(0.5rem, calc((100vw - 80rem) / 2 - 3.75rem));
+    }
+}
+
+/* Design System tokens & classes extracted to assets/css/design-system.css (Phase D.0) */

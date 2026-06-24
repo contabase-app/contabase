@@ -1,0 +1,238 @@
+{{define "ajuda-page"}}
+{{template "layout-start" .}}
+<!-- Header removido: seção identificada pela navegação ativa e barra de workspace -->
+
+<main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 space-y-6 relative" data-page-title="Ajuda">
+    <!-- Liquid blurs -->
+    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-50">
+        <div class="absolute top-[5%] right-[-10%] w-[45vw] h-[45vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
+        <div class="absolute bottom-[15%] left-[-15%] w-[40vw] h-[40vw] rounded-full bg-indigo-400/8 dark:bg-indigo-500/4 blur-[80px]"></div>
+    </div>
+
+    <!-- Hero Banner -->
+    <section class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-6 md:p-8">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div class="space-y-1.5">
+                <p class="text-[0.65rem] font-bold uppercase tracking-[0.25em] text-[var(--cb-accent)]">Suporte ao Usuário</p>
+                <h2 class="text-xl md:text-2xl font-bold text-[var(--cb-text-main)]">Como podemos ajudar hoje?</h2>
+                <p class="text-sm text-[var(--cb-text-muted)] max-w-md">Documentação e guias práticos para compreensão das regras de negócio, métricas e relatórios do sistema.</p>
+            </div>
+            <div class="w-full md:max-w-xs shrink-0">
+                <label for="help-search" class="mb-2 block text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Busca rápida</label>
+                <div class="relative">
+                    <input id="help-search" type="text" placeholder="Pesquisar tópico de ajuda..."
+                        class="h-11 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] pl-10 pr-3 text-sm text-[var(--cb-text-main)] outline-none transition-all placeholder:text-[var(--cb-text-muted)] focus:border-[var(--cb-border-strong)] focus:ring-0">
+                    <i data-lucide="search" class="w-4 h-4 text-[var(--cb-text-muted)] absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Help Topics Bento Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+        <!-- Perfis e Permissões (card largo) -->
+        <section id="perfis-permissoes"
+
+            class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-6 flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--cb-border-strong)] md:col-span-2 lg:col-span-3">
+            <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-100 border border-cyan-200/50 dark:bg-cyan-500/15 dark:border-cyan-500/20">
+                <i data-lucide="shield-check" class="h-5 w-5 text-cyan-600 dark:text-cyan-400"></i>
+            </div>
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Perfis e Permissões no ContaBase</h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">No MVP inicial, o ContaBase usa uma matriz fixa de permissões por perfil. Permissões granulares/customizadas não estão ativas nesta fase.</p>
+            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs md:grid md:grid-cols-3 md:gap-4 space-y-3 md:space-y-0">
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-rose-500">ADMIN</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Acesso completo ao workspace e às ações globais sensíveis da plataforma.</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Pode gerenciar dados do workspace e acessar backup, importação/restauração e administração global de usuários/workspaces.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-amber-500">MANAGER</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Perfil operacional avançado dentro do workspace ativo.</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Pode operar transações, faturas, metas, configurações e relatórios do próprio workspace, sem acesso a ações globais sensíveis.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-sky-500">USER</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Perfil básico para uso diário.</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Pode criar e consultar lançamentos permitidos, usar o dashboard e gerenciar o próprio perfil, sem poderes administrativos.</p>
+                </article>
+            </div>
+            <p class="mt-4 text-xs leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-cyan-600 dark:text-cyan-400">Importante:</span> ações globais sensíveis como backup, importação/restauração de banco e administração global de usuários/workspaces são restritas ao perfil <span class="font-semibold">ADMIN</span>.</p>
+        </section>
+
+        <!-- Relatórios: Custo de Vida / Custos Operacionais -->
+        <section id="custo-de-vida"
+
+            class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-6 flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--cb-border-strong)]">
+            <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 border border-emerald-200/50 dark:bg-emerald-500/15 dark:border-emerald-500/20">
+                <i data-lucide="pie-chart" class="h-5 w-5 text-emerald-600 dark:text-emerald-400"></i>
+            </div>
+            {{if .IsBusiness}}
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Relatórios: Custos Operacionais</h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">Acesse esta visão em <span class="font-semibold">Relatórios</span> para entender a divisão de custos fixos (aluguel, folha, infraestrutura) e variáveis (marketing, fornecedores, manutenção) da sua empresa.</p>
+            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
+                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-emerald-500 dark:text-emerald-400">Custos Fixos:</span> Despesas recorrentes e indispensáveis (aluguel, folha, honorários, software, infraestrutura).</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-violet-500 dark:text-violet-400">Custos Variáveis:</span> Gastos flexíveis ou passíveis de corte sob pressão (marketing pontual, manutenção não planejada, fornecedores eventuais).</p>
+            </div>
+            {{else}}
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Relatórios: Custo de Vida</h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">Acesse esta visão em <span class="font-semibold">Relatórios</span> para entender seus gastos por tipo, separando despesas essenciais e de estilo de vida.</p>
+            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
+                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-emerald-500 dark:text-emerald-400">Essenciais:</span> Despesas indispensáveis para subsistência (moradia, alimentação base, energia, transporte necessário).</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-violet-500 dark:text-violet-400">Estilo de Vida:</span> Gastos flexíveis ou passíveis de corte imediato sob pressão (lazer, conforto opcional, assinaturas secundárias).</p>
+            </div>
+            {{end}}
+        </section>
+
+        {{/* Saúde Financeira — oculto até os indicadores (Taxa de Poupança, Sobrevivência, Lucro Bruto, Eficiência) existirem no produto. */}}
+        {{/* <section id="saude-financeira" ... </section> */}}
+
+        <!-- Relatórios: Tendência de Saldo -->
+        <section id="tendencia-saldo"
+
+            class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-6 flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--cb-border-strong)]">
+            <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-100 border border-indigo-200/50 dark:bg-indigo-500/15 dark:border-indigo-500/20">
+                <i data-lucide="trending-up" class="h-5 w-5 text-indigo-600 dark:text-indigo-400"></i>
+            </div>
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Relatórios: Tendência de Saldo</h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">Acesse esta visão em <span class="font-semibold">Relatórios</span> para ver a projeção do saldo ao longo do tempo. A linha contínua mostra o histórico realizado e a linha tracejada indica projeções futuras baseadas nas recorrências cadastradas.</p>
+            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
+                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-indigo-500 dark:text-indigo-400">Linha contínua:</span> Patrimônio líquido real calculado nos últimos 4 meses.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-text-muted)]">Linha tracejada:</span> Previsão de caixa para os próximos 2 meses baseada nas despesas e receitas recorrentes cadastradas.</p>
+            </div>
+        </section>
+
+        <!-- Categorias Hierárquicas -->
+        <section id="categorias-hierarquia"
+
+            class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-6 flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--cb-border-strong)]">
+            <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-fuchsia-100 border border-fuchsia-200/50 dark:bg-fuchsia-500/15 dark:border-fuchsia-500/20">
+                <i data-lucide="tags" class="h-5 w-5 text-fuchsia-600 dark:text-fuchsia-400"></i>
+            </div>
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Categorias e Hierarquia</h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">O sistema organiza o plano de contas em uma relação hierárquica para manter a consistência e a coerência dos lançamentos.</p>
+            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
+                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-fuchsia-500 dark:text-fuchsia-400">Categoria Pai:</span> Define o contexto macro e o Grupo Macro (ex: Alimentação).</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-text-muted)]">Categoria Filho:</span> Subcategorias de detalhe (ex: Supermercado, Restaurantes) que herdam automaticamente as parametrizações e o Grupo Macro do Pai.</p>
+            </div>
+        </section>
+
+        <!-- Caixinhas de Metas -->
+        <section id="caixinhas-metas"
+
+            class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-6 flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--cb-border-strong)] md:col-span-2 lg:col-span-3">
+            <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-purple-100 border border-purple-200/50 dark:bg-purple-500/15 dark:border-purple-500/20">
+                <i data-lucide="piggy-bank" class="h-5 w-5 text-purple-600 dark:text-purple-400"></i>
+            </div>
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Reservas de Metas</h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">As reservas são reservas virtuais com objetivos de curto, medio e longo prazo. <span class="font-semibold text-purple-500 dark:text-purple-400">Reserva não é conta:</span> ela não guarda dinheiro de verdade — apenas bloqueia uma parte do seu saldo total para criar disciplina financeira.</p>
+
+            <!-- Saldos -->
+            <h3 class="mt-5 mb-2 text-sm font-bold text-[var(--cb-text-main)]">Os três saldos</h3>
+            <div class="mt-2 pt-2 border-t border-[var(--cb-border-subtle)] text-xs md:grid md:grid-cols-3 md:gap-4 space-y-3 md:space-y-0">
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-indigo-500">Saldo em Contas</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Soma do saldo atual de todas as suas contas que não são cartão de crédito. Representa o dinheiro real que você possui.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-amber-500">Saldo Reservado</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Valor separado virtualmente no ledger das reservas. Esse dinheiro ainda está nas suas contas, mas está comprometido com {{if $.IsBusiness}}suas metas{{else}}suas metas{{end}}.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-emerald-500">Saldo Disponível</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Saldo em Contas menos Saldo Reservado. Indica quanto dinheiro você tem livre para usar {{if $.IsBusiness}}sem comprometer seus orçamentos{{else}}sem comprometer suas metas{{end}}.</p>
+                </article>
+            </div>
+
+            <!-- Ações -->
+            <h3 class="mt-5 mb-2 text-sm font-bold text-[var(--cb-text-main)]">Ações disponíveis</h3>
+            <div class="mt-2 pt-2 border-t border-[var(--cb-border-subtle)] text-xs md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0">
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-violet-500">Aporte</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Aumenta o saldo reservado da reserva. O dinheiro sai do saldo disponível e passa a ser reserva virtual. <span class="font-semibold">Não altera o saldo real da conta.</span></p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-amber-500">Liberação de Reserva</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Reduz o saldo reservado e devolve valor ao saldo disponível. <span class="font-semibold">Não cria receita</span> — apenas desfaz a reserva.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-sky-500">Consumo Automático</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Ao lançar uma despesa em categoria ou subcategoria vinculada à reserva, a reserva é consumida automaticamente. A despesa continua saindo da conta ou cartão real; a reserva apenas reduz a reserva.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-fuchsia-500">Histórico / Extrato</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Clique no card da reserva para ver aportes, liberações, consumos automáticos e ajustes. Tudo registrado no ledger virtual da reserva.</p>
+                </article>
+            </div>
+
+            <!-- Excedente e Projeção -->
+            <h3 class="mt-5 mb-2 text-sm font-bold text-[var(--cb-text-main)]">Excedente e Projeção</h3>
+            <div class="mt-2 pt-2 border-t border-[var(--cb-border-subtle)] text-xs md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0">
+                <article class="rounded-xl border border-rose-500/20 dark:border-rose-500/20 bg-rose-500/5 dark:bg-rose-500/5 p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-rose-500">Excedente</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Ocorre quando o consumo ultrapassa o valor reservado. A reserva fica com saldo negativo e exibe <span class="font-semibold text-rose-500">"Em excedente"</span>. Só acontece com confirmação explícita. Corrige com um novo aporte.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-emerald-500">Rentabilidade Estimada</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">É <span class="font-semibold">apenas projeção</span> — não altera saldo real, não cria receita. Use a taxa mensal (% a.m.) para estimar quanto tempo falta para atingir {{if $.IsBusiness}}a meta{{else}}a meta{{end}} com juros compostos.</p>
+                </article>
+            </div>
+
+            <div class="mt-5 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5">
+                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-purple-500 dark:text-purple-400">Data-alvo e aporte sugerido:</span> ao definir um prazo (mês/ano), a reserva calcula quanto você precisa aportar por mês para atingir {{if $.IsBusiness}}a meta{{else}}a meta{{end}}. Se já houver rentabilidade estimada, o cálculo considera os juros compostos.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-text-muted)]">Recarga mensal automática:</span> quando configurada, a reserva recebe aportes automáticos todo dia 1º de cada mês, registrados no ledger como "Aporte Automático".</p>
+            </div>
+        </section>
+
+        <!-- Motor Temporal Automático -->
+        <section id="motor-temporal"
+
+            class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-6 flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--cb-border-strong)]">
+            <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-100 border border-blue-200/50 dark:bg-blue-500/15 dark:border-blue-500/20">
+                <i data-lucide="clock" class="h-5 w-5 text-blue-600 dark:text-blue-400"></i>
+            </div>
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Motor Temporal Automático</h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">O ContaBase conta com um motor assíncrono que processa lógicas de contabilidade e orçamento na virada do mês.</p>
+            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Os limites de gastos são reiniciados e os aportes recorrentes das reservas são processados automaticamente todo dia 1º de cada mês.</p>
+            </div>
+        </section>
+
+        <!-- Limite de Gastos -->
+        <section id="limite-gastos"
+
+            class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-6 flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--cb-border-strong)]">
+            <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-amber-100 border border-amber-200/50 dark:bg-amber-500/15 dark:border-amber-500/20">
+                <i data-lucide="gauge" class="h-5 w-5 text-amber-600 dark:text-amber-400"></i>
+            </div>
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">{{if .IsBusiness}}Controle de Custos{{else}}Limite de Gastos{{end}}</h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">{{if $.IsBusiness}}O controle de custos{{else}}O controle de limites{{end}} permite travar tetos de custos por categoria de forma mensal para assegurar a saúde financeira.</p>
+            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">A barra de progresso {{if $.IsBusiness}}do controle{{else}}do limite{{end}} serve para acompanhamento rápido no dashboard principal e na central de {{if $.IsBusiness}}orçamentos{{else}}metas{{end}}.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Ao atingir 90% do orçamento consumido, {{if $.IsBusiness}}o controle{{else}}o limite{{end}} passa a exibir alerta visual em vermelho (<span class="font-semibold text-rose-500">Crítico</span>) indicando necessidade de reavaliação dos gastos.</p>
+            </div>
+        </section>
+
+        <!-- Segurança de Dados e Backups (card largo) -->
+        <section id="seguranca-backups"
+
+            class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-6 flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--cb-border-strong)] md:col-span-2 lg:col-span-3">
+            <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-rose-100 border border-rose-200/50 dark:bg-rose-500/15 dark:border-rose-500/20">
+                <i data-lucide="shield" class="h-5 w-5 text-rose-600 dark:text-rose-400"></i>
+            </div>
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Segurança de Dados e Backups <span class="ml-1.5 text-xs font-bold text-rose-500 bg-rose-100 dark:bg-rose-500/10 dark:text-rose-400 px-2 py-0.5 rounded-lg border border-rose-200/50 dark:border-rose-500/20">ADMIN</span></h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">O sistema possui ferramentas administrativas avançadas e rotinas rigorosas de proteção e consistência de dados.</p>
+            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs flex-1 md:grid md:grid-cols-2 md:gap-6 space-y-2.5 md:space-y-0">
+                <div class="space-y-2.5">
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-rose-500 dark:text-rose-400">Backups Automáticos:</span> Criados automaticamente a cada 24 horas e armazenados em <code class="bg-[var(--cb-surface-2)] px-1 py-0.5 rounded text-[var(--cb-text-muted)]">data/backups/</code>. Apenas os 5 arquivos de backup mais recentes são mantidos para economizar espaço e manter alta eficiência.</p>
+                </div>
+                <div class="space-y-2.5">
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-rose-500 dark:text-rose-400">Exportação/Importação:</span> Administradores globais podem baixar a cópia do banco de dados SQLite (<code class="bg-[var(--cb-surface-2)] px-1 py-0.5 rounded text-[var(--cb-text-muted)]">.db</code>). No fluxo de importação, o arquivo enviado é rigorosamente validado antes da substituição e o processo ocorre atomicamente para evitar qualquer corrupção de estado.</p>
+                </div>
+            </div>
+        </section>
+
+    </div>
+</main>
+{{template "layout-end" .}}
+{{end}}

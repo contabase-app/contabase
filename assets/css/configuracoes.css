@@ -1,0 +1,7 @@
+/* ContaBase Configuracoes Styles */
+
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+.btn-tactile { transition: all 0.15s ease; }
+.btn-tactile:active { transform: scale(0.97); }

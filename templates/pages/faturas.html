@@ -1,0 +1,519 @@
+{{define "faturas-page"}}
+{{template "layout-start" .}}
+{{template "faturas-content" .}}
+{{template "layout-end" .}}
+{{end}}
+
+{{define "faturas-content"}}
+<link rel="stylesheet" href="/assets/css/faturas.css">
+<main id="faturas-content" class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative">
+    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden">
+        <div class="absolute inset-0 cb-page"></div>
+        <div class="absolute top-[-30%] left-[-20%] w-[60vw] h-[60vw] rounded-full bg-violet-500/[0.05] dark:bg-violet-500/[0.03] blur-[80px]"></div>
+        <div class="absolute bottom-[-20%] right-[-20%] w-[50vw] h-[50vw] rounded-full opacity-15 dark:opacity-10 blur-[80px] blob-colored" style="--ic: {{.CardColor}}"></div>
+    </div>
+
+{{template "invoice-summary" .}}
+
+    {{template "invoice-transactions" .}}
+</main>
+{{end}}
+
+{{define "invoice-summary"}}
+<section id="invoice-summary" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} class="w-full space-y-4 md:space-y-5">
+    <!-- Card Header -->
+    <div class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-5 py-4 md:px-6 md:py-5">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="flex items-center gap-4">
+                <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.CardColor}}">
+                    {{if .CardProviderMark}}
+                    <span class="text-xs font-black uppercase text-white tracking-tighter">{{.CardProviderMark}}</span>
+                    {{else}}
+                    <i data-lucide="{{if .CardIcon}}{{.CardIcon}}{{else}}credit-card{{end}}" class="w-5 h-5 icon-colored" style="--ic: var(--emblem-color, {{.CardColor}})"></i>
+                    {{end}}
+                </span>
+                <div class="min-w-0">
+                    <h1 class="text-lg font-black text-[var(--cb-text-main)] tracking-tight truncate leading-tight">{{.CardName}}</h1>
+                    <div class="flex items-center gap-2 mt-1 flex-wrap">
+                        <span class="inline-flex items-center rounded-full bg-violet-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-violet-700 dark:bg-violet-500/20 dark:text-violet-300 border border-violet-500/10">
+                            {{.Reference}}
+                        </span>
+                        <span class="badge {{.StatusBadgeClass}} shrink-0">{{.StatusLabel}}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-6 md:gap-8 self-start md:self-auto flex-wrap">
+                <div class="space-y-0.5">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)] block">Fecha em</span>
+                    <div class="flex items-center gap-1.5 text-xs font-bold text-[var(--cb-text-main)]">
+                        <i data-lucide="calendar" class="w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
+                        <span>{{.ClosingLabel}}</span>
+                    </div>
+                </div>
+                <div class="h-8 w-px bg-[var(--cb-border-subtle)] hidden sm:block"></div>
+                <div class="space-y-0.5">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)] block">Vencimento</span>
+                    <div class="flex items-center gap-1.5 text-xs font-bold text-[var(--cb-text-main)]">
+                        <i data-lucide="calendar-check" class="w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
+                        <span>{{.DueLabel}}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{if .FilterLabel}}
+        <div class="flex flex-wrap items-center gap-1.5 mt-4 pt-3 border-t border-[var(--cb-border-subtle)]">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Filtro:</span>
+            <span class="inline-flex items-center gap-0.5 rounded-full bg-violet-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:text-violet-300">{{.FilterLabel}}</span>
+            <a href="{{.ClearFiltersURL}}" hx-get="{{.ClearFiltersURL}}" hx-target="#main-content" hx-select="#main-content" class="inline-flex items-center gap-0.5 rounded-full bg-[var(--cb-surface-2)] hover:bg-[var(--cb-surface-3)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--cb-text-muted)] transition-colors">
+                <i data-lucide="x" class="w-2.5 h-2.5"></i>Limpar
+            </a>
+        </div>
+        {{end}}
+    </div>
+
+    <!-- Summary + Payment Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
+        <!-- Resumo da Fatura Card (Col Span 2) -->
+        <div class="lg:col-span-2 h-full bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-4 sm:p-5 flex flex-col">
+            <div>
+                <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--cb-text-muted)] mb-4">Resumo da Fatura</h3>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-3.5">
+                    <!-- Total Fatura -->
+                    <div class="col-span-2 sm:col-span-1 rounded-xl border border-violet-500/10 dark:border-violet-500/20 bg-[var(--cb-surface-2)] p-3 sm:p-4 flex flex-col justify-between">
+                        <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400">Total da Fatura</span>
+                        <p class="text-base xxs:text-lg xs:text-xl sm:text-2xl font-black text-[var(--cb-text-main)] mt-1 sm:mt-1.5 tracking-tighter sm:tracking-tight whitespace-nowrap overflow-x-auto scrollbar-hide" data-sensitive>R$ {{.Total.Reais}}{{.Total.Cents}}</p>
+                        <span class="text-[9px] text-[var(--cb-text-muted)] mt-2 block truncate">{{if .ClosingLabel}}{{.ClosingLabel}}{{end}} - {{if .DueLabel}}{{.DueLabel}}{{end}}</span>
+                    </div>
+
+                    <!-- Total Pago -->
+                    <div class="col-span-1 rounded-xl border border-emerald-500/10 dark:border-emerald-500/20 bg-[var(--cb-surface-2)] p-3 sm:p-4 flex flex-col justify-between">
+                        <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Total Pago</span>
+                        <p class="text-sm xxs:text-base xs:text-lg sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 sm:mt-1.5 tracking-tighter sm:tracking-tight whitespace-nowrap overflow-x-auto scrollbar-hide" data-sensitive>R$ {{.TotalPaid.Reais}}{{.TotalPaid.Cents}}</p>
+                        <span class="text-[9px] text-[var(--cb-text-muted)] mt-2 block truncate">Valor já liquidado</span>
+                    </div>
+
+                    <!-- Pendente -->
+                    <div class="col-span-1 rounded-xl border border-amber-500/10 dark:border-amber-500/20 bg-[var(--cb-surface-2)] p-3 sm:p-4 flex flex-col justify-between">
+                        <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">Pendente</span>
+                        <p class="text-sm xxs:text-base xs:text-lg sm:text-2xl font-black text-amber-600 dark:text-amber-400 mt-1 sm:mt-1.5 tracking-tighter sm:tracking-tight whitespace-nowrap overflow-x-auto scrollbar-hide" data-sensitive>R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</p>
+                        <span class="text-[9px] text-[var(--cb-text-muted)] mt-2 block truncate">Saldo restante a pagar</span>
+                    </div>
+                </div>
+            </div>
+
+            {{if .HasCreditLimit}}
+            <!-- Indicador de Limite do Cartão -->
+            <div class="mt-3 md:mt-4 border-t border-[var(--cb-border-subtle)] pt-3 md:pt-4">
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <h4 class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)] flex items-center gap-1.5">
+                        <i data-lucide="credit-card" class="w-3 h-3 text-[var(--cb-text-subtle)]"></i>
+                        Limite do cartão
+                    </h4>
+                    <span class="text-[10px] font-semibold tabular-nums shrink-0 {{if le .LimitPercent 30}}text-rose-600 dark:text-rose-400{{else if le .LimitPercent 70}}text-amber-600 dark:text-amber-400{{else}}text-[var(--cb-text-subtle)]{{end}}">{{.LimitPercent}}% livre</span>
+                </div>
+                <div class="grid grid-cols-3 gap-1.5 sm:gap-2.5 mb-2">
+                    <div class="min-w-0">
+                        <span class="block text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-[var(--cb-text-subtle)]">Disponível</span>
+                        <span class="block text-[11px] sm:text-xs font-bold text-[var(--cb-text-muted)] tabular-nums truncate" data-sensitive>R$ {{.LimitAvailable.Reais}}{{.LimitAvailable.Cents}}</span>
+                    </div>
+                    <div class="min-w-0">
+                        <span class="block text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-[var(--cb-text-subtle)]">Em uso</span>
+                        <span class="block text-[11px] sm:text-xs font-bold text-[var(--cb-text-muted)] tabular-nums truncate" data-sensitive>R$ {{.LimitUsed.Reais}}{{.LimitUsed.Cents}}</span>
+                    </div>
+                    <div class="min-w-0">
+                        <span class="block text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-[var(--cb-text-subtle)]">Limite total</span>
+                        <span class="block text-[11px] sm:text-xs font-bold text-[var(--cb-text-muted)] tabular-nums truncate" data-sensitive>R$ {{.CreditLimit.Reais}}{{.CreditLimit.Cents}}</span>
+                    </div>
+                </div>
+                <div class="h-1 w-full overflow-hidden rounded-full bg-[var(--cb-surface-2)]">
+                    <div class="h-full rounded-full transition-all duration-500 ease-out {{if le .LimitPercent 30}}bg-rose-500/70{{else if le .LimitPercent 70}}bg-amber-500/60{{else}}bg-[var(--cb-text-subtle)]/70{{end}}" style="width: {{.LimitPercent}}%;"></div>
+                </div>
+                <p class="text-[9px] text-[var(--cb-text-subtle)] mt-1.5 leading-snug">
+                    {{if le .LimitPercent 30}}Disponibilidade baixa. Limite bastante comprometido.
+                    {{else if le .LimitPercent 70}}Disponibilidade moderada.
+                    {{else}}Boa disponibilidade de limite.{{end}}
+                </p>
+            </div>
+            {{end}}
+
+            <!-- Payment History integrated -->
+            <div class="mt-4 md:mt-6 border-t border-[var(--cb-border-subtle)] pt-3 md:pt-5">
+                {{if .HasPayments}}
+                <h4 class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)] mb-3">Histórico de Pagamentos</h4>
+                <div class="space-y-2">
+                    {{range .InvoicePayments}}
+                    <div class="flex items-center justify-between gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-2.5 md:p-3 hover:bg-[var(--cb-surface-3)] transition-colors">
+                        <div class="min-w-0">
+                            <p class="text-xs font-bold text-[var(--cb-text-main)] truncate">
+                                {{if .AccountName}}{{.AccountName}} &middot; {{end}}{{.Source}}
+                            </p>
+                            <p class="text-[10px] text-[var(--cb-text-muted)] mt-0.5">{{.DateLabel}}{{if .Note}} &middot; {{.Note}}{{end}}</p>
+                        </div>
+                        <span class="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 shrink-0" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                    </div>
+                    {{end}}
+                </div>
+                {{else if .HasLegacyPaymentSummary}}
+                <div class="flex flex-col items-center justify-center py-3 text-center">
+                    <i data-lucide="clock" class="w-4 h-4 text-amber-500/70 mb-1.5"></i>
+                    <p class="text-xs text-[var(--cb-text-muted)]">{{.LegacyPaymentNotice}}</p>
+                </div>
+                {{else}}
+                <div class="flex items-center gap-1.5 justify-center py-1 text-center text-[var(--cb-text-muted)]">
+                    <i data-lucide="info" class="w-3.5 h-3.5"></i>
+                    <p class="text-[10px] font-semibold">Nenhum pagamento registrado</p>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        <!-- Payment Actions Card (Col Span 1) -->
+        <div class="lg:col-span-1 flex flex-col h-full">
+            {{if .CanAttemptPayment}}
+            <div class="h-full bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-4 md:p-5 flex flex-col justify-between">
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Ações da Fatura</h3>
+
+                    <div class="flex flex-col gap-3 pt-1">
+                        <button type="button" data-open-settle-payment {{if not .CanSubmitPayment}}disabled{{end}}
+                            class="btn-tactile flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-violet-600 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm shadow-violet-600/10">
+                            {{if .CanSubmitPayment}}<i data-lucide="badge-check" class="h-4 w-4"></i>Quitar fatura{{else}}{{.PaymentDisabledReason}}{{end}}
+                        </button>
+
+                        <button type="button" {{if not .CanSubmitPayment}}disabled{{end}}
+                            class="btn-tactile flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] text-xs font-bold text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                            data-onclick="openPartialPaymentModal">
+                            <i data-lucide="coins" class="h-4 w-4 text-[var(--cb-text-muted)]"></i>Pagamento parcial
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Info Block (desktop only) -->
+                <div class="hidden md:flex mt-6 border-t border-[var(--cb-border-subtle)] pt-5 space-y-4 flex-col">
+                    <h4 class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)] flex items-center gap-1.5">
+                        <i data-lucide="help-circle" class="w-3.5 h-3.5"></i>Sobre as ações
+                    </h4>
+                    <div class="space-y-3 text-[11px] text-[var(--cb-text-muted)] leading-relaxed">
+                        <div class="flex items-start gap-2">
+                            <i data-lucide="info" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0 mt-0.5"></i>
+                            <p>A escolha de conta de origem e data é feita de forma guiada diretamente dentro do modal de confirmação.</p>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <i data-lucide="check-circle" class="w-3.5 h-3.5 text-violet-500 dark:text-violet-400 shrink-0 mt-0.5"></i>
+                            <p><strong class="font-bold text-[var(--cb-text-main)]">Quitar fatura:</strong> Registra a baixa total do valor restante pendente no período atual.</p>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <i data-lucide="coins" class="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5"></i>
+                            <p><strong class="font-bold text-[var(--cb-text-main)]">Pagamento parcial:</strong> Permite abater qualquer valor, mantendo a fatura aberta com o saldo restante.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {{else}}
+            <!-- Fatura Quitada Card -->
+            <div class="h-full bg-emerald-500/5 dark:bg-emerald-500/[0.02] border border-emerald-500/25 rounded-xl p-6 flex flex-col items-center justify-center text-center">
+                <div class="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950/50 flex items-center justify-center mb-3">
+                    <i data-lucide="check-circle-2" class="w-6 h-6 text-emerald-600 dark:text-emerald-400"></i>
+                </div>
+                <h3 class="text-sm font-bold text-[var(--cb-text-main)]">Fatura Quitada</h3>
+                <p class="text-xs text-[var(--cb-text-muted)] mt-1 max-w-[200px]">Nenhuma pendência financeira para este período.</p>
+            </div>
+            {{end}}
+        </div>
+    </div>
+
+    {{if .CanAttemptPayment}}
+    <div id="invoice-settle-payment-modal" data-invoice-settle-modal data-contabase-overlay data-overlay-priority="120" data-overlay-close="closeSettlePaymentModal" class="fixed inset-0 z-[120] hidden items-end justify-center bg-black/60 p-4 backdrop-blur-sm md:items-center">
+        <div class="w-full max-w-md rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-5 shadow-2xl">
+            <div class="mb-4 flex items-start justify-between gap-3">
+                <div>
+                    <h3 class="text-sm font-bold text-[var(--cb-text-main)]">Confirmar quitação</h3>
+                    <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Revise os dados antes de registrar o pagamento integral.</p>
+                </div>
+                <button type="button" class="btn-tactile flex h-8 w-8 items-center justify-center rounded-xl text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-2)]"
+                    data-onclick="closeSettlePaymentModal" aria-label="Cancelar quitação">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+
+            <form hx-post="/cartoes/faturas/pagar" hx-target="#faturas-content" hx-swap="outerHTML" class="space-y-3.5">
+                <input type="hidden" name="invoice_id" value="{{.InvoiceID}}">
+                <input type="hidden" name="account_id" value="{{.AccountID}}">
+                <input type="hidden" name="payment_mode" value="settle">
+                <input type="hidden" name="confirm_settle" value="1">
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3">
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Competência</span>
+                        <p class="mt-1 text-sm font-extrabold text-[var(--cb-text-main)]">{{.Reference}}</p>
+                    </div>
+                    <div class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3">
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Valor a quitar</span>
+                        <p class="mt-1 text-sm font-extrabold text-amber-600 dark:text-amber-400" data-sensitive>R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</p>
+                    </div>
+                </div>
+
+                <label class="block">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Conta selecionada</span>
+                    <select name="payment_account_id" required data-settle-payment-account class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500">
+                        {{range .PaymentAccounts}}
+                        <option value="{{.ID}}" data-balance-after="R$ {{.BalanceAfterPayment.Reais}}{{.BalanceAfterPayment.Cents}}">{{.Name}} (R$ {{.Money.Reais}}{{.Money.Cents}})</option>
+                        {{end}}
+                    </select>
+                </label>
+                <label class="block">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Data de pagamento</span>
+                    <input type="date" name="payment_date" value="{{.PaymentDateInput}}"
+                        class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500">
+                </label>
+                <div class="rounded-xl bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                    Saldo estimado da conta após pagamento: <span data-settle-balance-after>{{range $idx, $account := .PaymentAccounts}}{{if eq $idx 0}}R$ {{$account.BalanceAfterPayment.Reais}}{{$account.BalanceAfterPayment.Cents}}{{end}}{{end}}</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 pt-1">
+                    <button type="button"
+                        class="btn-tactile flex h-10 items-center justify-center rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] text-xs font-bold text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]"
+                        data-onclick="closeSettlePaymentModal">
+                        Cancelar
+                    </button>
+                    <button type="submit" {{if not .CanSubmitPayment}}disabled{{end}}
+                        class="btn-tactile flex h-10 items-center justify-center gap-2 rounded-xl bg-violet-600 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                        <i data-lucide="check" class="h-4 w-4"></i>Confirmar quitação
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div id="invoice-partial-payment-modal" data-invoice-payment-modal data-pending-cents="{{.PendingAmountInput}}" data-contabase-overlay data-overlay-priority="120" data-overlay-close="closePartialPaymentModal" class="fixed inset-0 z-[120] hidden items-end justify-center bg-black/60 p-4 backdrop-blur-sm md:items-center">
+        <div class="w-full max-w-md rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-5 shadow-2xl">
+            <div class="mb-4 flex items-center justify-between gap-3">
+                <div>
+                    <h3 class="text-sm font-bold text-[var(--cb-text-main)]">Pagamento parcial</h3>
+                    <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Saldo pendente: R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</p>
+                </div>
+                <button type="button" class="btn-tactile flex h-8 w-8 items-center justify-center rounded-xl text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-2)]"
+                    data-onclick="closePartialPaymentModal" aria-label="Fechar">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+
+            <form hx-post="/cartoes/faturas/pagar" hx-target="#faturas-content" hx-swap="outerHTML" class="space-y-3.5">
+                <input type="hidden" name="invoice_id" value="{{.InvoiceID}}">
+                <input type="hidden" name="account_id" value="{{.AccountID}}">
+                <input type="hidden" name="payment_mode" value="partial">
+                <label class="block">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Valor</span>
+                    <input type="text" name="payment_amount" inputmode="decimal" autocomplete="off" placeholder="R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}" data-partial-payment-amount data-money-mask
+                        class="mt-1 h-11 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-sm font-semibold text-[var(--cb-text-main)] focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500">
+                </label>
+                <label class="block">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Conta</span>
+                    <select name="payment_account_id" class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500">
+                        {{range .PaymentAccounts}}
+                        <option value="{{.ID}}">{{.Name}} (R$ {{.Money.Reais}}{{.Money.Cents}})</option>
+                        {{end}}
+                    </select>
+                </label>
+                <label class="block">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Data de pagamento</span>
+                    <input type="date" name="payment_date" value="{{.PaymentDateInput}}"
+                        class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500">
+                </label>
+                <div class="rounded-xl bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                    Saldo restante após este pagamento: <span data-partial-payment-remaining>R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</span>
+                </div>
+                <button type="submit" {{if not .CanSubmitPayment}}disabled{{end}}
+                    class="btn-tactile flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-violet-600 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                    <i data-lucide="check" class="h-4 w-4"></i>Confirmar pagamento
+                </button>
+            </form>
+        </div>
+    </div>
+    {{end}}
+    <div class="mb-3 md:mb-5 bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] px-4 py-3 md:p-5 rounded-xl">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-[var(--cb-text-muted)] mb-2 md:mb-3.5">Faturas do cartão</h3>
+        <div class="flex items-center gap-3 w-full">
+            <a href="{{.MesAnteriorURL}}" hx-get="{{.MesAnteriorURL}}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
+                class="btn-tactile h-9 w-9 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] hover:bg-[var(--cb-surface-3)] flex items-center justify-center text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] shrink-0 shadow-sm transition-all">
+                <i data-lucide="chevron-left" class="w-4 h-4 text-[var(--cb-text-muted)]"></i>
+            </a>
+            <div id="month-selector-container" class="overflow-x-auto scrollbar-hide flex-1">
+                <div class="flex items-center gap-2 min-w-max md:min-w-0 md:w-full py-0.5">
+                    {{range .MonthOptions}}
+                    <a href="{{.URL}}" hx-get="{{.URL}}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
+                        {{if .IsActive}}data-month-active="true"{{end}}
+                        class="btn-tactile rounded-xl px-3 py-1.5 text-center transition-all shrink-0 md:shrink md:flex-1 min-w-[4.5rem] xs:min-w-[5rem] md:min-w-[5.5rem] shadow-sm
+                            {{if .IsActive}}bg-violet-600 text-white shadow-md shadow-violet-600/10{{else if .IsCurrent}}border border-violet-500/20 dark:border-violet-500/30 bg-violet-50/5 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10 dark:hover:bg-violet-500/20{{else}}border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] hover:bg-[var(--cb-surface-3)] text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
+                        <p class="text-[11px] font-extrabold leading-none">{{.Label}}</p>
+                        <p class="text-[8px] font-medium opacity-75 mt-0.5">{{.Year}}</p>
+                    </a>
+                    {{end}}
+                </div>
+            </div>
+            <a href="{{.MesSeguinteURL}}" hx-get="{{.MesSeguinteURL}}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
+                class="btn-tactile h-9 w-9 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] hover:bg-[var(--cb-surface-3)] flex items-center justify-center text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] shrink-0 shadow-sm transition-all">
+                <i data-lucide="chevron-right" class="w-4 h-4 text-[var(--cb-text-muted)]"></i>
+            </a>
+        </div>
+    </div>
+</section>
+{{end}}
+
+{{define "invoice-transactions"}}
+<section id="invoice-transactions" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} class="w-full bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-4 sm:p-6 mt-4 sm:mt-6">
+    <div class="mb-4 sm:mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Lançamentos na Fatura</h2>
+            <p class="mt-1 text-xs text-[var(--cb-text-muted)] leading-normal">Agrupados por dia e ordenados conforme sua preferência.</p>
+        </div>
+        <div class="flex w-full md:w-auto rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-1">
+            <a href="{{.SortRecentURL}}"
+                hx-get="{{.SortRecentURL}}"
+                hx-target="#main-content"
+                hx-select="#main-content"
+                hx-replace-url="true"
+                class="flex-1 md:flex-none flex items-center justify-center text-center rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all duration-150 {{if eq .SortOrder "desc"}}bg-violet-600 text-white shadow-sm shadow-violet-600/10{{else}}text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
+                <span class="block sm:hidden">Recentes</span>
+                <span class="hidden sm:block">Compras recentes</span>
+            </a>
+            <a href="{{.SortChronologicalURL}}"
+                hx-get="{{.SortChronologicalURL}}"
+                hx-target="#main-content"
+                hx-select="#main-content"
+                hx-replace-url="true"
+                class="flex-1 md:flex-none flex items-center justify-center text-center rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all duration-150 {{if eq .SortOrder "asc"}}bg-violet-600 text-white shadow-sm shadow-violet-600/10{{else}}text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
+                <span class="block sm:hidden">Cronológica</span>
+                <span class="hidden sm:block">Ordem cronológica</span>
+            </a>
+        </div>
+    </div>
+    {{if .Transactions}}
+        <div class="space-y-5" data-show-more-group="faturas" data-show-more-initial="{{.InitialVisibleItems}}" data-show-more-total="{{len .Transactions}}" data-show-more-one-way>
+        {{$invoiceID := .InvoiceID}}
+        {{range .TransactionGroups}}
+            <section data-show-more-item="{{.FirstIndex}}" class="space-y-3">
+                <div class="sticky top-[8.75rem] z-[1] rounded-lg bg-[var(--cb-surface-2)] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)] md:top-[8.25rem] border border-[var(--cb-border-subtle)] mb-2.5">
+                    {{.DateLabel}}
+                </div>
+                <div class="space-y-2">
+                {{range .Transactions}}
+                    <div data-show-more-item="{{.ListIndex}}">
+                    {{if .IsProjected}}
+                    <article class="rounded-xl border border-violet-200/40 bg-violet-50/40 p-4 dark:border-violet-500/15 dark:bg-violet-500/[0.04] transition-all hover:-translate-y-0.5 hover:shadow-sm shadow-sm">
+                        <div class="flex items-center gap-3">
+                            <!-- Category icon circle -->
+                            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-{{.CategoryColor}}-500/10 text-{{.CategoryColor}}-600 dark:bg-{{.CategoryColor}}-500/20 dark:text-{{.CategoryColor}}-400 border border-{{.CategoryColor}}-500/10 select-none">
+                                <i data-lucide="{{if and .CategoryIcon (ne .CategoryIcon "tag")}}{{.CategoryIcon}}{{else}}repeat{{end}}" class="w-5 h-5"></i>
+                            </span>
+                            <span class="min-w-0 flex-1">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-center gap-1.5">
+                                            <h4 class="truncate text-sm font-bold text-[var(--cb-text-main)] leading-tight">{{.Description}}</h4>
+                                            <span class="inline-flex rounded bg-violet-100 dark:bg-violet-500/15 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-350 shrink-0 border border-violet-500/10">Previsto</span>
+                                        </div>
+                                        <p class="mt-0.5 truncate text-xs text-[var(--cb-text-muted)]">{{.CategoryName}} · {{.DateLabel}}</p>
+                                    </div>
+                                    <div class="text-right flex-shrink-0">
+                                        <p class="text-sm font-black text-violet-600 dark:text-violet-400" data-sensitive>{{.AmountDisplay}}</p>
+                                        <p class="text-[10px] text-[var(--cb-text-muted)] mt-0.5">{{.TimeDisplay}}</p>
+                                    </div>
+                                </div>
+                            </span>
+                        </div>
+                    </article>
+                    {{else}}
+                    <article id="invoice-tx-{{.ID}}" class="invoice-transaction-row relative overflow-hidden rounded-xl"
+                        data-tx-id="{{.ID}}"
+                        data-swipe-row="true"
+                        data-swipe-left-url="/transacoes/{{.ID}}?invoice_id={{$invoiceID}}"
+                        data-swipe-left-method="DELETE"
+                        data-swipe-left-swap="none"
+                        data-swipe-left-confirm="Remover este lançamento?"
+                        data-swipe-right-url="/transacoes/{{.ID}}/mover-fatura"
+                        data-swipe-right-method="POST"
+                        data-swipe-right-swap="none">
+                        <div data-swipe-bg-left class="absolute inset-y-0 left-0 flex w-28 origin-left items-center justify-start rounded-l-xl bg-red-600 px-6 opacity-0 pointer-events-none">
+                            <i data-lucide="trash-2" class="w-5 h-5 text-white"></i>
+                        </div>
+                        <div data-swipe-bg-right class="absolute inset-y-0 right-0 flex w-32 origin-right items-center justify-end rounded-r-xl bg-blue-600 px-6 opacity-0 pointer-events-none">
+                            <span class="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-white">
+                                <i data-lucide="calendar-plus" class="w-5 h-5"></i>
+                                Mover
+                            </span>
+                        </div>
+                        <div
+                            data-swipe-content
+                            class="relative z-10 flex w-full items-center gap-3 rounded-xl border bg-[var(--cb-surface-2)] p-3.5 text-left transition-all duration-200 border-[var(--cb-border-subtle)] hover:-translate-y-0.5 hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] hover:shadow-sm">
+                            <button type="button"
+                                class="flex min-w-0 flex-1 items-center gap-3 text-left"
+                                hx-get="/transacoes/{{.ID}}/editar?invoice_id={{$invoiceID}}"
+                                hx-target="#bottom-sheet-container"
+                                hx-swap="innerHTML"
+                                hx-push-url="false">
+
+                                <!-- Category icon circle -->
+                                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-{{.CategoryColor}}-500/10 text-{{.CategoryColor}}-600 dark:bg-{{.CategoryColor}}-500/20 dark:text-{{.CategoryColor}}-400 border border-{{.CategoryColor}}-500/10 select-none">
+                                    <i data-lucide="{{if and .CategoryIcon (ne .CategoryIcon "tag")}}{{.CategoryIcon}}{{else}}credit-card{{end}}" class="w-5 h-5"></i>
+                                </span>
+
+                                <span class="min-w-0 flex-1">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <span class="min-w-0 flex-1">
+                                            <h4 class="truncate text-sm font-bold text-[var(--cb-text-main)] leading-tight">{{.Description}}</h4>
+                                            <div class="flex items-center gap-1.5 mt-1 flex-wrap">
+                                                <p class="truncate text-xs text-[var(--cb-text-muted)]">{{.CategoryName}}</p>
+                                                {{if .HasInstallmentInfo}}
+                                                <span class="inline-flex rounded bg-violet-500/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400 border border-violet-500/10">
+                                                    {{if and .IsSeries (le .TotalInstallments 1)}}Recorrente{{else}}{{.InstallmentNumber}}/{{.TotalInstallments}}{{end}}
+                                                </span>
+                                                {{end}}
+                                            </div>
+                                        </span>
+                                        <span class="text-right flex-shrink-0">
+                                            <p class="text-sm font-black {{.AmountClass}}" data-sensitive>{{.AmountDisplay}}</p>
+                                            <p class="text-[10px] text-[var(--cb-text-muted)] mt-0.5">{{.TimeDisplay}}</p>
+                                        </span>
+                                    </div>
+                                </span>
+                            </button>
+                            <button type="button"
+                                hx-post="/transacoes/{{.ID}}/mover-fatura"
+                                hx-swap="none"
+                                hx-indicator="#htmx-indicator"
+                                class="btn-tactile hidden md:inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-600 transition-colors hover:bg-blue-100 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20 shadow-sm"
+                                title="Mover para próxima fatura"
+                                aria-label="Mover para próxima fatura">
+                                <i data-lucide="calendar-plus" class="h-4 w-4"></i>
+                            </button>
+                        </div>
+                    </article>
+                    {{end}}
+                    </div>
+                {{end}}
+                </div>
+            </section>
+        {{end}}
+        {{if gt (len .Transactions) .InitialVisibleItems}}
+        <div data-show-more-toggle-container class="mt-5 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-4 text-center dark:border-violet-500/20 dark:bg-violet-500/[0.06]">
+            <p class="text-sm font-semibold text-[var(--cb-text-main)] dark:text-violet-200">{{.VisibleItemCountLabel}}</p>
+            <p class="mt-1 text-xs text-[var(--cb-text-muted)] dark:text-violet-200/70">{{.HiddenItemCountLabel}}</p>
+            <button data-onclick-ev="toggleShowMore" data-show-more-toggle type="button" class="btn-tactile mt-3 inline-flex items-center justify-center rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-violet-700">
+                {{.LoadMoreButtonLabel}}
+            </button>
+        </div>
+        {{end}}
+        </div>
+    {{else}}
+        <p class="text-sm text-[var(--cb-text-muted)] text-center py-8">Nenhum lançamento nesta fatura ainda.</p>
+    {{end}}
+    <aside class="mt-5 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-4 py-3 text-xs leading-relaxed text-[var(--cb-text-muted)] dark:border-violet-500/10 dark:bg-violet-500/[0.04] dark:text-[var(--cb-text-muted)] flex items-start gap-2">
+        <i data-lucide="help-circle" class="w-4 h-4 shrink-0 text-violet-500 dark:text-violet-400 mt-0.5"></i>
+        <span>
+            <strong class="font-bold text-violet-800 dark:text-violet-200">Dica de Navegação:</strong>
+            Arraste o lançamento para a Esquerda (&larr;) para apagar o registro | Arraste para a Direita (&rarr;) para mover a cobrança para a próxima fatura.
+        </span>
+    </aside>
+</section>
+{{end}}

@@ -1,0 +1,21 @@
+# Não edite este arquivo para customizações locais. Use `docker-compose.override.yml`.
+services:
+  contabase:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-}
+    container_name: contabase_app
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env.docker
+    environment:
+      - DATABASE_URL=file:/app/data/contabase.db
+      - DATA_DIR=/app/data
+      - DB_FILE=/app/data/contabase.db
+      - UPLOADS_DIR=/app/data/uploads
+      - PORT=8080
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

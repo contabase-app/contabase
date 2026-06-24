@@ -1,0 +1,538 @@
+{{define "form-lancamento"}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/sheet-form.css"}}">
+
+<div class="fixed inset-0 z-[100]">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation"></div>
+    <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto md:px-4 md:py-8">
+        <div class="sheet-in sheet-shell relative flex h-[88vh] max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl border md:h-auto md:max-h-[calc(100vh-4rem)] md:rounded-xl">
+        <div class="sheet-drag mx-auto mt-4 h-1 w-10 rounded-full md:hidden"></div>
+        <div class="sheet-topbar flex items-center gap-3 px-4 pb-3 pt-4 sm:px-6 md:pt-5">
+            <div class="sheet-tabs grid min-w-0 flex-1 grid-cols-3 gap-1 rounded-xl border p-1">
+                <button type="button" data-type="despesa" class="tab-button h-11 rounded-lg px-1 text-[10px] font-bold uppercase tracking-wide transition-all duration-150 sm:text-[11px] {{if or (eq .TipoInicial "") (eq .TipoInicial "despesa")}}is-active-despesa{{end}}">
+                    <span class="flex items-center justify-center gap-1.5"><i data-lucide="minus-circle" class="h-3.5 w-3.5"></i>Despesa</span>
+                </button>
+                <button type="button" data-type="receita" class="tab-button h-11 rounded-lg px-1 text-[10px] font-bold uppercase tracking-wide transition-all duration-150 sm:text-[11px] {{if eq .TipoInicial "receita"}}is-active-receita{{end}}">
+                    <span class="flex items-center justify-center gap-1.5"><i data-lucide="plus-circle" class="h-3.5 w-3.5"></i>Receita</span>
+                </button>
+                <button type="button" data-type="transferencia" class="tab-button h-11 rounded-lg px-1 text-[10px] font-bold uppercase tracking-wide transition-all duration-150 sm:text-[11px] {{if eq .TipoInicial "transferencia"}}is-active-transferencia{{end}}">
+                    <span class="flex items-center justify-center gap-1 sm:gap-1.5">
+                        <i data-lucide="arrow-left-right" class="hidden h-3.5 w-3.5 sm:block"></i>
+                        <span>Transferir</span>
+                    </span>
+                </button>
+            </div>
+            <button type="button" class="sheet-close-btn flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-all active:scale-95" data-onclick="closeBottomSheet" aria-label="Fechar">
+                <i data-lucide="x" class="h-5 w-5"></i>
+            </button>
+        </div>
+        <div class="flex-1 overflow-y-auto scrollbar-hide px-4 pb-24 pt-2 sm:px-6">
+        <form id="lancamento-form" {{if and .IsEdit .ReturnInvoiceID}}hx-post="/transacoes/{{.EditID}}/salvar" hx-swap="none"{{else if .IsEdit}}hx-put="/transacoes/{{.EditID}}" hx-target="#tx-{{.EditID}}" hx-swap="outerHTML"{{else}}hx-post="/transacoes" hx-swap="none"{{end}} hx-indicator="#htmx-indicator" class="sheet-form space-y-3" data-series-edit="{{if .IsSeriesEdit}}true{{else}}false{{end}}" enctype="multipart/form-data">
+            <input id="tipoLancamento" type="hidden" name="tipo" value="{{if .TipoInicial}}{{.TipoInicial}}{{else}}despesa{{end}}">
+            {{if .ReturnInvoiceID}}<input type="hidden" name="return_invoice_id" value="{{.ReturnInvoiceID}}">{{end}}
+            <input id="origemContaId" type="hidden" name="origem_conta_id" value="{{.OrigemContaID}}">
+            <input id="origemTipo" type="hidden" name="origem_tipo" value="{{if .OrigemTipo}}{{.OrigemTipo}}{{else}}conta{{end}}">
+            <input id="destinoContaId" type="hidden" name="destino_conta_id" value="{{.DestinoContaID}}">
+            <input id="escopoEdicao" type="hidden" name="escopo_edicao" value="single">
+            <input id="permitirExcedenteCaixinha" type="hidden" name="permitir_excedente_caixinha" value="0">
+            <input id="csrfToken" type="hidden" name="csrf_token" value="">
+            <div id="lancamento-form-error" class="hidden"></div>
+
+            <div class="sheet-amount-panel py-4 text-center relative">
+                <label for="valor" class="sr-only">Valor</label>
+                <div id="valor-input" class="relative inline-flex w-full max-w-[22rem] items-center justify-center gap-3 rounded-xl border border-transparent p-2 transition-colors sm:max-w-[26rem]">
+                    <input id="valor" name="valor" type="text" inputmode="decimal" autocomplete="off" placeholder="R$ 0,00" autofocus
+                        class="sheet-amount-input min-w-0 flex-1 bg-transparent text-center text-4xl font-black tracking-tight outline-none placeholder:font-black sm:text-5xl"
+                        value="{{.ValorPreenchido}}">
+                    <input id="statusPagamentoHidden" type="hidden" name="status_pagamento" value="{{if .StatusInicial}}{{.StatusInicial}}{{else}}paid{{end}}">
+                    <button type="button" id="statusPagamentoBtn"
+                        class="sheet-status-btn flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border transition-all active:scale-95 {{if eq .StatusInicial "pending"}}is-pending{{else}}is-paid{{end}}"
+                        title="{{if eq .StatusInicial "pending"}}Pendente — toque para marcar como pago{{else}}Pago — toque para marcar como pendente{{end}}"
+                        aria-label="{{if eq .StatusInicial "pending"}}Pendente — toque para marcar como pago{{else}}Pago — toque para marcar como pendente{{end}}"
+                        aria-pressed="{{if eq .StatusInicial "pending"}}false{{else}}true{{end}}">
+                        <span id="statusPagamentoPaidIcon" class="flex items-center justify-center{{if eq .StatusInicial "pending"}} hidden{{end}}">
+                            <i data-lucide="check-circle-2" class="w-5 h-5 text-emerald-400"></i>
+                        </span>
+                        <span id="statusPagamentoPendingIcon" class="flex items-center justify-center{{if ne .StatusInicial "pending"}} hidden{{end}}">
+                            <i data-lucide="clock-3" class="w-5 h-5 text-amber-400"></i>
+                        </span>
+                    </button>
+                </div>
+                <div id="valor-error" class="field-error mt-1 text-xs font-medium text-rose-400 hidden"></div>
+            </div>
+
+            <div class="space-y-3">
+                <label class="relative block">
+                    <div class="flex items-center justify-between">
+                        <span class="sr-only">Descrição</span>
+                        <span id="descricaoLancamento-error" class="field-error text-[0.65rem] font-medium text-rose-400 hidden mb-1 block"></span>
+                    </div>
+                    <input id="descricaoLancamento" type="text" name="descricao" placeholder="{{if .IsBusiness}}Ex: Prestação de Serviços, Nota Fiscal, Honorários ou Compra de Matéria-Prima{{else}}Mercado do Mês{{end}}"
+                        class="sheet-control h-14 w-full rounded-xl border px-4 pr-11 text-sm font-medium outline-none transition-all"
+                        value="{{.DescricaoPreenchida}}">
+                    <span class="sheet-control-icon pointer-events-none absolute inset-y-0 right-4 flex items-center">
+                        <i data-lucide="notepad-text" class="h-4 w-4"></i>
+                    </span>
+                    <div id="sugestoes-container" class="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-[130]"></div>
+                </label>
+                <label class="block">
+                    <span class="sheet-label mb-1.5 block">Data de competência</span>
+                    <span class="relative block">
+                        <span class="sheet-control-icon pointer-events-none absolute inset-y-0 left-4 flex items-center">
+                            <i data-lucide="calendar" class="h-4 w-4"></i>
+                        </span>
+                        <input id="dataLancamento" type="date" name="data" value="{{.DataPreenchida}}" data-auto-payment-default="{{if .IsEdit}}false{{else}}true{{end}}"
+                            data-onclick-el="showPicker"
+                            class="sheet-control h-14 w-full rounded-xl border px-11 text-sm font-semibold outline-none transition-all">
+                        <span class="sheet-control-icon pointer-events-none absolute inset-y-0 right-4 flex items-center">
+                            <i data-lucide="chevron-down" class="h-4 w-4"></i>
+                        </span>
+                    </span>
+                </label>
+            </div>
+
+            {{if .IsBusiness}}
+            <section class="sheet-card rounded-xl border p-4 space-y-3">
+                <div id="dueDateSection" class="{{if ne .StatusInicial "pending"}}hidden{{end}}" aria-hidden="{{if eq .StatusInicial "pending"}}false{{else}}true{{end}}">
+                    <label class="block">
+                        <span class="sheet-label">Data de vencimento</span>
+                        <input id="dueDateInput" type="date" name="due_date" value="{{.DueDatePreenchida}}" data-onclick-el="showPicker" class="sheet-control mt-1 h-11 w-full rounded-xl border px-3 text-sm outline-none">
+                    </label>
+                </div>
+                <label class="block">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="sheet-label">Contato</span>
+                        <span id="contato-error" class="field-error text-[0.65rem] font-medium text-rose-400 hidden"></span>
+                    </div>
+                    <input type="hidden" name="contact_id" value="{{.ContatoIDPreenchido}}">
+                    <div id="contatoCombobox" class="relative">
+                        <input type="text"
+                            id="contato-input"
+                            value="{{range .Contacts}}{{if eq .ID $.ContatoIDPreenchido}}{{.Name}}{{if .Document}} · {{.Document}}{{end}}{{end}}{{end}}"
+                            placeholder="Digite nome, CNPJ/CPF ou telefone"
+                            role="combobox"
+                            aria-autocomplete="list"
+                            aria-expanded="false"
+                            aria-controls="contato-options"
+                            aria-describedby="contato-error"
+                            class="sheet-control h-11 w-full rounded-xl border px-3 text-sm outline-none">
+                        <div id="contato-options" class="sheet-popover hidden absolute left-0 right-0 top-[calc(100%+0.4rem)] z-[140] max-h-44 overflow-y-auto rounded-xl border p-1">
+                            <button type="button"
+                                class="sheet-popover-option flex w-full items-center rounded-lg px-2.5 py-2 text-left text-xs"
+                                value="">
+                                Sem contato
+                            </button>
+                            {{range .Contacts}}
+                            <button type="button"
+                                class="sheet-popover-option js-contact-option flex w-full items-center rounded-lg px-2.5 py-2 text-left text-xs"
+                                value="{{.ID}}">
+                                <span class="js-contact-name">{{.Name}}</span>
+                                <span class="text-[var(--cb-text-muted)]">&nbsp;· {{.TypeLabel}}</span>
+                                <span class="js-contact-document hidden">{{.Document}}</span>
+                                <span class="js-contact-phone hidden">{{.Phone}}</span>
+                            </button>
+                            {{end}}
+                            <p id="contato-empty" class="hidden px-2.5 py-2 text-xs text-[var(--cb-text-muted)]">Nenhum contato encontrado.</p>
+                        </div>
+                    </div>
+                </label>
+            </section>
+            {{end}}
+
+            <button id="origemPicker" type="button"
+                class="sheet-picker flex w-full items-center justify-between gap-3 rounded-xl border p-4 text-left">
+                <span class="flex min-w-0 items-center gap-3">
+                    <span id="origemIconWrap" class="sheet-picker-icon flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border emblem-wrap-solid select-none" style="--ic: {{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}}">
+                        {{if .OrigemProviderMark}}
+                        <span id="origemIconText" class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .OrigemProviderMark}}" style="color: var(--emblem-color, {{.OrigemColor}})">{{.OrigemProviderMark}}</span>
+                        <i id="origemIcon" class="hidden h-4 w-4 icon-colored" style="--ic: var(--emblem-color, {{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}})"></i>
+                        {{else}}
+                        <span id="origemIconText" class="hidden font-bold uppercase tracking-wider select-none emblem-text" style="color: var(--emblem-color, {{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}})"></span>
+                        <i id="origemIcon" data-lucide="{{if .OrigemIcon}}{{.OrigemIcon}}{{else}}wallet{{end}}" class="h-4 w-4 icon-colored" style="--ic: var(--emblem-color, {{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}})"></i>
+                        {{end}}
+                    </span>
+                    <span class="min-w-0">
+                        <span id="origemLabel" class="sheet-label block">Conta de origem</span>
+                        <span id="origemNome" class="sheet-primary-text block truncate text-sm font-semibold">{{if .OrigemNome}}{{.OrigemNome}}{{else}}Conta de origem{{end}}</span>
+                    </span>
+                </span>
+                <i data-lucide="chevron-down" class="h-4 w-4 flex-shrink-0 text-[var(--cb-text-muted)]"></i>
+            </button>
+
+            <p id="faturaAviso" class="hidden rounded-xl border border-sky-500/25 bg-sky-500/10 px-3 py-2.5 text-xs font-medium text-sky-700 dark:text-sky-300"></p>
+
+            <div id="faturaSelector" class="hidden">
+                <div class="pt-1">
+                    <button type="button" class="text-xs font-medium transition-colors underline underline-offset-4 text-indigo-400 hover:text-indigo-300 decoration-indigo-400/30">+ Lançar na próxima fatura!</button>
+                </div>
+                <input type="hidden" name="fatura_offset" value="auto">
+            </div>
+
+            <button id="destinoPicker" type="button"
+                class="sheet-picker hidden w-full items-center justify-between gap-3 rounded-xl border p-4 text-left">
+                <span class="flex min-w-0 items-center gap-3">
+                    <span id="destinoIconWrap" class="sheet-picker-icon flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border emblem-wrap-solid select-none" style="--ic: {{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}}">
+                        {{if .DestinoProviderMark}}
+                        <span id="destinoIconText" class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .DestinoProviderMark}}" style="color: var(--emblem-color, {{.DestinoColor}})">{{.DestinoProviderMark}}</span>
+                        <i id="destinoIcon" class="hidden h-4 w-4 icon-colored" style="--ic: var(--emblem-color, {{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}})"></i>
+                        {{else}}
+                        <span id="destinoIconText" class="hidden font-bold uppercase tracking-wider select-none emblem-text" style="color: var(--emblem-color, {{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}})"></span>
+                        <i id="destinoIcon" data-lucide="{{if .DestinoIcon}}{{.DestinoIcon}}{{else}}wallet{{end}}" class="h-4 w-4 icon-colored" style="--ic: var(--emblem-color, {{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}})"></i>
+                        {{end}}
+                    </span>
+                    <span class="min-w-0">
+                        <span class="sheet-label block">Conta de destino</span>
+                        <span id="destinoNome" class="sheet-primary-text block truncate text-sm font-semibold">{{if .DestinoNome}}{{.DestinoNome}}{{else}}Conta de destino{{end}}</span>
+                    </span>
+                </span>
+                <i data-lucide="chevron-down" class="h-4 w-4 flex-shrink-0 text-[var(--cb-text-muted)]"></i>
+            </button>
+
+            <div id="categoriaPicker" class="space-y-1.5 relative">
+                <div class="flex items-center justify-between">
+                    <span class="sheet-label block">Categoria</span>
+                    <span id="categoria-error" class="field-error text-[0.65rem] font-medium text-rose-400 hidden"></span>
+                </div>
+                <button type="button"
+                    hx-get="/api/categorias/seletor"
+                    hx-target="#picker-modal-container"
+                    hx-swap="beforeend"
+                    hx-include="[name='tipo']"
+                    hx-push-url="false"
+                    class="sheet-picker flex w-full items-center justify-between gap-3 rounded-xl border p-4 text-left">
+                    <span class="flex min-w-0 items-center gap-3">
+                        <span id="categoriaIconWrap" class="sheet-picker-icon flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border {{if .CategoriaColor}}icon-wrap-colored{{end}}" style="{{if .CategoriaColor}}--ic: {{.CategoriaColor}}{{end}}">
+                            <i id="categoriaIcon" data-lucide="{{if .CategoriaIcon}}{{.CategoriaIcon}}{{else}}tag{{end}}" class="h-4 w-4 {{if .CategoriaColor}}icon-colored{{else}}text-[var(--cb-text-muted)]{{end}}" style="{{if .CategoriaColor}}--ic: {{.CategoriaColor}}{{end}}"></i>
+                        </span>
+                        <span class="min-w-0">
+                            <span id="categoriaNome" class="sheet-primary-text block truncate text-sm font-semibold">{{if .CategoriaNome}}{{.CategoriaNome}}{{else}}Selecione uma categoria{{end}}</span>
+                        </span>
+                    </span>
+                    <i data-lucide="chevron-down" class="h-4 w-4 flex-shrink-0 text-[var(--cb-text-muted)]"></i>
+                </button>
+                <input id="categoriaId" type="hidden" name="categoria_id" value="{{.CategoriaID}}">
+                <input id="categoriaType" type="hidden" name="categoria_type" value="{{.CategoriaType}}">
+
+            </div>
+
+            <div id="categoryLimitInfo" class="hidden rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 py-2">
+                <p class="text-[0.65rem] leading-relaxed text-[var(--cb-text-muted)]">
+                    <span class="font-semibold text-[var(--cb-text-main)]">Limite:</span>
+                    <span id="limitInfoText"></span>
+                </p>
+                <p id="limitOverdraftWarn" class="hidden text-[0.65rem] leading-relaxed text-amber-500 mt-0.5">
+                    Atenção: este lançamento pode ultrapassar o limite da categoria.
+                </p>
+            </div>
+            <div id="categoryReserveInfo" class="hidden rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 py-2">
+                <p class="text-[0.65rem] leading-relaxed text-[var(--cb-text-muted)]">
+                    <span class="font-semibold text-[var(--cb-text-main)]">Reserva:</span>
+                    <span id="reserveInfoText"></span>
+                </p>
+                <p class="text-[0.65rem] leading-relaxed text-[var(--cb-text-muted)] mt-0.5">Esta despesa consumirá automaticamente essa reserva.</p>
+            </div>
+
+            <section id="boxOverdraftWarning" class="hidden rounded-xl border border-amber-500/25 bg-amber-500/10 p-4">
+                <label class="flex items-start gap-3">
+                    <input id="allowBoxOverdraftCheckbox" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-amber-500/40 bg-zinc-900 text-amber-400 focus:ring-amber-400">
+                    <span class="text-xs leading-relaxed text-amber-900 dark:text-amber-100">
+                        Esta despesa ultrapassa o Saldo da sua Reserva. Ao confirmar, a despesa será mantida no seu histórico e a reserva ficara com saldo negativo (excedente) até que você faça um novo aporte.
+                    </span>
+                </label>
+            </section>
+
+            <section class="sheet-card sheet-toggle-card rounded-xl border p-4">
+                <input id="parcelada" name="parcelada" type="checkbox" class="toggle-input sr-only">
+                <label for="parcelada" class="toggle-label flex items-center justify-between gap-4">
+                    <span class="flex min-w-0 items-center gap-3">
+                        <span class="sheet-feature-icon text-[var(--cb-text-muted)]">
+                            <i data-lucide="receipt-text" class="h-4 w-4"></i>
+                        </span>
+                        <span class="min-w-0">
+                        <span id="parcelamentoTitulo" class="sheet-primary-text block text-sm font-medium leading-relaxed mb-0.5">Esta despesa é parcelada?</span>
+                        <span id="parcelasResumo" class="sheet-muted-text block text-xs mt-0.5">Ative para escolher de 2x até 12x</span>
+                        </span>
+                    </span>
+                    <span class="toggle-track relative h-6 w-11 flex-shrink-0 rounded-full border transition-colors">
+                        <span class="toggle-knob absolute left-0.5 top-0.5 h-5 w-5 rounded-full transition-transform"></span>
+                    </span>
+                </label>
+                <div id="parcelasBox" class="mt-3 hidden">
+                    <label for="parcelas" class="sheet-label mb-1.5 block">Quantidade de parcelas</label>
+                    <select id="parcelas" name="parcelas"
+                        class="sheet-select h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none">
+                        {{range $i := intRange 2 12}}
+                        <option value="{{$i}}">{{$i}}x</option>
+                        {{end}}
+                    </select>
+                </div>
+            </section>
+
+            <section class="sheet-card sheet-toggle-card rounded-xl border p-4">
+                <input id="lancamentoFixo" name="lancamento_fixo" type="checkbox" class="toggle-input sr-only" {{if .FixoInicial}}checked{{end}}>
+                <label for="lancamentoFixo" class="toggle-label flex items-center justify-between gap-4">
+                    <span class="flex min-w-0 items-center gap-3">
+                        <span class="sheet-feature-icon text-[var(--cb-text-muted)]">
+                            <i data-lucide="repeat-2" class="h-4 w-4"></i>
+                        </span>
+                        <span class="min-w-0">
+                        <span id="fixoTitulo" class="sheet-primary-text block text-sm font-medium">Lançamento fixo</span>
+                        <span class="sheet-muted-text block text-xs">Repete sem quantidade final definida</span>
+                        </span>
+                    </span>
+                    <span class="toggle-track relative h-6 w-11 flex-shrink-0 rounded-full border transition-colors">
+                        <span class="toggle-knob absolute left-0.5 top-0.5 h-5 w-5 rounded-full transition-transform"></span>
+                    </span>
+                </label>
+                <div id="recorrenciaBox" class="mt-3 hidden">
+                    <label for="recorrencia" class="sheet-label mb-1.5 block">Frequência</label>
+                    <select id="recorrencia" name="recorrencia"
+                        class="sheet-select h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none">
+                        <option value="DAILY" {{if eq .RecorrenciaInicial "DAILY"}}selected{{end}}>Diário</option>
+                        <option value="WEEKLY" {{if eq .RecorrenciaInicial "WEEKLY"}}selected{{end}}>Semanal</option>
+                        <option value="BIWEEKLY" {{if eq .RecorrenciaInicial "BIWEEKLY"}}selected{{end}}>Quinzenal</option>
+                        <option value="MONTHLY" {{if or (eq .RecorrenciaInicial "") (eq .RecorrenciaInicial "MONTHLY")}}selected{{end}}>Mensal</option>
+                        <option value="BIMONTHLY" {{if eq .RecorrenciaInicial "BIMONTHLY"}}selected{{end}}>Bimestral</option>
+                        <option value="QUARTERLY" {{if eq .RecorrenciaInicial "QUARTERLY"}}selected{{end}}>Trimestral</option>
+                        <option value="SEMIANNUAL" {{if eq .RecorrenciaInicial "SEMIANNUAL"}}selected{{end}}>Semestral</option>
+                        <option value="ANNUAL" {{if eq .RecorrenciaInicial "ANNUAL"}}selected{{end}}>Anual</option>
+                    </select>
+                </div>
+                <div id="totalOccurrencesBox" class="mt-3 hidden">
+                    <label for="totalOccurrences" class="sheet-label mb-1.5 block">Total de repeticoes</label>
+                    <input id="totalOccurrences" name="total_occurrences" type="number" min="2" max="360" placeholder="Deixe vazio para infinito"
+                        class="sheet-control h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none">
+                    <p class="sheet-muted-text text-xs mt-1">Deixe vazio para repetir sem limite de quantidade</p>
+                </div>
+            </section>
+
+            <section class="sheet-card rounded-xl border p-2">
+                <button type="button" id="detalhesAdicionaisToggle" aria-expanded="{{if or .AnotacoesPreenchidas .AttachmentViewURL}}true{{else}}false{{end}}"
+                    class="sheet-details-toggle flex h-12 w-full items-center justify-between rounded-lg px-3 text-left text-sm font-medium transition-colors active:scale-[0.98]">
+                    <span class="flex items-center gap-3">
+                        <span class="sheet-feature-icon h-9 w-9 text-[var(--cb-text-muted)]"><i data-lucide="list-todo" class="h-4 w-4"></i></span>
+                        Detalhes adicionais
+                    </span>
+                    <span id="detalhesAdicionaisIcon" class="flex h-4 w-4 items-center justify-center transition-transform{{if or .AnotacoesPreenchidas .AttachmentViewURL}} rotate-180{{end}}">
+                        <i data-lucide="chevron-down" class="h-4 w-4"></i>
+                    </span>
+                </button>
+                <div id="detalhesAdicionaisBody" class="space-y-3 px-2 pb-2 pt-2{{if or .AnotacoesPreenchidas .AttachmentViewURL}}{{else}} hidden{{end}}">
+                    <label class="block">
+                        <span class="sheet-label mb-1.5 block">Anotações</span>
+                        <textarea name="anotacoes" rows="4" placeholder="Observações, contexto, comprovante..."
+                            class="sheet-control w-full resize-none rounded-xl border px-3 py-2.5 text-sm outline-none">{{.AnotacoesPreenchidas}}</textarea>
+                    </label>
+                    <label class="block">
+                        <span class="sheet-label mb-1.5 block">Anexar Arquivo</span>
+                        <input type="file" name="anexo"
+                            class="sheet-file-input block w-full rounded-xl border border-dashed px-3 py-2.5 text-xs file:mr-3 file:rounded-lg file:border-0 file:px-3 file:py-1.5 file:text-xs file:font-semibold">
+                    </label>
+                    {{if .AttachmentViewURL}}
+                    <div class="flex items-center gap-2 rounded-xl border border-violet-500/15 bg-violet-500/10 px-3 py-2.5 text-xs text-violet-700 dark:text-violet-200">
+                        <i data-lucide="paperclip" class="h-4 w-4 shrink-0"></i>
+                        <span class="min-w-0 flex-1 truncate">Anexo salvo</span>
+                        <a href="{{.AttachmentViewURL}}" target="_blank" rel="noopener" class="rounded-lg bg-[var(--cb-surface-1)] px-2 py-1 font-semibold text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]">Ver</a>
+                        <a href="{{.AttachmentDownloadURL}}" class="rounded-lg bg-violet-500/15 px-2 py-1 font-semibold text-violet-700 dark:text-violet-100">Baixar</a>
+                    </div>
+                    {{end}}
+                </div>
+            </section>
+
+            {{if .IsEdit}}
+            <section class="sheet-card rounded-xl border px-4 py-3 text-xs leading-relaxed">
+                <p><span class="font-medium text-[var(--cb-text-muted)]">Lançado por:</span> {{if .AuditCreatedBy}}{{.AuditCreatedBy}}{{else}}-{{end}}</p>
+                <p class="mt-1"><span class="font-medium text-[var(--cb-text-muted)]">Última alteração:</span> {{if .AuditUpdatedAt}}{{.AuditUpdatedAt}}{{else}}-{{end}}</p>
+            </section>
+            {{end}}
+
+            <div class="pt-2 {{if .IsEdit}}flex items-center justify-end{{else}}hidden{{end}}">
+                {{if .IsEdit}}
+                <button type="button"
+                    {{if .IsSeriesEdit}}
+                    data-series-delete-open
+                    {{else}}
+                    hx-delete="/transacoes/{{.EditID}}?escopo=single{{if .ReturnInvoiceID}}&invoice_id={{.ReturnInvoiceID}}&from_sheet=1{{end}}"
+                    {{if .ReturnInvoiceID}}hx-swap="none"{{else}}hx-target="#tx-{{.EditID}}" hx-swap="delete"{{end}}
+                    hx-confirm="Remover este lançamento?"
+                    data-hx-after="closeBottomSheet"
+                    {{end}}
+                    class="h-11 w-11 flex items-center justify-center rounded-xl border border-rose-500/20 bg-rose-500/10 text-rose-400 transition-all hover:bg-rose-500/20 active:scale-95"
+                    aria-label="Excluir lançamento">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+                {{end}}
+                {{if .ReturnInvoiceID}}
+                <button type="button"
+                    hx-post="/transacoes/{{.EditID}}/mover-fatura"
+                    hx-swap="none"
+                    hx-indicator="#htmx-indicator"
+                    hx-confirm="Mover este lançamento para a próxima fatura?"
+                    class="h-11 w-11 flex items-center justify-center rounded-xl border border-indigo-500/20 bg-indigo-500/10 text-indigo-400 transition-all hover:bg-indigo-500/20 active:scale-95"
+                    aria-label="Mover para próxima fatura">
+                    <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+                </button>
+                {{end}}
+            </div>
+        {{if and .IsEdit .IsSeriesEdit}}
+        <div id="seriesScopeModal" data-contabase-overlay data-overlay-priority="130" data-overlay-close="closeLancamentoSeriesScopeModal" data-overlay-close-method="hidden" class="hidden fixed inset-0 z-[130] flex items-center justify-center sheet-series-overlay p-4">
+            <div class="sheet-series-card w-full max-w-md p-5 shadow-sm">
+                <p class="sheet-series-kicker text-xs font-semibold uppercase tracking-wide">Recorrência detectada</p>
+                <h3 class="mt-2 text-sm font-bold text-[var(--cb-text-main)]">Este lançamento faz parte de uma recorrência.</h3>
+                <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Como deseja aplicar as alterações de valor, nome ou vencimento?</p>
+                <div class="mt-4 space-y-2">
+                    <label class="sheet-series-option flex cursor-pointer items-start gap-2 p-3">
+                        <input type="radio" name="escopo_choice" value="single" checked class="sheet-series-radio-scope mt-0.5 h-4 w-4">
+                        <span class="text-xs text-[var(--cb-text-main)]">Apenas neste lançamento</span>
+                    </label>
+                    <label class="sheet-series-option flex cursor-pointer items-start gap-2 p-3">
+                        <input type="radio" name="escopo_choice" value="future" class="sheet-series-radio-scope mt-0.5 h-4 w-4">
+                        <span class="text-xs text-[var(--cb-text-main)]">Neste e nos lançamentos futuros</span>
+                    </label>
+                    <label class="sheet-series-option flex cursor-pointer items-start gap-2 p-3">
+                        <input type="radio" name="escopo_choice" value="all" class="sheet-series-radio-scope mt-0.5 h-4 w-4">
+                        <span class="text-xs text-[var(--cb-text-main)]">Em toda a série (incluindo passados)</span>
+                    </label>
+                </div>
+                <div class="mt-4 flex items-center justify-end gap-2">
+                    <button type="button" data-series-scope-cancel class="sheet-series-action sheet-series-action-cancel">Cancelar</button>
+                    <button type="button" data-series-scope-confirm class="sheet-series-action sheet-series-action-confirm">
+                        Aplicar alterações
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div id="seriesDeleteModal" data-contabase-overlay data-overlay-priority="140" data-overlay-close="closeLancamentoSeriesDeleteModal" data-overlay-close-method="hidden" class="hidden fixed inset-0 z-[140] flex items-center justify-center sheet-series-overlay p-4">
+            <div class="sheet-series-card w-full max-w-md p-5 shadow-sm">
+                <p class="sheet-series-kicker-danger text-xs font-semibold uppercase tracking-wide">Excluir recorrência</p>
+                <h3 class="mt-2 text-sm font-bold text-[var(--cb-text-main)]">Este lançamento faz parte de uma série.</h3>
+                <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Quantos lançamentos deseja excluir?</p>
+                <div class="mt-4 space-y-2">
+                    <label class="sheet-series-option flex cursor-pointer items-start gap-2 p-3">
+                        <input type="radio" name="delete_choice" value="single" checked class="sheet-series-radio-danger mt-0.5 h-4 w-4">
+                        <div>
+                            <span class="block text-xs font-medium text-[var(--cb-text-main)]">Apenas este lançamento</span>
+                            <span class="text-[0.65rem] text-[var(--cb-text-muted)]">Remove somente a ocorrência atual</span>
+                        </div>
+                    </label>
+                    <label class="sheet-series-option flex cursor-pointer items-start gap-2 p-3">
+                        <input type="radio" name="delete_choice" value="future" class="sheet-series-radio-danger mt-0.5 h-4 w-4">
+                        <div>
+                            <span class="block text-xs font-medium text-[var(--cb-text-main)]">Este e os próximos</span>
+                            <span class="text-[0.65rem] text-[var(--cb-text-muted)]">Remove a partir desta ocorrência</span>
+                        </div>
+                    </label>
+                    <label class="sheet-series-option flex cursor-pointer items-start gap-2 p-3">
+                        <input type="radio" name="delete_choice" value="all" class="sheet-series-radio-danger mt-0.5 h-4 w-4">
+                        <div>
+                            <span class="block text-xs font-medium text-[var(--cb-text-main)]">Toda a série</span>
+                            <span class="text-[0.65rem] text-[var(--cb-text-muted)]">Remove todos os lançamentos da série</span>
+                        </div>
+                    </label>
+                </div>
+                <div class="mt-4 flex items-center justify-end gap-2">
+                    <button type="button" data-series-delete-cancel class="sheet-series-action sheet-series-action-cancel">Cancelar</button>
+                    <button type="button"
+                        data-series-delete-confirm
+                        data-transaction-id="{{.EditID}}"
+                        data-return-invoice-id="{{.ReturnInvoiceID}}"
+                        class="sheet-series-action sheet-series-action-danger"
+                        data-return-invoice="{{if .ReturnInvoiceID}}true{{else}}false{{end}}">
+                        Confirmar exclusão
+                    </button>
+                </div>
+            </div>
+        </div>
+        {{end}}
+        </form>
+        </div>
+        <button type="submit"
+            form="lancamento-form"
+            class="sheet-submit-bubble absolute bottom-6 left-1/2 z-50 flex h-14 w-14 -translate-x-1/2 items-center justify-center rounded-full text-white transition-all duration-150 active:scale-95 cursor-pointer"
+            aria-label="Confirmar">
+            <i data-lucide="check" class="h-6 w-6"></i>
+        </button>
+        </div>
+    </div>
+</div>
+
+<div id="formModalBackdrop" data-contabase-overlay data-overlay-priority="110" data-overlay-close-method="hidden" class="fixed inset-0 z-[110] hidden bg-black/80 md:px-4 md:py-6">
+    <section id="origemModal" class="hidden mx-auto flex h-full max-w-md items-end md:max-w-xl md:items-start">
+        <div class="w-full rounded-t-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-5 md:mx-auto md:my-12 md:rounded-xl">
+            <div class="mb-5 flex items-center justify-between gap-4">
+                <div>
+                    <p id="origemModalTitle" class="text-sm font-semibold text-[var(--cb-text-main)]">Conta de origem</p>
+                    <p class="mt-0.5 text-xs text-[var(--cb-text-muted)]">Escolha uma conta ou cartão</p>
+                </div>
+                <button type="button" data-close-modal class="sheet-close-btn flex h-8 w-8 items-center justify-center rounded-full border">
+                    <i data-lucide="x" class="h-4 w-4 text-[var(--cb-text-muted)]"></i>
+                </button>
+            </div>
+            <div class="max-h-[60vh] overflow-y-auto pr-1 space-y-4">
+                <div class="space-y-1.5">
+                    <p class="px-1 text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--cb-text-muted)]">Contas</p>
+                    {{range .Accounts}}{{if eq .Tipo "conta"}}
+                    <button type="button" data-origin-kind="conta" data-origin-id="{{.ID}}" data-origin-name="{{.Name}}" data-origin-icon="{{.Icon}}" data-origin-color="{{.Color}}" data-origin-provider="{{.ProviderSlug}}" data-origin-provider-mark="{{.ProviderMark}}"
+                        class="origin-option flex w-full items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 text-left text-sm font-medium text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]">
+                        {{if eq .ProviderSlug "custom"}}
+                        <span class="flex h-9 w-9 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+                            <i data-lucide="landmark" class="h-4 w-4 icon-colored" style="--ic: {{.Color}}"></i>
+                        </span>
+                        {{else}}
+                        <span class="inline-flex h-7 min-w-[2.6rem] flex-shrink-0 items-center justify-center rounded-md border px-1.5 text-[0.62rem] font-bold uppercase tracking-wide text-white badge-colored" style="--ic: {{.Color}}">{{.ProviderMark}}</span>
+                        {{end}}
+                        {{.Name}}
+                    </button>
+                    {{end}}{{end}}
+                </div>
+                <div id="cartoesModalGroup" class="space-y-1.5">
+                    <p class="px-1 text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--cb-text-muted)]">Cartões</p>
+                    {{range .Accounts}}{{if eq .Tipo "cartao"}}
+                    <button type="button" data-origin-kind="cartao" data-origin-id="{{.ID}}" data-origin-name="{{.Name}}" data-origin-icon="{{.Icon}}" data-origin-color="{{.Color}}" data-origin-provider="{{.ProviderSlug}}" data-closing-day="{{.ClosingDay}}" data-due-day="{{.DueDay}}" data-origin-provider-mark="{{.ProviderMark}}"
+                        class="origin-option flex w-full items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 text-left text-sm font-medium text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]">
+                        {{if eq .ProviderSlug "custom"}}
+                        <span class="flex h-9 w-9 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+                            <i data-lucide="landmark" class="h-4 w-4 icon-colored" style="--ic: {{.Color}}"></i>
+                        </span>
+                        {{else}}
+                        <span class="inline-flex h-7 min-w-[2.6rem] flex-shrink-0 items-center justify-center rounded-md border px-1.5 text-[0.62rem] font-bold uppercase tracking-wide text-white badge-colored" style="--ic: {{.Color}}">{{.ProviderMark}}</span>
+                        {{end}}
+                        {{.Name}}
+                    </button>
+                    {{end}}{{end}}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div id="categoriaModal" class="hidden">
+        {{range .Categories}}
+        <span class="category-option" data-category-id="{{.ID}}" data-category-name="{{.Name}}" data-category-icon="{{.Icon}}" data-category-color="{{.Color}}" data-category-type="{{.Type}}"{{if .BoxID}} data-box-id="{{.BoxID}}" data-box-reserved="{{.BoxReservedBalance}}" data-box-name="{{.BoxName}}"{{end}}{{if .LimitMax}} data-limit-max="{{.LimitMax}}" data-limit-spent="{{.LimitSpent}}"{{end}}></span>
+        {{end}}
+    </div>
+</div>
+
+{{end}}
+
+{{define "transacoes-preditiva"}}
+<div class="overflow-hidden rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] shadow-xl" role="listbox" aria-label="Sugestões preditivas">
+    {{range .Suggestions}}
+    <button type="button"
+        class="group flex w-full items-center justify-between gap-3 border-b border-[var(--cb-border-subtle)] px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-[var(--cb-accent-soft)] focus:bg-[var(--cb-accent-soft)] focus:outline-none"
+        data-description="{{.Description}}"
+        data-category-id="{{.CategoryID}}"
+        data-account-id="{{.AccountID}}"
+        data-account-kind="{{.AccountKind}}"
+        data-destination-id="{{.DestinationAccountID}}"
+        data-type="{{.Type}}"
+        data-onclick-ev="applyPredictiveSuggestionFromEvent">
+        <span class="min-w-0">
+            <span class="block truncate text-sm font-semibold text-[var(--cb-text-main)]">{{.Description}}</span>
+            <span class="mt-0.5 block truncate text-xs text-[var(--cb-text-muted)]">{{if eq .Type "transferencia"}}{{.AccountName}}{{if .DestinationAccountName}} → {{.DestinationAccountName}}{{end}}{{else}}{{if .CategoryName}}{{.CategoryName}} · {{end}}{{.AccountName}}{{end}}</span>
+        </span>
+        <span class="shrink-0 rounded-full border border-violet-500/15 bg-violet-500/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-200/80">
+            {{.Type}}
+        </span>
+    </button>
+    {{end}}
+</div>
+{{end}}

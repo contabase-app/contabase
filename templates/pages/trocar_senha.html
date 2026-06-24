@@ -1,0 +1,71 @@
+{{define "required-password-change-page"}}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0a0b0f">
+    <title>Trocar senha — ContaBase</title>
+    <link rel="shortcut icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+    <link rel="manifest" href="/assets/manifest.json">
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="stylesheet" href="/assets/css/geist-sans.css">
+    <link rel="stylesheet" href="/assets/css/auth-pages.css">
+</head>
+<body class="min-h-screen bg-[#09090c] font-sans text-white antialiased overflow-hidden">
+    <div class="fixed inset-0 pointer-events-none overflow-hidden">
+        <div class="blob absolute top-[-20%] left-[-15%] w-[60vw] h-[60vw] rounded-full bg-violet-600/20 blur-[80px]"></div>
+        <div class="blob-2 absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-indigo-600/15 blur-[80px]"></div>
+        <div class="absolute inset-0 opacity-[0.035] dot-pattern"></div>
+    </div>
+
+    <main class="relative mx-auto flex min-h-screen max-w-md items-center px-5 py-10">
+        <section class="fade-up w-full rounded-3xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-2xl p-7 shadow-2xl shadow-black/60">
+            <div class="mb-7">
+                <div class="inline-flex items-center gap-2.5 mb-5">
+                    <span class="font-['Geist_Sans',sans-serif] font-bold text-2xl tracking-tight select-none">
+                        <span class="text-[#6744f1]">Conta</span><span class="text-white">Base</span>
+                    </span>
+                </div>
+                <h1 class="text-2xl font-bold text-white tracking-tight">Defina uma nova senha</h1>
+                <p class="mt-1.5 text-sm text-white/45">A senha temporária foi aceita. Antes de acessar o sistema, escolha uma senha definitiva.</p>
+            </div>
+
+            {{if .Error}}
+            <div class="mb-5 flex items-center gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3.5">
+                <svg class="w-4 h-4 text-rose-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></svg>
+                <p class="text-sm text-rose-200">{{.Error}}</p>
+            </div>
+            {{end}}
+
+            <form method="post" action="/trocar-senha" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <label class="block space-y-2">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-white/40">Nova senha</span>
+                    <input type="password" name="new_password" required minlength="8" autocomplete="new-password"
+                        class="h-11 w-full rounded-xl border border-white/[0.08] bg-white/[0.05] px-3.5 text-sm text-white outline-none placeholder:text-white/25 focus:border-zinc-700/60 focus:ring-1 focus:ring-zinc-700/20 transition-all">
+                </label>
+                <label class="block space-y-2">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-white/40">Confirmar nova senha</span>
+                    <input type="password" name="confirm_password" required minlength="8" autocomplete="new-password"
+                        class="h-11 w-full rounded-xl border border-white/[0.08] bg-white/[0.05] px-3.5 text-sm text-white outline-none placeholder:text-white/25 focus:border-zinc-700/60 focus:ring-1 focus:ring-zinc-700/20 transition-all">
+                </label>
+                <button type="submit"
+                    class="mt-2 h-12 w-full rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-sm font-bold text-white transition-all hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] shadow-lg shadow-violet-500/30">
+                    Salvar nova senha
+                </button>
+            </form>
+            <form method="post" action="/logout" class="mt-3">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <button type="submit" class="h-10 w-full rounded-xl border border-white/[0.08] bg-white/[0.03] text-sm font-semibold text-white/70 transition-all hover:bg-white/[0.06]">
+                    Sair
+                </button>
+            </form>
+        </section>
+    </main>
+</body>
+</html>
+{{end}}

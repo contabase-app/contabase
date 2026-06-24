@@ -1,0 +1,164 @@
+{{define "setup-page"}}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0a0b0f">
+    <title>Configuração Inicial — ContaBase</title>
+    
+    <!-- Favicons & Manifest -->
+    <link rel="shortcut icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+    <link rel="manifest" href="/assets/manifest.json">
+
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="stylesheet" href="/assets/css/geist-sans.css">
+    <link rel="stylesheet" href="/assets/css/auth-pages.css">
+    <script defer src="/assets/js/setup-page.js"></script>
+</head>
+<body class="min-h-screen bg-zinc-950 font-sans text-white antialiased relative">
+    <!-- Liquid blurs e dot pattern de fundo -->
+    <div class="fixed inset-0 pointer-events-none overflow-hidden premium-dot-pattern opacity-70 z-0">
+        <div class="blob absolute top-[-15%] left-[-10%] w-[55vw] h-[55vw] rounded-full bg-violet-600/15 blur-[80px]"></div>
+        <div class="blob-2 absolute bottom-[-15%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-indigo-600/10 blur-[80px]"></div>
+        <div class="blob absolute top-[40%] right-[20%] w-[30vw] h-[30vw] rounded-full bg-fuchsia-600/5 blur-[80px]"></div>
+    </div>
+
+    <main class="relative z-10 mx-auto flex min-h-screen max-w-3xl items-center justify-center px-5 py-10">
+        <section class="fade-up premium-card w-full rounded-3xl border border-zinc-800/80 bg-zinc-900/70 backdrop-blur p-8 md:p-10 shadow-2xl shadow-black/80">
+
+            <!-- Header da Configuração -->
+            <div class="mb-8 text-center">
+                <div class="inline-flex items-center gap-2.5 mb-4">
+                    <span class="font-['Geist_Sans',sans-serif] font-bold text-3xl tracking-tight select-none">
+                        <span class="text-[#6744f1]">Conta</span><span class="text-white">Base</span>
+                    </span>
+                </div>
+                <h1 class="text-2xl font-bold text-white tracking-tight">Configuração Inicial</h1>
+                <p class="mt-2 text-sm text-zinc-400 max-w-sm mx-auto leading-relaxed">Escolha entre iniciar uma nova instalação ou restaurar um backup existente.</p>
+            </div>
+
+            {{if .Error}}
+            <div class="mb-6 flex items-center gap-3 rounded-xl border border-rose-500 bg-rose-500/10 p-4 shadow-sm">
+                <svg class="w-4 h-4 text-rose-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/></svg>
+                <p class="text-sm text-rose-200 font-semibold">{{.Error}}</p>
+            </div>
+            {{end}}
+
+            <!-- Pill Tab Selector -->
+            <div class="mb-8 grid gap-4 md:grid-cols-2">
+                <button type="button" id="setup-tab-new"
+                    class="btn-tactile rounded-2xl border p-5 text-left transition-all duration-200 border-violet-500/60 bg-violet-500/10 shadow-lg shadow-violet-500/5">
+                    <div class="flex items-center gap-3 mb-2.5">
+                        <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-500/20 text-violet-300">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                        </span>
+                        <p class="text-sm font-bold text-white">Nova instalação</p>
+                    </div>
+                    <p class="text-xs leading-relaxed text-zinc-300">Criar o primeiro administrador e iniciar com dados limpos.</p>
+                </button>
+                <button type="button" id="setup-tab-restore"
+                    class="btn-tactile rounded-2xl border p-5 text-left transition-all duration-200 border-zinc-800 bg-zinc-950/50 hover:border-zinc-700 hover:bg-zinc-950/80">
+                    <div class="flex items-center gap-3 mb-2.5">
+                        <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-zinc-900 text-zinc-500">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m6.75 12-3-3m0 0-3 3m3-3v6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>
+                        </span>
+                        <p class="text-sm font-bold text-zinc-400">Restaurar backup</p>
+                    </div>
+                    <p class="text-xs leading-relaxed text-zinc-500">Importar um arquivo <code class="bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-300 font-mono">.db</code> de uma instalação anterior.</p>
+                </button>
+            </div>
+
+            <!-- Formulário: Nova Instalação -->
+            <div id="setup-panel-new">
+                <form method="post" action="/setup" class="space-y-5">
+                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                    <label class="block space-y-2">
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Token local de setup</span>
+                        <input type="password" name="setup_token" required autocomplete="off"
+                            class="h-12 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500/20 transition-all"
+                            placeholder="Informe o token configurado no servidor">
+                        <p class="text-xs text-zinc-400 leading-relaxed mt-2">
+                            O token vem da variável <code class="bg-zinc-800/80 px-1 py-0.5 rounded text-zinc-300 font-mono">CONTABASE_SETUP_TOKEN</code> (mínimo de 32 caracteres) definida no arquivo <code class="bg-zinc-800/80 px-1 py-0.5 rounded text-zinc-300 font-mono">.env.docker</code> do servidor. Pode ser gerado com <code class="bg-zinc-800/80 px-1 py-0.5 rounded text-zinc-300 font-mono">openssl rand -base64 48</code>. Após o setup, a variável pode ser comentada e o app reiniciado por segurança.
+                        </p>
+                    </label>
+                    <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+                        <label class="block space-y-2">
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Nome completo</span>
+                            <input name="name" required
+                                class="h-12 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500/20 transition-all"
+                                placeholder="Seu nome">
+                        </label>
+                        <label class="block space-y-2">
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-zinc-400">E-mail</span>
+                            <input type="email" name="email" required
+                                class="h-12 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500/20 transition-all"
+                                placeholder="voce@empresa.com">
+                        </label>
+                    </div>
+                    <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+                        <label class="block space-y-2">
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Senha</span>
+                            <input type="password" name="password" required
+                                class="h-12 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500/20 transition-all"
+                                placeholder="••••••••">
+                        </label>
+                        <label class="block space-y-2">
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Tipo de workspace</span>
+                            <select name="workspace_type"
+                                class="h-12 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 text-sm text-white outline-none focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500/20 transition-all">
+                                <option value="personal" class="bg-zinc-950 text-white">Pessoal</option>
+                                <option value="business" class="bg-zinc-950 text-white">Business</option>
+                            </select>
+                        </label>
+                    </div>
+                    <button type="submit"
+                        class="btn-tactile h-12 w-full rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-sm font-bold text-white transition-all hover:from-violet-500 hover:to-indigo-500 shadow-lg shadow-violet-500/20 mt-2">
+                        Criar sistema novo
+                    </button>
+                </form>
+            </div>
+
+            <!-- Formulário: Restaurar Backup -->
+            <div id="setup-panel-restore" class="hidden">
+                <form method="post" action="/setup/restaurar" enctype="multipart/form-data" class="space-y-5">
+                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                    <label class="block space-y-2">
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Token local de setup</span>
+                        <input type="password" name="setup_token" required autocomplete="off"
+                            class="h-12 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-500/20 transition-all"
+                            placeholder="Informe o token configurado no servidor">
+                        <p class="text-xs text-zinc-400 leading-relaxed mt-2">
+                            O token vem da variável <code class="bg-zinc-800/80 px-1 py-0.5 rounded text-zinc-300 font-mono">CONTABASE_SETUP_TOKEN</code> (mínimo de 32 caracteres) definida no arquivo <code class="bg-zinc-800/80 px-1 py-0.5 rounded text-zinc-300 font-mono">.env.docker</code> do servidor. Pode ser gerado com <code class="bg-zinc-800/80 px-1 py-0.5 rounded text-zinc-300 font-mono">openssl rand -base64 48</code>. Após o setup, a variável pode ser comentada e o app reiniciado por segurança.
+                        </p>
+                    </label>
+                    <label class="block space-y-2">
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Arquivo de backup (.db)</span>
+                        <div class="flex items-center justify-center w-full">
+                            <label class="flex flex-col items-center justify-center w-full h-36 border-2 border-dashed border-zinc-700 rounded-2xl cursor-pointer bg-zinc-950/40 hover:bg-zinc-950/80 hover:border-indigo-500/50 transition-all">
+                                <div class="flex flex-col items-center justify-center pt-5 pb-6 px-4 text-center">
+                                    <svg class="w-8 h-8 mb-3 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-15H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>
+                                    <p class="text-sm text-zinc-400 font-medium">Clique para selecionar o arquivo <code class="bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-300 font-mono">.db</code></p>
+                                    <p id="setup-file-wrap" class="mt-2 max-w-full truncate rounded-lg bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200 hidden">
+                                        Arquivo selecionado: <span id="setup-file-name"></span>
+                                    </p>
+                                </div>
+                                <input type="file" id="setup-backup-file" name="backup_file" accept=".db" required class="hidden">
+                            </label>
+                        </div>
+                    </label>
+                    <button type="submit"
+                        class="btn-tactile h-12 w-full rounded-xl bg-white text-sm font-bold text-zinc-950 transition-all hover:bg-zinc-100 shadow-lg mt-2">
+                        Importar e Restaurar Sistema
+                    </button>
+                </form>
+            </div>
+
+        </section>
+    </main>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,138 @@
+{{define "configuracoes-workspace-page"}}
+{{template "layout-start" .}}
+<div class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 relative">
+    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden">
+        <div class="absolute inset-0 cb-page"></div>
+        <div class="absolute top-[-30%] left-[-20%] w-[60vw] h-[60vw] rounded-full bg-violet-500/[0.05] dark:bg-violet-500/[0.03] blur-[80px]"></div>
+        <div class="absolute bottom-[-20%] right-[-20%] w-[50vw] h-[50vw] rounded-full bg-indigo-500/[0.03] dark:bg-indigo-500/[0.02] blur-[80px]"></div>
+    </div>
+
+    <div class="hidden md:flex gap-8 w-full max-w-full">
+        <aside class="md:w-64 flex-none border-r border-[var(--cb-border-subtle)] pr-6">
+            <div class="mb-6">
+                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
+                <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Painel de Controle</h2>
+            </div>
+            {{template "configuracoes-sidebar" .}}
+        </aside>
+
+        <div id="settings-content" class="flex-1 pl-4">
+            {{template "configuracoes-workspace-content" .}}
+        </div>
+    </div>
+
+    <div class="block md:hidden">
+        {{template "configuracoes-workspace-content" .}}
+    </div>
+</div>
+{{template "layout-end" .}}
+{{end}}
+
+{{define "configuracoes-workspace-content"}}
+<div id="settings-dynamic-payload" class="w-full">
+    <header class="sticky top-14 z-20 bg-[var(--cb-surface-overlay)] backdrop-blur-xl border-b border-[var(--cb-border-subtle)] transition-colors md:hidden w-full">
+        <div class="mx-auto flex max-w-7xl items-center gap-4 px-4 pt-4 pb-3">
+            <button type="button" hx-get="/configuracoes" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] btn-tactile">
+                <i data-lucide="arrow-left" class="h-4 w-4"></i>
+            </button>
+            <div class="min-w-0 flex-1">
+                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
+                <h1 class="mt-0.5 text-lg font-bold text-[var(--cb-text-main)] md:text-xl">Perfil corporativo</h1>
+            </div>
+        </div>
+    </header>
+
+    <div class="w-full px-4 pb-[7rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative">
+        {{if .FlashError}}<div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-100">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100">{{.FlashSuccess}}</div>{{end}}
+
+        {{if not .IsBusiness}}
+        <div class="cb-card p-4 md:p-6">
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Perfil corporativo indisponível</h2>
+            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Esta seção só pode ser usada em workspaces Business.</p>
+        </div>
+        {{else}}
+        <form class="cb-card space-y-5 md:p-6" hx-post="/configuracoes/workspace" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" enctype="multipart/form-data">
+            <div>
+                <h2 class="text-base font-bold text-[var(--cb-text-main)]">Perfil corporativo</h2>
+                <p class="mt-0.5 text-xs text-[var(--cb-text-muted)]">Atualize os dados exibidos no contexto empresarial do workspace ativo.</p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <label class="block md:col-span-2">
+                    <span class="cb-label">Nome do workspace / nome fantasia</span>
+                    <input type="text" name="name" value="{{.WorkspaceProfile.Name}}" class="cb-input">
+                </label>
+                <label class="block md:col-span-2">
+                    <span class="cb-label">Descrição</span>
+                    <input type="text" name="description" value="{{.WorkspaceProfile.Description}}" class="cb-input" placeholder="Descrição opcional do workspace">
+                </label>
+                <label class="block">
+                    <span class="cb-label">Razão social / nome da empresa</span>
+                    <input type="text" name="company_name" value="{{.WorkspaceProfile.CompanyName}}" class="cb-input">
+                </label>
+                <label class="block">
+                    <span class="cb-label">CNPJ / CPF</span>
+                    <input type="text" name="cnpj_cpf" value="{{.WorkspaceProfile.CNPJCPF}}" data-oninput="maskCnpjCpf" class="cb-input" placeholder="00.000.000/0001-00">
+                </label>
+                <label class="block md:col-span-2">
+                    <span class="cb-label">Endereço</span>
+                    <input type="text" name="address" value="{{.WorkspaceProfile.Address}}" class="cb-input">
+                </label>
+                <label class="block">
+                    <span class="cb-label">Telefone</span>
+                    <input type="text" name="phone" value="{{.WorkspaceProfile.Phone}}" data-oninput="maskPhone" class="cb-input" placeholder="(11) 99999-9999">
+                </label>
+            </div>
+
+            <div class="rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-4 md:p-5">
+                <div class="mb-4">
+                    <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">Identidade visual</h3>
+                    <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Use arquivos JPG, PNG ou WebP com até 2 MB. O logo atual é mantido se você não enviar um novo arquivo nem marcar remoção.</p>
+                </div>
+
+                <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+                    <div class="space-y-3">
+                        <div>
+                            <p class="cb-label">Logo claro</p>
+                            {{if .WorkspaceProfile.LogoLightURL}}
+                            <img src="{{.WorkspaceProfile.LogoLightURL}}" alt="Logo claro atual" class="mt-2 h-12 max-w-[220px] rounded-lg border border-[var(--cb-border-subtle)] bg-zinc-900/70 px-3 py-2 object-contain" data-avatar-fallback>
+                            {{else}}
+                            <p class="mt-2 text-xs text-[var(--cb-text-muted)]">Nenhum logo claro cadastrado.</p>
+                            {{end}}
+                        </div>
+                        <input type="file" name="logo_light_file" accept=".jpg,.jpeg,.png,.webp" class="block w-full text-sm text-zinc-600 dark:text-zinc-300 file:mr-3 file:h-9 file:cursor-pointer file:rounded-lg file:border file:border-violet-300 file:bg-violet-50 file:px-3 file:text-xs file:font-semibold file:text-violet-700 hover:file:bg-violet-100 dark:file:border-violet-500/35 dark:file:bg-violet-500/15 dark:file:text-violet-200">
+                        <input type="hidden" name="logo_light_url" value="{{.WorkspaceProfile.LogoLightURL}}">
+                        <label class="flex items-center gap-2 text-xs text-[var(--cb-text-muted)]">
+                            <input type="checkbox" name="remove_logo_light" value="1" class="h-4 w-4 rounded border-[var(--cb-border-subtle)] text-violet-600 focus:ring-violet-500">
+                            Remover referência do logo claro
+                        </label>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div>
+                            <p class="cb-label">Logo escuro</p>
+                            {{if .WorkspaceProfile.LogoDarkURL}}
+                            <img src="{{.WorkspaceProfile.LogoDarkURL}}" alt="Logo escuro atual" class="mt-2 h-12 max-w-[220px] rounded-lg border border-[var(--cb-border-subtle)] bg-white px-3 py-2 object-contain" data-avatar-fallback>
+                            {{else}}
+                            <p class="mt-2 text-xs text-[var(--cb-text-muted)]">Nenhum logo escuro cadastrado.</p>
+                            {{end}}
+                        </div>
+                        <input type="file" name="logo_dark_file" accept=".jpg,.jpeg,.png,.webp" class="block w-full text-sm text-zinc-600 dark:text-zinc-300 file:mr-3 file:h-9 file:cursor-pointer file:rounded-lg file:border file:border-violet-300 file:bg-violet-50 file:px-3 file:text-xs file:font-semibold file:text-violet-700 hover:file:bg-violet-100 dark:file:border-violet-500/35 dark:file:bg-violet-500/15 dark:file:text-violet-200">
+                        <input type="hidden" name="logo_dark_url" value="{{.WorkspaceProfile.LogoDarkURL}}">
+                        <label class="flex items-center gap-2 text-xs text-[var(--cb-text-muted)]">
+                            <input type="checkbox" name="remove_logo_dark" value="1" class="h-4 w-4 rounded border-[var(--cb-border-subtle)] text-violet-600 focus:ring-violet-500">
+                            Remover referência do logo escuro
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 pt-1">
+                <button class="cb-button cb-button-primary h-11 px-6 text-sm">Salvar perfil corporativo</button>
+            </div>
+        </form>
+        {{end}}
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,493 @@
+/* ContaBase Bottom Sheet Form Styles — scoped to form_lancamento.html */
+@keyframes sheetIn {
+    from { opacity: 0; transform: translateY(28px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.sheet-in { animation: sheetIn 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+.sheet-shell {
+    background: var(--cb-surface-overlay);
+    border-color: var(--cb-border-subtle);
+    box-shadow: 0 18px 45px -28px rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(16px);
+}
+
+.dark .sheet-shell {
+    background: var(--cb-surface-1);
+    border-color: var(--cb-border-subtle);
+    box-shadow: 0 28px 80px -42px rgba(0, 0, 0, 0.5);
+}
+
+.sheet-drag { background: var(--cb-text-muted); }
+.dark .sheet-drag { background: var(--cb-text-subtle); }
+
+.sheet-tabs {
+    background: var(--cb-surface-2);
+    border-color: var(--cb-border-subtle);
+}
+
+.dark .sheet-tabs {
+    background: var(--cb-surface-2);
+    border-color: var(--cb-border-subtle);
+}
+
+.tab-button {
+    color: var(--cb-text-muted);
+}
+
+.dark .tab-button {
+    color: var(--cb-text-muted);
+}
+
+.tab-button:hover {
+    background: var(--cb-surface-2);
+    color: var(--cb-text-main);
+}
+
+.dark .tab-button:hover {
+    background: var(--cb-surface-3);
+    color: var(--cb-text-main);
+}
+
+/* Active States */
+.tab-button.is-active-despesa {
+    background: var(--cb-danger);
+    color: #ffffff;
+}
+.tab-button.is-active-receita {
+    background: var(--cb-success);
+    color: #ffffff;
+}
+.tab-button.is-active-transferencia {
+    background: var(--cb-warning);
+    color: #ffffff;
+}
+
+/* Active States Hover Overrides */
+.tab-button.is-active-despesa:hover,
+.dark .tab-button.is-active-despesa:hover {
+    background: color-mix(in srgb, var(--cb-danger) 85%, #000);
+    color: #ffffff;
+}
+.tab-button.is-active-receita:hover,
+.dark .tab-button.is-active-receita:hover {
+    background: color-mix(in srgb, var(--cb-success) 85%, #000);
+    color: #ffffff;
+}
+.tab-button.is-active-transferencia:hover,
+.dark .tab-button.is-active-transferencia:hover {
+    background: color-mix(in srgb, var(--cb-warning) 85%, #000);
+    color: #ffffff;
+}
+
+/* Inactive States Hover Overrides (based on data-type attribute) */
+.tab-button[data-type="despesa"]:not(.is-active-despesa):hover {
+    background: color-mix(in srgb, var(--cb-danger) 8%, transparent);
+    color: color-mix(in srgb, var(--cb-danger) 90%, #000);
+}
+.dark .tab-button[data-type="despesa"]:not(.is-active-despesa):hover {
+    background: color-mix(in srgb, var(--cb-danger) 12%, transparent);
+    color: color-mix(in srgb, var(--cb-danger) 90%, #ffffff);
+}
+
+.tab-button[data-type="receita"]:not(.is-active-receita):hover {
+    background: color-mix(in srgb, var(--cb-success) 8%, transparent);
+    color: color-mix(in srgb, var(--cb-success) 90%, #000);
+}
+.dark .tab-button[data-type="receita"]:not(.is-active-receita):hover {
+    background: color-mix(in srgb, var(--cb-success) 12%, transparent);
+    color: color-mix(in srgb, var(--cb-success) 90%, #ffffff);
+}
+
+.tab-button[data-type="transferencia"]:not(.is-active-transferencia):hover {
+    background: color-mix(in srgb, var(--cb-warning) 8%, transparent);
+    color: color-mix(in srgb, var(--cb-warning) 90%, #000);
+}
+.dark .tab-button[data-type="transferencia"]:not(.is-active-transferencia):hover {
+    background: color-mix(in srgb, var(--cb-warning) 12%, transparent);
+    color: color-mix(in srgb, var(--cb-warning) 90%, #ffffff);
+}
+
+.sheet-close-btn {
+    background: var(--cb-surface-2);
+    border-color: var(--cb-border-subtle);
+    color: var(--cb-text-muted);
+}
+
+.sheet-close-btn:hover {
+    background: var(--cb-surface-3);
+    color: var(--cb-text-main);
+}
+
+.dark .sheet-close-btn {
+    background: var(--cb-surface-3);
+    border-color: var(--cb-border-subtle);
+    color: var(--cb-text-muted);
+}
+
+.dark .sheet-close-btn:hover {
+    background: var(--cb-surface-1);
+    color: var(--cb-text-main);
+}
+
+.sheet-amount-panel {
+    border-bottom: 1px solid var(--cb-border-subtle);
+}
+
+.dark .sheet-amount-panel {
+    border-bottom-color: var(--cb-border-subtle);
+}
+
+.sheet-amount-input {
+    color: var(--cb-text-main);
+}
+
+.sheet-amount-input::placeholder {
+    color: var(--cb-text-subtle);
+}
+
+.dark .sheet-amount-input {
+    color: var(--cb-text-main);
+}
+
+.dark .sheet-amount-input::placeholder {
+    color: var(--cb-text-subtle);
+}
+
+.sheet-status-btn {
+    background: var(--cb-surface-2);
+    border-color: var(--cb-border-subtle);
+}
+
+.dark .sheet-status-btn {
+    background: var(--cb-surface-3);
+    border-color: var(--cb-border-subtle);
+}
+
+.sheet-status-btn.is-paid {
+    background: color-mix(in srgb, var(--cb-success) 14%, transparent);
+    border-color: color-mix(in srgb, var(--cb-success) 26%, transparent);
+}
+
+.sheet-status-btn.is-pending {
+    background: color-mix(in srgb, var(--cb-warning) 14%, transparent);
+    border-color: color-mix(in srgb, var(--cb-warning) 26%, transparent);
+}
+
+.sheet-card,
+.sheet-picker,
+.sheet-control,
+.sheet-select,
+.sheet-file-input {
+    background: var(--cb-surface-1);
+    border-color: var(--cb-border-subtle);
+    color: var(--cb-text-main);
+}
+
+.dark .sheet-card,
+.dark .sheet-picker,
+.dark .sheet-control,
+.dark .sheet-select,
+.dark .sheet-file-input {
+    background: var(--cb-surface-2);
+    border-color: var(--cb-border-subtle);
+    color: var(--cb-text-main);
+}
+
+.sheet-picker:hover,
+.sheet-control:focus,
+.sheet-select:focus,
+.sheet-file-input:focus {
+    background: var(--cb-surface-2);
+    border-color: var(--cb-border-strong);
+}
+
+.dark .sheet-picker:hover,
+.dark .sheet-control:focus,
+.dark .sheet-select:focus,
+.dark .sheet-file-input:focus {
+    background: var(--cb-surface-3);
+    border-color: var(--cb-border-strong);
+}
+
+.sheet-control::placeholder,
+.sheet-file-input::placeholder {
+    color: var(--cb-text-subtle);
+}
+
+.dark .sheet-control::placeholder,
+.dark .sheet-file-input::placeholder {
+    color: var(--cb-text-subtle);
+}
+
+.sheet-control-icon,
+.sheet-muted-text {
+    color: var(--cb-text-muted);
+}
+
+.dark .sheet-control-icon,
+.dark .sheet-muted-text {
+    color: var(--cb-text-muted);
+}
+
+.sheet-label {
+    color: var(--cb-text-muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.dark .sheet-label {
+    color: var(--cb-text-muted);
+}
+
+.sheet-primary-text {
+    color: var(--cb-text-main);
+}
+
+.dark .sheet-primary-text {
+    color: var(--cb-text-main);
+}
+
+.sheet-picker-icon,
+.sheet-feature-icon {
+    background: var(--cb-surface-3);
+    border-color: var(--cb-border-subtle);
+}
+
+.sheet-feature-icon {
+    display: inline-flex;
+    width: 2.75rem;
+    height: 2.75rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.75rem;
+    border-width: 1px;
+}
+
+.toggle-track {
+    background: var(--cb-surface-2);
+    border-color: var(--cb-border-subtle);
+}
+
+.toggle-knob {
+    background: var(--cb-surface-1);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.dark .toggle-track {
+    background: var(--cb-surface-3);
+    border-color: var(--cb-border-subtle);
+}
+
+.dark .toggle-knob {
+    background: var(--cb-text-muted);
+}
+
+.toggle-input:checked + .toggle-label .toggle-track {
+    background: var(--cb-accent);
+    border-color: var(--cb-accent);
+}
+
+.toggle-input:checked + .toggle-label .toggle-knob {
+    transform: translateX(1.25rem);
+    background: #ffffff;
+}
+
+.sheet-select {
+    color-scheme: light;
+}
+
+.dark .sheet-select,
+.dark input[type="date"],
+.dark input[type="month"] {
+    color-scheme: dark;
+}
+
+.sheet-file-input {
+    border-style: dashed;
+    color: var(--cb-text-muted);
+}
+
+.sheet-file-input::file-selector-button {
+    background: var(--cb-accent-soft);
+    color: var(--cb-accent);
+}
+
+.dark .sheet-file-input {
+    color: var(--cb-text-muted);
+}
+
+.dark .sheet-file-input::file-selector-button {
+    background: var(--cb-accent-soft);
+    color: var(--cb-accent);
+}
+
+.sheet-details-toggle {
+    color: var(--cb-text-muted);
+}
+
+.sheet-details-toggle:hover {
+    background: var(--cb-surface-2);
+    color: var(--cb-text-main);
+}
+
+.dark .sheet-details-toggle {
+    color: var(--cb-text-main);
+}
+
+.dark .sheet-details-toggle:hover {
+    background: var(--cb-surface-3);
+    color: var(--cb-text-main);
+}
+
+.sheet-popover {
+    background: var(--cb-surface-1);
+    border-color: var(--cb-border-subtle);
+    box-shadow: 0 12px 30px -20px rgba(0, 0, 0, 0.08);
+}
+
+.dark .sheet-popover {
+    background: var(--cb-surface-1);
+    border-color: var(--cb-border-subtle);
+    box-shadow: 0 18px 50px -30px rgba(0, 0, 0, 0.5);
+}
+
+.sheet-popover-option {
+    color: var(--cb-text-muted);
+}
+
+.sheet-popover-option:hover {
+    background: var(--cb-surface-2);
+    color: var(--cb-text-main);
+}
+
+.dark .sheet-popover-option {
+    color: var(--cb-text-main);
+}
+
+.dark .sheet-popover-option:hover {
+    background: var(--cb-surface-3);
+    color: var(--cb-text-main);
+}
+
+.sheet-submit-bubble {
+    background: var(--cb-success);
+    box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--cb-success) 30%, transparent);
+}
+
+.sheet-submit-bubble:hover {
+    background: color-mix(in srgb, var(--cb-success) 80%, #000);
+}
+
+.sheet-series-overlay {
+    background: rgba(15, 19, 26, 0.58);
+}
+
+.dark .sheet-series-overlay {
+    background: rgba(15, 19, 26, 0.74);
+}
+
+.sheet-series-card {
+    border: 1px solid var(--cb-border-subtle);
+    border-radius: 1rem;
+    background: var(--cb-surface-1);
+}
+
+.dark .sheet-series-card {
+    background: var(--cb-surface-2);
+}
+
+.sheet-series-kicker {
+    color: var(--cb-accent-solid);
+}
+
+.sheet-series-kicker-danger {
+    color: var(--cb-danger);
+}
+
+.sheet-series-option {
+    border: 1px solid var(--cb-border-subtle);
+    border-radius: 1rem;
+    background: var(--cb-surface-2);
+    transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.sheet-series-option:hover {
+    background: var(--cb-surface-3);
+    border-color: var(--cb-border-strong);
+}
+
+.sheet-series-radio-scope {
+    accent-color: var(--cb-accent-solid);
+    border-color: var(--cb-border-strong);
+}
+
+.sheet-series-radio-danger {
+    accent-color: var(--cb-danger);
+    border-color: var(--cb-border-strong);
+}
+
+.sheet-series-action {
+    min-height: 2.25rem;
+    padding: 0 0.75rem;
+    border-radius: 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease, transform 150ms ease;
+}
+
+.sheet-series-action-cancel {
+    border: 1px solid var(--cb-border-subtle);
+    color: var(--cb-text-muted);
+    background: transparent;
+}
+
+.sheet-series-action-cancel:hover {
+    background: var(--cb-surface-3);
+    color: var(--cb-text-main);
+}
+
+.sheet-series-action-confirm {
+    border: 1px solid transparent;
+    background: var(--cb-accent-solid);
+    color: var(--cb-accent-text);
+}
+
+.sheet-series-action-confirm:hover {
+    background: var(--cb-accent-hover);
+}
+
+.sheet-series-action-danger {
+    border: 1px solid transparent;
+    background: var(--cb-danger);
+    color: var(--cb-accent-text);
+}
+
+.sheet-series-action-danger:hover {
+    filter: brightness(0.95);
+}
+
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+    .sheet-in { animation: none; }
+    .tab-button,
+    .sheet-close-btn,
+    .sheet-picker,
+    .sheet-control,
+    .sheet-select,
+    .sheet-status-btn,
+    .sheet-submit-bubble {
+        transition: none;
+    }
+}

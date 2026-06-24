@@ -1,0 +1,160 @@
+{{define "contatos-page"}}
+{{template "layout-start" .}}
+{{template "contatos-content" .}}
+{{template "layout-end" .}}
+{{if .FabOOB}}{{template "fab-contatos-oob" .}}{{end}}
+{{end}}
+
+{{define "contatos-content"}}
+<link rel="stylesheet" href="/assets/css/contatos.css">
+<main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative" data-page-title="Contatos">
+    <!-- Background blobs removidos para o piloto de Design System visando interface mais plana -->
+    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden">
+    </div>
+
+    <!-- Header removido: seção identificada pela navegação ativa e barra de workspace -->
+
+    {{template "contatos-list" .}}
+</main>
+<!-- Modal de Novo Contato -->
+<div id="contatos-modal" data-contabase-overlay data-overlay-priority="120" data-overlay-close="closeContatosModal" class="cb-modal-wrapper fixed inset-0 z-[120] hidden px-4 py-6 backdrop-blur-sm" data-onclick-self="closeContatosModal">
+    <section class="mx-auto flex h-full max-w-md items-end md:max-w-xl md:items-start">
+        <div class="cb-modal w-full rounded-t-[2rem] p-5 shadow-2xl md:mx-auto md:my-12 md:rounded-3xl">
+            <div class="mb-5 flex items-center justify-between gap-3">
+                <div>
+                    <p class="text-[10px] font-bold uppercase tracking-[0.2em]" style="color: var(--cb-accent)">Cadastro</p>
+                    <p class="text-sm font-bold cb-text-main mt-0.5">Novo contato</p>
+                    <p class="text-xs cb-text-muted">Cliente ou fornecedor</p>
+                </div>
+                <button type="button"
+                    data-onclick="closeContatosModal"
+                    class="cb-button cb-button-secondary flex h-9 w-9 items-center justify-center rounded-xl p-0">
+                    <i data-lucide="x" class="h-4 w-4 cb-text-muted"></i>
+                </button>
+            </div>
+            <form hx-post="/contatos" hx-target="#contatos-list" hx-swap="outerHTML"
+                data-hx-after="closeContatosModal"
+                class="space-y-3">
+                {{template "contato-form-fields" .}}
+                <button class="cb-button cb-button-primary h-11 w-full rounded-xl">Salvar contato</button>
+            </form>
+        </div>
+    </section>
+</div>
+{{end}}
+
+{{define "contatos-list"}}
+<div id="contatos-list">
+    <!-- Tabs navegacao HTMX (dentro do partial para atualizar estado visual) -->
+    <nav class="cb-tabs mb-4 w-full">
+        <button type="button"
+            hx-get="/contatos?tipo=todos&partial=lista"
+            hx-target="#contatos-list" hx-swap="outerHTML"
+            hx-push-url="/contatos?tipo=todos"
+            class="cb-tab {{if or (eq .Tipo "") (eq .Tipo "todos")}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
+            <i data-lucide="users-round" class="w-3.5 h-3.5 shrink-0"></i>Todos
+        </button>
+        <button type="button"
+            hx-get="/contatos?tipo=client&partial=lista"
+            hx-target="#contatos-list" hx-swap="outerHTML"
+            hx-push-url="/contatos?tipo=client"
+            class="cb-tab {{if eq .Tipo "client"}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
+            <i data-lucide="user-check" class="w-3.5 h-3.5 shrink-0"></i>Clientes
+        </button>
+        <button type="button"
+            hx-get="/contatos?tipo=vendor&partial=lista"
+            hx-target="#contatos-list" hx-swap="outerHTML"
+            hx-push-url="/contatos?tipo=vendor"
+            class="cb-tab {{if eq .Tipo "vendor"}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
+            <i data-lucide="truck" class="w-3.5 h-3.5 shrink-0"></i>
+            <span class="inline min-[375px]:hidden">Fornec.</span>
+            <span class="hidden min-[375px]:inline">Fornecedores</span>
+        </button>
+    </nav>
+
+    <!-- Search -->
+    <div class="relative mb-5">
+        <i data-lucide="search" class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 cb-text-muted z-10"></i>
+        <input type="search" name="q" value="{{.Query}}" placeholder="Buscar por nome, documento ou telefone..."
+            hx-get="/contatos?tipo={{if .Tipo}}{{.Tipo}}{{else}}todos{{end}}&partial=lista"
+            hx-target="#contatos-grid"
+            hx-select="#contatos-grid"
+            hx-swap="outerHTML"
+            hx-trigger="keyup delay:300ms changed, search"
+            class="cb-input cb-input-search">
+    </div>
+
+    <div id="contatos-grid">
+    {{if .Contatos}}
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
+        {{range .Contatos}}
+        <article id="contato-{{.ID}}" class="cb-card cb-row flex-col items-stretch">
+            <div class="flex items-start justify-between gap-3 mb-3">
+                {{template "contato-row-summary" .}}
+                <div class="flex items-center gap-1 shrink-0" data-stop-propagation>
+                    <button type="button"
+                        hx-get="/contatos/{{.ID}}"
+                        hx-target="#contato-{{.ID}}"
+                        hx-swap="outerHTML"
+                        class="cb-button cb-button-ghost w-7 h-7 rounded-lg p-0">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button type="button"
+                        hx-delete="/contatos/{{.ID}}"
+                        hx-target="#contato-{{.ID}}"
+                        hx-swap="delete"
+                        hx-confirm="Remover {{.Name}}?"
+                        class="cb-button cb-button-ghost w-7 h-7 rounded-lg p-0 hover:text-[var(--cb-danger)]">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="space-y-1.5 text-[11px]">
+                {{if .CustomClientID}}
+                <div class="flex items-center gap-2">
+                    <span class="cb-text-muted w-16 shrink-0">ID</span>
+                    <span class="font-medium cb-text-main">{{.CustomClientID}}</span>
+                </div>
+                {{end}}
+                {{if .Document}}
+                <div class="flex items-center gap-2">
+                    <span class="cb-text-muted w-16 shrink-0">{{if eq .Type "client"}}CPF/CNPJ{{else}}CNPJ{{end}}</span>
+                    <span class="font-medium cb-text-main">{{.Document}}</span>
+                </div>
+                {{end}}
+                {{if .Email}}
+                <div class="flex items-center gap-2">
+                    <span class="cb-text-muted w-16 shrink-0">Email</span>
+                    <span class="font-medium cb-text-main truncate">{{.Email}}</span>
+                </div>
+                {{end}}
+                {{if .Phone}}
+                <div class="flex items-center gap-2">
+                    <span class="cb-text-muted w-16 shrink-0">Telefone</span>
+                    <span class="font-medium cb-text-main">{{.Phone}}</span>
+                </div>
+                {{end}}
+            </div>
+
+            <div class="mt-3 pt-2.5 cb-divider my-0">
+                <span class="text-[10px] cb-text-subtle">Criado em {{.CreatedAt}}</span>
+            </div>
+        </article>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="cb-empty-state py-14">
+        <div class="w-14 h-14 rounded-xl cb-card-muted flex items-center justify-center mb-3">
+            <i data-lucide="users-round" class="w-6 h-6 cb-text-muted"></i>
+        </div>
+        <p class="text-sm font-medium cb-text-main">Nenhum contato encontrado</p>
+        <p class="text-[11px] cb-text-subtle mt-1">{{if .Query}}Tente ajustar sua busca{{else}}Use o botao + para adicionar{{end}}</p>
+    </div>
+    {{end}}
+    </div>
+</div>
+{{if .FabOOB}}
+{{template "fab-contatos-oob" .}}
+{{end}}
+{{end}}

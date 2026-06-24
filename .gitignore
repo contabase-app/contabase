@@ -1,0 +1,57 @@
+# Banco de dados e persistência do Docker (CRÍTICO - ANTI-VAZAMENTO DE DADOS)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Binários compilados localmente e diretórios de distribuição
+main
+dist/
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Configurações de ambiente sensíveis e chaves de sessão
+.env
+.env.*
+!.env.example
+!.env.docker.example
+compose.local.yaml
+compose.local.yml
+docker-compose.override.yml
+!docker-compose.override.example.yml
+certs/
+*.pem
+node_modules/
+.DS_Store
+/server
+/admin
+*-TEMPORARIO.md
+*.bak
+
+# Binário standalone do Tailwind CLI (build tool, não projeto)
+tailwindcss
+
+# CSS compilado (gerado automaticamente a partir de assets/css/input.css)
+assets/css/style.css
+
+# Backup de recuperação (.git órfão)
+.git.orphan-backup/
+
+data/*.db-wal
+data/*.db-shm
+data/backups/*.db
+
+# Temporarios
+.tmp-*/
+.tmp-clean-install*/
+.tmp-export/
+
+# Impeccable design tooling
+.impeccable/
+PRODUCT.md
+DESIGN.md

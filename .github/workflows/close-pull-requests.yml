@@ -1,0 +1,48 @@
+name: Fechar Pull Requests
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
+jobs:
+  close-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comentar no PR e Fechar
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const message = `Obrigado pelo interesse em contribuir com o ContaBase.
+
+            Neste momento, o repositório público funciona como espelho/snapshot de publicação e não aceita Pull Requests diretamente.
+
+            Para sugestões, bugs, melhorias ou discussões, abra uma Issue com o máximo de contexto possível:
+            - descrição do problema ou sugestão;
+            - passos para reproduzir, se for bug;
+            - prints/logs quando fizer sentido;
+            - versão do ContaBase utilizada.
+
+            Se o seu reporte for sobre uma vulnerabilidade de segurança, **por favor, não abra uma Issue comum com detalhes públicos**. Consulte as regras do nosso [SECURITY.md](https://github.com/contabase-app/contabase/blob/main/SECURITY.md) para os procedimentos seguros.
+
+            PR fechado automaticamente para manter o fluxo público organizado.`;
+
+            // Adiciona o comentário amigável
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });
+
+            // Fecha o Pull Request
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              state: 'closed'
+            });

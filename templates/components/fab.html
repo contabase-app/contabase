@@ -1,0 +1,83 @@
+{{define "fab-default"}}
+<div id="fab-primary" class="fixed bottom-24 right-4 z-50 md:bottom-6 md:right-8 pointer-events-none">
+    <button hx-get="/transacoes/nova" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" class="pointer-events-auto p-4 -m-4 outline-none group touch-manipulation" aria-label="Adicionar lancamento">
+        <div class="cb-fab group-active:scale-95">
+            <i data-lucide="plus" class="w-6 h-6 group-hover:rotate-90 transition-transform duration-300 pointer-events-none"></i>
+        </div>
+    </button>
+</div>
+{{end}}
+
+{{define "fab-metas"}}
+<div id="fab-primary" class="fixed bottom-24 right-4 z-50 md:bottom-6 md:right-8 pointer-events-none">
+    <button
+        hx-get="/metas/novo?aba={{if eq .Aba "caixinhas"}}reserva{{else}}limite{{end}}"
+        hx-target="#bottom-sheet-container"
+        hx-swap="innerHTML"
+        hx-push-url="false"
+        class="pointer-events-auto p-4 -m-4 outline-none group touch-manipulation"
+        aria-label="Criar meta"
+    >
+        <div class="cb-fab group-active:scale-95">
+            <i data-lucide="target" class="w-6 h-6 group-hover:scale-110 transition-transform duration-300 pointer-events-none"></i>
+        </div>
+    </button>
+</div>
+{{end}}
+
+{{define "fab-default-oob"}}
+<div id="fab-primary" hx-swap-oob="outerHTML" class="fixed bottom-24 right-4 z-50 md:bottom-6 md:right-8 pointer-events-none">
+    <button hx-get="/transacoes/nova" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" class="pointer-events-auto p-4 -m-4 outline-none group touch-manipulation" aria-label="Adicionar lancamento">
+        <div class="cb-fab group-active:scale-95">
+            <i data-lucide="plus" class="w-6 h-6 group-hover:rotate-90 transition-transform duration-300 pointer-events-none"></i>
+        </div>
+    </button>
+</div>
+{{end}}
+
+{{define "fab-contatos"}}
+<div id="fab-primary" class="fixed bottom-24 right-4 z-50 md:bottom-6 md:right-8 pointer-events-none">
+    <button
+        type="button"
+        data-onclick-ev="openContatosModal"
+        class="pointer-events-auto p-4 -m-4 outline-none group touch-manipulation"
+        aria-label="Novo contato"
+    >
+        <div class="cb-fab group-active:scale-95">
+            <i data-lucide="user-plus" class="w-6 h-6 group-hover:scale-110 transition-transform duration-300 pointer-events-none"></i>
+        </div>
+    </button>
+</div>
+{{end}}
+
+{{define "fab-contatos-oob"}}
+<div id="fab-primary" hx-swap-oob="outerHTML" class="fixed bottom-24 right-4 z-50 md:bottom-6 md:right-8 pointer-events-none">
+    <button
+        type="button"
+        data-onclick-ev="openContatosModal"
+        class="pointer-events-auto p-4 -m-4 outline-none group touch-manipulation"
+        aria-label="Novo contato"
+    >
+        <div class="cb-fab group-active:scale-95">
+            <i data-lucide="user-plus" class="w-6 h-6 group-hover:scale-110 transition-transform duration-300 pointer-events-none"></i>
+        </div>
+    </button>
+</div>
+{{end}}
+
+{{define "fab-metas-oob"}}
+<div id="fab-primary" hx-swap-oob="outerHTML" class="fixed bottom-24 right-4 z-50 md:bottom-6 md:right-8 pointer-events-none">
+    <button
+        hx-get="/metas/novo?aba={{if eq .Aba "caixinhas"}}reserva{{else}}limite{{end}}"
+        hx-target="#bottom-sheet-container"
+        hx-swap="innerHTML"
+        hx-push-url="false"
+        class="pointer-events-auto p-4 -m-4 outline-none group touch-manipulation"
+        aria-label="Criar meta"
+    >
+        <div class="cb-fab group-active:scale-95">
+            <i data-lucide="target" class="w-6 h-6 group-hover:scale-110 transition-transform duration-300 pointer-events-none"></i>
+        </div>
+    </button>
+</div>
+{{end}}

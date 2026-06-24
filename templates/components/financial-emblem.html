@@ -1,0 +1,7 @@
+{{define "financial-emblem"}}
+{{if .ProviderMark}}
+<span class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .ProviderMark}}" style="color: var(--emblem-color, {{.Color}})">{{.ProviderMark}}</span>
+{{else}}
+<i data-lucide="{{if .Icon}}{{.Icon}}{{else}}wallet{{end}}" class="h-4 w-4 icon-colored" style="--ic: var(--emblem-color, {{.Color}})"></i>
+{{end}}
+{{end}}

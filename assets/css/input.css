@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@source "../../templates/**/*.html";
+@source "../../templates/*.html";
+@source "../../internal/**/*.go";
+@source "../../cmd/**/*.go";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+
+@layer components {
+    .btn-tactile {
+        transition: all 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .btn-tactile:active {
+        transform: scale(0.96);
+    }
+
+    .premium-dot-pattern {
+        background-image: radial-gradient(rgba(255, 255, 255, 0.015) 1.5px, transparent 1.5px);
+        background-size: 24px 24px;
+    }
+
+    /* Style for active theme option button */
+    [data-theme-option].border-indigo-600 {
+        background-color: var(--cb-accent-soft) !important;
+        border-color: var(--cb-accent) !important;
+        color: var(--cb-accent) !important;
+    }
+}
+
+@layer utilities {
+    .scrollbar-none {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+    .scrollbar-none::-webkit-scrollbar {
+        display: none;
+    }
+}
+
+@layer base {
+  /* Oculta barra de rolagem no Chrome, Safari e Opera */
+  ::-webkit-scrollbar {
+    display: none;
+  }
+  /* Oculta barra de rolagem no Firefox e IE/Edge */
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+}
+
+@layer utilities {
+  /* Suavização de transições assíncronas do HTMX */
+  .htmx-settling {
+    opacity: 0;
+  }
+
+  .htmx-request {
+    opacity: 0.8;
+    transition: opacity 150ms ease-in-out;
+  }
+}

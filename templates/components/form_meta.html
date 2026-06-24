@@ -1,0 +1,149 @@
+{{define "metas-form"}}
+<div class="fixed inset-0 z-[100]">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation"></div>
+    <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto">
+        <article class="sheet-in cb-modal relative flex h-[85vh] max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl shadow-2xl shadow-black/80 md:mx-auto md:my-12 md:h-auto md:max-h-[calc(100vh-6rem)] md:max-w-md md:rounded-2xl md:shadow-2xl" data-meta-form-root data-open-tab="{{if eq .OpenTab "caixinha"}}caixinha{{else}}limite{{end}}">
+        <div class="absolute right-4 top-4 z-[110]">
+            <button type="button" class="cb-button cb-button-secondary h-8 w-8 flex items-center justify-center rounded-full p-0" data-onclick="closeBottomSheet">
+                <i data-lucide="x" class="h-4 w-4"></i>
+            </button>
+        </div>
+        <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-zinc-700/60 md:hidden"></div>
+        <div class="pt-2 md:pt-4 mb-3 flex items-center justify-between px-6">
+            <div class="pr-8">
+                <h2 class="text-sm font-semibold cb-text-main">{{if eq .Mode "edit"}}Editar Meta{{else}}Nova Meta{{end}}</h2>
+                <p class="mt-0.5 text-xs cb-text-subtle">Configure limites de gasto ou reservas</p>
+            </div>
+        </div>
+
+        {{if eq .Mode "create"}}
+        <div class="mb-5 mx-6 cb-segmented grid grid-cols-2">
+            <button type="button" id="tab-limite" class="cb-segmented-option" data-onclick-tab="toggleMetaTab" data-tab="limite">Limites</button>
+            <button type="button" id="tab-caixinha" class="cb-segmented-option" data-onclick-tab="toggleMetaTab" data-tab="caixinha">Reservas</button>
+        </div>
+        {{end}}
+        <div class="flex-1 overflow-y-auto px-6 pt-4 pb-4">
+        {{$isLimite := eq .OpenTab "limite"}}
+        <form id="meta-limite-form" class="{{if not $isLimite}}hidden {{end}}space-y-3" hx-post="/metas/limite" hx-swap="none" hx-indicator="#htmx-indicator">
+            <input type="hidden" name="limit_id" value="{{.LimitID}}">
+            <input type="hidden" name="tipo" value="EXPENSE">
+            <div id="categoriaPicker_limite" class="space-y-1.5 relative">
+                <div class="flex items-center justify-between">
+                    <span class="cb-label mb-0">Categoria vinculada</span>
+                    <span id="categoria-error-limite" class="field-error text-[0.65rem] font-medium text-[var(--cb-danger)] hidden"></span>
+                </div>
+                <div id="limite-form-error" class="hidden"></div>
+                <button type="button"
+                    hx-get="/api/categorias/seletor?tipo=despesa"
+                    hx-target="#picker-modal-container"
+                    hx-swap="beforeend"
+                    hx-push-url="false"
+                    class="cb-input flex h-12 w-full items-center justify-between gap-3 text-left transition-all hover:border-[var(--cb-border-focus)] active:scale-[0.99]">
+                    <span class="flex min-w-0 items-center gap-3">
+                        <span id="categoriaIconWrap_limite" class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border icon-wrap-colored" style="--ic: {{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}">
+                            <i id="categoriaIcon_limite" data-lucide="{{if .CategoryIcon}}{{.CategoryIcon}}{{else}}tag{{end}}" class="h-3.5 w-3.5 icon-colored" style="--ic: {{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}"></i>
+                        </span>
+                        <span class="min-w-0">
+                            <span id="categoriaNome_limite" class="block truncate text-sm font-semibold cb-text-main">{{if .CategoryName}}{{.CategoryName}}{{else}}Buscar categoria...{{end}}</span>
+                        </span>
+                    </span>
+                    <i data-lucide="chevron-down" class="h-4 w-4 flex-shrink-0 cb-text-muted"></i>
+                </button>
+                <input id="categoriaId_limite" type="hidden" name="category_id" value="{{.CategoryID}}">
+            </div>
+            <label class="block">
+                <span class="cb-label">Valor máximo mensal</span>
+                <input name="max_amount_monthly" inputmode="decimal" value="{{.MaxAmountInput}}" placeholder="R$ 0,00" data-money-mask class="cb-input font-semibold h-12">
+            </label>
+        </form>
+
+        <form id="meta-caixinha-form" class="{{if $isLimite}}hidden {{end}}space-y-3" hx-post="/metas/caixinha" hx-swap="none" hx-indicator="#htmx-indicator">
+            <input type="hidden" name="box_id" value="{{.BoxID}}">
+            <input type="hidden" name="tipo" value="EXPENSE">
+            <label class="block">
+                <span class="cb-label">Nome da reserva</span>
+                <input name="name" maxlength="80" value="{{.Name}}" class="cb-input font-semibold h-12">
+            </label>
+            <div id="categoriaPicker_caixinha" class="space-y-1.5 relative">
+                <div class="flex items-center justify-between">
+                    <span class="cb-label mb-0">Categoria vinculada</span>
+                    <span id="categoria-error-caixinha" class="field-error text-[0.65rem] font-medium text-[var(--cb-danger)] hidden"></span>
+                </div>
+                <button type="button"
+                    hx-get="/api/categorias/seletor?tipo=despesa"
+                    hx-target="#picker-modal-container"
+                    hx-swap="beforeend"
+                    hx-push-url="false"
+                    class="cb-input flex h-12 w-full items-center justify-between gap-3 text-left transition-all hover:border-[var(--cb-border-focus)] active:scale-[0.99]">
+                    <span class="flex min-w-0 items-center gap-3">
+                        <span id="categoriaIconWrap_caixinha" class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border icon-wrap-colored" style="--ic: {{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}">
+                            <i id="categoriaIcon_caixinha" data-lucide="{{if .CategoryIcon}}{{.CategoryIcon}}{{else}}tag{{end}}" class="h-3.5 w-3.5 icon-colored" style="--ic: {{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}"></i>
+                        </span>
+                        <span class="min-w-0">
+                            <span id="categoriaNome_caixinha" class="block truncate text-sm font-semibold cb-text-main">{{if .CategoryName}}{{.CategoryName}}{{else}}Buscar categoria...{{end}}</span>
+                        </span>
+                    </span>
+                    <i data-lucide="chevron-down" class="h-4 w-4 flex-shrink-0 cb-text-muted"></i>
+                </button>
+                <input id="categoriaId_caixinha" type="hidden" name="category_id" value="{{.CategoryID}}">
+            </div>
+            <label class="block">
+                <span class="cb-label">Valor alvo (Opcional)</span>
+                <input name="target_amount" inputmode="decimal" value="{{.TargetAmountInput}}" placeholder="R$ 0,00" data-money-mask class="cb-input font-semibold h-12">
+            </label>
+            <label class="block">
+                <span class="cb-label">Recarga mensal</span>
+                <input name="monthly_recharge" inputmode="decimal" value="{{.MonthlyRechargeInput}}" placeholder="R$ 0,00" data-money-mask class="cb-input font-semibold h-12">
+            </label>
+            <label class="block cursor-pointer">
+                <span class="cb-label">Data alvo</span>
+                <div class="relative">
+                    <input id="targetMonthInput" name="target_month" type="month" value="{{.TargetMonthInput}}" class="cb-input h-12 pr-10 [color-scheme:dark]">
+                    <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 cb-text-muted">
+                        <i data-lucide="calendar" class="h-4 w-4"></i>
+                    </span>
+                </div>
+            </label>
+            {{if .BalanceLabel}}
+            <p class="cb-card-muted px-3 py-2.5 text-xs cb-text-subtle">Saldo atual: <span class="font-semibold cb-text-main">{{.BalanceLabel}}</span></p>
+            {{end}}
+            <label class="block">
+                <span class="cb-label">Rentabilidade est. mensal (Opcional)</span>
+                <div class="relative">
+                    <input name="monthly_yield_rate" inputmode="decimal" value="{{.MonthlyYieldRateInput}}" placeholder="Ex: 0,8" data-percent-mask class="cb-input h-12 font-semibold pr-12">
+                    <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium cb-text-subtle">% a.m.</span>
+                </div>
+                <p class="mt-1 text-[0.65rem] cb-text-subtle">Ex: 0,8 para 0,8% ao mes (~10% ao ano). Estimativa para projecao.</p>
+            </label>
+        </form>
+
+        <div class="{{if eq .Mode "edit"}}flex items-center justify-between{{else}}flex justify-center{{end}} pt-6 pb-4">
+            {{if eq .Mode "edit"}}
+            {{if $isLimite}}
+            <button type="button"
+                hx-delete="/metas/limite/{{.LimitID}}" hx-target="closest .sheet-in" hx-swap="delete" hx-confirm="Tem certeza que deseja excluir este limite?"
+                class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-[var(--cb-danger)] transition-colors hover:bg-[rgba(239,68,68,0.1)] active:scale-[0.97] min-h-[44px]">
+                <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Excluir limite
+            </button>
+            <button type="submit" form="meta-limite-form"
+                class="cb-fab transition-all duration-150 cursor-pointer inline-flex" aria-label="Confirmar limite"><i data-lucide="check" class="h-6 w-6"></i></button>
+            {{else}}
+            <button type="button"
+                hx-delete="/metas/caixinha/{{.BoxID}}" hx-target="closest .sheet-in" hx-swap="delete" hx-confirm="Tem certeza que deseja excluir esta reserva?"
+                class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-[var(--cb-danger)] transition-colors hover:bg-[rgba(239,68,68,0.1)] active:scale-[0.97] min-h-[44px]">
+                <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Excluir reserva
+            </button>
+            <button type="submit" form="meta-caixinha-form"
+                class="cb-fab transition-all duration-150 cursor-pointer inline-flex" aria-label="Confirmar reserva"><i data-lucide="check" class="h-6 w-6"></i></button>
+            {{end}}
+            {{else}}
+            <button type="submit" data-meta-create-submit
+                form="{{if $isLimite}}meta-limite-form{{else}}meta-caixinha-form{{end}}"
+                class="cb-fab transition-all duration-150 cursor-pointer inline-flex" aria-label="Confirmar"><i data-lucide="check" class="h-6 w-6"></i></button>
+            {{end}}
+        </div>
+        </div>
+        </article>
+    </div>
+</div>
+{{end}}

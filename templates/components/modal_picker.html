@@ -1,0 +1,43 @@
+{{define "modal-picker"}}
+<style>.pk-item{display:flex;width:100%;align-items:center;gap:.75rem;border-radius:.75rem;padding:.75rem;text-align:left}.pk-item:hover{background:var(--cb-surface-3)}.pk-dot{display:flex;height:2.5rem;width:2.5rem;flex-shrink:0;align-items:center;justify-content:center}.pk-dot::before{content:'';display:block;height:.625rem;width:.625rem;border-radius:9999px;background:#64748b}.pk-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.875rem;font-weight:600;color:var(--cb-text-main)}</style>
+<div id="modalPickerBackdrop" data-contabase-overlay data-overlay-priority="120" data-overlay-close="closePickerModal" data-overlay-close-method="remove" data-picker-backdrop class="fixed inset-0 z-[120] bg-black/80 md:px-4 md:py-6">
+    <section class="mx-auto flex h-full max-w-md items-end md:max-w-xl md:items-start" id="modalPickerSheet">
+        <div class="flex h-[85vh] w-full flex-col overflow-hidden rounded-t-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] shadow-sm md:mx-auto md:my-12 md:h-auto md:max-h-[85vh] md:rounded-xl animate-slide-up-mobile md:animate-scale-in">
+            <!-- Header -->
+            <div class="flex items-center justify-between border-b border-[var(--cb-border-subtle)] p-4">
+                <h3 class="text-lg font-bold text-[var(--cb-text-main)]">{{.Title}}</h3>
+                <button type="button" data-onclick-ev="closePickerModal" class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--cb-surface-3)] text-[var(--cb-text-muted)] transition-colors hover:bg-[var(--cb-surface-2)] hover:text-[var(--cb-text-main)]">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            
+            <!-- Search -->
+            <div class="border-b border-[var(--cb-border-subtle)] p-4">
+                <div class="relative flex items-center w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-4 py-3 focus-within:border-[var(--cb-border-focus)] transition-colors">
+                    <i data-lucide="search" class="h-4 w-4 text-[var(--cb-text-muted)] mr-2.5 shrink-0"></i>
+                    <input type="search" name="q"
+                        hx-get="{{.SearchEndpoint}}"
+                        hx-trigger="keyup delay:400ms, search"
+                        hx-target="#picker-list-container"
+                        hx-swap="innerHTML"
+                        hx-indicator="#modalPickerLoading"
+                        hx-include="[name='tipo']"
+                        hx-disinherit="*"
+                        data-picker-search
+                        placeholder="Buscar {{.TargetName}}..."
+                        class="flex-1 bg-transparent border-none outline-none p-0 m-0 text-sm text-[var(--cb-text-main)] placeholder:text-[var(--cb-text-subtle)]">
+                    <div id="modalPickerLoading" class="htmx-indicator ml-2 shrink-0">
+                        <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- List Container: swap target exclusivo do input de busca -->
+            <!-- NUNCA mova o input para dentro deste div -->
+            <div id="picker-list-container" class="flex-1 overflow-y-auto p-2 scrollbar-hide space-y-1" data-picker-type="{{.ItemType}}">
+                {{template "modal-picker-list" .}}
+            </div>
+        </div>
+    </section>
+</div>
+{{end}}

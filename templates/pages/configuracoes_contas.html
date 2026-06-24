@@ -1,0 +1,139 @@
+{{define "configuracoes-contas-page"}}
+{{template "layout-start" .}}
+<div class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pb-28 pt-5 md:pb-10 md:pt-8 relative">
+    <!-- Liquid blurs + dot pattern -->
+    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-60">
+        <div class="absolute top-[5%] left-[-20%] w-[55vw] h-[55vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
+        <div class="absolute bottom-[10%] right-[-15%] w-[45vw] h-[45vw] rounded-full bg-indigo-400/10 dark:bg-indigo-500/5 blur-[80px]"></div>
+    </div>
+
+    <!-- Desktop View: SaaS Split Layout -->
+    <div class="hidden md:flex gap-8 w-full max-w-full">
+        <!-- Sidebar Navigation -->
+        <aside class="md:w-64 flex-none border-r border-[var(--cb-border-subtle)] pr-6">
+            <div class="mb-6">
+                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
+                <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Painel de Controle</h2>
+            </div>
+            {{template "configuracoes-sidebar" .}}
+        </aside>
+
+        <!-- Dynamic Content Area -->
+        <div id="settings-content" class="flex-1 pl-4">
+            {{template "configuracoes-contas-content" .}}
+        </div>
+    </div>
+
+    <!-- Mobile View -->
+    <div class="block md:hidden">
+        {{template "configuracoes-contas-content" .}}
+    </div>
+</div>
+{{template "layout-end" .}}
+{{end}}
+
+{{define "configuracoes-contas-content"}}
+<div id="settings-dynamic-payload" class="w-full">
+    <!-- Header Mobile Only -->
+    <header class="sticky top-14 z-20 bg-[var(--cb-surface-overlay)] backdrop-blur-xl border-b border-[var(--cb-border-subtle)] transition-colors md:hidden w-full">
+        <div class="mx-auto flex max-w-7xl items-center gap-4 px-4 pt-4 pb-3">
+            <button type="button" hx-get="/configuracoes" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] btn-tactile">
+                <i data-lucide="arrow-left" class="h-4 w-4"></i>
+            </button>
+            <div class="min-w-0 flex-1">
+                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
+                <h1 class="mt-0.5 text-lg font-bold text-[var(--cb-text-main)] md:text-xl capitalize">contas</h1>
+            </div>
+        </div>
+    </header>
+
+    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative">
+        <!-- Liquid blurs + dot pattern -->
+        <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-60 md:hidden">
+            <div class="absolute top-[5%] left-[-20%] w-[55vw] h-[55vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
+            <div class="absolute bottom-[10%] right-[-15%] w-[45vw] h-[45vw] rounded-full bg-indigo-400/10 dark:bg-indigo-500/5 blur-[80px]"></div>
+        </div>
+        
+
+        {{if .FlashError}}<div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-100">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100">{{.FlashSuccess}}</div>{{end}}
+
+        <div class="md:premium-card md:bg-[var(--cb-surface-1)]/75 md:backdrop-blur-xl md:border md:border-[var(--cb-border-subtle)] md:shadow-sm md:rounded-3xl p-0 md:p-8">
+            <div class="mb-6">
+                <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Contas</h2>
+                <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Gerencie suas contas bancárias e de investimento.</p>
+            </div>
+            <form data-provider-select class="mb-6 rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 md:p-5" hx-post="/configuracoes/contas" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
+                    <div>
+                        <span class="{{template "field-label" .}}">Banco / Carteira</span>
+                        <select name="provider_slug" data-provider-value class="{{template "field-class" .}}">
+                            {{range .AccountProviders}}
+                            <option value="{{.Slug}}">{{.Name}}</option>
+                            {{end}}
+                            <option value="custom">Outro / Personalizado</option>
+                        </select>
+                    </div>
+                    <div>
+                        <span class="{{template "field-label" .}}">Tipo</span>
+                        <select name="type" class="{{template "field-class" .}}">
+                            <option value="CHECKING">Conta Corrente</option>
+                            <option value="SAVINGS">Poupança</option>
+                            <option value="INVESTMENT">Investimento</option>
+                            <option value="WALLET">Carteira / Dinheiro</option>
+                        </select>
+                    </div>
+                    <div>
+                        <span class="{{template "field-label" .}}">Ícone</span>
+                        <select name="icon" class="{{template "field-class" .}}">
+                            <option value="">Padrão</option>
+                            <option value="landmark">Banco (landmark)</option>
+                            <option value="building-2">Prédio (building)</option>
+                            <option value="wallet">Carteira (wallet)</option>
+                            <option value="credit-card">Cartão (credit-card)</option>
+                            <option value="piggy-bank">Cofrinho (piggy-bank)</option>
+                            <option value="briefcase">Maleta (briefcase)</option>
+                            <option value="circle-dollar-sign">Dinheiro (dollar)</option>
+                            <option value="receipt">Recibo (receipt)</option>
+                            <option value="banknote">Cédula (banknote)</option>
+                            <option value="coins">Moedas (coins)</option>
+                            <option value="hand-coins">Mão com Moedas</option>
+                        </select>
+                    </div>
+                    <div>
+                        <span class="{{template "field-label" .}}">Saldo inicial</span>
+                        <input type="text" name="initial_balance" placeholder="R$ 0,00" inputmode="decimal" data-money-mask class="{{template "field-class" .}}">
+                    </div>
+                </div>
+                <div data-provider-custom class="hidden mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div  class="md:col-span-2">
+                        <span class="{{template "field-label" .}}">Nome da instituição</span>
+                        <input type="text" name="provider_custom_name" placeholder="Ex: Cooperativa Local" data-provider-custom-input disabled class="{{template "field-class" .}}">
+                    </div>
+                    <div>
+                        <span class="{{template "field-label" .}}">Cor</span>
+                        <input type="color" name="color" value="#6B7280" data-provider-custom-input disabled class="h-10 w-full rounded-xl border border-[var(--cb-border-strong)] p-1.5 bg-[var(--cb-surface-2)]">
+                    </div>
+                </div>
+                <button class="cb-button cb-button-primary h-11 px-6 text-sm mt-4">Criar conta</button>
+            </form>
+            <div class="space-y-2">
+            {{range .Contas}}{{template "config-contas-row" .}}{{else}}<div class="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-dashed border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)]/50"><div class="w-12 h-12 rounded-xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-3"><i data-lucide="wallet" class="w-5 h-5 text-[var(--cb-text-subtle)]"></i></div><p class="text-sm text-[var(--cb-text-muted)]">Nenhuma conta cadastrada</p></div>{{end}}
+            </div>
+
+            {{if .ContasArquivadas}}
+            <details class="mt-8 group/archived">
+                <summary class="cursor-pointer text-sm font-medium text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] select-none flex items-center gap-2">
+                    <i data-lucide="archive" class="h-4 w-4"></i>
+                    Arquivados ({{len .ContasArquivadas}})
+                    <i data-lucide="chevron-down" class="h-4 w-4 transition-transform group-open/archived:rotate-180"></i>
+                </summary>
+                <div class="mt-3 space-y-2">
+                    {{range .ContasArquivadas}}{{template "config-contas-row-archived" .}}{{end}}
+                </div>
+            </details>
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}

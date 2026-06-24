@@ -1,0 +1,63 @@
+{{define "seletor_meses"}}
+<div id="monthSelector" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} class="mx-auto flex w-full max-w-7xl items-center justify-between gap-2 px-3 pb-1.5 md:gap-4 md:px-6 lg:px-8">
+    <div class="min-w-0 flex-1 overflow-x-auto scrollbar-hide scrollbar-none">
+        <div id="monthRail" class="flex min-w-max items-center gap-1.5 sm:gap-2">
+            {{range .MonthOptions}}
+            <button type="button"
+                hx-get="{{if and $.MonthSelectorHXGet .Query}}{{printf "%s?%s" $.MonthSelectorHXGet .Query}}{{else}}{{.URL}}{{end}}"
+                hx-target="{{if $.MonthSelectorHXTarget}}{{$.MonthSelectorHXTarget}}{{else}}#main-content{{end}}"
+                {{if $.MonthSelectorHXSelect}}hx-select="{{$.MonthSelectorHXSelect}}"{{end}}
+                {{if $.MonthSelectorHXSwap}}hx-swap="{{$.MonthSelectorHXSwap}}"{{end}}
+                {{if $.MonthSelectorPartial}}hx-vals='{"partial":"{{$.MonthSelectorPartial}}"}'{{else}}hx-replace-url="true"{{end}}
+                {{if .IsActive}}data-month-active="true"{{end}}
+                class="month-btn border
+                    {{if .IsActive}}
+                        {{if .IsCurrent}}border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/15 dark:text-violet-200{{else}}border-violet-300 bg-violet-50/50 text-violet-600 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-200/80{{end}}
+                    {{else}}
+                        {{if .IsCurrent}}border-violet-200 bg-transparent text-violet-600 hover:bg-violet-50 dark:border-violet-500/20 dark:text-violet-300 dark:hover:bg-violet-500/10{{else}}border-transparent text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)]{{end}}
+                    {{end}}">
+                <span class="block leading-none">{{.Label}}</span>
+                <span class="mt-0.5 block text-[9px] sm:text-[0.62rem] font-medium {{if .IsActive}}text-violet-500/80 dark:text-violet-200/80{{else}}text-[var(--cb-text-subtle)]{{end}}">{{.Year}}</span>
+            </button>
+            {{end}}
+        </div>
+    </div>
+
+    <div class="flex items-center gap-1.5 shrink-0">
+        <button type="button"
+            class="h-9 w-9 sm:h-11 sm:w-11 shrink-0 flex items-center justify-center rounded-lg sm:rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] transition-colors hover:bg-[var(--cb-surface-3)]"
+            hx-get="{{if and .MonthSelectorHXGet .MonthSelectorPrevQuery}}{{printf "%s?%s" .MonthSelectorHXGet .MonthSelectorPrevQuery}}{{else}}{{.MesAnteriorURL}}{{end}}"
+            hx-target="{{if .MonthSelectorHXTarget}}{{.MonthSelectorHXTarget}}{{else}}#main-content{{end}}"
+            {{if $.MonthSelectorHXSelect}}hx-select="{{$.MonthSelectorHXSelect}}"{{end}}
+            {{if .MonthSelectorHXSwap}}hx-swap="{{.MonthSelectorHXSwap}}"{{end}}
+            {{if .MonthSelectorPartial}}hx-vals='{"partial":"{{.MonthSelectorPartial}}"}'{{else}}hx-replace-url="true"{{end}}
+            aria-label="Mês anterior">
+            <i data-lucide="chevron-left" class="h-3.5 w-3.5 sm:h-4 sm:w-4"></i>
+        </button>
+
+        {{if .CurrentMonthURL}}
+        <button type="button"
+            class="h-9 w-9 sm:h-11 sm:w-11 shrink-0 flex items-center justify-center rounded-lg sm:rounded-xl border border-violet-200 bg-violet-50/80 text-violet-600 transition-colors hover:bg-violet-100 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-400 dark:hover:bg-violet-500/20"
+            hx-get="{{if and .MonthSelectorHXGet .MonthSelectorCurrentQuery}}{{printf "%s?%s" .MonthSelectorHXGet .MonthSelectorCurrentQuery}}{{else}}{{.CurrentMonthURL}}{{end}}"
+            hx-target="{{if .MonthSelectorHXTarget}}{{.MonthSelectorHXTarget}}{{else}}#main-content{{end}}"
+            {{if $.MonthSelectorHXSelect}}hx-select="{{$.MonthSelectorHXSelect}}"{{end}}
+            {{if .MonthSelectorHXSwap}}hx-swap="{{.MonthSelectorHXSwap}}"{{end}}
+            {{if .MonthSelectorPartial}}hx-vals='{"partial":"{{.MonthSelectorPartial}}"}'{{else}}hx-replace-url="true"{{end}}
+            aria-label="Mês atual">
+            <i data-lucide="target" class="h-3.5 w-3.5 sm:h-4 sm:w-4"></i>
+        </button>
+        {{end}}
+
+        <button type="button"
+            class="h-9 w-9 sm:h-11 sm:w-11 shrink-0 flex items-center justify-center rounded-lg sm:rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] transition-colors hover:bg-[var(--cb-surface-3)]"
+            hx-get="{{if and .MonthSelectorHXGet .MonthSelectorNextQuery}}{{printf "%s?%s" .MonthSelectorHXGet .MonthSelectorNextQuery}}{{else}}{{.MesSeguinteURL}}{{end}}"
+            hx-target="{{if .MonthSelectorHXTarget}}{{.MonthSelectorHXTarget}}{{else}}#main-content{{end}}"
+            {{if $.MonthSelectorHXSelect}}hx-select="{{$.MonthSelectorHXSelect}}"{{end}}
+            {{if .MonthSelectorHXSwap}}hx-swap="{{.MonthSelectorHXSwap}}"{{end}}
+            {{if .MonthSelectorPartial}}hx-vals='{"partial":"{{.MonthSelectorPartial}}"}'{{else}}hx-replace-url="true"{{end}}
+            aria-label="Mês seguinte">
+            <i data-lucide="chevron-right" class="h-3.5 w-3.5 sm:h-4 sm:w-4"></i>
+        </button>
+    </div>
+</div>
+{{end}}

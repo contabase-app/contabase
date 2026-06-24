@@ -1,0 +1,46 @@
+{{define "invoice-row-legacy"}}
+<article id="invoice-{{.ID}}" class="invoice-row relative mb-1.5 overflow-hidden rounded-xl"
+    data-invoice-id="{{.ID}}"
+    data-swipe-row="true"
+    data-swipe-left-url="/transacoes/bulk/delete"
+    data-swipe-left-method="POST"
+    data-swipe-left-target="#invoice-{{.ID}}"
+    data-swipe-left-swap="delete"
+    data-swipe-left-confirm="Remover esta fatura?"
+    data-swipe-right-url="{{.FaturaURL}}"
+    data-swipe-right-method="GET"
+    data-swipe-right-target="#main-content"
+    data-swipe-right-swap="innerHTML">
+    <div data-swipe-bg-left class="absolute inset-y-0 left-0 flex w-28 origin-left items-center justify-start rounded-l-xl bg-red-500 px-6 opacity-0 pointer-events-none">
+        <i data-lucide="trash-2" class="w-5 h-5 text-white"></i>
+    </div>
+    <div data-swipe-bg-right class="absolute inset-y-0 right-0 flex w-28 origin-right items-center justify-end rounded-r-xl bg-indigo-500 px-6 opacity-0 pointer-events-none">
+        <i data-lucide="external-link" class="w-5 h-5 text-white"></i>
+    </div>
+    <div data-swipe-content
+        hx-get="{{.FaturaURL}}"
+        hx-target="#main-content"
+        hx-select="#main-content"
+        hx-push-url="true"
+        class="relative z-10 flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-3 transition-all duration-200 hover:bg-zinc-50 dark:border-zinc-800/50 dark:bg-zinc-900/50 dark:hover:bg-zinc-800/40
+        {{if .IsOverdue}}border-red-200 bg-red-50/50 dark:border-red-500/20 dark:bg-red-500/[0.04]{{end}}">
+        <span class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.CardColor}}">
+            {{if .CardProviderMark}}
+            <span class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .CardProviderMark}}" style="color: var(--emblem-color, {{.CardColor}})">{{.CardProviderMark}}</span>
+            {{else}}
+            <i data-lucide="{{if .CardIcon}}{{.CardIcon}}{{else}}credit-card{{end}}" class="w-5 h-5 icon-colored" style="--ic: var(--emblem-color, {{.CardColor}})"></i>
+            {{end}}
+        </span>
+        <span class="flex-1 min-w-0">
+            <h4 class="text-sm font-medium text-zinc-800 dark:text-white/85 truncate">Fatura {{.AccountName}} - {{.ReferenceLabel}}</h4>
+            <p class="text-xs text-zinc-400 dark:text-white/40 mt-0.5">Vence em {{.DateLabel}} · {{.ItemCount}} {{if eq .ItemCount 1}}item{{else}}itens{{end}}</p>
+        </span>
+        <div class="flex flex-col items-end flex-shrink-0">
+            <p class="text-sm font-semibold {{if .IsOverdue}}text-[#FE414F]{{else}}text-zinc-800 dark:text-white/90{{end}}" data-sensitive>R$ {{.TotalMoney.Reais}}{{.TotalMoney.Cents}}</p>
+            <span class="badge {{if eq .Status "PAID"}}badge-success{{else if .IsOverdue}}badge-error{{else if eq .Status "CLOSED"}}badge-error{{else}}badge-warning{{end}}">
+                {{if eq .Status "PAID"}}Paga{{else if .IsOverdue}}Vencida{{else if eq .Status "CLOSED"}}Fechada{{else}}Aberta{{end}}
+            </span>
+        </div>
+    </div>
+</article>
+{{end}}

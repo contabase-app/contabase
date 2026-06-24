@@ -1,0 +1,29 @@
+{{define "modal-picker-list"}}
+    {{- if len .Items}}
+        {{- range .Items}}
+        <button type="button" data-picker-select data-picker-id="{{.ID}}" data-picker-name="{{.Name}}" data-picker-icon="{{.Icon}}" data-picker-color="{{.Color}}"{{if .BoxID}} data-picker-box-id="{{.BoxID}}" data-picker-box-reserved="{{.BoxReservedBalance}}" data-picker-box-name="{{.BoxName}}"{{end}}{{if .LimitMax}} data-picker-limit-max="{{.LimitMax}}" data-picker-limit-spent="{{.LimitSpent}}"{{end}} class="pk-item"><span class="pk-dot"></span><span class="pk-name">{{.Name}}</span></button>
+        {{- end}}
+    {{- else}}
+    <div class="flex flex-col items-center justify-center py-8 text-center">
+        <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--cb-surface-3)]">
+            <i data-lucide="search-x" class="h-6 w-6 text-[var(--cb-text-muted)]"></i>
+        </div>
+        {{if .SearchQuery}}
+        <p class="text-sm font-medium text-[var(--cb-text-main)]">Nenhuma categoria encontrada para "{{.SearchQuery}}"</p>
+        {{if .CreateURL}}
+        <button type="button"
+            hx-get="{{.CreateURL}}"
+            hx-target="#picker-list-container"
+            hx-swap="innerHTML"
+            class="cb-button cb-button-primary mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold">
+            <i data-lucide="plus" class="h-3.5 w-3.5"></i>
+            Cadastrar "{{.SearchQuery}}"
+        </button>
+        {{end}}
+        {{else}}
+        <p class="text-sm font-medium text-[var(--cb-text-main)]">Nenhuma categoria encontrada</p>
+        <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Ajuste o tipo ou o termo de busca</p>
+        {{end}}
+    </div>
+    {{end}}
+{{end}}
