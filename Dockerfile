@@ -36,6 +36,7 @@ COPY --from=builder /app/server .
 COPY --from=builder /app/admin .
 COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/assets ./assets
+COPY --from=builder /app/VERSION /app/VERSION
 
 RUN addgroup -g 1000 appgroup && \
     adduser -u 1000 -G appgroup -S -D appuser

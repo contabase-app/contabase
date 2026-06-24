@@ -17,7 +17,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release-artifacts-${{ github.ref }}
@@ -81,6 +81,8 @@ jobs:
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
 
     steps:
       - name: Check out source
@@ -241,6 +243,20 @@ jobs:
             release-dist/checksums.txt
           if-no-files-found: error
           retention-days: 7
+
+      - name: Attach assets to GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.version }}
+          prerelease: ${{ contains(needs.prepare.outputs.version, '-beta') }}
+          draft: false
+          files: |
+            release-dist/contabase-linux-amd64.tar.gz
+            release-dist/contabase-linux-arm64.tar.gz
+            release-dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   ghcr:
     name: Publish multi-arch image to GHCR
