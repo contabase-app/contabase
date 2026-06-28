@@ -1,12 +1,7 @@
 {{define "configuracoes-categorias-page"}}
 {{template "layout-start" .}}
 <div class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pb-28 pt-5 md:pb-10 md:pt-8 relative">
-    <!-- Background base + blobs (DS pattern) -->
-    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden">
-        <div class="absolute inset-0 cb-page"></div>
-        <div class="absolute top-[-30%] left-[-20%] w-[60vw] h-[60vw] rounded-full bg-violet-500/[0.05] dark:bg-violet-500/[0.03] blur-[80px]"></div>
-        <div class="absolute bottom-[-20%] right-[-20%] w-[50vw] h-[50vw] rounded-full bg-indigo-500/[0.03] dark:bg-indigo-500/[0.02] blur-[80px]"></div>
-    </div>
+    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
 
     <!-- Desktop View: SaaS Split Layout -->
     <div class="hidden md:flex gap-8 w-full max-w-full">
@@ -48,33 +43,26 @@
         </div>
     </header>
 
-    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative">
-        <!-- Background base + blobs for mobile -->
-        <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden md:hidden">
-            <div class="absolute inset-0 cb-page"></div>
-            <div class="absolute top-[-30%] left-[-20%] w-[60vw] h-[60vw] rounded-full bg-violet-500/[0.05] dark:bg-violet-500/[0.03] blur-[80px]"></div>
-            <div class="absolute bottom-[-20%] right-[-20%] w-[50vw] h-[50vw] rounded-full bg-indigo-500/[0.03] dark:bg-indigo-500/[0.02] blur-[80px]"></div>
-        </div>
-        
+    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
+        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-danger) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 8%, transparent); color: var(--cb-danger)">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-success) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-success) 8%, transparent); color: var(--cb-success)">{{.FlashSuccess}}</div>{{end}}
 
-        {{if .FlashError}}<div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-100">{{.FlashError}}</div>{{end}}
-        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100">{{.FlashSuccess}}</div>{{end}}
-
-        <div class="md:bg-[var(--cb-surface-1)] md:border md:border-[var(--cb-border-subtle)] md:shadow-sm md:rounded-xl p-0 md:p-8">
-            <div class="mb-6 flex items-start justify-between gap-4">
-                <div>
-                    <div class="flex items-center gap-2">
-                        <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Categorias</h2>
-                        <a href="/ajuda#categorias-hierarquia" hx-get="/ajuda" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="text-[var(--cb-text-subtle)] hover:text-[var(--cb-text-main)]" title="Ajuda sobre Hierarquia de Categorias">
-                            <i data-lucide="help-circle" class="w-4 h-4"></i>
-                        </a>
-                    </div>
-                    <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Gerencie as categorias de despesas e receitas do workspace.</p>
+        <!-- Section header -->
+        <div class="mb-6 flex items-start justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Categorias</h1>
+                    <a href="/ajuda#categorias-hierarquia" hx-get="/ajuda" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="text-[var(--cb-text-subtle)] hover:text-[var(--cb-text-main)]" title="Ajuda sobre Hierarquia de Categorias">
+                        <i data-lucide="help-circle" class="w-4 h-4"></i>
+                    </a>
                 </div>
+                <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Gerencie as categorias de despesas e receitas do workspace.</p>
             </div>
-            
+        </div>
+
+        <div class="cb-card-dense p-4 md:p-6">
             <!-- Cadastro Superior Form -->
-            <form class="cb-card mb-8 p-4 md:p-5" hx-post="/configuracoes/categorias" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
+            <form class="cb-card-muted mb-6 p-4 md:p-5" hx-post="/configuracoes/categorias" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
                     <div class="md:col-span-2">
                         <span class="cb-label">Nome da categoria</span>
@@ -165,7 +153,7 @@
             {{$expenseCats := filterCategories .Categorias "EXPENSE"}}
 
             <!-- Search -->
-            <div class="mt-6">
+            <div>
                 <div class="relative">
                     <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                         <i data-lucide="search" class="h-4 w-4 text-[var(--cb-text-subtle)]"></i>

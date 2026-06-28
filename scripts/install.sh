@@ -191,29 +191,31 @@ dispatch_method() {
   method="$1"
   case "$method" in
     docker)
-      say "Metodo: Docker Compose (recomendado)."
+      say "Método selecionado: Instalar via Docker Compose"
       run_script "$INSTALL_DOCKER"
       ;;
     source)
-      say "Metodo: build local/source (avancado). Exige Go/Node."
+      say "Método selecionado: Instalar via código-fonte/systemd"
+      say "Este modo compila o ContaBase localmente."
+      say "Indicado para desenvolvimento, customização ou repo privado."
       run_script "$INSTALL_SOURCE"
       ;;
     update-docker)
-      say "Metodo: atualizar instalacao Docker existente."
+      say "Método selecionado: Atualizar via Docker Compose"
       run_script "$UPDATE_DOCKER"
       ;;
     update-source)
-      say "Metodo: atualizar instalacao source/systemd existente."
+      say "Método selecionado: Atualizar via código-fonte/systemd"
       run_script "$UPDATE_SOURCE"
       ;;
     release)
-      say "Metodo: binario pronto de GitHub Release com checksum."
-      say "Exige uma tag publicada com artifact e checksums.txt."
+      say "Método selecionado: Instalar via binário da Release"
+      say "Este modo baixa o binário publicado no GitHub Release."
+      say "Indicado para VPS/LXC sem Docker, sem Go e sem Node."
       run_release_installer
       ;;
     update-release)
-      say "Metodo: atualizar instalacao release/LXC existente."
-      say "Exige uma tag publicada com artifact e checksums.txt."
+      say "Método selecionado: Atualizar via binário da Release"
       run_release_updater
       ;;
     *)
@@ -229,26 +231,25 @@ show_menu() {
   say "ContaBase Installer"
   say "======================================================================"
   blank
-  say "1) Instalar com Docker Compose"
-  say "   Recomendado para a maioria. Isolado e facil de atualizar."
+  say "1) Instalar via Docker Compose"
+  say "   Recomendado para a maioria dos usuários. Isolado e fácil de atualizar."
   blank
-  say "2) Instalar por binario pronto de GitHub Release"
-  say "   Para VPS/LXC Debian sem Docker e sem Go/Node."
-  say "   Exige uma tag publicada com artifact e checksums.txt."
+  say "2) Instalar via binário da Release"
+  say "   Para VPS/LXC sem Docker, sem Go e sem Node."
+  say "   Baixa o binário publicado no GitHub Release."
   blank
-  say "3) Instalar por build local/source"
-  say "   Avancado. Util para desenvolvimento, repo privado ou customizacao."
-  say "   Exige Go/Node."
+  say "3) Instalar via código-fonte/systemd"
+  say "   Avançado. Para desenvolvimento, customização ou repo privado."
+  say "   Exige Go e Node."
   blank
-  say "4) Atualizar instalacao Docker"
-  say "   Atualiza uma instalacao Docker existente."
+  say "4) Atualizar via Docker Compose"
+  say "   Atualiza instalação criada pela opção 1."
   blank
-  say "5) Atualizar instalacao source/systemd"
-  say "   Atualiza instalacao criada por build local/source."
+  say "5) Atualizar via binário da Release"
+  say "   Atualiza instalação criada pela opção 2."
   blank
-  say "6) Atualizar instalacao release/LXC"
-  say "   Atualiza instalacao criada por binario de GitHub Release."
-  say "   Exige uma tag publicada com artifact e checksums.txt."
+  say "6) Atualizar via código-fonte/systemd"
+  say "   Atualiza instalação criada pela opção 3."
   blank
   say "7) Sair"
   blank
@@ -277,11 +278,11 @@ interactive_menu() {
         return 0
         ;;
       5)
-        dispatch_method update-source
+        dispatch_method update-release
         return 0
         ;;
       6)
-        dispatch_method update-release
+        dispatch_method update-source
         return 0
         ;;
       7)

@@ -7,20 +7,14 @@
 {{define "metas-content"}}
 <link rel="stylesheet" href="/assets/css/metas.css">
 <main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative" data-page-title="Metas">
-    <!-- Background blobs removidos para o piloto de Design System visando interface mais plana -->
-    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden">
-    </div>
-
-    <!-- Header removido: seção identificada pela navegação ativa e barra de workspace -->
-
+    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
     {{template "metas-tabs" .}}
 </main>
 {{end}}
 
 {{define "metas-tabs"}}
 <div id="metas-tabs" data-active-tab="{{.Aba}}" {{if .ContentOOB}}hx-swap-oob="outerHTML"{{end}}>
-    <!-- Tabs navegacao HTMX -->
-    <nav class="cb-tabs mb-6 w-full">
+    <nav class="cb-tabs mb-5 w-full">
         <button type="button"
             hx-get="/metas?aba=limites&partial=conteudo"
             hx-target="#metas-tabs" hx-swap="outerHTML"
@@ -37,355 +31,299 @@
         </button>
     </nav>
 
-    <!-- Error containers for OOB swap -->
     <div id="aporte-form-error" class="hidden mb-4"></div>
     <div id="resgate-form-error" class="hidden mb-4"></div>
 
     {{if eq .Aba "limites"}}
-    <!-- Painel: Limites -->
-    <!-- Summary card -->
-    <section class="mb-5">
-        <div class="cb-card">
-            <div class="flex items-center gap-3 mb-2">
-                <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-[rgba(245,158,11,0.12)] text-[var(--cb-warning)]">
-                    <i data-lucide="gauge" class="w-4 h-4"></i>
-                </span>
-                <span class="text-[11px] font-bold cb-text-subtle uppercase tracking-wider">{{if .IsBusiness}}Total gasto nos controles{{else}}Total gasto nos limites{{end}}</span>
-            </div>
-            <p class="text-2xl font-black cb-text-main tracking-tight" data-sensitive>R$ {{.TotalLimits.Reais}}{{.TotalLimits.Cents}}</p>
-            <p class="mt-1 text-[10px] cb-text-subtle">{{.LimitesCount}} {{if eq .LimitesCount 1}}ativo{{else}}ativos{{end}} este mes</p>
-        </div>
-    </section>
-
-    <!-- Lista de Limites -->
-    {{if .Limites}}
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
-        {{range .Limites}}
-        {{if $.IsBusiness}}
-        {{template "metas-limit-card-business" .}}
-        {{else}}
-        {{template "metas-limit-card-personal" .}}
-        {{end}}
-        {{end}}
-    </div>
+    {{template "metas-limites-panel" .}}
     {{else}}
-    <div class="cb-empty-state py-10">
-        <div class="w-12 h-12 rounded-xl cb-card-muted flex items-center justify-center mb-3">
-            <i data-lucide="gauge" class="w-5 h-5 cb-text-muted"></i>
-        </div>
-        <p class="text-sm font-medium cb-text-main">Nenhum limite definido</p>
-        <p class="text-[11px] cb-text-subtle mt-1">Use o botao + para criar seu primeiro limite</p>
-    </div>
-    {{end}}
-
-    {{else}}
-    <!-- Painel: Caixinhas -->
-    <!-- Summary cards -->
-    <div class="mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 px-1 text-xs cb-text-subtle">
-        <i data-lucide="wallet" class="h-3.5 w-3.5 cb-text-muted shrink-0"></i>
-        <span>Saldo total em contas:</span>
-        <span class="font-semibold cb-text-main whitespace-nowrap" data-sensitive>R$ {{.RealBalance.Reais}}{{.RealBalance.Cents}}</span>
-    </div>
-
-    <section class="mb-5 grid grid-cols-2 gap-3">
-        <div class="cb-card transition-all hover:-translate-y-0.5 !border-[rgba(245,158,11,0.3)] shadow-sm">
-            <div class="flex items-center gap-1.5 mb-1.5 sm:mb-3">
-                <span class="flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center rounded-md bg-[rgba(245,158,11,0.12)] text-[var(--cb-warning)] shrink-0">
-                    <i data-lucide="lock" class="h-3 w-3 sm:h-3.5 sm:w-3.5"></i>
-                </span>
-                <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider cb-text-subtle truncate">Saldo Reservado</span>
-            </div>
-            <span class="text-[1.05rem] sm:text-xl font-extrabold text-[var(--cb-warning)] leading-tight tracking-tight whitespace-nowrap block" data-sensitive>R$ {{.ReservedBalance.Reais}}{{.ReservedBalance.Cents}}</span>
-        </div>
-        <div class="cb-card transition-all hover:-translate-y-0.5 {{if .FreeBalanceNegative}}!border-[rgba(239,68,68,0.3)]{{else}}!border-[rgba(34,197,94,0.3)]{{end}} shadow-sm">
-            <div class="flex items-center gap-1.5 mb-1.5 sm:mb-3">
-                <span class="flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center rounded-md {{if .FreeBalanceNegative}}bg-[rgba(239,68,68,0.12)] text-[var(--cb-danger)]{{else}}bg-[rgba(34,197,94,0.12)] text-[var(--cb-success)]{{end}} shrink-0">
-                    <i data-lucide="wallet-cards" class="h-3 w-3 sm:h-3.5 sm:w-3.5"></i>
-                </span>
-                <span class="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider cb-text-subtle truncate">Saldo Disponivel</span>
-            </div>
-            <span class="text-[1.05rem] sm:text-xl font-extrabold leading-tight tracking-tight whitespace-nowrap block {{if .FreeBalanceNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-success)]{{end}}" data-sensitive>R$ {{.FreeBalance.Reais}}{{.FreeBalance.Cents}}</span>
-        </div>
-    </section>
-
-    <!-- Banner explicativo -->
-    <div class="mb-5 rounded-xl border border-[var(--cb-accent-soft)] bg-[var(--cb-accent-soft)] px-4 py-2.5 flex items-center gap-2.5">
-        <i data-lucide="info" class="w-4 h-4 text-[var(--cb-accent)] shrink-0"></i>
-        <p class="text-[11px] cb-text-main">As reservas separam saldo das suas contas para objetivos futuros. O dinheiro continua nas contas, mas fica separado para cada meta.</p>
-    </div>
-
-    <!-- Lista de Caixinhas -->
-    {{if .Caixinhas}}
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
-        {{range .Caixinhas}}
-        {{template "metas-caixinha-card" .}}
-        {{end}}
-    </div>
-    {{else}}
-    <div class="cb-empty-state py-10">
-        <div class="w-12 h-12 rounded-xl cb-card-muted flex items-center justify-center mb-3">
-            <i data-lucide="piggy-bank" class="w-5 h-5 cb-text-muted"></i>
-        </div>
-        <p class="text-sm font-medium cb-text-main">Nenhuma reserva criada</p>
-        <p class="text-[11px] cb-text-subtle mt-1">Use o botão + para criar sua primeira reserva</p>
-    </div>
-    {{end}}
+    {{template "metas-caixinhas-panel" .}}
     {{end}}
 </div>
 {{if .FabOOB}}
 {{template "fab-metas-oob" .}}
 {{end}}
 {{end}}
-{{define "metas-limit-card-business"}}
-<article class="cb-card cb-row flex-col items-stretch">
-    <div class="cursor-pointer"
+
+{{define "metas-limites-panel"}}
+<section class="metas-summary-card" aria-label="Resumo dos limites">
+    <div class="metas-summary-head">
+        <div class="metas-summary-title">
+            <span class="metas-summary-icon">
+                <i data-lucide="gauge" class="w-3.5 h-3.5"></i>
+            </span>
+            Limites
+        </div>
+        <span class="metas-summary-chip">{{.LimitesCount}} {{if eq .LimitesCount 1}}limite ativo{{else}}limites ativos{{end}}</span>
+    </div>
+    <div class="metas-summary-metrics">
+        <div class="metas-summary-metric">
+            <span class="metas-summary-label">Gastos este mês</span>
+            <span class="metas-summary-value" data-sensitive>R$ {{.TotalLimits.Reais}}{{.TotalLimits.Cents}}</span>
+        </div>
+    </div>
+</section>
+
+{{if .Limites}}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 w-full">
+    {{range .Limites}}
+    {{template "metas-limit-card" .}}
+    {{end}}
+</div>
+{{else}}
+<div class="cb-empty-state py-10">
+    <div class="metas-empty-icon mb-3">
+        <i data-lucide="gauge" class="w-5 h-5"></i>
+    </div>
+    <p class="text-sm font-medium cb-text-main">Nenhum limite definido</p>
+    <p class="cb-text-micro cb-text-subtle mt-1">Use o botão + para criar seu primeiro limite.</p>
+</div>
+{{end}}
+{{end}}
+
+{{define "metas-limit-card"}}
+{{$variant := "healthy"}}
+{{if ge .Percent 100}}{{$variant = "danger"}}{{else if ge .Percent 80}}{{$variant = "warning"}}{{end}}
+<article class="cb-card-dense flex flex-col gap-2.5">
+    <div class="metas-card-header">
+        <div class="flex items-center gap-2.5 min-w-0">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-{{.CategoryColor}}-500/10 text-{{.CategoryColor}}-600 dark:text-{{.CategoryColor}}-400">
+                <i data-lucide="{{.CategoryIcon}}" class="w-3.5 h-3.5"></i>
+            </span>
+            <div class="min-w-0">
+                <p class="metas-card-title truncate">{{.CategoryName}}</p>
+                <p class="metas-card-subtitle">Máx: R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}</p>
+            </div>
+        </div>
+        <div class="cb-meta-menu" data-caixinha-dropdown data-ck-mode="menu">
+            <button type="button" data-ck-toggle class="cb-meta-menu-toggle" aria-label="Ações do limite">
+                <i data-lucide="ellipsis-vertical" class="w-4 h-4"></i>
+            </button>
+            <div data-ck-panel class="metas-menu-panel hidden">
+                <div data-ck-mode-panel="menu">
+                    <button type="button" data-ck-close
+                        hx-get="/metas/novo?aba=limite&id={{.ID}}"
+                        hx-target="#bottom-sheet-container"
+                        hx-swap="innerHTML"
+                        hx-push-url="false"
+                        class="cb-meta-menu-item">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5 cb-text-muted"></i>Editar
+                    </button>
+                    <button type="button" data-ck-close
+                        hx-get="/lancamentos?categoria={{.CategoryID}}"
+                        hx-target="#main-content"
+                        hx-select="#main-content"
+                        hx-push-url="true"
+                        class="cb-meta-menu-item">
+                        <i data-lucide="list" class="w-3.5 h-3.5 cb-text-muted"></i>Lançamentos
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="cursor-pointer flex flex-col gap-2"
         hx-get="/metas/limite/historico?limit_id={{.ID}}"
         hx-target="#bottom-sheet-container"
         hx-swap="innerHTML"
         hx-push-url="false">
-        <div class="flex items-center justify-between gap-3 mb-3">
-            <div class="flex items-center gap-3 min-w-0">
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-{{.CategoryColor}}-500/10 text-{{.CategoryColor}}-600 dark:text-{{.CategoryColor}}-400">
-                    <i data-lucide="{{.CategoryIcon}}" class="w-4 h-4"></i>
-                </span>
-                <div class="min-w-0">
-                    <p class="text-sm font-semibold cb-text-main truncate">{{.CategoryName}}</p>
-                    <p class="text-xs cb-text-subtle mt-0.5">Controle: <span class="font-semibold cb-text-main whitespace-nowrap" data-sensitive>R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}</span></p>
-                </div>
-            </div>
-            <span class="text-lg font-black {{if ge .Percent 90}}text-[var(--cb-danger)]{{else if ge .Percent 70}}text-[var(--cb-warning)]{{else}}text-[var(--cb-success)]{{end}} shrink-0" data-sensitive>{{.Percent}}%</span>
+        <div class="flex items-center justify-between gap-2">
+            <span class="cb-status-chip cb-status-chip-{{$variant}}">{{.Percent}}% usado</span>
+            {{if ge .Percent 100}}
+            <span class="cb-status-chip cb-status-chip-danger">Excedido</span>
+            {{end}}
         </div>
-        {{template "metas-limit-card-progress" .}}
-        {{template "metas-limit-card-values" .}}
-    </div>
 
-    {{template "metas-limit-card-footer" .}}
+        <div class="metas-progress">
+            <div class="metas-progress-fill metas-progress-{{$variant}}" style="--pct: {{.Percent}}"></div>
+        </div>
+
+        <div class="metas-metrics">
+            <span>Gasto: <span class="metas-value" data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}}</span></span>
+            <span>Restam: <span class="metas-value" data-sensitive>R$ {{.Remaining.Reais}}{{.Remaining.Cents}}</span></span>
+        </div>
+    </div>
 </article>
 {{end}}
 
-{{define "metas-limit-card-personal"}}
-<article class="cb-card cb-row flex-col items-stretch">
-    <div class="cursor-pointer"
-        hx-get="/metas/limite/historico?limit_id={{.ID}}"
-        hx-target="#bottom-sheet-container"
-        hx-swap="innerHTML"
-        hx-push-url="false">
-        <div class="flex items-center justify-between gap-3 mb-3">
-            <div class="flex items-center gap-3 min-w-0">
-                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-{{.CategoryColor}}-500/10 text-{{.CategoryColor}}-600 dark:text-{{.CategoryColor}}-400">
-                    <i data-lucide="{{.CategoryIcon}}" class="w-4 h-4"></i>
-                </span>
-                <div class="min-w-0">
-                    <p class="text-sm font-semibold cb-text-main truncate">{{.CategoryName}}</p>
-                    <p class="text-xs cb-text-subtle mt-0.5">Limite: <span class="font-semibold cb-text-main whitespace-nowrap" data-sensitive>R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}</span></p>
-                </div>
-            </div>
-            <span class="text-lg font-black {{if ge .Percent 90}}text-[var(--cb-danger)]{{else if ge .Percent 70}}text-[var(--cb-warning)]{{else}}text-[var(--cb-success)]{{end}} shrink-0" data-sensitive>{{.Percent}}%</span>
+{{define "metas-caixinhas-panel"}}
+<section class="metas-summary-card" aria-label="Resumo das reservas">
+    <div class="metas-summary-head">
+        <div class="metas-summary-title">
+            <span class="metas-summary-icon">
+                <i data-lucide="piggy-bank" class="w-3.5 h-3.5"></i>
+            </span>
+            Reservas
         </div>
-        {{template "metas-limit-card-progress" .}}
-        {{template "metas-limit-card-values" .}}
+        <span class="metas-summary-chip">{{.CaixinhasCount}} {{if eq .CaixinhasCount 1}}reserva{{else}}reservas{{end}}</span>
     </div>
+    <div class="metas-summary-metrics">
+        <div class="metas-summary-metric">
+            <span class="metas-summary-label">Reservado</span>
+            <span class="metas-summary-value" data-sensitive>R$ {{.ReservedBalance.Reais}}{{.ReservedBalance.Cents}}</span>
+        </div>
+        <div class="metas-summary-metric">
+            <span class="metas-summary-label">Disponível</span>
+            <span class="metas-summary-value {{if .FreeBalanceNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-success)]{{end}}" data-sensitive>R$ {{.FreeBalance.Reais}}{{.FreeBalance.Cents}}</span>
+        </div>
+    </div>
+</section>
 
-    {{template "metas-limit-card-footer" .}}
-</article>
-{{end}}
-
-{{define "metas-limit-card-progress"}}
-<div class="h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800/80 relative mb-3">
-    <div class="h-full rounded-full transition-all duration-500 progress-fill
-        {{if ge .Percent 90}}bg-gradient-to-r from-red-500 to-rose-500
-        {{else if ge .Percent 70}}bg-gradient-to-r from-amber-500 to-orange-500
-        {{else}}bg-gradient-to-r from-emerald-500 to-teal-500{{end}}"
-        style="--pct: {{.Percent}}"></div>
+{{if .Caixinhas}}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 w-full">
+    {{range .Caixinhas}}
+    {{template "metas-caixinha-card" .}}
+    {{end}}
+</div>
+{{else}}
+<div class="cb-empty-state py-10">
+    <div class="metas-empty-icon mb-3">
+        <i data-lucide="piggy-bank" class="w-5 h-5"></i>
+    </div>
+    <p class="text-sm font-medium cb-text-main">Nenhuma reserva criada</p>
+    <p class="cb-text-micro cb-text-subtle mt-1">Use o botão + para criar sua primeira reserva.</p>
 </div>
 {{end}}
-
-{{define "metas-limit-card-values"}}
-<div class="flex justify-between text-[0.78rem] sm:text-xs">
-    <span class="cb-text-subtle" data-sensitive>Gasto: <span class="font-semibold cb-text-main whitespace-nowrap">R$ {{.Spent.Reais}}{{.Spent.Cents}}</span></span>
-    <span class="{{if ge .Percent 90}}text-[var(--cb-danger)] font-bold{{else}}cb-text-subtle{{end}}" data-sensitive>Restam: <span class="font-semibold cb-text-main whitespace-nowrap">R$ {{.Remaining.Reais}}{{.Remaining.Cents}}</span></span>
-</div>
-{{end}}
-
-{{define "metas-limit-card-footer"}}
-<div class="relative mt-3 pt-3 cb-divider flex items-center gap-2 mb-0 border-b-0 border-l-0 border-r-0">
-    <button type="button"
-        hx-get="/metas/novo?aba=limite&id={{.ID}}"
-        hx-target="#bottom-sheet-container"
-        hx-swap="innerHTML"
-        hx-push-url="false"
-        class="cb-button cb-button-secondary flex-1 h-8 rounded-lg text-[10px] p-0 font-medium font-sans">
-        <i data-lucide="pencil" class="w-3 h-3"></i>Editar
-    </button>
-    <a href="/lancamentos?categoria={{.CategoryID}}"
-        hx-get="/lancamentos?categoria={{.CategoryID}}"
-        hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
-        class="cb-button cb-button-secondary flex-1 h-8 rounded-lg text-[10px] p-0 font-medium font-sans">
-        <i data-lucide="list" class="w-3 h-3"></i>Lancamentos
-    </a>
-</div>
 {{end}}
 
 {{define "metas-caixinha-card"}}
-<article class="cb-card cb-row flex-col items-stretch hover:border-[var(--cb-accent)]">
-    <div class="cursor-pointer"
+{{$variant := "accent"}}
+{{if ge .Percent 100}}{{$variant = "success"}}{{end}}
+{{if .IsNegative}}{{$variant = "danger"}}{{end}}
+
+{{$status := "info"}}
+{{$statusLabel := "Em andamento"}}
+{{if .IsNegative}}
+    {{$status = "danger"}}{{$statusLabel = "excedente"}}
+{{else if ge .Percent 100}}
+    {{$status = "success"}}{{$statusLabel = "Concluída"}}
+{{else if eq .RequiredState "completed"}}
+    {{$status = "success"}}{{$statusLabel = "Concluída"}}
+{{else if eq .RequiredState "value"}}
+    {{if .MonthlyRecharge.Reais}}
+        {{$status = "success"}}{{$statusLabel = "No prazo"}}
+    {{else}}
+        {{$status = "warning"}}{{$statusLabel = "Atenção"}}
+    {{end}}
+{{else if eq .RequiredState "no_deadline"}}
+    {{$status = "neutral"}}{{$statusLabel = "Sem prazo"}}
+{{end}}
+
+<article class="cb-card-dense flex flex-col gap-2.5">
+    <div class="metas-card-header">
+        <div class="flex items-center gap-2.5 min-w-0">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]">
+                <i data-lucide="{{.Icon}}" class="w-3.5 h-3.5 icon-colored" style="--ic: {{.Color}}"></i>
+            </span>
+            <div class="min-w-0">
+                <p class="metas-card-title truncate">{{.Name}}</p>
+                <p class="metas-card-subtitle">{{.CategoryName}}</p>
+            </div>
+        </div>
+        <div class="cb-meta-menu" data-caixinha-dropdown data-ck-mode="menu">
+                    <button type="button" data-ck-toggle class="cb-meta-menu-toggle" aria-label="Ações da reserva">
+                        <i data-lucide="ellipsis-vertical" class="w-4 h-4"></i>
+                        <span class="sr-only">Mais</span>
+                    </button>
+            <div data-ck-panel class="metas-menu-panel hidden">
+                <div data-ck-mode-panel="menu">
+                    <button type="button" data-ck-close
+                        hx-get="/metas/caixinha/aporte/sheet?box_id={{.ID}}"
+                        hx-target="#bottom-sheet-container"
+                        hx-swap="innerHTML"
+                        class="cb-meta-menu-item">
+                        <i data-lucide="plus-circle" class="w-3.5 h-3.5 text-[var(--cb-accent)]"></i>Aportar
+                    </button>
+                    <button type="button" data-ck-close
+                        hx-get="/metas/caixinha/resgate/sheet?box_id={{.ID}}"
+                        hx-target="#bottom-sheet-container"
+                        hx-swap="innerHTML"
+                        class="cb-meta-menu-item">
+                        <i data-lucide="arrow-up-from-line" class="w-3.5 h-3.5 text-[var(--cb-warning)]"></i>Liberar
+                    </button>
+                    <button type="button" data-ck-close
+                        hx-get="/metas/novo?aba=caixinha&id={{.ID}}"
+                        hx-target="#bottom-sheet-container"
+                        hx-swap="innerHTML"
+                        hx-push-url="false"
+                        class="cb-meta-menu-item">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5 cb-text-muted"></i>Editar
+                    </button>
+                    {{if .CategoryID}}
+                    <button type="button" data-ck-close
+                        hx-get="/lancamentos?categoria={{.CategoryID}}"
+                        hx-target="#main-content"
+                        hx-select="#main-content"
+                        hx-push-url="true"
+                        class="cb-meta-menu-item">
+                        <i data-lucide="list" class="w-3.5 h-3.5 cb-text-muted"></i>Lançamentos
+                    </button>
+                    {{else}}
+                    <button type="button" disabled class="cb-meta-menu-item opacity-50 cursor-not-allowed">
+                        <i data-lucide="list" class="w-3.5 h-3.5 cb-text-subtle"></i>Lançamentos
+                    </button>
+                    {{end}}
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <div class="cursor-pointer flex flex-col gap-2"
         hx-get="/metas/caixinha/historico?box_id={{.ID}}"
         hx-target="#bottom-sheet-container"
         hx-swap="innerHTML"
         hx-push-url="false">
-        {{template "metas-caixinha-card-header" .}}
-        {{template "metas-caixinha-card-progress" .}}
-        {{template "metas-caixinha-card-values" .}}
-        {{template "metas-caixinha-card-forecast" .}}
-    </div>
-
-    {{template "metas-caixinha-card-footer" .}}
-</article>
-{{end}}
-
-{{define "metas-caixinha-card-header"}}
-<div class="flex items-start justify-between gap-3 mb-3">
-    <div class="flex items-center gap-3 min-w-0">
-        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]">
-            <i data-lucide="{{.Icon}}" class="w-4 h-4 icon-colored" style="--ic: {{.Color}}"></i>
-        </span>
-        <div class="min-w-0">
-            <h3 class="text-sm font-semibold cb-text-main truncate">{{.Name}}{{if .IsNegative}}<span class="text-[10px] font-medium text-[var(--cb-danger)] bg-[rgba(239,68,68,0.12)] px-1.5 py-0.5 rounded-md ml-1.5">excedente</span>{{end}}</h3>
-            <p class="text-xs cb-text-subtle mt-0.5">{{.CategoryName}}</p>
+        <div class="flex items-center justify-between gap-2">
+            <span class="cb-status-chip cb-status-chip-info">{{.Percent}}%</span>
+            <span class="cb-status-chip cb-status-chip-{{$status}}">{{$statusLabel}}</span>
         </div>
-    </div>
-</div>
-{{end}}
 
-{{define "metas-caixinha-card-progress"}}
-<div class="flex items-center justify-between mb-1.5">
-    <span class="text-[11px] cb-text-subtle uppercase tracking-wider">Progresso</span>
-    <span class="text-sm font-bold {{if .IsNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-accent)]{{end}}" data-sensitive>{{.Percent}}%</span>
-</div>
-<div class="h-2 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800/80 relative mb-3">
-    <div class="h-full rounded-full transition-all duration-500 progress-fill-capped goal-progress-fill" style="--pct: {{.Percent}}"></div>
-</div>
-{{end}}
+        <div class="metas-progress">
+            <div class="metas-progress-fill metas-progress-{{$variant}}" style="--pct: {{.Percent}}"></div>
+        </div>
 
-{{define "metas-caixinha-card-values"}}
-<div class="space-y-1.5">
-    <div class="flex justify-between text-[0.78rem] sm:text-xs">
-        <span class="cb-text-subtle">Saldo</span>
-        <span class="font-semibold cb-text-main whitespace-nowrap" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</span>
-    </div>
-    <div class="flex justify-between text-[0.78rem] sm:text-xs">
-        <span class="cb-text-subtle">Alvo</span>
-        <span class="font-semibold cb-text-main whitespace-nowrap" data-sensitive>R$ {{.Target.Reais}}{{.Target.Cents}}</span>
-    </div>
-    {{if .MonthlyRecharge.Reais}}
-    <div class="flex justify-between text-[0.78rem] sm:text-xs">
-        <span class="cb-text-subtle">Aporte mensal</span>
-        <span class="font-semibold cb-text-main whitespace-nowrap" data-sensitive>R$ {{.MonthlyRecharge.Reais}}{{.MonthlyRecharge.Cents}}</span>
-    </div>
-    {{end}}
-</div>
-{{end}}
+        <div class="metas-metrics">
+            <span>Saldo: <span class="metas-value" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</span></span>
+            <span>Alvo: <span class="metas-value" data-sensitive>R$ {{.Target.Reais}}{{.Target.Cents}}</span></span>
+        </div>
 
-{{define "metas-caixinha-card-forecast"}}
-{{if .ForecastLabel}}
-<div class="rounded-lg cb-card-muted px-3 py-2 mt-3">
-    <p class="text-[11px] sm:text-xs cb-text-subtle">{{.ForecastLabel}}</p>
-    {{if .YieldForecastLabel}}
-    <p class="text-[11px] sm:text-xs cb-text-subtle mt-0.5">{{.YieldForecastLabel}}</p>
-    {{end}}
-</div>
-{{end}}
-{{end}}
-
-{{define "metas-caixinha-card-footer"}}
-<!-- Ações do Card: Menu "Mais" (Unificado Mobile & Desktop) -->
-<div class="relative mt-auto pt-3 cb-divider border-b-0 border-l-0 border-r-0 w-full mb-0" data-caixinha-dropdown data-ck-mode="menu">
-    <button type="button" data-ck-toggle
-        class="cb-button cb-button-secondary w-full h-10 shadow-sm text-xs">
-        <i data-lucide="ellipsis" class="w-4 h-4 text-[var(--cb-accent)]"></i>Mais
-    </button>
-
-    <!-- Dropdown panel -->
-    <div data-ck-panel
-        class="absolute bottom-full left-0 right-0 mb-2 z-30 cb-card overflow-hidden hidden p-0">
-        <!-- Modo menu -->
-        <div data-ck-mode-panel="menu" class="py-1">
-            <button type="button" data-ck-mode="aporte"
-                class="w-full text-left px-4 py-3 min-h-[44px] flex items-center gap-3 text-sm font-semibold cb-text-main hover:bg-[var(--cb-surface-3)]">
-                <i data-lucide="plus-circle" class="w-4 h-4 text-[var(--cb-accent)]"></i>Aportar
-            </button>
-            <button type="button" data-ck-mode="resgate"
-                class="w-full text-left px-4 py-3 min-h-[44px] flex items-center gap-3 text-sm font-semibold cb-text-main hover:bg-[var(--cb-surface-3)]">
-                <i data-lucide="arrow-up-from-line" class="w-4 h-4 text-[var(--cb-warning)]"></i>Liberar
-            </button>
-            <button type="button" data-ck-close
-                hx-get="/metas/novo?aba=caixinha&id={{.ID}}"
-                hx-target="#bottom-sheet-container"
-                hx-swap="innerHTML"
-                hx-push-url="false"
-                class="w-full text-left px-4 py-3 min-h-[44px] flex items-center gap-3 text-sm font-semibold cb-text-main hover:bg-[var(--cb-surface-3)]">
-                <i data-lucide="pencil" class="w-4 h-4 text-[var(--cb-info)]"></i>Editar
-            </button>
-            {{if .CategoryID}}
-            <button type="button" data-ck-close
-                hx-get="/lancamentos?categoria={{.CategoryID}}"
-                hx-target="#main-content"
-                hx-select="#main-content"
-                hx-push-url="true"
-                class="w-full text-left px-4 py-3 min-h-[44px] flex items-center gap-3 text-sm font-semibold cb-text-main hover:bg-[var(--cb-surface-3)]">
-                <i data-lucide="list" class="w-4 h-4 cb-text-muted"></i>Lançamentos
-            </button>
-            {{else}}
-            <button type="button" disabled
-                class="w-full text-left px-4 py-3 min-h-[44px] flex items-center gap-3 text-sm font-semibold cb-text-subtle opacity-50 cursor-not-allowed">
-                <i data-lucide="list" class="w-4 h-4 cb-text-subtle"></i>Lançamentos
-            </button>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 metas-pace">
+            {{if .MonthlyRecharge.Reais}}
+            <span class="flex items-center gap-1">
+                <i data-lucide="repeat" class="w-3 h-3"></i>
+                Aporte R$ {{.MonthlyRecharge.Reais}}{{.MonthlyRecharge.Cents}}/mês
+            </span>
+            {{end}}
+            {{if .ForecastLabel}}
+            <span class="flex items-center gap-1">
+                <i data-lucide="calendar-clock" class="w-3 h-3"></i>
+                {{.ForecastLabel}}
+            </span>
             {{end}}
         </div>
-
-        <!-- Modo formulario de aporte -->
-        <form data-ck-mode-panel="aporte" class="hidden p-2 flex items-center gap-2" hx-post="/metas/caixinha/aporte" hx-swap="none">
-            <input type="hidden" name="box_id" value="{{.ID}}">
-            <input type="text" name="amount" placeholder="R$ 0,00" inputmode="decimal" data-money-mask
-                class="cb-input h-10 w-full text-sm">
-            <button type="submit" class="cb-button cb-button-primary h-10 shrink-0 px-3 text-xs">Confirmar</button>
-            <button type="button" data-ck-mode="menu" class="cb-button cb-button-secondary h-10 w-10 shrink-0 p-0 flex items-center justify-center">
-                <i data-lucide="arrow-left" class="w-4 h-4"></i>
-            </button>
-        </form>
-
-        <!-- Modo formulario de resgate -->
-        <form data-ck-mode-panel="resgate" class="hidden p-2 flex items-center gap-2" hx-post="/metas/caixinha/resgate" hx-swap="none">
-            <input type="hidden" name="box_id" value="{{.ID}}">
-            <input type="text" name="amount" placeholder="R$ 0,00" inputmode="decimal" data-money-mask
-                class="cb-input h-10 w-full text-sm">
-            <button type="submit" class="cb-button cb-button-primary h-10 shrink-0 px-3 text-xs !bg-[var(--cb-warning)] hover:!opacity-90">Confirmar</button>
-            <button type="button" data-ck-mode="menu" class="cb-button cb-button-secondary h-10 w-10 shrink-0 p-0 flex items-center justify-center">
-                <i data-lucide="arrow-left" class="w-4 h-4"></i>
-            </button>
-        </form>
     </div>
-</div>
+</article>
 {{end}}
 
 {{define "box-history"}}
 <div class="fixed inset-0 z-[100]">
     <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation"></div>
     <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto">
-        <article class="sheet-in cb-modal relative flex h-auto max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl shadow-2xl shadow-black/80 md:mx-auto md:my-8 md:h-auto md:max-h-[calc(100vh-6rem)] md:max-w-md md:rounded-2xl md:shadow-2xl">
+        <article class="sheet-in cb-modal relative flex h-auto max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl shadow-2xl md:mx-auto md:my-8 md:h-auto md:max-h-[calc(100vh-6rem)] md:max-w-md md:rounded-2xl">
         <div class="absolute right-4 top-4 z-[110]">
             <button type="button" class="cb-button cb-button-secondary h-8 w-8 flex items-center justify-center rounded-full p-0" data-onclick="closeBottomSheet">
                 <i data-lucide="x" class="h-4 w-4"></i>
             </button>
         </div>
-        <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-zinc-700/60 md:hidden"></div>
+        <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-[var(--cb-border-strong)] md:hidden"></div>
         <div class="pt-4 md:pt-5 pb-1 flex items-center gap-3 px-6">
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/15">
-                <i data-lucide="piggy-bank" class="w-4 h-4 text-violet-400"></i>
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]">
+                <i data-lucide="piggy-bank" class="w-4 h-4"></i>
             </span>
             <div class="pr-8 min-w-0">
-                <h2 class="text-sm font-semibold text-white/90 truncate">{{.BoxName}}</h2>
-                <p class="mt-0.5 text-xs text-zinc-500">Historico de eventos</p>
+                <h2 class="text-sm font-semibold cb-text-main truncate">{{.BoxName}}</h2>
+                <p class="mt-0.5 text-xs cb-text-subtle">Histórico de eventos</p>
             </div>
         </div>
 
@@ -399,7 +337,7 @@
                             <span class="text-xs font-semibold cb-text-main truncate">{{.TypeLabel}}</span>
                             {{if .Description}}
                             <span class="text-[11px] cb-text-subtle truncate hidden sm:inline">{{.Description}}</span>
-                            {{end}}
+{{end}}
                         </div>
                         <p class="mt-0.5 text-[11px] cb-text-subtle">{{.DateLabel}}</p>
                     </div>
@@ -411,14 +349,157 @@
             </div>
             {{else}}
             <div class="flex flex-col items-center justify-center py-16 text-center">
-                <div class="w-14 h-14 rounded-2xl bg-zinc-800/60 border border-zinc-700/40 flex items-center justify-center mb-4">
-                    <i data-lucide="history" class="w-7 h-7 text-zinc-500"></i>
+                <div class="w-14 h-14 rounded-2xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-4">
+                    <i data-lucide="history" class="w-7 h-7 cb-text-muted"></i>
                 </div>
-                <p class="text-sm font-semibold text-zinc-400">Nenhum evento registrado</p>
-                <p class="text-xs text-zinc-500 mt-1">Os aportes, liberacoes e consumos aparecem aqui</p>
+                <p class="text-sm font-semibold cb-text-main">Nenhum evento registrado</p>
+                <p class="text-xs cb-text-subtle mt-1">Os aportes, liberações e consumos aparecem aqui</p>
             </div>
             {{end}}
         </div>
+        </article>
+    </div>
+</div>
+{{end}}
+
+
+{{define "caixinha-aporte-sheet"}}
+<div class="fixed inset-0 z-[100]">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation" data-onclick="closeBottomSheet"></div>
+    <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto">
+        <article class="sheet-in cb-modal relative flex flex-col w-full max-w-md rounded-t-xl shadow-2xl shadow-black/80 md:mx-auto md:my-8 md:rounded-2xl md:shadow-2xl">
+            <div class="absolute right-4 top-4 z-[110]">
+                <button type="button" class="cb-button cb-button-secondary h-8 w-8 flex items-center justify-center rounded-full p-0" data-onclick="closeBottomSheet">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-[var(--cb-border-strong)] md:hidden"></div>
+
+            <div class="px-6 pt-4 md:pt-5 pb-3">
+                <div class="flex items-center gap-3">
+                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]">
+                        <i data-lucide="{{.Icon}}" class="w-4 h-4 icon-colored" style="--ic: {{.Color}}"></i>
+                    </span>
+                    <div class="pr-8 min-w-0">
+                        <h2 class="text-sm font-semibold cb-text-main truncate">Aportar na reserva</h2>
+                        <p class="mt-0.5 text-xs cb-text-subtle truncate">{{.BoxName}}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-6 pb-2 space-y-2">
+                {{if .CategoryName}}
+                <div class="flex items-center justify-between text-xs">
+                    <span class="cb-text-subtle">Categoria</span>
+                    <span class="font-medium cb-text-main">{{.CategoryName}}</span>
+                </div>
+                {{end}}
+                <div class="flex items-center justify-between text-xs">
+                    <span class="cb-text-subtle">Saldo atual</span>
+                    <span class="font-semibold cb-text-main tabular-nums" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</span>
+                </div>
+                {{if .Target.Reais}}
+                <div class="flex items-center justify-between text-xs">
+                    <span class="cb-text-subtle">Alvo</span>
+                    <span class="font-medium cb-text-main tabular-nums" data-sensitive>R$ {{.Target.Reais}}{{.Target.Cents}}</span>
+                </div>
+                {{end}}
+            </div>
+
+            {{if .ErrorMessage}}
+            <div class="mx-6 mb-1 rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">{{.ErrorMessage}}</div>
+            {{end}}
+
+            <div class="px-6 pb-6 pt-2">
+                <form hx-post="/metas/caixinha/aporte" hx-swap="none">
+                    <input type="hidden" name="box_id" value="{{.BoxID}}">
+                    <input type="hidden" name="_from_sheet" value="1">
+                    <label class="block mb-1.5">
+                        <span class="sheet-label">Valor do aporte</span>
+                    </label>
+                    <input type="text" name="amount" placeholder="R$ 0,00" inputmode="decimal" data-money-mask
+                        class="cb-input h-12 w-full text-lg font-medium text-center tracking-wide"
+                        autofocus autocomplete="off">
+                    <div class="flex items-center gap-2.5 mt-3">
+                        <button type="submit" class="cb-button cb-button-primary flex-1 h-11 text-sm font-semibold">
+                            Confirmar
+                        </button>
+                        <button type="button" data-onclick="closeBottomSheet" class="cb-button cb-button-secondary h-11 px-5 text-sm font-medium">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </article>
+    </div>
+</div>
+{{end}}
+
+
+{{define "caixinha-resgate-sheet"}}
+<div class="fixed inset-0 z-[100]">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation" data-onclick="closeBottomSheet"></div>
+    <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto">
+        <article class="sheet-in cb-modal relative flex flex-col w-full max-w-md rounded-t-xl shadow-2xl shadow-black/80 md:mx-auto md:my-8 md:rounded-2xl md:shadow-2xl">
+            <div class="absolute right-4 top-4 z-[110]">
+                <button type="button" class="cb-button cb-button-secondary h-8 w-8 flex items-center justify-center rounded-full p-0" data-onclick="closeBottomSheet">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-[var(--cb-border-strong)] md:hidden"></div>
+
+            <div class="px-6 pt-4 md:pt-5 pb-3">
+                <div class="flex items-center gap-3">
+                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400">
+                        <i data-lucide="arrow-up-from-line" class="w-4 h-4"></i>
+                    </span>
+                    <div class="pr-8 min-w-0">
+                        <h2 class="text-sm font-semibold cb-text-main truncate">Liberar saldo da reserva</h2>
+                        <p class="mt-0.5 text-xs cb-text-subtle truncate">{{.BoxName}}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="px-6 pb-2 space-y-2">
+                <div class="flex items-center justify-between text-xs">
+                    <span class="cb-text-subtle">Saldo atual</span>
+                    <span class="font-semibold cb-text-main tabular-nums" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</span>
+                </div>
+                {{if .AvailableForRelease.Reais}}
+                <div class="flex items-center justify-between text-xs">
+                    <span class="cb-text-subtle">Disponível para liberar</span>
+                    <span class="font-medium cb-text-main tabular-nums" data-sensitive>R$ {{.AvailableForRelease.Reais}}{{.AvailableForRelease.Cents}}</span>
+                </div>
+                {{end}}
+                <div class="rounded-lg bg-amber-500/8 border border-amber-500/15 px-3 py-2 mt-1">
+                    <p class="text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">A liberação reduz o saldo reservado e devolve o valor ao saldo livre das contas.</p>
+                </div>
+            </div>
+
+            {{if .ErrorMessage}}
+            <div class="mx-6 mb-1 rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">{{.ErrorMessage}}</div>
+            {{end}}
+
+            <div class="px-6 pb-6 pt-2">
+                <form hx-post="/metas/caixinha/resgate" hx-swap="none">
+                    <input type="hidden" name="box_id" value="{{.BoxID}}">
+                    <input type="hidden" name="_from_sheet" value="1">
+                    <label class="block mb-1.5">
+                        <span class="sheet-label">Valor a liberar</span>
+                    </label>
+                    <input type="text" name="amount" placeholder="R$ 0,00" inputmode="decimal" data-money-mask
+                        class="cb-input h-12 w-full text-lg font-medium text-center tracking-wide"
+                        autofocus autocomplete="off">
+                    <div class="flex items-center gap-2.5 mt-3">
+                        <button type="submit" class="cb-button cb-button-primary flex-1 h-11 text-sm font-semibold !bg-[var(--cb-warning)] hover:!opacity-90">
+                            Confirmar
+                        </button>
+                        <button type="button" data-onclick="closeBottomSheet" class="cb-button cb-button-secondary h-11 px-5 text-sm font-medium">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
         </article>
     </div>
 </div>
@@ -428,26 +509,26 @@
 <div class="fixed inset-0 z-[100]">
     <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation"></div>
     <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto">
-        <article class="sheet-in cb-modal relative flex h-auto max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl shadow-2xl shadow-black/80 md:mx-auto md:my-8 md:h-auto md:max-h-[calc(100vh-6rem)] md:max-w-md md:rounded-2xl md:shadow-2xl">
+        <article class="sheet-in cb-modal relative flex h-auto max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl shadow-2xl md:mx-auto md:my-8 md:h-auto md:max-h-[calc(100vh-6rem)] md:max-w-md md:rounded-2xl">
         <div class="absolute right-4 top-4 z-[110]">
             <button type="button" class="cb-button cb-button-secondary h-8 w-8 flex items-center justify-center rounded-full p-0" data-onclick="closeBottomSheet">
                 <i data-lucide="x" class="h-4 w-4"></i>
             </button>
         </div>
-        <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-zinc-700/60 md:hidden"></div>
+        <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-[var(--cb-border-strong)] md:hidden"></div>
         <div class="pt-4 md:pt-5 pb-1 flex items-center gap-3 px-6">
             <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-{{.CategoryColor}}-500/15">
                 <i data-lucide="{{.CategoryIcon}}" class="w-4 h-4 text-{{.CategoryColor}}-400"></i>
             </span>
             <div class="pr-8 min-w-0">
-                <h2 class="text-sm font-semibold text-white/90 truncate">{{.LimitName}}</h2>
-                <p class="mt-0.5 text-xs text-zinc-500">{{if .IsBusiness}}Controle:{{else}}Limite:{{end}} <span class="font-medium text-zinc-400" data-sensitive>R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}</span> &middot; <span data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}}</span> gasto{{if .Percent}} ({{.Percent}}%){{end}}</p>
+                <h2 class="text-sm font-semibold cb-text-main truncate">{{.LimitName}}</h2>
+                <p class="mt-0.5 text-xs cb-text-subtle">{{if .IsBusiness}}Controle:{{else}}Limite:{{end}} <span class="font-medium cb-text-main" data-sensitive>R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}</span> &middot; <span data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}}</span> gasto{{if .Percent}} ({{.Percent}}%){{end}}</p>
             </div>
         </div>
 
         <div class="flex-1 overflow-y-auto px-6 py-4 pb-8">
             {{if .HasTransactions}}
-            <p class="mb-3 text-[10px] uppercase tracking-wider font-semibold text-zinc-500">Lancamentos deste mes</p>
+            <p class="mb-3 text-[10px] uppercase tracking-wider font-semibold cb-text-subtle">Lançamentos deste mês</p>
             <div class="space-y-2">
                 {{range .Transactions}}
                 <div class="cb-card-muted flex items-center justify-between px-4 py-3">
@@ -461,11 +542,11 @@
             </div>
             {{else}}
             <div class="flex flex-col items-center justify-center py-16 text-center">
-                <div class="w-14 h-14 rounded-2xl bg-zinc-800/60 border border-zinc-700/40 flex items-center justify-center mb-4">
-                    <i data-lucide="search-x" class="w-7 h-7 text-zinc-500"></i>
+                <div class="w-14 h-14 rounded-2xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-4">
+                    <i data-lucide="search-x" class="w-7 h-7 cb-text-muted"></i>
                 </div>
-                <p class="text-sm font-semibold text-zinc-400">Nenhum lancamento este mes</p>
-                <p class="text-xs text-zinc-500 mt-1">Os gastos na categoria {{.CategoryName}} aparecem aqui</p>
+                <p class="text-sm font-semibold cb-text-main">Nenhum lançamento este mês</p>
+                <p class="text-xs cb-text-subtle mt-1">Os gastos na categoria {{.CategoryName}} aparecem aqui</p>
             </div>
             {{end}}
         </div>

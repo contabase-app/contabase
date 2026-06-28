@@ -1,4 +1,4 @@
-/* ContaBase Relatorios Styles */
+/* ContaBase Relatorios Styles — P.44.a redesigned with Design System */
 
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
@@ -6,74 +6,7 @@
 .btn-tactile { transition: all 0.15s ease; }
 .btn-tactile:active { transform: scale(0.97); }
 
-.progress-fill {
-    width: calc(var(--pct, 0) * 1%);
-    transition: width 0.5s ease;
-}
-
-.reports-kpi-card {
-    min-width: 0;
-    padding: 0.625rem;
-}
-@media (min-width: 640px) {
-    .reports-kpi-card { padding: 1rem; }
-}
-
-.reports-kpi-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.375rem;
-    margin-bottom: 0.375rem;
-}
-@media (min-width: 640px) {
-    .reports-kpi-header { margin-bottom: 0.625rem; }
-}
-
-.reports-kpi-label {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--cb-text-subtle);
-}
-@media (min-width: 640px) {
-    .reports-kpi-label { font-size: 11px; }
-}
-
-.reports-kpi-icon {
-    width: 0.875rem;
-    height: 0.875rem;
-    color: var(--cb-text-subtle);
-    flex-shrink: 0;
-}
-
-.reports-kpi-value {
-    font-size: 0.92rem;
-    font-weight: 900;
-    line-height: 1.25;
-    letter-spacing: -0.03em;
-    white-space: nowrap;
-    display: block;
-}
-@media (min-width: 390px) {
-    .reports-kpi-value { font-size: 1rem; }
-}
-@media (min-width: 640px) {
-    .reports-kpi-value { font-size: 1.25rem; }
-}
-@media (min-width: 1280px) {
-    .reports-kpi-value { font-size: 1.5rem; }
-}
-
-.reports-eyebrow {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.2em;
-    color: var(--cb-text-subtle);
-}
-
+/* DRE Table */
 .reports-dre-th {
     border: 1px solid var(--cb-border-subtle);
     background: var(--cb-surface-2);
@@ -88,7 +21,7 @@
     white-space: nowrap;
 }
 
-/* DRE horizontal scroll — visible affordance on narrow screens (P.28.e.fix M1) */
+/* DRE horizontal scroll — visible affordance on narrow screens */
 .reports-dre-scroll {
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
@@ -111,6 +44,7 @@
     border-radius: 0.5rem;
 }
 
+/* Categories list */
 .reports-cat-group {
     border-radius: 0.75rem;
     border: 1px solid var(--cb-border-subtle);

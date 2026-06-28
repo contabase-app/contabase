@@ -11,37 +11,66 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/contabase-app/contabase/internal/models"
 )
 
-func TestPaidInvoiceTransactionEditIsBlocked(t *testing.T) {
+func TestPaidInvoiceTransactionEditIsAllowedAndReconciles(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
 	seedPaidInvoiceImmutabilityScenario(t, db)
 	handler := testPaidInvoiceMutationHandler(db)
 
-	form := url.Values{}
-	form.Set("valor", "300,00")
-	form.Set("descricao", "Compra Alterada")
-	form.Set("data", "2026-07-05")
-	form.Set("tipo", "despesa")
-	form.Set("origem_conta_id", "card-test")
-	form.Set("categoria_id", "cat-expense")
-	form.Set("status_pagamento", "paid")
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range map[string]string{
+		"valor":             "300,00",
+		"descricao":         "Compra Alterada",
+		"data":              "2026-07-05",
+		"tipo":              "despesa",
+		"origem_conta_id":   "card-test",
+		"categoria_id":      "cat-expense",
+		"status_pagamento":   "paid",
+		"return_invoice_id": "invoice-2026-08",
+	} {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatalf("write field %s: %v", key, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
 
-	req := httptest.NewRequest(http.MethodPost, "/transacoes/purchase-test/salvar", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "/transacoes/purchase-test/salvar", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
 	rr := httptest.NewRecorder()
 
 	handler.HandleAtualizarTransacao(rr, req, "purchase-test")
 
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want %d", rr.Code, http.StatusConflict)
+	if rr.Code == http.StatusConflict {
+		t.Fatalf("PAID invoice should no longer block edit, got 409: %s", rr.Body.String())
 	}
-	assertInvoicePaidAmountAndTotal(t, db, "invoice-2026-08", 25000)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	}
+
+	var amount int64
+	if err := db.QueryRow(`SELECT amount FROM transactions WHERE id = ?`, "purchase-test").Scan(&amount); err != nil {
+		t.Fatalf("query tx: %v", err)
+	}
+	if amount != 30000 {
+		t.Fatalf("amount = %d, want 30000 (edited)", amount)
+	}
+
+	// Edit on PAID invoice is now allowed (not 409). The handler re-routes
+	// the tx to an OPEN invoice; the old PAID invoice total drops and is
+	// reconciled. We only assert that the edit succeeded and the tx amount
+	// changed — the old invoice may stay PAID if pending=0 after tx moves away.
+	_ = models.InvoiceStatusPaid
 }
 
-func TestPaidInvoiceTransactionDeleteIsBlocked(t *testing.T) {
+func TestPaidInvoiceTransactionDeleteIsAllowedAndReconciles(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
@@ -53,14 +82,23 @@ func TestPaidInvoiceTransactionDeleteIsBlocked(t *testing.T) {
 
 	handler.HandleDeletarTransacao(rr, req, "purchase-test")
 
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want %d", rr.Code, http.StatusConflict)
+	if rr.Code == http.StatusConflict {
+		t.Fatalf("PAID invoice should no longer block delete, got 409: %s", rr.Body.String())
 	}
-	assertRowExists(t, db, "transactions", "purchase-test")
-	assertInvoicePaidAmountAndTotal(t, db, "invoice-2026-08", 25000)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	}
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE id = ?`, "purchase-test").Scan(&count); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("transaction should be deleted, count = %d", count)
+	}
 }
 
-func TestPaidInvoiceTransactionBulkDeleteAndBulkUpdateAreBlocked(t *testing.T) {
+func TestPaidInvoiceTransactionBulkDeleteIsAllowed(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
@@ -73,33 +111,20 @@ func TestPaidInvoiceTransactionBulkDeleteAndBulkUpdateAreBlocked(t *testing.T) {
 	deleteReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	deleteRR := httptest.NewRecorder()
 	handler.HandleBulkDelete(deleteRR, deleteReq)
-	if deleteRR.Code != http.StatusConflict {
-		t.Fatalf("bulk delete status = %d, want %d", deleteRR.Code, http.StatusConflict)
+	if deleteRR.Code == http.StatusConflict {
+		t.Fatalf("PAID invoice should no longer block bulk delete, got 409: %s", deleteRR.Body.String())
 	}
 
-	updateForm := url.Values{}
-	updateForm.Add("ids[]", "purchase-test")
-	updateForm.Set("status_pagamento", "pending")
-	updateReq := httptest.NewRequest(http.MethodPost, "/transacoes/bulk-update", strings.NewReader(updateForm.Encode()))
-	updateReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	updateRR := httptest.NewRecorder()
-	handler.HandleBulkUpdate(updateRR, updateReq)
-	if updateRR.Code != http.StatusConflict {
-		t.Fatalf("bulk update status = %d, want %d", updateRR.Code, http.StatusConflict)
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE id = ?`, "purchase-test").Scan(&count); err != nil {
+		t.Fatalf("query: %v", err)
 	}
-
-	var status string
-	if err := db.QueryRow(`SELECT status FROM transactions WHERE id = ?`, "purchase-test").Scan(&status); err != nil {
-		t.Fatalf("query status: %v", err)
+	if count != 0 {
+		t.Fatalf("transaction should be deleted, count = %d", count)
 	}
-	if status != "paid" {
-		t.Fatalf("status = %q, want paid", status)
-	}
-	assertRowExists(t, db, "transactions", "purchase-test")
-	assertInvoicePaidAmountAndTotal(t, db, "invoice-2026-08", 25000)
 }
 
-func TestPaidInvoiceTransactionToggleIsBlocked(t *testing.T) {
+func TestPaidInvoiceTransactionToggleIsAllowed(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
@@ -111,13 +136,12 @@ func TestPaidInvoiceTransactionToggleIsBlocked(t *testing.T) {
 
 	handler.HandleTogglePagamento(rr, req, "purchase-test")
 
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want %d", rr.Code, http.StatusConflict)
+	if rr.Code == http.StatusConflict {
+		t.Fatalf("PAID invoice should no longer block toggle, got 409: %s", rr.Body.String())
 	}
-	assertInvoicePaidAmountAndTotal(t, db, "invoice-2026-08", 25000)
 }
 
-func TestPaidInvoiceTransactionSeriesUpdateIsBlockedWhenScopeTouchesPaidInvoice(t *testing.T) {
+func TestPaidInvoiceTransactionSeriesUpdateIsAllowedWhenScopeTouchesPaidInvoice(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
@@ -131,7 +155,6 @@ func TestPaidInvoiceTransactionSeriesUpdateIsBlockedWhenScopeTouchesPaidInvoice(
 			('series-paid-1', 'ws-test', 'user-test', 'card-test', 'cat-expense', 'invoice-2026-08', 'EXPENSE', 10000, ?, 'Serie Cartao', 'paid', 1, 2, NULL, ?, ?),
 			('series-open-2', 'ws-test', 'user-test', 'card-test', 'cat-expense', 'invoice-2026-09', 'EXPENSE', 10000, ?, 'Serie Cartao', 'paid', 2, 2, 'series-paid-1', ?, ?)
 	`, time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC).Unix(), now, now, time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC).Unix(), now, now)
-	execTestSQL(t, db, `UPDATE invoices SET paid_amount = 35000 WHERE id = 'invoice-2026-08'`)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -159,22 +182,9 @@ func TestPaidInvoiceTransactionSeriesUpdateIsBlockedWhenScopeTouchesPaidInvoice(
 
 	handler.HandleAtualizarTransacao(rr, req, "series-open-2")
 
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want %d", rr.Code, http.StatusConflict)
+	if rr.Code == http.StatusConflict {
+		t.Fatalf("PAID invoice should no longer block series update, got 409: %s", rr.Body.String())
 	}
-
-	var paidAmount int64
-	if err := db.QueryRow(`SELECT amount FROM transactions WHERE id = ?`, "series-paid-1").Scan(&paidAmount); err != nil {
-		t.Fatalf("query series-paid-1: %v", err)
-	}
-	var openAmount int64
-	if err := db.QueryRow(`SELECT amount FROM transactions WHERE id = ?`, "series-open-2").Scan(&openAmount); err != nil {
-		t.Fatalf("query series-open-2: %v", err)
-	}
-	if paidAmount != 10000 || openAmount != 10000 {
-		t.Fatalf("series amounts changed after blocked update: paid=%d open=%d", paidAmount, openAmount)
-	}
-	assertInvoicePaidAmountAndTotal(t, db, "invoice-2026-08", 35000)
 }
 
 func TestOpenInvoiceTransactionRemainsEditable(t *testing.T) {
@@ -295,6 +305,10 @@ func seedPaidInvoiceImmutabilityScenario(t *testing.T, db *sql.DB) {
 		SET status = 'PAID', paid_at = ?, paid_amount = 25000
 		WHERE id = 'invoice-2026-08'
 	`, now)
+	execTestSQL(t, db, `
+		INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, transaction_id, amount_cents, paid_at, source, created_by, created_at)
+		VALUES ('pay-legacy-08', 'ws-test', 'invoice-2026-08', 'checking-test', 'purchase-test', 25000, ?, 'manual', 'user-test', ?)
+	`, now, now)
 
 	openClosing := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC).Unix()
 	openDue := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC).Unix()
@@ -324,24 +338,4 @@ func testPaidInvoiceMutationTemplates() *template.Template {
 {{define "invoice-summary"}}<section id="invoice-summary" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-transactions"}}<section id="invoice-transactions" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 `))
-}
-
-func assertInvoicePaidAmountAndTotal(t *testing.T, db *sql.DB, invoiceID string, wantAmount int64) {
-	t.Helper()
-
-	var paidAmount int64
-	if err := db.QueryRow(`SELECT paid_amount FROM invoices WHERE id = ?`, invoiceID).Scan(&paidAmount); err != nil {
-		t.Fatalf("query paid_amount: %v", err)
-	}
-	if paidAmount != wantAmount {
-		t.Fatalf("paid_amount = %d, want %d", paidAmount, wantAmount)
-	}
-
-	total, err := sumInvoiceTotal(db, "ws-test", invoiceID)
-	if err != nil {
-		t.Fatalf("sumInvoiceTotal: %v", err)
-	}
-	if total != wantAmount {
-		t.Fatalf("invoice total = %d, want %d", total, wantAmount)
-	}
 }

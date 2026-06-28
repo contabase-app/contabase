@@ -27,9 +27,9 @@
         {{if .FilterAccountID}}<input type="hidden" name="conta" value="{{.FilterAccountID}}">{{end}}
 
     <div class="flex items-center gap-2 mb-3 mt-2">
-        <!-- Busca Premium -->
+        <!-- Busca -->
         <div class="relative flex-1">
-            <i data-lucide="search" class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--cb-text-muted)] z-10"></i>
+            <i data-lucide="search" class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--cb-text-muted)] z-10"></i>
             <input type="search" name="q" value="{{.Filters.Busca}}" placeholder="Buscar descrição ou categoria..."
                 hx-get="/lancamentos"
                 hx-target="#lancamentos-list-wrapper"
@@ -41,9 +41,9 @@
                 class="search-input">
         </div>
         <!-- Botão Filtros -->
-        <button type="button" data-onclick="toggleLancamentosFilters" class="shrink-0 h-11 px-3 sm:px-4 flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-xs sm:text-sm font-semibold text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] transition-all btn-tactile">
-            <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 sm:w-4 sm:h-4"></i>
-            <span>Filtros</span>
+        <button type="button" data-onclick="toggleLancamentosFilters" class="shrink-0 h-10 px-3 flex items-center justify-center gap-1.5 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-xs font-semibold text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] transition-all btn-tactile">
+            <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Filtros</span>
         </button>
     </div>
 
@@ -224,33 +224,35 @@
 {{end}}
 
 {{define "lancamentos-resumo"}}
-<section id="lancamentosResumo" class="mt-2 mb-5" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}>
-    <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-4 py-2.5 text-xs font-semibold shadow-sm">
-        <div class="flex items-center gap-1.5 text-[var(--cb-text-main)]">
-            <i data-lucide="calendar" class="w-3.5 h-3.5 text-violet-500 shrink-0"></i>
-            <span class="tracking-tight">{{.MonthLabel}}</span>
+<section id="lancamentosResumo" class="mb-4" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}>
+    <div class="cb-card-dense flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-2 text-[var(--cb-text-main)]">
+            <span class="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-accent)] shrink-0" style="background: color-mix(in srgb, var(--cb-accent) 12%, transparent)">
+                <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+            </span>
+            <span class="text-sm font-bold tracking-tight">{{.MonthLabel}}</span>
         </div>
-        <div class="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[11px]">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
             <div class="flex items-center gap-1.5">
                 <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                <span class="text-[var(--cb-text-muted)] font-medium">Entradas</span>
+                <span class="cb-text-micro text-[var(--cb-text-muted)]">Entradas</span>
                 <span class="font-bold text-emerald-600 dark:text-emerald-400" data-sensitive>{{.ResumoEntradas}}</span>
             </div>
             <div class="flex items-center gap-1.5">
                 <span class="inline-block w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                <span class="text-[var(--cb-text-muted)] font-medium">Saídas</span>
+                <span class="cb-text-micro text-[var(--cb-text-muted)]">Saídas</span>
                 <span class="font-bold text-red-600 dark:text-red-400" data-sensitive>{{.ResumoSaidas}}</span>
             </div>
             <div class="flex items-center gap-1.5">
-                <span class="inline-block w-1.5 h-1.5 rounded-full {{if .ResumoNegativo}}bg-red-500{{else}}bg-violet-500{{end}}"></span>
-                <span class="text-[var(--cb-text-muted)] font-medium">Saldo</span>
-                <span class="font-extrabold {{if .ResumoNegativo}}text-red-600 dark:text-red-400{{else}}text-violet-600 dark:text-violet-400{{end}}" data-sensitive>{{.ResumoSaldo}}</span>
+                <span class="inline-block w-1.5 h-1.5 rounded-full {{if .ResumoNegativo}}bg-red-500{{else}}bg-[var(--cb-accent)]{{end}}"></span>
+                <span class="cb-text-micro text-[var(--cb-text-muted)]">Saldo</span>
+                <span class="font-extrabold {{if .ResumoNegativo}}text-red-600 dark:text-red-400{{else}}text-[var(--cb-accent-solid)]{{end}}" data-sensitive>{{.ResumoSaldo}}</span>
             </div>
             {{if .ResumoAcumulado}}
             <div class="flex items-center gap-1.5">
-                <span class="inline-block w-1.5 h-1.5 rounded-full {{if .AcumuladoNegativo}}bg-red-500{{else}}bg-blue-500{{end}}"></span>
-                <span class="text-[var(--cb-text-muted)] font-medium">Acumulado</span>
-                <span class="font-bold {{if .AcumuladoNegativo}}text-red-600 dark:text-red-400{{else}}text-blue-600 dark:text-blue-400{{end}}" data-sensitive>{{.ResumoAcumulado}}</span>
+                <span class="inline-block w-1.5 h-1.5 rounded-full {{if .AcumuladoNegativo}}bg-red-500{{else}}bg-sky-500{{end}}"></span>
+                <span class="cb-text-micro text-[var(--cb-text-muted)]">Acumulado</span>
+                <span class="font-bold {{if .AcumuladoNegativo}}text-red-600 dark:text-red-400{{else}}text-sky-600 dark:text-sky-400{{end}}" data-sensitive>{{.ResumoAcumulado}}</span>
             </div>
             {{end}}
         </div>
@@ -282,8 +284,10 @@
                 <button type="button" class="text-violet-600 hover:text-violet-700 dark:text-violet-300 dark:hover:text-violet-200 font-medium" data-bulk-toggle-mode>Selecionar</button>
                 <span class="text-[var(--cb-text-muted)] font-medium" data-bulk-count></span>
             </div>
-            {{template "lancamentos-table-body" .}}
-            <div class="bulk-action-bar bg-[var(--cb-surface-overlay)] border border-[var(--cb-border-subtle)] backdrop-blur hidden" data-bulk-bar>
+        {{end}}
+        {{template "lancamentos-table-body" .}}
+        {{if or .Transactions .Invoices}}
+            <div class="bulk-action-bar" data-bulk-bar>
                 <div class="flex items-center justify-between gap-2">
                     <span class="text-xs font-bold text-[var(--cb-text-main)]">
                         <span class="text-violet-600 dark:text-violet-400" data-bulk-count-num>0</span> selecionados
@@ -363,12 +367,12 @@
             {{end}}
         {{end}}
     {{else}}
-        <div class="flex flex-col items-center justify-center py-12 text-center">
-            <div class="w-16 h-16 rounded-xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-3">
-                <i data-lucide="inbox" class="w-6 h-6 text-[var(--cb-text-subtle)]"></i>
+        <div class="cb-empty-state py-10">
+            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)] border border-[var(--cb-border-subtle)]">
+                <i data-lucide="inbox" class="w-5 h-5"></i>
             </div>
-            <p class="text-sm font-semibold text-[var(--cb-text-muted)]">Nenhum lançamento</p>
-            <p class="text-[11px] text-[var(--cb-text-subtle)] mt-1">Tente ajustar os filtros ou adicione um novo</p>
+            <p class="text-sm font-bold text-[var(--cb-text-main)]">Nenhum lançamento</p>
+            <p class="cb-text-micro text-[var(--cb-text-muted)] mt-1">Tente ajustar os filtros ou adicione um novo</p>
         </div>
     {{end}}
 </div>
@@ -385,40 +389,42 @@
         <input type="checkbox" class="bulk-checkbox h-4 w-4 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 shrink-0" data-tx-checkbox data-ignore-select value="{{.ID}}">
         <button type="button" data-ignore-select data-stop-propagation hx-post="/transacoes/{{.ID}}/status-pagamento" hx-target="closest .tx-row" hx-swap="outerHTML" hx-confirm="{{.PaymentConfirm}}"
             class="tx-status" title="{{.PaymentTitle}}" aria-label="{{.PaymentTitle}}">
-            <i data-lucide="{{.PaymentIcon}}" class="w-5 h-5"></i>
+            <i data-lucide="{{.PaymentIcon}}" class="w-4 h-4"></i>
         </button>
         <button type="button" data-ignore-select class="flex flex-1 min-w-0 items-center gap-3 text-left" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false">
             <span class="flex-1 min-w-0">
-                <h4 class="text-sm font-medium text-[var(--cb-text-main)] truncate">{{.Description}}</h4>
-                <p class="text-xs text-[var(--cb-text-muted)] mt-0.5 whitespace-normal break-words leading-snug">
+                <span class="flex items-center gap-1.5 mb-0.5">
+                    <h4 class="text-sm font-semibold text-[var(--cb-text-main)] truncate">{{.Description}}</h4>
+                    {{if .UsesDueDate}}<span class="cb-status-chip cb-status-chip-warning">Venc. {{.DisplayDateLabel}}</span>{{end}}
+                </span>
+                <p class="cb-text-micro text-[var(--cb-text-muted)] whitespace-normal break-words leading-snug">
                     {{if .IsBusiness}}{{if .ContactName}}{{.ContactName}} · {{end}}{{.AccountName}}{{if .CategoryName}} · {{.CategoryName}}{{end}}{{else}}{{.AccountName}}{{if .CategoryName}} · {{.CategoryName}}{{end}}{{end}}
                 </p>
-                {{if .UsesDueDate}}<p class="mt-1"><span class="badge badge-warning">Vencimento: {{.DisplayDateLabel}}</span></p>{{end}}
                 {{if .HasInstallmentInfo}}
-                    <p class="mt-1">
+                    <p class="mt-1.5">
                         {{if and .IsSeries (le .TotalInstallments 1)}}
-                        <span class="badge badge-info">Recorrente</span>
+                        <span class="cb-status-chip cb-status-chip-info">Recorrente</span>
                         {{else}}
-                        <span class="badge badge-installment">{{.InstallmentNumber}}/{{.TotalInstallments}}</span>
+                        <span class="cb-status-chip cb-status-chip-neutral">{{.InstallmentNumber}}/{{.TotalInstallments}}</span>
                         {{end}}
                     </p>
                 {{end}}
             </span>
         </button>
-        <div class="flex flex-col items-end shrink-0">
-            <p class="text-sm font-semibold {{if eq .Type "INCOME"}}text-emerald-600 dark:text-emerald-400{{else if eq .Type "EXPENSE"}}text-red-600 dark:text-red-400{{else}}text-blue-600 dark:text-blue-400{{end}}" data-sensitive>{{.AmountDisplay}}</p>
-            <span class="text-[0.62rem] text-[var(--cb-text-muted)] mt-0.5">{{if .UsesDueDate}}{{.DisplayDateLabel}}{{else}}{{.DateLabel}}{{end}}</span>
+        <div class="flex flex-col items-end shrink-0 gap-0.5 min-w-0">
+            <p class="text-sm font-bold {{if eq .Type "INCOME"}}text-emerald-600 dark:text-emerald-400{{else if eq .Type "EXPENSE"}}text-red-600 dark:text-red-400{{else}}text-sky-600 dark:text-sky-400{{end}}" data-sensitive>{{.AmountDisplay}}</p>
+            <span class="cb-text-micro text-[var(--cb-text-muted)]">{{if .UsesDueDate}}{{.DisplayDateLabel}}{{else}}{{.DateLabel}}{{end}}</span>
         </div>
         <span class="tx-desktop-actions">
-            <button type="button" data-ignore-select class="btn-tactile tx-action-btn" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Editar">
+            <button type="button" data-ignore-select class="tx-action-btn" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Editar">
                 <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
             </button>
             {{if .CanGenerateReceipt}}
-            <a href="/transacoes/{{.ID}}/recibo" target="_blank" rel="noopener" class="btn-tactile tx-action-btn hover:text-violet-600 hover:bg-violet-50/80 dark:hover:text-violet-400 dark:hover:bg-violet-500/10" aria-label="Recibo">
+            <a href="/transacoes/{{.ID}}/recibo" target="_blank" rel="noopener" class="tx-action-btn" aria-label="Recibo">
                 <i data-lucide="receipt" class="h-3.5 w-3.5"></i>
             </a>
             {{end}}
-            <button type="button" data-ignore-select class="btn-tactile tx-action-btn hover:text-red-600 hover:bg-red-50/80 dark:hover:text-red-400 dark:hover:bg-red-500/10" data-row-delete="{{.ID}}"{{if .IsSeries}} data-row-is-series="true"{{end}} aria-label="Excluir">
+            <button type="button" data-ignore-select class="tx-action-btn tx-action-btn-danger" data-row-delete="{{.ID}}"{{if .IsSeries}} data-row-is-series="true"{{end}} aria-label="Excluir">
                 <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
             </button>
         </span>
@@ -427,7 +433,7 @@
 {{end}}
 
 {{define "invoice-row"}}
-<article id="invoice-{{.ID}}" class="invoice-row relative mb-2 overflow-hidden rounded-xl"
+<article id="invoice-{{.ID}}" class="invoice-row relative mb-1.5 overflow-hidden rounded-xl"
     data-invoice-id="{{.ID}}"
     data-swipe-row="true"
     data-swipe-left-url="/transacoes/bulk/delete"
@@ -440,19 +446,19 @@
     data-swipe-right-target="#main-content"
     data-swipe-right-swap="innerHTML">
     <div data-swipe-bg-left><i data-lucide="trash-2" class="swipe-icon"></i></div>
-    <div data-swipe-bg-right class="bg-indigo-500"><i data-lucide="external-link" class="swipe-icon"></i></div>
+    <div data-swipe-bg-right class="bg-[var(--cb-accent)]"><i data-lucide="external-link" class="swipe-icon"></i></div>
     <div data-swipe-content hx-get="{{.FaturaURL}}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
-        class="invoice-content relative z-10 flex items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 cursor-pointer hover:bg-[var(--cb-surface-2)]">
-        <span class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.CardColor}}">
-            {{if .CardProviderMark}}<span class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .CardProviderMark}}" style="color: var(--emblem-color, {{.CardColor}})">{{.CardProviderMark}}</span>{{else}}<i data-lucide="{{if .CardIcon}}{{.CardIcon}}{{else}}credit-card{{end}}" class="w-5 h-5 icon-colored" style="--ic: var(--emblem-color, {{.CardColor}})"></i>{{end}}
+        class="invoice-content relative z-10 flex items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-3 cursor-pointer hover:bg-[var(--cb-surface-2)]">
+        <span class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.CardColor}}">
+            {{if .CardProviderMark}}<span class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .CardProviderMark}}" style="color: var(--emblem-color, {{.CardColor}})">{{.CardProviderMark}}</span>{{else}}<i data-lucide="{{if .CardIcon}}{{.CardIcon}}{{else}}credit-card{{end}}" class="w-4 h-4 icon-colored" style="--ic: var(--emblem-color, {{.CardColor}})"></i>{{end}}
         </span>
         <span class="flex-1 min-w-0">
-            <h4 class="text-sm font-medium text-[var(--cb-text-main)] truncate">Fatura {{.AccountName}} - {{.ReferenceLabel}}</h4>
-            <p class="text-xs text-[var(--cb-text-muted)] mt-0.5">Vence em {{.DateLabel}} · {{.ItemCount}} {{if eq .ItemCount 1}}item{{else}}itens{{end}}</p>
+            <h4 class="text-sm font-semibold text-[var(--cb-text-main)] truncate">Fatura {{.AccountName}} - {{.ReferenceLabel}}</h4>
+            <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">Vence em {{.DateLabel}} · {{.ItemCount}} {{if eq .ItemCount 1}}item{{else}}itens{{end}}</p>
         </span>
-        <div class="flex flex-col items-end shrink-0">
-            <p class="text-sm font-semibold {{if .IsOverdue}}text-red-500{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.TotalMoney.Reais}}{{.TotalMoney.Cents}}</p>
-            <span class="badge {{if eq .Status "PAID"}}badge-success{{else if .IsOverdue}}badge-error{{else if eq .Status "CLOSED"}}badge-error{{else}}badge-warning{{end}}">
+        <div class="flex flex-col items-end shrink-0 gap-0.5 min-w-0">
+            <p class="text-sm font-bold {{if .IsOverdue}}text-red-600 dark:text-red-400{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.TotalMoney.Reais}}{{.TotalMoney.Cents}}</p>
+            <span class="cb-status-chip {{if eq .Status "PAID"}}cb-status-chip-success{{else if .IsOverdue}}cb-status-chip-danger{{else if eq .Status "CLOSED"}}cb-status-chip-danger{{else}}cb-status-chip-warning{{end}}">
                 {{if eq .Status "PAID"}}Paga{{else if .IsOverdue}}Vencida{{else if eq .Status "CLOSED"}}Fechada{{else}}Aberta{{end}}
             </span>
         </div>

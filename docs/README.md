@@ -34,10 +34,11 @@ Se você está começando, leia nesta ordem:
 
 ## Versão atual
 
-A versão beta pública atual é:
+A versão recomendada deve ser obtida pelo canal de instalação ou pelas notas de release.
+Para versão travada, use uma tag publicada no formato:
 
 ```text
-v0.1.0-beta.1
+vX.Y.Z
 ```
 
 Use sempre uma versão publicada.
@@ -62,5 +63,6 @@ Não use `latest`.
 
 ## Notas de versão
 
-- [v0.1.0-beta.1 — Beta pública controlada](releases/v0.1.0-beta.1.md)
+- [v0.1.0-beta.2 — Beta pública controlada](releases/v0.1.0-beta.2.md)
+- [v0.1.0-beta.1 — primeira Beta pública controlada](releases/v0.1.0-beta.1.md)
 - [v0.1.0-alpha.1 — Primeira validação pública](releases/v0.1.0-alpha.1.md)

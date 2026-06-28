@@ -1,11 +1,7 @@
 {{define "configuracoes-workspace-page"}}
 {{template "layout-start" .}}
 <div class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 relative">
-    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden">
-        <div class="absolute inset-0 cb-page"></div>
-        <div class="absolute top-[-30%] left-[-20%] w-[60vw] h-[60vw] rounded-full bg-violet-500/[0.05] dark:bg-violet-500/[0.03] blur-[80px]"></div>
-        <div class="absolute bottom-[-20%] right-[-20%] w-[50vw] h-[50vw] rounded-full bg-indigo-500/[0.03] dark:bg-indigo-500/[0.02] blur-[80px]"></div>
-    </div>
+    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
 
     <div class="hidden md:flex gap-8 w-full max-w-full">
         <aside class="md:w-64 flex-none border-r border-[var(--cb-border-subtle)] pr-6">
@@ -42,22 +38,26 @@
         </div>
     </header>
 
-    <div class="w-full px-4 pb-[7rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative">
-        {{if .FlashError}}<div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-100">{{.FlashError}}</div>{{end}}
-        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100">{{.FlashSuccess}}</div>{{end}}
+    <div class="w-full px-4 pb-[7rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
+        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-danger) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 8%, transparent); color: var(--cb-danger)">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-success) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-success) 8%, transparent); color: var(--cb-success)">{{.FlashSuccess}}</div>{{end}}
 
         {{if not .IsBusiness}}
-        <div class="cb-card p-4 md:p-6">
+        <div class="mb-6">
+            <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Perfil corporativo</h1>
+            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Atualize os dados exibidos no contexto empresarial do workspace ativo.</p>
+        </div>
+        <div class="cb-card-dense p-4 md:p-6">
             <h2 class="text-base font-bold text-[var(--cb-text-main)]">Perfil corporativo indisponível</h2>
             <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Esta seção só pode ser usada em workspaces Business.</p>
         </div>
         {{else}}
-        <form class="cb-card space-y-5 md:p-6" hx-post="/configuracoes/workspace" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" enctype="multipart/form-data">
-            <div>
-                <h2 class="text-base font-bold text-[var(--cb-text-main)]">Perfil corporativo</h2>
-                <p class="mt-0.5 text-xs text-[var(--cb-text-muted)]">Atualize os dados exibidos no contexto empresarial do workspace ativo.</p>
-            </div>
+        <div class="mb-6">
+            <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Perfil corporativo</h1>
+            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Atualize os dados exibidos no contexto empresarial do workspace ativo.</p>
+        </div>
 
+        <form class="cb-card-dense p-4 md:p-6 space-y-5" hx-post="/configuracoes/workspace" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" enctype="multipart/form-data">
             <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
                 <label class="block md:col-span-2">
                     <span class="cb-label">Nome do workspace / nome fantasia</span>
@@ -85,7 +85,7 @@
                 </label>
             </div>
 
-            <div class="rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-4 md:p-5">
+            <div class="cb-card-muted p-4 md:p-5">
                 <div class="mb-4">
                     <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">Identidade visual</h3>
                     <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Use arquivos JPG, PNG ou WebP com até 2 MB. O logo atual é mantido se você não enviar um novo arquivo nem marcar remoção.</p>
@@ -101,7 +101,7 @@
                             <p class="mt-2 text-xs text-[var(--cb-text-muted)]">Nenhum logo claro cadastrado.</p>
                             {{end}}
                         </div>
-                        <input type="file" name="logo_light_file" accept=".jpg,.jpeg,.png,.webp" class="block w-full text-sm text-zinc-600 dark:text-zinc-300 file:mr-3 file:h-9 file:cursor-pointer file:rounded-lg file:border file:border-violet-300 file:bg-violet-50 file:px-3 file:text-xs file:font-semibold file:text-violet-700 hover:file:bg-violet-100 dark:file:border-violet-500/35 dark:file:bg-violet-500/15 dark:file:text-violet-200">
+                        <input type="file" name="logo_light_file" accept=".jpg,.jpeg,.png,.webp" class="block w-full text-sm text-zinc-600 dark:text-zinc-300 file:mr-3 file:h-9 file:cursor-pointer file:rounded-lg file:border file:border-[var(--cb-accent)]/30 file:bg-[var(--cb-accent-soft)] file:px-3 file:text-xs file:font-semibold file:text-[var(--cb-accent-solid)] hover:file:bg-[var(--cb-accent)]/15">
                         <input type="hidden" name="logo_light_url" value="{{.WorkspaceProfile.LogoLightURL}}">
                         <label class="flex items-center gap-2 text-xs text-[var(--cb-text-muted)]">
                             <input type="checkbox" name="remove_logo_light" value="1" class="h-4 w-4 rounded border-[var(--cb-border-subtle)] text-violet-600 focus:ring-violet-500">
@@ -118,7 +118,7 @@
                             <p class="mt-2 text-xs text-[var(--cb-text-muted)]">Nenhum logo escuro cadastrado.</p>
                             {{end}}
                         </div>
-                        <input type="file" name="logo_dark_file" accept=".jpg,.jpeg,.png,.webp" class="block w-full text-sm text-zinc-600 dark:text-zinc-300 file:mr-3 file:h-9 file:cursor-pointer file:rounded-lg file:border file:border-violet-300 file:bg-violet-50 file:px-3 file:text-xs file:font-semibold file:text-violet-700 hover:file:bg-violet-100 dark:file:border-violet-500/35 dark:file:bg-violet-500/15 dark:file:text-violet-200">
+                        <input type="file" name="logo_dark_file" accept=".jpg,.jpeg,.png,.webp" class="block w-full text-sm text-zinc-600 dark:text-zinc-300 file:mr-3 file:h-9 file:cursor-pointer file:rounded-lg file:border file:border-[var(--cb-accent)]/30 file:bg-[var(--cb-accent-soft)] file:px-3 file:text-xs file:font-semibold file:text-[var(--cb-accent-solid)] hover:file:bg-[var(--cb-accent)]/15">
                         <input type="hidden" name="logo_dark_url" value="{{.WorkspaceProfile.LogoDarkURL}}">
                         <label class="flex items-center gap-2 text-xs text-[var(--cb-text-muted)]">
                             <input type="checkbox" name="remove_logo_dark" value="1" class="h-4 w-4 rounded border-[var(--cb-border-subtle)] text-violet-600 focus:ring-violet-500">

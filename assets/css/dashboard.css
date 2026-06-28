@@ -1,50 +1,13 @@
-/* ContaBase Dashboard Styles */
-
-/* Balance card — visual emphasis */
-#dashboard-balance {
-    background-color: color-mix(in srgb, var(--cb-surface-1) 94%, var(--cb-accent));
-    border-color: color-mix(in srgb, var(--cb-border-subtle) 72%, var(--cb-accent));
-    transition: transform 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
-}
-#dashboard-balance:hover {
-    border-color: color-mix(in srgb, var(--cb-border-strong) 65%, var(--cb-accent));
-}
-
-.dashboard-balance-icon {
-    background-color: color-mix(in srgb, currentColor 10%, transparent);
-}
-
-.dashboard-balance-secondary {
-    background-color: var(--cb-border-subtle);
-}
-
-.dashboard-balance-secondary > div {
-    background-color: color-mix(in srgb, var(--cb-surface-2) 90%, transparent);
-}
+/* ContaBase Dashboard Styles — P.49.b card glow + balance refinements */
 
 /* Scrollbar hide para mobile */
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 
 /* Progress bar com cor dinâmica via CSS custom property */
-.progress-fill {
-    width: calc(var(--pct, 0) * 1%);
-    transition: width 0.5s ease;
-}
-
 .progress-fill-colored {
     width: calc(var(--pct, 0) * 1%);
     transition: width 0.5s ease;
-    background-color: var(--ic, #8b5cf6);
-}
-
-.progress-fill-capped {
-    width: clamp(0%, calc(var(--pct, 0) * 1%), 100%);
-    transition: width 0.5s ease;
-}
-
-/* Blob colorido para cards de crédito */
-.blob-colored {
     background-color: var(--ic, #8b5cf6);
 }
 
@@ -58,17 +21,112 @@
     color: var(--ic, #8b5cf6);
 }
 
-/* --- Credit Card: integrated limit bar --- */
-/* Bar fills card width edge-to-edge via negative margins, clipped by overflow-hidden */
-.credit-card-item .-mx-3 {
-    /* negative margin breaks padding so bar extends full card width */
+/* === Credit Card Item — premium feel restored from pre-redesign version === */
+
+.card-cc {
+    position: relative;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--ic, #7C5CFF) 6%, transparent), transparent 35%),
+        linear-gradient(180deg, #F8FAFD 0%, #F2F5FA 100%);
+    border: 1px solid color-mix(in srgb, var(--cb-border-subtle) 82%, var(--ic, #CBD5E1) 18%);
+    border-radius: 1.25rem;
+    padding: 1rem;
+    transition: border-color 0.2s, box-shadow 0.3s, transform 0.3s ease;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.65),
+        0 2px 8px -2px rgba(0, 0, 0, 0.05);
+}
+.card-cc:hover {
+    border-color: color-mix(in srgb, var(--cb-border-strong) 75%, var(--ic, #8B5CF6) 25%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.75),
+        0 8px 24px -6px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
+}
+.dark .card-cc {
+    background:
+        radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--ic, #7C5CFF) 12%, transparent), transparent 38%),
+        linear-gradient(180deg, #181D28 0%, #151B25 100%);
+    border-color: color-mix(in srgb, var(--cb-border-subtle) 82%, var(--ic, #6366F1) 18%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 4px 16px -4px rgba(0, 0, 0, 0.28);
+}
+.dark .card-cc:hover {
+    border-color: color-mix(in srgb, var(--cb-border-strong) 70%, var(--ic, #818CF8) 30%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        0 10px 28px -8px rgba(0, 0, 0, 0.45);
 }
 
-/* Goal progress fill — capped at 100% with gradient */
-.goal-progress-fill {
-    width: clamp(0%, calc(var(--pct, 0) * 1%), 100%);
-    background: linear-gradient(90deg, var(--ic, #8b5cf6), color-mix(in srgb, var(--ic, #8b5cf6) 70%, white));
+/* Colored ambient blob — positioned top-right, blurred, tinted by card color */
+.card-cc-blob {
+    position: absolute;
+    top: -2.5rem;
+    right: -2.5rem;
+    width: 7rem;
+    height: 7rem;
+    border-radius: 9999px;
+    filter: blur(2.5rem);
+    opacity: 0.15;
+    pointer-events: none;
+    background-color: var(--ic, #8b5cf6);
+    transition: opacity 0.3s ease, transform 0.3s ease;
 }
-.dark .goal-progress-fill {
-    background: linear-gradient(90deg, var(--ic, #8b5cf6), color-mix(in srgb, var(--ic, #8b5cf6) 60%, black));
+.card-cc:hover .card-cc-blob {
+    opacity: 0.22;
+    transform: scale(1.1);
+}
+
+/* Top edge accent line — thin gradient from transparent to color to transparent */
+.card-cc::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0.75rem;
+    right: 0.75rem;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--ic, #8b5cf6), transparent);
+    opacity: 0.20;
+    pointer-events: none;
+}
+
+/* Bottom limit bar — edge-to-edge via absolute positioning */
+.card-cc-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: 0.25rem;
+    background: var(--cb-border-subtle);
+    border-radius: 0 0 1.25rem 1.25rem;
+    overflow: hidden;
+}
+.card-cc-bar-fill {
+    height: 100%;
+    transition: width 0.5s ease;
+    background-color: var(--ic, #8b5cf6);
+}
+
+/* === Balance secondary metrics — compact inline === */
+
+.balance-inline-metrics {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+}
+.balance-inline-group {
+    display: inline-flex;
+    align-items: baseline;
+    flex-wrap: nowrap;
+    min-width: 0;
+}
+.balance-sep {
+    color: var(--cb-text-subtle);
+    user-select: none;
+    flex-shrink: 0;
+    line-height: 1;
 }

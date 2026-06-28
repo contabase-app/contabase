@@ -539,7 +539,7 @@
         var valueInput = document.getElementById('valor');
         if (!toggle || !summary || !select) return;
         if (!toggle.checked) {
-            summary.textContent = 'Ative para escolher de 1x at\u00e9 12x';
+            summary.textContent = 'Ative para escolher de 2x at\u00e9 12x';
             summary.className = 'sheet-muted-text block text-xs mt-0.5';
             return;
         }
@@ -590,6 +590,7 @@
                     }
                     if (fixedToggle) fixedToggle.checked = false;
                     if (recurrenceBox) recurrenceBox.classList.add('hidden');
+                    if (totalOccurrencesBox) totalOccurrencesBox.classList.add('hidden');
                 }
                 ns.updateInstallmentsSummary();
             });
@@ -866,8 +867,6 @@
     var formWiringInitSet = new WeakSet();
     var monthFormatter = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' });
     var faturaSelectorWeakSet = window.__contabaseFaturaSelectorEnhanced || (window.__contabaseFaturaSelectorEnhanced = new WeakSet());
-    var faturaCurrentClasses = ['text-indigo-400', 'hover:text-indigo-300', 'decoration-indigo-400/30'];
-    var faturaNextClasses = ['text-zinc-500', 'hover:text-zinc-400', 'decoration-zinc-500/30'];
 
     ns.initFormWiring = function(root) {
         var formEl = findInRoot(root, '#lancamento-form');
@@ -946,7 +945,6 @@
             var selectedDate = dateInput && dateInput.value ? new Date(dateInput.value + 'T12:00:00') : new Date();
             var closingDate = new Date(selectedDate);
             if (selectedDate.getDate() > Number(closingDay)) closingDate.setMonth(closingDate.getMonth() + 1);
-            if (window.isProximaFatura) closingDate.setMonth(closingDate.getMonth() + 1);
             var dueDate = new Date(closingDate);
             if (Number(dueDay) < Number(closingDay)) dueDate.setMonth(dueDate.getMonth() + 1);
             var month = monthFormatter.format(dueDate).replace(' de ', '/');
@@ -954,8 +952,7 @@
         }
 
         function currentFaturaOffset() {
-            var selector = document.getElementById('faturaSelector');
-            var input = selector ? selector.querySelector('input[name="fatura_offset"]') : null;
+            var input = document.getElementById('faturaOffset');
             return input && input.value === 'next' ? 'next' : 'auto';
         }
 
@@ -967,7 +964,25 @@
                     invoiceNotice.textContent = fallbackText;
                     invoiceNotice.classList.remove('hidden');
                 }
-                loadInvoiceOptions();
+                var quickState = document.getElementById('faturaQuickState');
+                var currentCard = originId && originId.value ? originId.value : '';
+                if (quickState) {
+                    if (quickState.dataset.cardId !== currentCard) {
+                        quickState.dataset.cardId = currentCard;
+                        delete quickState.dataset.loaded;
+                        // Clear stale options and hide quick actions immediately on card change.
+                        window.__contabaseFaturaOptionsData = null;
+                        var actions = document.getElementById('faturaQuickActions');
+                        if (actions) actions.classList.add('hidden');
+                        var prevBtn = document.getElementById('faturaPrevBtn');
+                        if (prevBtn) { prevBtn.classList.add('hidden'); prevBtn.dataset.invoiceId = ''; }
+                        var nextBtn = document.getElementById('faturaNextBtn');
+                        if (nextBtn) { nextBtn.classList.add('hidden'); nextBtn.dataset.invoiceId = ''; }
+                    }
+                }
+                if (quickState && !quickState.dataset.loaded) {
+                    loadInvoiceOptions();
+                }
                 if (originId && originId.value) {
                     var params = new URLSearchParams();
                     params.set('data', dateInput ? dateInput.value || '' : '');
@@ -984,6 +999,9 @@
                             if (payload && payload.notice && invoiceNotice) {
                                 invoiceNotice.textContent = payload.notice;
                             }
+                            if (payload && payload.reference) {
+                                setFaturaAutoReference(payload.reference, payload.invoice_id);
+                            }
                         })
                         .catch(function() {
                             if (requestSeq === invoiceNoticeRequestSeq && invoiceNotice) {
@@ -998,38 +1016,237 @@
             }
         }
 
-        function syncFaturaSelector(selector, usarProximaFatura) {
-            var input = selector ? selector.querySelector('input[name="fatura_offset"]') : null;
-            var button = selector ? selector.querySelector('button[type="button"]') : null;
-            if (!input || !button) return;
-            input.value = usarProximaFatura ? 'next' : 'auto';
-            button.textContent = usarProximaFatura ? '- Desfazer (lançar na fatura atual)' : '+ Lançar na próxima fatura!';
-            button.setAttribute('aria-pressed', usarProximaFatura ? 'true' : 'false');
-            button.classList.remove.apply(button.classList, faturaCurrentClasses.concat(faturaNextClasses));
-            button.classList.add.apply(button.classList, usarProximaFatura ? faturaNextClasses : faturaCurrentClasses);
+        function syncFaturaOffset(val) {
+            var input = document.getElementById('faturaOffset');
+            if (input) input.value = val;
+        }
+
+        function setFaturaAutoReference(reference, invoiceID) {
+            window.__contabaseFaturaAutoReference = reference || '';
+            window.__contabaseFaturaAutoID = invoiceID || '';
+        }
+
+        function applyManualInvoice(invoiceID, label, isSensitive) {
+            var select = document.getElementById('faturaSelect');
+            var sensitive = document.getElementById('faturaSensitiveAviso');
+            var quickState = document.getElementById('faturaQuickState');
+            var resetBtn = document.getElementById('faturaResetAuto');
+            var prevBtn = document.getElementById('faturaPrevBtn');
+            var nextBtn = document.getElementById('faturaNextBtn');
+            var advancedBox = document.getElementById('faturaAdvancedBox');
+
+            if (select) select.value = invoiceID || '';
+            syncFaturaOffset('auto');
+
+            if (quickState) {
+                var muted = quickState.querySelector('.text-\\[var\\(--cb-text-muted\\)\\]');
+                var main = quickState.querySelector('.font-medium');
+                if (muted) muted.textContent = invoiceID ? 'Selecionada' : 'Automático';
+                if (main) main.textContent = invoiceID ? (label || 'Fatura selecionada') : 'fatura do ciclo';
+            }
+
+            if (resetBtn) resetBtn.classList.toggle('hidden', !invoiceID);
+            if (prevBtn) prevBtn.classList.remove('is-selected');
+            if (nextBtn) nextBtn.classList.remove('is-selected');
+            if (sensitive) sensitive.classList.toggle('hidden', !isSensitive);
+            if (advancedBox) advancedBox.classList.add('hidden');
+
+            collapseFaturaAdvanced();
+            showQuickActions();
+        }
+
+        function resetFaturaToAuto() {
+            var select = document.getElementById('faturaSelect');
+            var quickState = document.getElementById('faturaQuickState');
+            var resetBtn = document.getElementById('faturaResetAuto');
+            var prevBtn = document.getElementById('faturaPrevBtn');
+            var nextBtn = document.getElementById('faturaNextBtn');
+            var sensitive = document.getElementById('faturaSensitiveAviso');
+            var advancedBox = document.getElementById('faturaAdvancedBox');
+
+            if (select) select.value = '';
+            syncFaturaOffset('auto');
+
+            if (quickState) {
+                var muted = quickState.querySelector('.text-\\[var\\(--cb-text-muted\\)\\]');
+                var main = quickState.querySelector('.font-medium');
+                if (muted) muted.textContent = 'Automático';
+                if (main) main.textContent = 'fatura do ciclo';
+            }
+
+            if (resetBtn) resetBtn.classList.add('hidden');
+            if (sensitive) sensitive.classList.add('hidden');
+            if (advancedBox) advancedBox.classList.add('hidden');
+            if (prevBtn) prevBtn.classList.remove('is-selected');
+            if (nextBtn) nextBtn.classList.remove('is-selected');
+            collapseFaturaAdvanced();
+
+            showQuickActions();
+        }
+
+        function collapseFaturaAdvanced() {
+            var box = document.getElementById('faturaAdvancedBox');
+            if (box) box.classList.add('hidden');
+        }
+
+        function showQuickActions() {
+            var actions = document.getElementById('faturaQuickActions');
+            var invoices = window.__contabaseFaturaOptionsData;
+            var autoReference = window.__contabaseFaturaAutoReference;
+            if (!actions || !invoices || !invoices.length) {
+                if (actions) actions.classList.add('hidden');
+                return;
+            }
+
+            // Validate that options data belongs to the current card.
+            var quickState = document.getElementById('faturaQuickState');
+            var currentCard = originId && originId.value ? originId.value : '';
+            if (quickState && quickState.dataset.cardId !== currentCard) {
+                actions.classList.add('hidden');
+                return;
+            }
+
+            var currentIdx = -1;
+            if (autoReference) {
+                for (var i = 0; i < invoices.length; i++) {
+                    if (invoices[i].Reference === autoReference) {
+                        currentIdx = i;
+                        break;
+                    }
+                }
+            }
+            if (currentIdx === -1 && invoices.length > 0) {
+                currentIdx = 0;
+            }
+
+            var prevBtn = document.getElementById('faturaPrevBtn');
+            var nextBtn = document.getElementById('faturaNextBtn');
+            var prevLabel = document.getElementById('faturaPrevLabel');
+            var nextLabel = document.getElementById('faturaNextLabel');
+            var hasVisible = false;
+
+            if (currentIdx > 0 && invoices[currentIdx - 1] && invoices[currentIdx - 1].ID) {
+                hasVisible = true;
+                if (prevBtn) {
+                    prevBtn.classList.remove('hidden', 'is-selected');
+                    prevBtn.dataset.invoiceId = invoices[currentIdx - 1].ID;
+                    prevBtn.dataset.sensitive = invoices[currentIdx - 1].IsSensitive ? 'true' : 'false';
+                }
+                if (prevLabel) prevLabel.textContent = 'Mover ' + invoices[currentIdx - 1].ReferenceLabel;
+            } else if (prevBtn) {
+                prevBtn.classList.add('hidden');
+                prevBtn.classList.remove('is-selected');
+                prevBtn.dataset.invoiceId = '';
+                prevBtn.dataset.sensitive = 'false';
+            }
+
+            if (currentIdx >= 0 && currentIdx < invoices.length - 1 && invoices[currentIdx + 1] && invoices[currentIdx + 1].ID) {
+                hasVisible = true;
+                if (nextBtn) {
+                    nextBtn.classList.remove('hidden', 'is-selected');
+                    nextBtn.dataset.invoiceId = invoices[currentIdx + 1].ID;
+                    nextBtn.dataset.sensitive = invoices[currentIdx + 1].IsSensitive ? 'true' : 'false';
+                }
+                if (nextLabel) nextLabel.textContent = 'Mover ' + invoices[currentIdx + 1].ReferenceLabel;
+            } else if (nextBtn) {
+                nextBtn.classList.add('hidden');
+                nextBtn.classList.remove('is-selected');
+                nextBtn.dataset.invoiceId = '';
+                nextBtn.dataset.sensitive = 'false';
+            }
+
+            if (actions) {
+                if (hasVisible) {
+                    actions.classList.remove('hidden');
+                } else {
+                    actions.classList.add('hidden');
+                }
+            }
         }
 
         function initFaturaSelector() {
             var selector = document.getElementById('faturaSelector');
             if (!selector) return;
-            var input = selector.querySelector('input[name="fatura_offset"]');
-            var button = selector.querySelector('button[type="button"]');
-            var usarProximaFatura = input ? input.value === 'next' : false;
-            syncFaturaSelector(selector, usarProximaFatura);
-            window.isProximaFatura = usarProximaFatura;
+            var offsetInput = document.getElementById('faturaOffset');
+            if (!offsetInput) return;
             if (faturaSelectorWeakSet.has(selector)) return;
             faturaSelectorWeakSet.add(selector);
-            selector.addEventListener('fatura-toggle', function(e) {
-                var nextState = e.detail === true;
-                syncFaturaSelector(selector, nextState);
-                window.isProximaFatura = nextState;
-                updateInvoiceNotice();
-            });
-            if (button) {
-                button.addEventListener('click', function() {
-                    var currentInput = selector.querySelector('input[name="fatura_offset"]');
-                    var nextState = !(currentInput && currentInput.value === 'next');
-                    button.dispatchEvent(new CustomEvent('fatura-toggle', { bubbles: true, detail: nextState }));
+
+            var prevBtn = document.getElementById('faturaPrevBtn');
+            var nextBtn = document.getElementById('faturaNextBtn');
+            var toggleAdv = document.getElementById('faturaToggleAdvanced');
+            var resetBtn = document.getElementById('faturaResetAuto');
+            var advancedBox = document.getElementById('faturaAdvancedBox');
+            var select = document.getElementById('faturaSelect');
+            var sensitive = document.getElementById('faturaSensitiveAviso');
+
+            if (prevBtn) {
+                prevBtn.addEventListener('click', function() {
+                    var invId = this.dataset.invoiceId;
+                    if (!invId) {
+                        console.warn('[ContaBase] Quick action prev: invoice_id vazio ou ausente. Ação ignorada.');
+                        return;
+                    }
+                    var isSens = this.dataset.sensitive === 'true';
+                    var label = '';
+                    var invoices = window.__contabaseFaturaOptionsData;
+                    if (invoices) {
+                        var found = invoices.filter(function(o) { return o.ID === invId; })[0];
+                        if (found) label = found.ReferenceLabel;
+                    }
+                    applyManualInvoice(invId, label, isSens);
+                });
+            }
+
+            if (nextBtn) {
+                nextBtn.addEventListener('click', function() {
+                    var invId = this.dataset.invoiceId;
+                    if (!invId) {
+                        console.warn('[ContaBase] Quick action next: invoice_id vazio ou ausente. Ação ignorada.');
+                        return;
+                    }
+                    var isSens = this.dataset.sensitive === 'true';
+                    var label = '';
+                    var invoices = window.__contabaseFaturaOptionsData;
+                    if (invoices) {
+                        var found = invoices.filter(function(o) { return o.ID === invId; })[0];
+                        if (found) label = found.ReferenceLabel;
+                    }
+                    applyManualInvoice(invId, label, isSens);
+                });
+            }
+
+            if (toggleAdv) {
+                toggleAdv.addEventListener('click', function() {
+                    var box = document.getElementById('faturaAdvancedBox');
+                    if (!box) return;
+                    var isHidden = box.classList.contains('hidden');
+                    if (isHidden) {
+                        box.classList.remove('hidden');
+                    } else {
+                        box.classList.add('hidden');
+                    }
+                });
+            }
+
+            if (resetBtn) {
+                resetBtn.addEventListener('click', function() {
+                    resetFaturaToAuto();
+                    updateInvoiceNotice();
+                });
+            }
+
+            if (select && sensitive) {
+                select.addEventListener('change', function() {
+                    var selectedOption = select.options[select.selectedIndex];
+                    if (selectedOption && selectedOption.value) {
+                        var invId = selectedOption.value;
+                        var isSens = selectedOption.dataset && selectedOption.dataset.sensitive === 'true';
+                        var label = selectedOption.textContent.split(' · ')[0] || '';
+                        applyManualInvoice(invId, label, isSens);
+                    } else {
+                        resetFaturaToAuto();
+                    }
                 });
             }
         }
@@ -1037,9 +1254,54 @@
         initFaturaSelector();
 
         function loadInvoiceOptions() {
+            var quickState = document.getElementById('faturaQuickState');
+            if (!quickState) return;
+            var select = document.getElementById('faturaSelect');
+            if (!originId || !originId.value) return;
             var selector = document.getElementById('faturaSelector');
-            if (!selector || !originId || !originId.value) return;
-            selector.classList.remove('hidden');
+            if (selector) selector.classList.remove('hidden');
+
+            quickState.dataset.loaded = 'true';
+            var previousValue = select ? select.value : '';
+            var requestedCardId = originId.value;
+            fetch('/cartoes/fatura-destino/' + encodeURIComponent(originId.value) + '?include_options=true&data=' + (dateInput ? dateInput.value || '' : ''), {
+                headers: { 'Accept': 'application/json', 'HX-Request': 'true' }
+            })
+                .then(function(r) { return r.json(); })
+                .then(function(payload) {
+                    // Race condition guard: ignore response if card changed since request.
+                    var currentCard = originId && originId.value ? originId.value : '';
+                    if (requestedCardId !== currentCard) return;
+                    if (!payload || !payload.options) return;
+                    window.__contabaseFaturaOptionsData = payload.options;
+                    setFaturaAutoReference(payload.reference, payload.invoice_id);
+
+                    if (select) {
+                        select.innerHTML = '';
+                        var defaultOption = document.createElement('option');
+                        defaultOption.value = '';
+                        defaultOption.textContent = 'Automático (fatura do ciclo)';
+                        select.appendChild(defaultOption);
+                        payload.options.forEach(function(opt) {
+                            var option = document.createElement('option');
+                            option.value = opt.ID;
+                            option.textContent = opt.ReferenceLabel + ' · ' + opt.CycleLabel + ' · ' + opt.FinLabel + ' · vence ' + opt.DueLabel;
+                            if (opt.IsSensitive) option.dataset.sensitive = 'true';
+                            select.appendChild(option);
+                        });
+                    }
+
+                    var existing = null;
+                    if (previousValue) {
+                        existing = payload.options.filter(function(o) { return o.ID === previousValue; })[0];
+                    }
+                    if (existing && select) {
+                        select.value = previousValue;
+                        applyManualInvoice(existing.ID, existing.ReferenceLabel, existing.IsSensitive);
+                    } else {
+                        resetFaturaToAuto();
+                    }
+                });
         }
 
         function hideInvoiceSelector() {
@@ -1091,6 +1353,7 @@
                     }
                 }
             );
+            updateInvoiceNotice();
         }
 
         function selectCategory(option) {

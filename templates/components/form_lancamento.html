@@ -3,10 +3,10 @@
 
 <div class="fixed inset-0 z-[100]">
     <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation"></div>
-    <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto md:px-4 md:py-8">
-        <div class="sheet-in sheet-shell relative flex h-[88vh] max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl border md:h-auto md:max-h-[calc(100vh-4rem)] md:rounded-xl">
-        <div class="sheet-drag mx-auto mt-4 h-1 w-10 rounded-full md:hidden"></div>
-        <div class="sheet-topbar flex items-center gap-3 px-4 pb-3 pt-4 sm:px-6 md:pt-5">
+    <div class="absolute inset-x-0 bottom-0 flex justify-center overflow-hidden md:inset-0 md:items-center md:px-4 md:py-8">
+        <div class="sheet-in sheet-shell relative flex h-auto max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl border md:h-auto md:max-h-[calc(100vh-4rem)] md:rounded-xl">
+        <div class="sheet-drag flex-none mx-auto mt-4 h-1 w-10 rounded-full md:hidden"></div>
+        <div class="sheet-topbar flex-none flex items-center gap-3 px-4 pb-3 pt-4 sm:px-6 md:pt-5">
             <div class="sheet-tabs grid min-w-0 flex-1 grid-cols-3 gap-1 rounded-xl border p-1">
                 <button type="button" data-type="despesa" class="tab-button h-11 rounded-lg px-1 text-[10px] font-bold uppercase tracking-wide transition-all duration-150 sm:text-[11px] {{if or (eq .TipoInicial "") (eq .TipoInicial "despesa")}}is-active-despesa{{end}}">
                     <span class="flex items-center justify-center gap-1.5"><i data-lucide="minus-circle" class="h-3.5 w-3.5"></i>Despesa</span>
@@ -25,7 +25,7 @@
                 <i data-lucide="x" class="h-5 w-5"></i>
             </button>
         </div>
-        <div class="flex-1 overflow-y-auto scrollbar-hide px-4 pb-24 pt-2 sm:px-6">
+        <div class="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 pb-4 pt-2 sm:px-6" data-form-scroll>
         <form id="lancamento-form" {{if and .IsEdit .ReturnInvoiceID}}hx-post="/transacoes/{{.EditID}}/salvar" hx-swap="none"{{else if .IsEdit}}hx-put="/transacoes/{{.EditID}}" hx-target="#tx-{{.EditID}}" hx-swap="outerHTML"{{else}}hx-post="/transacoes" hx-swap="none"{{end}} hx-indicator="#htmx-indicator" class="sheet-form space-y-3" data-series-edit="{{if .IsSeriesEdit}}true{{else}}false{{end}}" enctype="multipart/form-data">
             <input id="tipoLancamento" type="hidden" name="tipo" value="{{if .TipoInicial}}{{.TipoInicial}}{{else}}despesa{{end}}">
             {{if .ReturnInvoiceID}}<input type="hidden" name="return_invoice_id" value="{{.ReturnInvoiceID}}">{{end}}
@@ -161,10 +161,48 @@
             <p id="faturaAviso" class="hidden rounded-xl border border-sky-500/25 bg-sky-500/10 px-3 py-2.5 text-xs font-medium text-sky-700 dark:text-sky-300"></p>
 
             <div id="faturaSelector" class="hidden">
-                <div class="pt-1">
-                    <button type="button" class="text-xs font-medium transition-colors underline underline-offset-4 text-indigo-400 hover:text-indigo-300 decoration-indigo-400/30">+ Lançar na próxima fatura!</button>
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="sheet-label block">Fatura</span>
+                        <button type="button" id="faturaResetAuto" class="hidden text-[0.65rem] sm:text-xs font-medium text-indigo-400 hover:text-indigo-300 py-1 px-2 min-h-[28px]">
+                            Voltar para automático
+                        </button>
+                    </div>
+                    <div id="faturaQuickState" class="rounded-xl border px-3 py-2.5 text-xs">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[var(--cb-text-muted)]">Automático</span>
+                            <span class="font-medium text-[var(--cb-text-main)]">fatura do ciclo</span>
+                        </div>
+                    </div>
+                    <div id="faturaQuickActions" class="flex items-center justify-between">
+                        <button type="button" id="faturaPrevBtn" class="hidden text-xs font-medium text-indigo-400 hover:text-indigo-300 underline underline-offset-4 decoration-indigo-400/30 py-2 px-1 min-h-[44px] transition-colors">
+                            <span class="mr-1">←</span><span id="faturaPrevLabel">Mover</span>
+                        </button>
+                        <button type="button" id="faturaNextBtn" class="hidden text-xs font-medium text-indigo-400 hover:text-indigo-300 underline underline-offset-4 decoration-indigo-400/30 py-2 px-1 min-h-[44px] transition-colors">
+                            <span id="faturaNextLabel">Mover</span><span class="ml-1">→</span>
+                        </button>
+                    </div>
+                    <div class="text-center">
+                        <button type="button" id="faturaToggleAdvanced" class="text-[0.65rem] sm:text-xs font-medium text-zinc-400 hover:text-zinc-300 py-2 px-3 min-h-[32px]">
+                            Escolher outra fatura
+                        </button>
+                    </div>
+                    <div id="faturaAdvancedBox" class="hidden space-y-2">
+                        <select id="faturaSelect" name="invoice_id"
+                            class="sheet-select h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none">
+                            <option value="">Automático (fatura do ciclo)</option>
+                            {{range .FaturaOptions}}
+                            <option value="{{.ID}}" class="text-xs" {{if .IsSensitive}}data-sensitive="true"{{end}} {{if eq .ID $.ReturnInvoiceID}}selected{{end}}>
+                                {{.ReferenceLabel}} · {{.CycleLabel}} · {{.FinLabel}} · vence {{.DueLabel}}
+                            </option>
+                            {{end}}
+                        </select>
+                    </div>
+                    <input type="hidden" id="faturaOffset" name="fatura_offset" value="auto">
+                    <p id="faturaSensitiveAviso" class="hidden rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300 font-medium">
+                        Correção manual em fatura fechada/paga. O lançamento pode reabrir saldo pendente e alterar o limite disponível.
+                    </p>
                 </div>
-                <input type="hidden" name="fatura_offset" value="auto">
             </div>
 
             <button id="destinoPicker" type="button"
@@ -445,12 +483,14 @@
         {{end}}
         </form>
         </div>
-        <button type="submit"
-            form="lancamento-form"
-            class="sheet-submit-bubble absolute bottom-6 left-1/2 z-50 flex h-14 w-14 -translate-x-1/2 items-center justify-center rounded-full text-white transition-all duration-150 active:scale-95 cursor-pointer"
-            aria-label="Confirmar">
-            <i data-lucide="check" class="h-6 w-6"></i>
-        </button>
+        <div data-form-footer class="flex-none px-4 pb-6 pt-2">
+            <button type="submit"
+                form="lancamento-form"
+                class="sheet-submit-bubble mx-auto flex h-14 w-14 items-center justify-center rounded-full text-white transition-all duration-150 active:scale-95 cursor-pointer"
+                aria-label="Confirmar">
+                <i data-lucide="check" class="h-6 w-6"></i>
+            </button>
+        </div>
         </div>
     </div>
 </div>
@@ -488,7 +528,7 @@
                     <p class="px-1 text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--cb-text-muted)]">Cartões</p>
                     {{range .Accounts}}{{if eq .Tipo "cartao"}}
                     <button type="button" data-origin-kind="cartao" data-origin-id="{{.ID}}" data-origin-name="{{.Name}}" data-origin-icon="{{.Icon}}" data-origin-color="{{.Color}}" data-origin-provider="{{.ProviderSlug}}" data-closing-day="{{.ClosingDay}}" data-due-day="{{.DueDay}}" data-origin-provider-mark="{{.ProviderMark}}"
-                        class="origin-option flex w-full items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 text-left text-sm font-medium text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]">
+                        class="origin-option flex w-full items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 text-left hover:bg-[var(--cb-surface-3)]">
                         {{if eq .ProviderSlug "custom"}}
                         <span class="flex h-9 w-9 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
                             <i data-lucide="landmark" class="h-4 w-4 icon-colored" style="--ic: {{.Color}}"></i>
@@ -496,7 +536,10 @@
                         {{else}}
                         <span class="inline-flex h-7 min-w-[2.6rem] flex-shrink-0 items-center justify-center rounded-md border px-1.5 text-[0.62rem] font-bold uppercase tracking-wide text-white badge-colored" style="--ic: {{.Color}}">{{.ProviderMark}}</span>
                         {{end}}
-                        {{.Name}}
+                        <span class="min-w-0">
+                            <span class="block truncate text-sm font-medium text-[var(--cb-text-main)]">{{.Name}}</span>
+                            {{if .CreditLimitLabel}}<span class="mt-0.5 block truncate text-xs text-[var(--cb-text-muted)]">{{.CreditLimitLabel}}</span>{{end}}
+                        </span>
                     </button>
                     {{end}}{{end}}
                 </div>

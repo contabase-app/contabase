@@ -1,11 +1,7 @@
 {{define "configuracoes-perfil-page"}}
 {{template "layout-start" .}}
 <div class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 relative">
-    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden">
-        <div class="absolute inset-0 cb-page"></div>
-        <div class="absolute top-[-30%] left-[-20%] w-[60vw] h-[60vw] rounded-full bg-violet-500/[0.05] dark:bg-violet-500/[0.03] blur-[80px]"></div>
-        <div class="absolute bottom-[-20%] right-[-20%] w-[50vw] h-[50vw] rounded-full bg-indigo-500/[0.03] dark:bg-indigo-500/[0.02] blur-[80px]"></div>
-    </div>
+    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
 
     <!-- Desktop View: SaaS Split Layout -->
     <div class="hidden md:flex gap-8 w-full max-w-full">
@@ -47,45 +43,51 @@
         </div>
     </header>
 
-    <div class="w-full px-4 pb-[7rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative">
+    <div class="w-full px-4 pb-[7rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
 
-        {{if .FlashError}}<div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-100">{{.FlashError}}</div>{{end}}
-        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100">{{.FlashSuccess}}</div>{{end}}
+        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-danger) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 8%, transparent); color: var(--cb-danger)">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-success) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-success) 8%, transparent); color: var(--cb-success)">{{.FlashSuccess}}</div>{{end}}
+
+        <!-- Section header -->
+        <div class="mb-6">
+            <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Meu Perfil</h1>
+            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Atualize seus dados pessoais e credenciais.</p>
+        </div>
 
         <div class="space-y-4 md:space-y-5">
             <!-- Meu Perfil -->
-            <form class="cb-card space-y-5 md:p-6" hx-post="/configuracoes/perfil" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" enctype="multipart/form-data">
+            <form class="cb-card-dense p-4 md:p-6" hx-post="/configuracoes/perfil" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" enctype="multipart/form-data">
                 <input type="hidden" name="photo_path" value="{{.Perfil.PhotoPath}}">
-                <div class="mb-1">
-                    <h2 class="text-base font-bold text-[var(--cb-text-main)]">Meu Perfil</h2>
-                    <p class="mt-0.5 text-xs text-[var(--cb-text-muted)]">Atualize seus dados pessoais e credenciais.</p>
-                </div>
-                <div class="flex flex-col items-center gap-3 mb-6">
-                    <div class="relative w-20 h-20 rounded-full bg-[var(--cb-accent-soft)] flex items-center justify-center text-2xl font-bold text-[var(--cb-accent)] dark:text-violet-300">
-                        {{if .Perfil.PhotoURL}}
-                        <img src="{{.Perfil.PhotoURL}}" alt="Foto de perfil" class="w-full h-full rounded-full object-cover" data-avatar-fallback>
-                        <span data-avatar-text style="display:none">{{.UserInitials}}</span>
-                        {{else}}
-                        {{.UserInitials}}
-                        {{end}}
+                <div class="grid grid-cols-1 gap-6 md:grid-cols-[140px_1fr]">
+                    <div class="flex flex-col items-center gap-3 md:items-start">
+                        <div class="relative w-20 h-20 rounded-full bg-[var(--cb-accent-soft)] flex items-center justify-center text-2xl font-bold text-[var(--cb-accent)]">
+                            {{if .Perfil.PhotoURL}}
+                            <img src="{{.Perfil.PhotoURL}}" alt="Foto de perfil" class="w-full h-full rounded-full object-cover" data-avatar-fallback>
+                            <span data-avatar-text style="display:none">{{.UserInitials}}</span>
+                            {{else}}
+                            {{.UserInitials}}
+                            {{end}}
+                        </div>
+                        <label class="inline-flex items-center gap-2 h-9 px-3 rounded-xl border border-[var(--cb-border-subtle)] text-xs font-medium text-[var(--cb-text-muted)] cursor-pointer hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95 transition-all btn-tactile">
+                            <i data-lucide="camera" class="w-3.5 h-3.5"></i>
+                            <span>Alterar foto</span>
+                            <input type="file" name="photo_file" accept="image/jpeg,image/png" class="hidden" data-onchange="submitProfilePhoto">
+                        </label>
                     </div>
-                    <label class="inline-flex items-center gap-2 h-9 px-3 rounded-xl border border-[var(--cb-border-subtle)] text-xs font-medium text-[var(--cb-text-muted)] cursor-pointer hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95 transition-all btn-tactile">
-                        <i data-lucide="camera" class="w-3.5 h-3.5"></i>
-                        <span>Alterar foto</span>
-                        <input type="file" name="photo_file" accept="image/jpeg,image/png" class="hidden" data-onchange="submitProfilePhoto">
-                    </label>
-                </div>
-                <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
-                    <label class="block"><span class="cb-label">Nome</span><input type="text" name="name" value="{{.Perfil.Name}}" class="cb-input"></label>
-                    <label class="block"><span class="cb-label">E-mail</span><input type="email" name="email" value="{{.Perfil.Email}}" class="cb-input"></label>
-                </div>
-                <div class="flex items-center gap-3 pt-2">
-                    <button class="cb-button cb-button-primary h-11 px-6 text-sm">Salvar Perfil</button>
+                    <div class="space-y-5">
+                        <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+                            <label class="block"><span class="cb-label">Nome</span><input type="text" name="name" value="{{.Perfil.Name}}" class="cb-input"></label>
+                            <label class="block"><span class="cb-label">E-mail</span><input type="email" name="email" value="{{.Perfil.Email}}" class="cb-input"></label>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button class="cb-button cb-button-primary h-11 px-6 text-sm">Salvar Perfil</button>
+                        </div>
+                    </div>
                 </div>
             </form>
 
             <!-- Senha e segurança -->
-            <div class="cb-card p-4 md:p-6">
+            <div class="cb-card-dense p-4 md:p-6">
                 <div class="flex items-center justify-between gap-4">
                     <div>
                         <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">Senha e segurança</h3>
@@ -131,9 +133,10 @@
             </div>
 
             <!-- Workspace Padrão de Entrada -->
-            <form class="cb-card space-y-3 p-4 md:p-6" hx-post="/configuracoes/perfil/padrao" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
+            <form class="cb-card-dense p-4 md:p-6" hx-post="/configuracoes/perfil/padrao" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
                 <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">Workspace Padrão de Entrada</h3>
-                <label class="block">
+                <p class="text-xs text-[var(--cb-text-muted)] mt-0.5 mb-4">Escolha o workspace aberto por padrão ao fazer login.</p>
+                <label class="block mb-4">
                     <span class="cb-label">Selecione o workspace</span>
                     <select name="default_workspace_id" class="cb-input">
                         <option value="">Usar workspace inicial automático</option>
@@ -146,40 +149,40 @@
             </form>
 
             <!-- Aparência (Tema) -->
-            <div class="cb-card p-4 md:p-6">
+            <div class="cb-card-dense p-4 md:p-6">
                 <div class="flex items-start justify-between gap-4">
                     <div>
-                        <h3 class="text-base font-bold text-[var(--cb-text-main)]">Aparência do Aplicativo</h3>
-                        <p class="text-xs text-[var(--cb-text-muted)] mt-1">Selecione o tema visual do ContaBase.</p>
+                        <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">Aparência do Aplicativo</h3>
+                        <p class="text-xs text-[var(--cb-text-muted)] mt-0.5">Selecione o tema visual do ContaBase.</p>
                     </div>
                 </div>
                 <div class="mt-5 grid grid-cols-2 gap-3 max-w-md">
                     <button type="button"
                         data-onclick-tab="applyTheme" data-tab="light" data-theme-option="light"
                         class="btn-tactile flex flex-col items-center justify-center p-4 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)] text-center transition-all hover:bg-[var(--cb-surface-3)]">
-                        <i data-lucide="sun" class="w-6 h-6 text-amber-500 mb-2"></i>
+                        <i data-lucide="sun" class="w-6 h-6 text-[var(--cb-warning)] mb-2"></i>
                         <span class="text-xs font-semibold">Tema Claro</span>
                     </button>
                     <button type="button"
                         data-onclick-tab="applyTheme" data-tab="dark" data-theme-option="dark"
                         class="btn-tactile flex flex-col items-center justify-center p-4 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)] text-center transition-all hover:bg-[var(--cb-surface-3)]">
-                        <i data-lucide="moon" class="w-6 h-6 text-indigo-400 mb-2"></i>
+                        <i data-lucide="moon" class="w-6 h-6 text-[var(--cb-info)] mb-2"></i>
                         <span class="text-xs font-semibold">Tema Escuro</span>
                     </button>
                 </div>
             </div>
 
             <!-- Autenticação de Dois Fatores (2FA) -->
-            <div class="cb-card p-4 md:p-6">
+            <div class="cb-card-dense p-4 md:p-6">
                 <div class="flex items-start justify-between gap-4">
                     <div>
-                        <h3 class="text-base font-bold text-[var(--cb-text-main)]">Autenticação de Dois Fatores (2FA)</h3>
-                        <p class="text-xs text-[var(--cb-text-muted)] mt-1">Adicione uma camada extra de segurança à sua conta.</p>
+                        <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">Autenticação de Dois Fatores (2FA)</h3>
+                        <p class="text-xs text-[var(--cb-text-muted)] mt-0.5">Adicione uma camada extra de segurança à sua conta.</p>
                     </div>
                     {{if .Perfil.TwoFactorEnabled}}
-                    <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">Ativo</span>
+                    <span class="cb-status-chip cb-status-chip-success">Ativo</span>
                     {{else}}
-                    <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-[var(--cb-surface-3)] text-[var(--cb-text-muted)]">Inativo</span>
+                    <span class="cb-status-chip cb-status-chip-neutral">Inativo</span>
                     {{end}}
                 </div>
                 <div id="totp-area" class="mt-5">

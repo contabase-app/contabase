@@ -162,6 +162,13 @@ func accountVisualByProvider(providerSlug, accType string) string {
 	return "wallet"
 }
 
+func accountProviderName(providerSlug string) string {
+	if provider, ok := accountProviderBySlugOrCustom(providerSlug); ok && strings.TrimSpace(provider.Name) != "" {
+		return provider.Name
+	}
+	return ""
+}
+
 func accountProviderMark(providerSlug, accountName string) string {
 	if provider, ok := accountProviderBySlugOrCustom(providerSlug); ok && strings.TrimSpace(provider.Mark) != "" {
 		return provider.Mark

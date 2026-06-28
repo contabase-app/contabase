@@ -1,12 +1,6 @@
 {{define "configuracoes-admin_backups-page"}}
 {{template "layout-start" .}}
 <div class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pb-28 pt-5 md:pb-10 md:pt-8 relative">
-    <!-- Liquid blurs + dot pattern -->
-    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-60">
-        <div class="absolute top-[5%] left-[-20%] w-[55vw] h-[55vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
-        <div class="absolute bottom-[10%] right-[-15%] w-[45vw] h-[45vw] rounded-full bg-indigo-400/10 dark:bg-indigo-500/5 blur-[80px]"></div>
-    </div>
-
     <!-- Desktop View: SaaS Split Layout -->
     <div class="hidden md:flex gap-8 w-full max-w-full">
         <!-- Sidebar Navigation -->
@@ -47,139 +41,131 @@
         </div>
     </header>
 
-    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative">
-        <!-- Liquid blurs + dot pattern -->
-        <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-60 md:hidden">
-            <div class="absolute top-[5%] left-[-20%] w-[55vw] h-[55vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
-            <div class="absolute bottom-[10%] right-[-15%] w-[45vw] h-[45vw] rounded-full bg-indigo-400/10 dark:bg-indigo-500/5 blur-[80px]"></div>
-        </div>
-    
+    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
+        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-danger) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 8%, transparent); color: var(--cb-danger)">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-success) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-success) 8%, transparent); color: var(--cb-success)">{{.FlashSuccess}}</div>{{end}}
 
-    {{if .FlashError}}<div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-100">{{.FlashError}}</div>{{end}}
-    {{if .FlashSuccess}}<div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100">{{.FlashSuccess}}</div>{{end}}
-
-    <div class="md:premium-card md:bg-[var(--cb-surface-1)]/75 md:backdrop-blur-xl md:border md:border-[var(--cb-border-subtle)] md:shadow-sm md:rounded-3xl p-0 md:p-8">
-    <div class="mb-6 flex items-start justify-between gap-4">
-        <div>
-            <div class="flex items-center gap-2">
-                <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Backups</h2>
-                <a href="/ajuda#seguranca-backups" hx-get="/ajuda" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]" title="Ajuda sobre Segurança e Backups">
-                    <i data-lucide="help-circle" class="w-4 h-4"></i>
-                </a>
-            </div>
-            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Exportação, importação e política da rotina automática.</p>
-        </div>
-    </div>
-    <div class="space-y-4">
-        <!-- Exportar Backup -->
-        <div class="rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-5">
-            <div class="flex items-start gap-4">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100/80 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400">
-                    <i data-lucide="download" class="h-5 w-5"></i>
-                </span>
-                <div class="min-w-0 flex-1">
-                    <p class="text-sm font-bold text-[var(--cb-text-main)]">Exportar backup</p>
-                    <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Baixe uma cópia de segurança atual do banco de dados. Este arquivo não inclui uploads, anexos, fotos, logos nem .env.</p>
+        <!-- Section header -->
+        <div class="mb-6 flex items-start justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Backups</h1>
+                    <a href="/ajuda#seguranca-backups" hx-get="/ajuda" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]" title="Ajuda sobre Segurança e Backups">
+                        <i data-lucide="help-circle" class="w-4 h-4"></i>
+                    </a>
                 </div>
-            </div>
-            <div class="mt-4 flex justify-start">
-                <a href="/admin/backups/exportar" class="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] transition-all px-4 text-xs font-semibold text-white btn-tactile">
-                    <i data-lucide="download" class="h-4 w-4"></i>
-                    <span>Baixar backup</span>
-                </a>
+                <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Exportação, importação e política da rotina automática.</p>
             </div>
         </div>
 
-        <!-- Rotina Automática -->
-        <article class="rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-5">
-            <div class="flex items-start gap-4">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100/80 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400">
-                    <i data-lucide="calendar" class="h-5 w-5"></i>
-                </span>
-                <div class="min-w-0 flex-1">
-                    <p class="text-sm font-bold text-[var(--cb-text-main)]">Rotina automática</p>
-                    <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Backup a cada {{.BackupTicker}} · retenção: {{.BackupRetention}} arquivos</p>
+        <div class="cb-card-dense p-4 md:p-6 space-y-4">
+            <!-- Exportar Backup -->
+            <div class="cb-row-dense">
+                <div class="flex items-start gap-4">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in srgb,var(--cb-success) 12%,transparent)] text-[color-mix(in srgb,var(--cb-success) 75%,var(--cb-text-main))]">
+                        <i data-lucide="download" class="h-5 w-5"></i>
+                    </span>
+                    <div class="min-w-0 flex-1">
+                        <p class="text-sm font-bold text-[var(--cb-text-main)]">Exportar backup</p>
+                        <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Baixe uma cópia de segurança atual do banco de dados. Este arquivo não inclui uploads, anexos, fotos, logos nem .env.</p>
+                    </div>
                 </div>
-            </div>
-        </article>
-
-        <!-- Importar Backup -->
-        <form class="rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-5 space-y-4"
-              data-backup-dropzone
-              hx-post="/admin/backups/importar"
-              hx-encoding="multipart/form-data"
-              hx-target="#settings-dynamic-payload"
-              hx-swap="outerHTML"
-              hx-sync="this:drop"
-              hx-disabled-elt="find button[type='submit']"
-              hx-indicator="#htmx-indicator">
-
-            <div class="flex items-start gap-4">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-100/80 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400">
-                    <i data-lucide="upload" class="h-5 w-5"></i>
-                </span>
-                <div class="min-w-0 flex-1">
-                    <p class="text-sm font-bold text-[var(--cb-text-main)]">Importar backup</p>
-                    <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Restaure um estado anterior a partir de um arquivo SQLite .db; arquivos em data/uploads precisam ser restaurados separadamente.</p>
+                <div class="mt-4 flex justify-start">
+                    <a href="/admin/backups/exportar" class="cb-button cb-button-primary h-9 px-4 text-xs">
+                        <i data-lucide="download" class="h-4 w-4"></i>
+                        <span>Baixar backup</span>
+                    </a>
                 </div>
             </div>
 
-            <!-- Upload dropzone label -->
-            <label
-                data-backup-dropzone-label
-                class="relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-8 px-4 text-center cursor-pointer transition-all duration-200 border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)]/50 hover:border-[var(--cb-border-strong)] hover:bg-[var(--cb-surface-3)]"
-            >
-                <input
-                    type="file"
-                    id="backup_file_input"
-                    name="backup_file"
-                    accept=".db"
-                    required
-                    class="sr-only"
+            <!-- Rotina Automática -->
+            <article class="cb-row-dense">
+                <div class="flex items-start gap-4">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in srgb,var(--cb-info) 12%,transparent)] text-[color-mix(in srgb,var(--cb-info) 75%,var(--cb-text-main))]">
+                        <i data-lucide="calendar" class="h-5 w-5"></i>
+                    </span>
+                    <div class="min-w-0 flex-1">
+                        <p class="text-sm font-bold text-[var(--cb-text-main)]">Rotina automática</p>
+                        <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Backup a cada {{.BackupTicker}} · retenção: {{.BackupRetention}} arquivos</p>
+                    </div>
+                </div>
+            </article>
+
+            <!-- Importar Backup -->
+            <form class="cb-card-muted border-[var(--cb-danger)]/20 p-4 md:p-5 space-y-4"
+                  data-backup-dropzone
+                  hx-post="/admin/backups/importar"
+                  hx-encoding="multipart/form-data"
+                  hx-target="#settings-dynamic-payload"
+                  hx-swap="outerHTML"
+                  hx-sync="this:drop"
+                  hx-disabled-elt="find button[type='submit']"
+                  hx-indicator="#htmx-indicator">
+
+                <div class="flex items-start gap-4">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in srgb,var(--cb-danger) 12%,transparent)] text-[var(--cb-danger)]">
+                        <i data-lucide="upload" class="h-5 w-5"></i>
+                    </span>
+                    <div class="min-w-0 flex-1">
+                        <p class="text-sm font-bold text-[var(--cb-text-main)]">Importar backup</p>
+                        <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Restaure um estado anterior a partir de um arquivo SQLite .db; arquivos em data/uploads precisam ser restaurados separadamente.</p>
+                    </div>
+                </div>
+
+                <!-- Upload dropzone label -->
+                <label
+                    data-backup-dropzone-label
+                    class="relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-8 px-4 text-center cursor-pointer transition-all duration-200 border-[var(--cb-border-strong)] bg-[color-mix(in srgb,var(--cb-surface-2) 50%,transparent)] hover:border-[var(--cb-border-strong)] hover:bg-[var(--cb-surface-3)]"
                 >
+                    <input
+                        type="file"
+                        id="backup_file_input"
+                        name="backup_file"
+                        accept=".db"
+                        required
+                        class="sr-only"
+                    >
 
-                <div class="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)] mb-3">
-                    <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+                    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)] mb-3">
+                        <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+                    </div>
+
+                    <p class="text-sm font-semibold text-[var(--cb-text-main)]" data-backup-drag-text>
+                        Arraste um arquivo .db aqui ou clique para selecionar
+                    </p>
+                    <p class="text-xs text-[var(--cb-text-muted)] mt-1" data-backup-drag-text>
+                        Apenas backups SQLite .db exportados pelo ContaBase.
+                    </p>
+
+                    <!-- Feedback area -->
+                    <div class="flex items-center gap-2 text-sm font-medium rounded-xl border border-[var(--cb-success)]/20 bg-[color-mix(in srgb,var(--cb-success) 10%,var(--cb-surface-2))] px-3 py-2 text-[color-mix(in srgb,var(--cb-success) 75%,var(--cb-text-main))] hidden" data-backup-file-wrap>
+                        <i data-lucide="file-check" class="w-4 h-4 shrink-0"></i>
+                        <span>Arquivo selecionado: <strong class="font-bold font-mono text-xs text-[var(--cb-text-main)]" data-backup-filename></strong></span>
+                    </div>
+                </label>
+
+                <!-- Microcopy Warning -->
+                <div class="flex gap-3 rounded-xl border border-[var(--cb-danger)]/20 bg-[color-mix(in srgb,var(--cb-danger) 8%,var(--cb-surface-2))] p-4 text-[var(--cb-danger)]">
+                    <i data-lucide="alert-triangle" class="w-5 h-5 shrink-0"></i>
+                    <div class="text-xs leading-relaxed">
+                        <p class="font-semibold">Esta ação substitui o banco atual pelo backup selecionado. Um backup de segurança pré-restore será criado automaticamente antes da troca.</p>
+                        <p class="mt-1">O restore pelo painel troca somente o banco SQLite. Preserve data/uploads e as chaves do .env.docker para manter anexos, imagens e 2FA funcionando.</p>
+                    </div>
                 </div>
 
-                <p class="text-sm font-semibold text-[var(--cb-text-main)]" data-backup-drag-text>
-                    Arraste um arquivo .db aqui ou clique para selecionar
-                </p>
-                <p class="text-xs text-[var(--cb-text-muted)] mt-1" data-backup-drag-text>
-                    Apenas backups SQLite .db exportados pelo ContaBase.
-                </p>
-
-                <!-- Feedback area -->
-                <div class="flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-250/50 dark:border-emerald-500/20 px-3 py-2 rounded-xl hidden" data-backup-file-wrap>
-                    <i data-lucide="file-check" class="w-4 h-4 shrink-0"></i>
-                    <span>Arquivo selecionado: <strong class="font-bold font-mono text-xs text-[var(--cb-text-main)]" data-backup-filename></strong></span>
+                <!-- Submit actions -->
+                <div class="flex justify-end pt-2">
+                    <button
+                        type="submit"
+                        class="btn-tactile inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl border border-[var(--cb-danger)]/30 bg-[color-mix(in srgb,var(--cb-danger) 12%,transparent)] text-xs font-semibold text-[var(--cb-danger)] transition-all hover:bg-[color-mix(in srgb,var(--cb-danger) 18%,transparent)] active:scale-95"
+                    >
+                        <i data-lucide="upload" class="h-4 w-4"></i>
+                        <span>Importar e Sobrescrever Banco</span>
+                        <span class="htmx-indicator ml-2">Importando...</span>
+                    </button>
                 </div>
-            </label>
-
-            <!-- Microcopy Warning -->
-            <div class="flex gap-3 rounded-xl border border-rose-200 bg-rose-50/50 p-4 dark:border-rose-500/20 dark:bg-rose-500/5 text-rose-800 dark:text-rose-200">
-                <i data-lucide="alert-triangle" class="w-5 h-5 shrink-0 text-rose-500"></i>
-                <div class="text-xs leading-relaxed">
-                    <p class="font-semibold">Esta ação substitui o banco atual pelo backup selecionado. Um backup de segurança pré-restore será criado automaticamente antes da troca.</p>
-                    <p class="mt-1">O restore pelo painel troca somente o banco SQLite. Preserve data/uploads e as chaves do .env.docker para manter anexos, imagens e 2FA funcionando.</p>
-                </div>
-            </div>
-
-            <!-- Submit actions -->
-            <div class="flex justify-end pt-2">
-                <button
-                    type="submit"
-                    class="btn-tactile inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-[0.98] transition-all px-4 text-xs font-semibold text-white shadow-sm dark:bg-rose-600 dark:hover:bg-rose-500"
-                >
-                    <i data-lucide="upload" class="h-4 w-4"></i>
-                    <span>Importar e Sobrescrever Banco</span>
-                    <span class="htmx-indicator ml-2">Importando...</span>
-                </button>
-            </div>
-        </form>
-    </div>
-
-    </div>
+            </form>
+        </div>
     </div>
 </div>
 {{end}}

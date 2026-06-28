@@ -36,13 +36,13 @@
 
 {{define "contato-row-summary"}}
 <div class="flex items-center gap-3 min-w-0">
-    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold uppercase
-        {{if eq .Type "client"}}bg-[rgba(34,197,94,0.12)] text-[var(--cb-success)]{{else}}bg-[rgba(245,158,11,0.12)] text-[var(--cb-warning)]{{end}}">
+    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold uppercase"
+        style="{{if eq .Type "client"}}background: color-mix(in srgb, var(--cb-success) 12%, transparent); color: var(--cb-success){{else}}background: color-mix(in srgb, var(--cb-warning) 12%, transparent); color: var(--cb-warning){{end}}">
         {{slice .Name 0 2 | upper}}
     </span>
     <div class="min-w-0">
         <h3 class="text-sm font-semibold cb-text-main truncate">{{.Name}}</h3>
-        <span class="badge {{if eq .Type "client"}}badge-success{{else}}badge-warning{{end}} mt-1">
+        <span class="cb-status-chip {{if eq .Type "client"}}cb-status-chip-success{{else}}cb-status-chip-warning{{end}} mt-1">
             {{.TypeLabel}}
         </span>
     </div>
@@ -50,7 +50,7 @@
 {{end}}
 
 {{define "contato-row"}}
-<article id="contato-{{.ID}}" class="cb-card cb-row">
+<article id="contato-{{.ID}}" class="cb-card-dense">
     <div class="flex items-start justify-between gap-3 w-full">
         <div class="min-w-0">
             <p class="text-sm font-semibold cb-text-main truncate">{{.Name}}</p>
@@ -81,7 +81,7 @@
 {{end}}
 
 {{define "contato-row-form"}}
-<article id="contato-{{.ID}}" class="cb-card cb-row">
+<article id="contato-{{.ID}}" class="cb-card-dense">
     <form hx-post="/contatos/{{.ID}}/salvar" hx-target="#contato-{{.ID}}" hx-swap="outerHTML" class="space-y-2 w-full">
         {{template "contato-form-fields" .}}
         <div class="flex items-center justify-end gap-2 pt-1">

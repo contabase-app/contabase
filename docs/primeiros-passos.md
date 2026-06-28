@@ -4,9 +4,9 @@ Este guia ajuda a escolher como instalar o ContaBase antes de você sair copiand
 
 ## O que é a Beta?
 
-A `v0.1.0-beta.1` é a primeira Beta pública controlada. Ela está funcional, mas **não é uma versão stable**. Algumas áreas ainda estão em validação (recorrências/parcelamentos e pagamento parcial de faturas, por exemplo).
+A Beta pública atual/preparada está funcional, mas **não é uma versão stable**.
 
-A release `v0.1.0-beta.1` **já está publicada** como Beta pública controlada (prerelease). A imagem Docker no GHCR e os artifacts da GitHub Release estão disponíveis.
+A primeira Beta pública controlada permanece como histórico. Stable pública ainda não existe.
 
 ## Qual método devo escolher?
 

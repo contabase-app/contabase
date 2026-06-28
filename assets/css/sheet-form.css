@@ -11,6 +11,22 @@
     border-color: var(--cb-border-subtle);
     box-shadow: 0 18px 45px -28px rgba(0, 0, 0, 0.08);
     backdrop-filter: blur(16px);
+    max-height: 92vh;
+    max-height: 92dvh;
+    overflow: hidden;
+}
+
+@supports (overflow: clip) {
+    .sheet-shell {
+        overflow: clip;
+    }
+}
+
+@media (min-width: 768px) {
+    .sheet-shell {
+        max-height: calc(100vh - 4rem);
+        max-height: calc(100dvh - 4rem);
+    }
 }
 
 .dark .sheet-shell {
@@ -382,6 +398,41 @@
 
 .sheet-submit-bubble:hover {
     background: color-mix(in srgb, var(--cb-success) 80%, #000);
+}
+
+/* Fatura quick selector */
+#faturaQuickState {
+    background: var(--cb-surface-2);
+    border-color: var(--cb-border-subtle);
+}
+
+#faturaQuickActions {
+    gap: 0.5rem;
+}
+
+#faturaQuickActions button {
+    min-height: 2.75rem;
+    padding: 0.5rem 0.25rem;
+}
+
+@media (max-width: 374px) {
+    #faturaQuickActions {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    #faturaQuickActions button {
+        text-align: center;
+        width: 100%;
+    }
+}
+
+#faturaQuickActions button.is-selected {
+    color: var(--cb-accent);
+    text-decoration-color: color-mix(in srgb, var(--cb-accent) 50%, transparent);
+}
+
+.dark #faturaQuickActions button.is-selected {
+    color: var(--cb-accent);
 }
 
 .sheet-series-overlay {

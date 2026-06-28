@@ -1,11 +1,7 @@
 {{define "configuracoes-admin_auditoria-page"}}
 {{template "layout-start" .}}
 <div class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pb-28 pt-5 md:pb-10 md:pt-8 relative">
-    <!-- Liquid blurs + dot pattern -->
-    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-60">
-        <div class="absolute top-[5%] left-[-20%] w-[55vw] h-[55vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
-        <div class="absolute bottom-[10%] right-[-15%] w-[45vw] h-[45vw] rounded-full bg-indigo-400/10 dark:bg-indigo-500/5 blur-[80px]"></div>
-    </div>
+    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
 
     <!-- Desktop View: SaaS Split Layout -->
     <div class="hidden md:flex gap-8 w-full max-w-full">
@@ -47,109 +43,101 @@
         </div>
     </header>
 
-    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative">
-        <!-- Liquid blurs + dot pattern -->
-        <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-60 md:hidden">
-            <div class="absolute top-[5%] left-[-20%] w-[55vw] h-[55vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
-            <div class="absolute bottom-[10%] right-[-15%] w-[45vw] h-[45vw] rounded-full bg-indigo-400/10 dark:bg-indigo-500/5 blur-[80px]"></div>
+    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
+        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-danger) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 8%, transparent); color: var(--cb-danger)">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-success) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-success) 8%, transparent); color: var(--cb-success)">{{.FlashSuccess}}</div>{{end}}
+
+        <!-- Section header -->
+        <div class="mb-6">
+            <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Logs de Auditoria &amp; Alertas</h1>
+            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Configure SMTP, preferências de alerta e monitore os eventos dos últimos 14 dias.</p>
         </div>
-    
 
-    {{if .FlashError}}<div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-100">{{.FlashError}}</div>{{end}}
-    {{if .FlashSuccess}}<div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100">{{.FlashSuccess}}</div>{{end}}
+        <div class="space-y-4">
+            <form class="cb-card-dense p-4 md:p-5 space-y-4" hx-post="/admin/auditoria/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
+                <p class="text-sm font-semibold text-[var(--cb-text-main)]">Servidor SMTP</p>
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label class="space-y-1">
+                        <span class="cb-label">Host SMTP</span>
+                        <input type="text" name="smtp_host" value="{{.SMTPHost}}" placeholder="smtp.seudominio.com" class="cb-input">
+                    </label>
+                    <label class="space-y-1">
+                        <span class="cb-label">Porta SMTP</span>
+                        <input type="number" min="1" max="65535" name="smtp_port" value="{{.SMTPPort}}" class="cb-input">
+                    </label>
+                </div>
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <label class="space-y-1">
+                        <span class="cb-label">Usuário SMTP</span>
+                        <input type="text" name="smtp_user" value="{{.SMTPUser}}" placeholder="alertas@seudominio.com" class="cb-input">
+                    </label>
+                    <label class="space-y-1">
+                        <span class="cb-label">Senha SMTP</span>
+                        <input type="password" name="smtp_pass" value="{{.SMTPPass}}" placeholder="********" class="cb-input">
+                    </label>
+                </div>
+                <label class="space-y-1 block">
+                    <span class="cb-label">E-mail destino das notificações</span>
+                    <input type="email" name="notification_email" value="{{.NotificationEmail}}" placeholder="soc@seudominio.com" class="cb-input">
+                </label>
 
-    <div class="md:premium-card md:bg-[var(--cb-surface-1)]/75 md:backdrop-blur-xl md:border md:border-[var(--cb-border-subtle)] md:shadow-sm md:rounded-3xl p-0 md:p-8">
-    <div class="mb-6">
-        <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Logs de Auditoria &amp; Alertas</h2>
-        <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Configure SMTP, preferências de alerta e monitore os eventos dos últimos 14 dias.</p>
-    </div>
-    <div class="space-y-4">
-        <form class="rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 md:p-5 space-y-4" hx-post="/admin/auditoria/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
-            <p class="text-sm font-semibold text-zinc-800 dark:text-white">Servidor SMTP</p>
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <label class="space-y-1">
-                    <span class="cb-label">Host SMTP</span>
-                    <input type="text" name="smtp_host" value="{{.SMTPHost}}" placeholder="smtp.seudominio.com" class="cb-input">
-                </label>
-                <label class="space-y-1">
-                    <span class="cb-label">Porta SMTP</span>
-                    <input type="number" min="1" max="65535" name="smtp_port" value="{{.SMTPPort}}" class="cb-input">
-                </label>
-            </div>
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <label class="space-y-1">
-                    <span class="cb-label">Usuário SMTP</span>
-                    <input type="text" name="smtp_user" value="{{.SMTPUser}}" placeholder="alertas@seudominio.com" class="cb-input">
-                </label>
-                <label class="space-y-1">
-                    <span class="cb-label">Senha SMTP</span>
-                    <input type="password" name="smtp_pass" value="{{.SMTPPass}}" placeholder="********" class="cb-input">
-                </label>
-            </div>
-            <label class="space-y-1 block">
-                <span class="cb-label">E-mail destino das notificações</span>
-                <input type="email" name="notification_email" value="{{.NotificationEmail}}" placeholder="soc@seudominio.com" class="cb-input">
-            </label>
+                <div class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-3 md:p-4 space-y-3">
+                    <p class="text-sm font-semibold text-[var(--cb-text-main)]">Preferências de alerta por e-mail</p>
+                    <label class="flex items-center justify-between gap-3">
+                        <span class="text-sm text-zinc-600 dark:text-zinc-300">Tentativas de Login Inválidas</span>
+                        <input type="checkbox" name="email_preferences" value="auth.failed" {{if .EmailPrefAuth}}checked{{end}} class="h-5 w-5 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 dark:border-zinc-600 dark:bg-zinc-900">
+                    </label>
+                    <label class="flex items-center justify-between gap-3">
+                        <span class="text-sm text-zinc-600 dark:text-zinc-300">Exportação de Backups</span>
+                        <input type="checkbox" name="email_preferences" value="backup.export" {{if .EmailPrefBackup}}checked{{end}} class="h-5 w-5 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 dark:border-zinc-600 dark:bg-zinc-900">
+                    </label>
+                    <label class="flex items-center justify-between gap-3">
+                        <span class="text-sm text-zinc-600 dark:text-zinc-300">Alterações de Membros</span>
+                        <input type="checkbox" name="email_preferences" value="workspace.edit" {{if .EmailPrefWorkspace}}checked{{end}} class="h-5 w-5 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 dark:border-zinc-600 dark:bg-zinc-900">
+                    </label>
+                </div>
 
-            <div class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-3 md:p-4 space-y-3">
-                <p class="text-sm font-semibold text-zinc-800 dark:text-white">Preferências de alerta por e-mail</p>
-                <label class="flex items-center justify-between gap-3">
-                    <span class="text-sm text-zinc-600 dark:text-zinc-300">Tentativas de Login Inválidas</span>
-                    <input type="checkbox" name="email_preferences" value="auth.failed" {{if .EmailPrefAuth}}checked{{end}} class="h-5 w-5 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 dark:border-zinc-600 dark:bg-zinc-900">
-                </label>
-                <label class="flex items-center justify-between gap-3">
-                    <span class="text-sm text-zinc-600 dark:text-zinc-300">Exportação de Backups</span>
-                    <input type="checkbox" name="email_preferences" value="backup.export" {{if .EmailPrefBackup}}checked{{end}} class="h-5 w-5 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 dark:border-zinc-600 dark:bg-zinc-900">
-                </label>
-                <label class="flex items-center justify-between gap-3">
-                    <span class="text-sm text-zinc-600 dark:text-zinc-300">Alterações de Membros</span>
-                    <input type="checkbox" name="email_preferences" value="workspace.edit" {{if .EmailPrefWorkspace}}checked{{end}} class="h-5 w-5 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 dark:border-zinc-600 dark:bg-zinc-900">
-                </label>
-            </div>
+                <button class="cb-button cb-button-primary h-10 px-4 text-xs">Salvar Configurações de Auditoria</button>
+            </form>
 
-            <button class="cb-button cb-button-primary h-10 px-4 text-xs">Salvar Configurações de Auditoria</button>
-        </form>
-
-        <article class="rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 md:p-5">
-            <p class="text-sm font-semibold text-[var(--cb-text-main)]">Eventos de segurança (últimos 14 dias)</p>
-            <div class="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
-                <select name="event_type" hx-get="/admin/auditoria" hx-trigger="change" hx-include="closest div" hx-target="#auditoria-table-body"
-                    class="cb-input h-9 text-xs">
-                    <option value="" {{if eq .AuditEventFilter ""}}selected{{end}}>Todos os Eventos</option>
-                    <option value="auth.failed" {{if eq .AuditEventFilter "auth.failed"}}selected{{end}}>Falhas de Senha (auth.failed)</option>
-                    <option value="auth.invalid_user" {{if eq .AuditEventFilter "auth.invalid_user"}}selected{{end}}>Usuários Inexistentes (auth.invalid_user)</option>
-                    <option value="auth.2fa_failed" {{if eq .AuditEventFilter "auth.2fa_failed"}}selected{{end}}>Falhas de 2FA (auth.2fa_failed)</option>
-                    <option value="security.tampering" {{if eq .AuditEventFilter "security.tampering"}}selected{{end}}>Violação de Escopo (security.tampering)</option>
-                </select>
-                <select name="severity" hx-get="/admin/auditoria" hx-trigger="change" hx-include="closest div" hx-target="#auditoria-table-body"
-                    class="cb-input h-9 text-xs">
-                    <option value="" {{if eq .AuditSeverityFilter ""}}selected{{end}}>Todas as Severidades</option>
-                    <option value="INFO" {{if eq .AuditSeverityFilter "INFO"}}selected{{end}}>INFO</option>
-                    <option value="WARNING" {{if eq .AuditSeverityFilter "WARNING"}}selected{{end}}>WARNING</option>
-                    <option value="HIGH" {{if eq .AuditSeverityFilter "HIGH"}}selected{{end}}>HIGH</option>
-                    <option value="CRITICAL" {{if eq .AuditSeverityFilter "CRITICAL"}}selected{{end}}>CRITICAL</option>
-                </select>
-            </div>
-            <div class="mt-3 overflow-x-auto scrollbar-hide">
-                <table class="min-w-full text-left text-xs text-[var(--cb-text-main)]">
-                    <thead class="text-[0.65rem] uppercase tracking-wide text-[var(--cb-text-muted)]">
-                        <tr>
-                            <th class="px-2 py-2">Data</th>
-                            <th class="px-2 py-2">Evento</th>
-                            <th class="px-2 py-2">Severidade</th>
-                            <th class="px-2 py-2">IP</th>
-                            <th class="px-2 py-2">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="auditoria-table-body">
-                        {{template "admin-auditoria-table-rows" .}}
-                    </tbody>
-                </table>
-            </div>
-        </article>
-    </div>
-
-    </div>
+            <article class="cb-card-dense p-4 md:p-5">
+                <p class="text-sm font-semibold text-[var(--cb-text-main)]">Eventos de segurança (últimos 14 dias)</p>
+                <div class="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+                    <select name="event_type" hx-get="/admin/auditoria" hx-trigger="change" hx-include="closest div" hx-target="#auditoria-table-body"
+                        class="cb-input h-9 text-xs">
+                        <option value="" {{if eq .AuditEventFilter ""}}selected{{end}}>Todos os Eventos</option>
+                        <option value="auth.failed" {{if eq .AuditEventFilter "auth.failed"}}selected{{end}}>Falhas de Senha (auth.failed)</option>
+                        <option value="auth.invalid_user" {{if eq .AuditEventFilter "auth.invalid_user"}}selected{{end}}>Usuários Inexistentes (auth.invalid_user)</option>
+                        <option value="auth.2fa_failed" {{if eq .AuditEventFilter "auth.2fa_failed"}}selected{{end}}>Falhas de 2FA (auth.2fa_failed)</option>
+                        <option value="security.tampering" {{if eq .AuditEventFilter "security.tampering"}}selected{{end}}>Violação de Escopo (security.tampering)</option>
+                    </select>
+                    <select name="severity" hx-get="/admin/auditoria" hx-trigger="change" hx-include="closest div" hx-target="#auditoria-table-body"
+                        class="cb-input h-9 text-xs">
+                        <option value="" {{if eq .AuditSeverityFilter ""}}selected{{end}}>Todas as Severidades</option>
+                        <option value="INFO" {{if eq .AuditSeverityFilter "INFO"}}selected{{end}}>INFO</option>
+                        <option value="WARNING" {{if eq .AuditSeverityFilter "WARNING"}}selected{{end}}>WARNING</option>
+                        <option value="HIGH" {{if eq .AuditSeverityFilter "HIGH"}}selected{{end}}>HIGH</option>
+                        <option value="CRITICAL" {{if eq .AuditSeverityFilter "CRITICAL"}}selected{{end}}>CRITICAL</option>
+                    </select>
+                </div>
+                <div class="mt-3 overflow-x-auto scrollbar-hide">
+                    <table class="min-w-full text-left text-xs text-[var(--cb-text-main)]">
+                        <thead class="text-[0.65rem] uppercase tracking-wide text-[var(--cb-text-muted)]">
+                            <tr>
+                                <th class="px-2 py-2">Data</th>
+                                <th class="px-2 py-2">Evento</th>
+                                <th class="px-2 py-2">Severidade</th>
+                                <th class="px-2 py-2">IP</th>
+                                <th class="px-2 py-2">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="auditoria-table-body">
+                            {{template "admin-auditoria-table-rows" .}}
+                        </tbody>
+                    </table>
+                </div>
+            </article>
+        </div>
     </div>
 </div>
 {{end}}

@@ -1,41 +1,7 @@
-/* ContaBase Contatos Styles */
+/* ContaBase Contatos Styles — P.46.a redesigned with Design System */
 
-/* === SCROLLBAR HIDE === */
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 
-/* === BUTTONS === */
 .btn-tactile { transition: all 0.15s ease; }
 .btn-tactile:active { transform: scale(0.97); }
-
-/* === SEARCH INPUT === */
-.search-input {
-    width: 100%;
-    height: 44px;
-    border-radius: 12px;
-    border: 1px solid #e4e4e7;
-    background: rgba(255, 255, 255, 0.9);
-    padding: 0 16px 0 44px;
-    font-size: 14px;
-    color: #18181b;
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-}
-
-.search-input:focus {
-    outline: none;
-    border-color: #8b5cf6;
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
-}
-
-.search-input::placeholder { color: #a1a1aa; }
-
-.dark .search-input {
-    background: rgba(24, 24, 27, 0.8);
-    border-color: rgba(255, 255, 255, 0.08);
-    color: #fafafa;
-}
-
-.dark .search-input:focus {
-    border-color: #8b5cf6;
-}

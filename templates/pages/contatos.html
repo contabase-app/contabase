@@ -8,9 +8,7 @@
 {{define "contatos-content"}}
 <link rel="stylesheet" href="/assets/css/contatos.css">
 <main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative" data-page-title="Contatos">
-    <!-- Background blobs removidos para o piloto de Design System visando interface mais plana -->
-    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden">
-    </div>
+    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
 
     <!-- Header removido: seção identificada pela navegação ativa e barra de workspace -->
 
@@ -22,7 +20,7 @@
         <div class="cb-modal w-full rounded-t-[2rem] p-5 shadow-2xl md:mx-auto md:my-12 md:rounded-3xl">
             <div class="mb-5 flex items-center justify-between gap-3">
                 <div>
-                    <p class="text-[10px] font-bold uppercase tracking-[0.2em]" style="color: var(--cb-accent)">Cadastro</p>
+                    <p class="cb-text-micro font-bold uppercase tracking-wider" style="color: var(--cb-accent)">Cadastro</p>
                     <p class="text-sm font-bold cb-text-main mt-0.5">Novo contato</p>
                     <p class="text-xs cb-text-muted">Cliente ou fornecedor</p>
                 </div>
@@ -88,7 +86,7 @@
     {{if .Contatos}}
     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
         {{range .Contatos}}
-        <article id="contato-{{.ID}}" class="cb-card cb-row flex-col items-stretch">
+        <article id="contato-{{.ID}}" class="cb-card-dense">
             <div class="flex items-start justify-between gap-3 mb-3">
                 {{template "contato-row-summary" .}}
                 <div class="flex items-center gap-1 shrink-0" data-stop-propagation>

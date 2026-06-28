@@ -167,12 +167,9 @@ func TestMetasPageRendersActionsInMenu(t *testing.T) {
 	assertContains(t, body, `data-caixinha-dropdown`)
 	assertContains(t, body, `data-ck-toggle`)
 
-	// Valida que o formulario de aporte existe com atributos corretos
-	assertContains(t, body, `hx-post="/metas/caixinha/aporte"`)
-	assertContains(t, body, `data-money-mask`)
-
-	// Valida que o formulario de resgate existe
-	assertContains(t, body, `hx-post="/metas/caixinha/resgate"`)
+	// Valida que os botoes do menu carregam o sheet de aporte/resgate
+	assertContains(t, body, `hx-get="/metas/caixinha/aporte/sheet`)
+	assertContains(t, body, `hx-get="/metas/caixinha/resgate/sheet`)
 }
 
 func TestMetasPageVerLancamentosLinkConditional(t *testing.T) {

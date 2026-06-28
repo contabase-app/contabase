@@ -326,3 +326,228 @@
 .cb-text-main { color: var(--cb-text-main); }
 .cb-text-muted { color: var(--cb-text-muted); }
 .cb-text-subtle { color: var(--cb-text-subtle); }
+
+/* --- Phase F — Dense financial UI kit (P.40.a) ---
+   Base visual para cards compactos, progresso e chips.
+   Mantém compatibilidade com componentes anteriores; não altera lógica. */
+
+/* Dense card — mais informação por tela, sem perder touch target */
+.cb-card-dense {
+  background-color: var(--cb-surface-1);
+  border: 1px solid var(--cb-border-subtle);
+  border-radius: 1rem;
+  padding: 0.75rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.cb-card-dense:hover {
+  border-color: var(--cb-border-strong);
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.06);
+}
+.dark .cb-card-dense:hover {
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.25);
+}
+
+/* Progress bar — 6px, sem gradiente decorativo */
+.cb-progress {
+  height: 0.375rem;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  background-color: var(--cb-surface-3);
+}
+.cb-progress-fill {
+  height: 100%;
+  border-radius: 9999px;
+  width: clamp(0%, calc(var(--pct, 0) * 1%), 100%);
+  transition: width 0.5s ease;
+}
+.cb-progress-healthy { background-color: var(--cb-success); }
+.cb-progress-success { background-color: var(--cb-success); }
+.cb-progress-warning { background-color: var(--cb-warning); }
+.cb-progress-danger  { background-color: var(--cb-danger); }
+.cb-progress-accent  { background-color: var(--cb-accent); }
+.cb-progress-neutral { background-color: var(--cb-border-strong); }
+
+/* Status chip — pill discreto, >=11px, contraste AA */
+.cb-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  line-height: 1;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.cb-status-chip-success { background: color-mix(in srgb, var(--cb-success) 12%, transparent); color: color-mix(in srgb, var(--cb-success) 75%, var(--cb-text-main)); }
+.cb-status-chip-warning { background: color-mix(in srgb, var(--cb-warning) 12%, transparent); color: color-mix(in srgb, var(--cb-warning) 75%, var(--cb-text-main)); }
+.cb-status-chip-danger  { background: color-mix(in srgb, var(--cb-danger) 12%, transparent); color: color-mix(in srgb, var(--cb-danger) 75%, var(--cb-text-main)); }
+.cb-status-chip-info    { background: var(--cb-accent-soft); color: var(--cb-accent-solid); }
+.cb-status-chip-neutral { background: var(--cb-surface-3); color: var(--cb-text-muted); }
+.dark .cb-status-chip-success { background: color-mix(in srgb, var(--cb-success) 18%, transparent); color: color-mix(in srgb, var(--cb-success) 90%, var(--cb-text-main)); }
+.dark .cb-status-chip-warning { background: color-mix(in srgb, var(--cb-warning) 18%, transparent); color: color-mix(in srgb, var(--cb-warning) 90%, var(--cb-text-main)); }
+.dark .cb-status-chip-danger  { background: color-mix(in srgb, var(--cb-danger) 18%, transparent); color: color-mix(in srgb, var(--cb-danger) 90%, var(--cb-text-main)); }
+.dark .cb-status-chip-info    { background: color-mix(in srgb, var(--cb-accent) 18%, transparent); color: color-mix(in srgb, var(--cb-accent) 90%, var(--cb-text-main)); }
+.dark .cb-status-chip-neutral { background: var(--cb-surface-3); color: var(--cb-text-subtle); }
+
+/* Meta menu — ações discretas no canto do card */
+.cb-meta-menu {
+  position: relative;
+  display: inline-flex;
+}
+.cb-meta-menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.625rem;
+  color: var(--cb-text-muted);
+  background-color: transparent;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+  cursor: pointer;
+}
+.cb-meta-menu-toggle:hover {
+  background-color: var(--cb-surface-2);
+  color: var(--cb-text-main);
+  border-color: var(--cb-border-subtle);
+}
+.cb-meta-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  z-index: 30;
+  min-width: 11rem;
+  background-color: var(--cb-surface-1);
+  border: 1px solid var(--cb-border-strong);
+  border-radius: 0.875rem;
+  padding: 0.375rem;
+  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.08);
+}
+.dark .cb-meta-menu-panel {
+  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.45);
+}
+.cb-meta-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--cb-text-main);
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.cb-meta-menu-item:hover {
+  background-color: var(--cb-surface-2);
+}
+
+/* Summary strip — resumo compacto no topo da página */
+.cb-summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.625rem 0.875rem;
+  background-color: var(--cb-surface-1);
+  border: 1px solid var(--cb-border-subtle);
+  border-radius: 1rem;
+  font-size: 0.8125rem;
+  color: var(--cb-text-muted);
+}
+
+/* Micro text — mínimo aceitável para labels secundários */
+.cb-text-micro {
+  font-size: 0.6875rem;
+  line-height: 1.25;
+}
+
+/* --- Phase G — Financial Typography (P.43.d) ---
+   Classes tipográficas reutilizáveis para valores e labels financeiros.
+   Baseadas em tokens --cb-*; compatíveis com dark/light. */
+
+/* Section title — cabeçalhos de seção como "Resumo da Fatura", "Limite do cartão" */
+.cb-section-title {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--cb-text-muted);
+}
+
+/* Label — rótulo secundário padrão */
+.cb-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--cb-text-subtle);
+}
+
+/* Label micro — rótulo menor para métricas compactas */
+.cb-label-micro {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--cb-text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+/* Value main — valor financeiro principal */
+.cb-value-main {
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: var(--cb-text-main);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Value secondary — valor financeiro secundário */
+.cb-value-secondary {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--cb-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Money main — alias para valor monetário principal */
+.cb-money-main {
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: var(--cb-text-main);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Money secondary — alias para valor monetário secundário */
+.cb-money-secondary {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--cb-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Muted text — texto auxiliar discreto */
+.cb-muted-text {
+  font-size: 0.6875rem;
+  color: var(--cb-text-subtle);
+}
+
+/* Row-like dense list item */
+.cb-row-dense {
+  background-color: var(--cb-surface-1);
+  border: 1px solid var(--cb-border-subtle);
+  border-radius: 1rem;
+  padding: 0.75rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.cb-row-dense:hover {
+  border-color: var(--cb-border-strong);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.05);
+}
+.dark .cb-row-dense:hover {
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.25);
+}

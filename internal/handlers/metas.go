@@ -510,7 +510,11 @@ func (h *MetasHandler) HandleAporteCaixinha(w http.ResponseWriter, r *http.Reque
 	boxID := strings.TrimSpace(r.FormValue("box_id"))
 	amount, err := parseCurrency(r.FormValue("amount"))
 	if err != nil || amount <= 0 || boxID == "" {
-		respondMetaFormError(w, "aporte", "aporte inválido")
+		if r.FormValue("_from_sheet") == "1" {
+			h.renderSheetError(w, "aporte", "aporte inválido", boxID)
+		} else {
+			respondMetaFormError(w, "aporte", "aporte inválido")
+		}
 		return
 	}
 	note := strings.TrimSpace(r.FormValue("note"))
@@ -530,7 +534,11 @@ func (h *MetasHandler) HandleAporteCaixinha(w http.ResponseWriter, r *http.Reque
 		`, uuid.NewString(), boxID, now, amount, note, now)
 	}); err != nil {
 		log.Printf("aporte manual error: %v", err)
-		respondMetaFormError(w, "aporte", "erro ao registrar aporte")
+		if r.FormValue("_from_sheet") == "1" {
+			h.renderSheetError(w, "aporte", "erro ao registrar aporte", boxID)
+		} else {
+			respondMetaFormError(w, "aporte", "erro ao registrar aporte")
+		}
 		return
 	}
 
@@ -770,7 +778,11 @@ func (h *MetasHandler) HandleResgateCaixinha(w http.ResponseWriter, r *http.Requ
 	boxID := strings.TrimSpace(r.FormValue("box_id"))
 	amount, err := parseCurrency(r.FormValue("amount"))
 	if err != nil || amount <= 0 || boxID == "" {
-		respondMetaFormError(w, "resgate", "resgate inválido")
+		if r.FormValue("_from_sheet") == "1" {
+			h.renderSheetError(w, "resgate", "resgate inválido", boxID)
+		} else {
+			respondMetaFormError(w, "resgate", "resgate inválido")
+		}
 		return
 	}
 	note := strings.TrimSpace(r.FormValue("note"))
@@ -800,7 +812,11 @@ func (h *MetasHandler) HandleResgateCaixinha(w http.ResponseWriter, r *http.Requ
 		`, uuid.NewString(), boxID, now, -amount, note, now)
 	}); err != nil {
 		log.Printf("resgate manual error: %v", err)
-		respondMetaFormError(w, "resgate", "erro ao registrar liberação")
+		if r.FormValue("_from_sheet") == "1" {
+			h.renderSheetError(w, "resgate", "erro ao registrar liberação", boxID)
+		} else {
+			respondMetaFormError(w, "resgate", "erro ao registrar liberação")
+		}
 		return
 	}
 
@@ -1317,4 +1333,125 @@ func formatMonthlyYieldRateForInput(rate float64) string {
 	formatted := strconv.FormatFloat(ratePercent, 'f', -1, 64)
 	formatted = strings.ReplaceAll(formatted, ".", ",")
 	return formatted
+}
+
+type BoxSheetData struct {
+	BoxID              string
+	BoxName            string
+	CategoryName       string
+	Icon               string
+	Color              string
+	Balance            MoneyDisplay
+	Target             MoneyDisplay
+	AvailableForRelease MoneyDisplay
+	ErrorMessage       string
+}
+
+func (h *MetasHandler) buildBoxSheetData(boxID string) (BoxSheetData, error) {
+	var d BoxSheetData
+	var targetAmount int64
+	var balanceCents int64
+	var categoryID, categoryName, icon, color sql.NullString
+
+	err := h.DB.QueryRow(`
+		SELECT b.name, b.category_id, b.target_amount,
+			COALESCE(c.name, ''),
+			COALESCE(c.icon, 'piggy-bank'),
+			COALESCE(c.color, '#6b7280'),
+			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0)
+		FROM boxes b
+		LEFT JOIN categories c ON c.id = b.category_id
+		WHERE b.id = ? AND b.workspace_id = ?
+	`, boxID, h.WorkspaceID).Scan(&d.BoxName, &categoryID, &targetAmount, &categoryName, &icon, &color, &balanceCents)
+
+	if err != nil {
+		return d, fmt.Errorf("box not found: %w", err)
+	}
+
+	d.BoxID = boxID
+	if categoryID.Valid && categoryID.String != "" {
+		d.CategoryName = categoryName.String
+	}
+	d.Icon = icon.String
+	d.Color = color.String
+	d.Balance = MoneyMinor(balanceCents)
+	if targetAmount > 0 {
+		d.Target = MoneyMinor(targetAmount)
+	}
+	if balanceCents > 0 {
+		d.AvailableForRelease = MoneyMinor(balanceCents)
+	}
+
+	return d, nil
+}
+
+func (h *MetasHandler) HandleAporteCaixinhaSheet(w http.ResponseWriter, r *http.Request) {
+	boxID := strings.TrimSpace(r.URL.Query().Get("box_id"))
+	if boxID == "" {
+		http.Error(w, "id invalido", http.StatusBadRequest)
+		return
+	}
+
+	data, err := h.buildBoxSheetData(boxID)
+	if err != nil {
+		http.Error(w, "reserva nao encontrada", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.Templates.ExecuteTemplate(w, "caixinha-aporte-sheet", data); err != nil {
+		log.Printf("render aporte sheet error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func (h *MetasHandler) HandleResgateCaixinhaSheet(w http.ResponseWriter, r *http.Request) {
+	boxID := strings.TrimSpace(r.URL.Query().Get("box_id"))
+	if boxID == "" {
+		http.Error(w, "id invalido", http.StatusBadRequest)
+		return
+	}
+
+	data, err := h.buildBoxSheetData(boxID)
+	if err != nil {
+		http.Error(w, "reserva nao encontrada", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.Templates.ExecuteTemplate(w, "caixinha-resgate-sheet", data); err != nil {
+		log.Printf("render resgate sheet error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func (h *MetasHandler) renderSheetError(w http.ResponseWriter, idPrefix string, message string, boxID string) {
+	data, err := h.buildBoxSheetData(boxID)
+	if err != nil {
+		respondMetaFormError(w, idPrefix, message)
+		return
+	}
+	data.ErrorMessage = message
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	var buf bytes.Buffer
+	var tmpl string
+	if idPrefix == "aporte" {
+		tmpl = "caixinha-aporte-sheet"
+	} else {
+		tmpl = "caixinha-resgate-sheet"
+	}
+
+	buf.WriteString(`<div id="bottom-sheet-container" hx-swap-oob="innerHTML">`)
+	if err := h.Templates.ExecuteTemplate(&buf, tmpl, data); err != nil {
+		log.Printf("render %s sheet error: %v", idPrefix, err)
+		fmt.Fprintf(w, `<div id="%s-sheet-error" hx-swap-oob="true" class="rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">%s</div>`, idPrefix, template.HTMLEscapeString(message))
+		return
+	}
+	buf.WriteString(`</div>`)
+
+	buf.WriteString(fmt.Sprintf(`<div id="%s-form-error" hx-swap-oob="true" class="hidden"></div>`, idPrefix))
+
+	buf.WriteTo(w)
 }

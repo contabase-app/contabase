@@ -10,18 +10,81 @@ Leia também:
 
 [Backup e restauração](backup-restauracao.md)
 
+## Método recomendado: comando global
+
+Após instalar, o ContaBase registra o comando `contabase-update` no sistema.
+Para atualizar, execute:
+
+```bash
+sudo contabase-update vX.Y.Z
+```
+
+O comando detecta automaticamente se sua instalação é binary (LXC/VPS), Docker ou
+source e chama o script de update correto.
+
+Atalho curto:
+
+```bash
+sudo cb-update vX.Y.Z
+```
+
+Se não informar a versão, o comando pergunta interativamente.
+
+Opcional: `sudo contabase-update --help`
+
+Este comando é instalado em `/usr/local/bin/contabase-update` e
+`/usr/local/bin/cb-update` durante a instalação inicial.
+
+### Atualização headless
+
+```bash
+sudo env CONTABASE_ASSUME_YES=1 contabase-update vX.Y.Z
+```
+
+### Instalações antigas
+
+Se você instalou o ContaBase antes do comando `contabase-update` existir, ele pode não estar disponível no seu sistema.
+
+Nesse caso, use o script manual de atualização uma vez conforme seu tipo de instalação:
+
+* **Docker:** `./scripts/update-contabase-docker.sh`
+* **Source/systemd:** `sudo ./scripts/update-contabase-source.sh`
+* **Release/binário:** `sudo env CONTABASE_VERSION=vX.Y.Z bash scripts/update-contabase-release.sh`
+
+Após a atualização, verifique se o comando foi instalado:
+
+```bash
+command -v contabase-update
+command -v cb-update
+```
+
+Se ainda não aparecer, execute o script manual mais uma vez — pode ser que a primeira execução
+tenha trazido os scripts novos, mas o script antigo ainda estava rodando.
+
+Depois disso, use normalmente:
+
+```bash
+sudo contabase-update vX.Y.Z
+```
+
+O método manual continua funcionando como fallback se preferir.
+
+## Método manual: pelo instalador
+
+Se preferir usar o instalador manualmente, siga os passos abaixo.
+
 ## 1. Escolha a nova versão
 
 Exemplo:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.1
+export CONTABASE_VERSION=vX.Y.Z
 ```
 
 Quando sair uma versão nova, troque somente o valor:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.2
+export CONTABASE_VERSION=vX.Y.Z
 ```
 
 Não use `main`.
@@ -53,17 +116,14 @@ Use este método se você instalou sem Docker, com binário pronto e systemd.
 Baixe o instalador da versão desejada:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.1
-
-curl -fsSL -o /tmp/contabase-install.sh \
-  "https://raw.githubusercontent.com/contabase-app/contabase/${CONTABASE_VERSION}/scripts/install.sh"
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
 ```
 
 Execute a atualização:
 
 ```bash
 CONTABASE_INSTALL_METHOD=update-release \
-CONTABASE_VERSION=v0.1.0-beta.1 \
+CONTABASE_VERSION=vX.Y.Z \
 CONTABASE_ASSUME_YES=1 \
 bash /tmp/contabase-install.sh
 ```
@@ -127,7 +187,7 @@ Se quiser trocar a versão fixa, edite o `docker-compose.yml`.
 Exemplo:
 
 ```yaml
-image: ghcr.io/contabase-app/contabase:v0.1.0-beta.1
+image: ghcr.io/contabase-app/contabase:vX.Y.Z
 ```
 
 Depois rode:
@@ -186,7 +246,7 @@ docker compose logs --tail 100 contabase
 Se você clonou o repositório ou tem o script de update local:
 
 ```bash
-sudo env CONTABASE_VERSION=v0.1.0-beta.1 ./scripts/update-contabase-release.sh --dry-run
+sudo env CONTABASE_VERSION=vX.Y.Z ./scripts/update-contabase-release.sh --dry-run
 ```
 
 ### Docker

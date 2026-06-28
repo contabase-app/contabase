@@ -1,12 +1,6 @@
 {{define "configuracoes-admin_users-page"}}
 {{template "layout-start" .}}
 <div class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pb-28 pt-5 md:pb-10 md:pt-8 relative">
-    <!-- Liquid blurs + dot pattern -->
-    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-60">
-        <div class="absolute top-[5%] left-[-20%] w-[55vw] h-[55vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
-        <div class="absolute bottom-[10%] right-[-15%] w-[45vw] h-[45vw] rounded-full bg-indigo-400/10 dark:bg-indigo-500/5 blur-[80px]"></div>
-    </div>
-
     <!-- Desktop View: SaaS Split Layout -->
     <div class="hidden md:flex gap-8 w-full max-w-full">
         <!-- Sidebar Navigation -->
@@ -47,23 +41,18 @@
         </div>
     </header>
 
-    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative">
-        <!-- Liquid blurs + dot pattern -->
-        <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-60 md:hidden">
-            <div class="absolute top-[5%] left-[-20%] w-[55vw] h-[55vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
-            <div class="absolute bottom-[10%] right-[-15%] w-[45vw] h-[45vw] rounded-full bg-indigo-400/10 dark:bg-indigo-500/5 blur-[80px]"></div>
+    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
+        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-danger) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 8%, transparent); color: var(--cb-danger)">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-success) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-success) 8%, transparent); color: var(--cb-success)">{{.FlashSuccess}}</div>{{end}}
+
+        <!-- Section header -->
+        <div class="mb-6">
+            <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Gerenciar Usuários</h1>
+            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Painel administrativo global — acesso restrito.</p>
         </div>
-        
 
-        {{if .FlashError}}<div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-100">{{.FlashError}}</div>{{end}}
-        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100">{{.FlashSuccess}}</div>{{end}}
-
-        <div class="md:premium-card md:bg-[var(--cb-surface-1)]/75 md:backdrop-blur-xl md:border md:border-[var(--cb-border-subtle)] md:shadow-sm md:rounded-3xl p-0 md:p-8">
-            <div class="mb-6">
-                <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Gerenciar Usuários</h2>
-                <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Painel administrativo global — acesso restrito.</p>
-            </div>
-            <form id="admin-user-form" class="mb-6 rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 md:p-5" hx-post="/admin/usuarios/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
+        <div class="cb-card-dense p-4 md:p-6">
+            <form id="admin-user-form" class="cb-card-muted mb-6 p-4 md:p-5" hx-post="/admin/usuarios/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
                 <input type="hidden" name="user_id" value="">
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
                     <div><span class="{{template "field-label" .}}">Nome</span><input type="text" name="name" placeholder="Nome completo" class="{{template "field-class" .}}"></div>
@@ -73,27 +62,28 @@
                 </div>
                 <div class="mt-4">
                     <span class="{{template "field-label" .}}">Vincular aos workspaces</span>
-                    <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">{{range .SystemWorkspaces}}<label class="flex items-center gap-2.5 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-4 py-2.5 text-sm cursor-pointer transition-all hover:border-[var(--cb-border-strong)]"><input type="checkbox" name="workspace_ids" value="{{.ID}}" class="h-4 w-4 rounded border-zinc-300 text-violet-500 focus:ring-violet-500/30"> <span class="text-[var(--cb-text-main)]">{{.Name}}</span></label>{{end}}</div>
+                    <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">{{range .SystemWorkspaces}}<label class="flex items-center gap-2.5 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-4 py-2.5 text-sm cursor-pointer transition-all hover:border-[var(--cb-border-strong)]"><input type="checkbox" name="workspace_ids" value="{{.ID}}" class="h-4 w-4 rounded border-[var(--cb-border-strong)] text-[var(--cb-accent)] focus:ring-[var(--cb-accent)]/30"> <span class="text-[var(--cb-text-main)]">{{.Name}}</span></label>{{end}}</div>
                 </div>
                 <button class="cb-button cb-button-primary h-11 px-6 text-sm mt-4">Salvar usuário</button>
             </form>
+
             <div class="space-y-3">{{range .AdminUsers}}
-            <article data-admin-user-card class="rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 md:p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm">
+            <article data-admin-user-card class="cb-row-dense">
                 <div data-admin-user-view>
                     <div class="flex items-start justify-between gap-4">
                         <div class="min-w-0">
                             <p class="text-sm font-semibold text-[var(--cb-text-main)]">{{.Name}} <span class="text-[var(--cb-text-muted)] font-normal">{{.Email}}</span></p>
-                            <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Status: <span class="{{if eq .Status "active"}}text-emerald-600 dark:text-emerald-400{{else if eq .Status "pending"}}text-amber-600 dark:text-amber-400{{else}}text-[var(--cb-text-muted)]{{end}}">{{if eq .Status "active"}}Ativo{{else if eq .Status "pending"}}Pendente{{else}}Inativo{{end}}</span></p>
+                            <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Status: <span class="cb-status-chip {{if eq .Status "active"}}cb-status-chip-success{{else if eq .Status "pending"}}cb-status-chip-warning{{else}}cb-status-chip-neutral{{end}}">{{if eq .Status "active"}}Ativo{{else if eq .Status "pending"}}Pendente{{else}}Inativo{{end}}</span></p>
                         </div>
-                        <button type="button" data-admin-user-edit class="h-9 rounded-lg border border-violet-300 bg-violet-50 px-3 text-xs font-semibold text-violet-700 transition-all hover:bg-violet-100 dark:border-violet-500/35 dark:bg-violet-500/15 dark:text-violet-100 dark:hover:bg-violet-500/25">Editar</button>
+                        <button type="button" data-admin-user-edit class="cb-button cb-button-secondary h-9 px-3 text-xs">Editar</button>
                     </div>
                     <div class="mt-3">
                         <p class="text-xs text-[var(--cb-text-muted)] mb-1.5">Vínculos:</p>
                         <div class="flex flex-wrap gap-1.5">
-                            {{range .WorkspaceRoles}}<span class="inline-flex items-center gap-1.5 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-2.5 py-1 text-xs"><span class="text-[var(--cb-text-main)]">{{.WorkspaceName}}</span><span class="text-[var(--cb-text-muted)]">·</span><span class="text-[var(--cb-text-muted)]">{{if eq .Role "ADMIN"}}Administrador{{else if eq .Role "MANAGER"}}Gestor{{else}}Usuário{{end}}</span></span>{{else}}<span class="text-xs text-[var(--cb-text-muted)]">Sem vínculos</span>{{end}}
+                            {{range .WorkspaceRoles}}<span class="cb-status-chip cb-status-chip-neutral"><span class="text-[var(--cb-text-main)]">{{.WorkspaceName}}</span><span class="text-[var(--cb-text-muted)]">·</span><span class="text-[var(--cb-text-muted)]">{{if eq .Role "ADMIN"}}Administrador{{else if eq .Role "MANAGER"}}Gestor{{else}}Usuário{{end}}</span></span>{{else}}<span class="text-xs text-[var(--cb-text-muted)]">Sem vínculos</span>{{end}}
                         </div>
                     </div>
-                    <div class="mt-4 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3">
+                    <div class="mt-4 cb-card-muted p-3 md:p-4">
                         {{if .IsAdmin}}
                         <div data-admin-recovery-root data-recovery-action="">
                         <div class="flex flex-wrap items-center justify-between gap-2">
@@ -102,48 +92,48 @@
                                 <p class="mt-1 text-xs text-[var(--cb-text-muted)]">2FA: {{if .TOTPEnabled}}ativo{{else}}inativo{{end}} · revoga sessões e desafios pendentes.</p>
                             </div>
                             <div class="flex flex-wrap gap-2">
-                                <button type="button" data-admin-recovery-action="password" class="h-9 rounded-lg border border-violet-200 bg-violet-50 px-3 text-xs font-semibold text-violet-700 transition-all hover:bg-violet-100 active:scale-95 dark:border-violet-500/35 dark:bg-violet-500/15 dark:text-violet-100 dark:hover:bg-violet-500/25">Gerar senha temporária</button>
-                                <button type="button" data-admin-recovery-action="sessions" class="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-600 transition-all hover:bg-zinc-100 active:scale-95 dark:border-zinc-700/60 dark:bg-zinc-800/40 dark:text-zinc-200 dark:hover:bg-zinc-700/40">Revogar sessões</button>
-                                <button type="button" data-admin-recovery-action="2fa" class="h-9 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-700 transition-all hover:bg-amber-100 active:scale-95 dark:border-amber-500/35 dark:bg-amber-500/15 dark:text-amber-100 dark:hover:bg-amber-500/25">Desativar 2FA</button>
+                                <button type="button" data-admin-recovery-action="password" class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-accent)]/30 bg-[var(--cb-accent-soft)] text-xs font-semibold text-[var(--cb-accent-solid)] transition-all hover:bg-[color-mix(in srgb,var(--cb-accent) 18%,transparent)] active:scale-95">Gerar senha temporária</button>
+                                <button type="button" data-admin-recovery-action="sessions" class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)] text-xs font-semibold text-[var(--cb-text-muted)] transition-all hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95">Revogar sessões</button>
+                                <button type="button" data-admin-recovery-action="2fa" class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-warning)]/30 bg-[color-mix(in srgb,var(--cb-warning) 12%,transparent)] text-xs font-semibold text-[color-mix(in srgb,var(--cb-warning) 75%,var(--cb-text-main))] transition-all hover:bg-[color-mix(in srgb,var(--cb-warning) 18%,transparent)] active:scale-95">Desativar 2FA</button>
                             </div>
                         </div>
-                        <div data-admin-recovery-panel class="hidden mt-3 rounded-xl border border-amber-200 bg-amber-50/80 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
-                            <div class="space-y-1 text-xs text-amber-800 dark:text-amber-100">
+                        <div data-admin-recovery-panel class="hidden mt-3 cb-card-muted border-[var(--cb-warning)]/30 bg-[color-mix(in srgb,var(--cb-warning) 8%,var(--cb-surface-2))]">
+                            <div class="space-y-1 text-xs text-[var(--cb-text-main)]">
                                 <p class="font-semibold">Ações em administradores exigem confirmação adicional.</p>
                                 <p>Essa ação será registrada em auditoria.</p>
                                 <p data-admin-recovery-info="password" class="hidden">A senha será exibida uma única vez e expira em 1 hora.</p>
                                 <p data-admin-recovery-info="sessions" class="hidden">O usuário precisará fazer login novamente.</p>
                                 <p data-admin-recovery-info="2fa" class="hidden">O usuário poderá entrar sem 2FA até reconfigurar o método.</p>
                             </div>
-                            <div class="mt-3 text-xs text-amber-800 dark:text-amber-100">
+                            <div class="mt-3 text-xs text-[var(--cb-text-main)]">
                                 <p>Para evitar alteração acidental no administrador errado, digite o e-mail abaixo para confirmar:</p>
-                                <p class="font-semibold mt-1 select-all text-amber-900 dark:text-amber-50">{{.Email}}</p>
+                                <p class="font-semibold mt-1 select-all text-[var(--cb-warning)]">{{.Email}}</p>
                             </div>
                             <form data-admin-recovery-form="password" class="hidden mt-3 space-y-3" hx-post="/admin/usuarios/reset-senha" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Gerar senha temporária e revogar sessões deste administrador?">
                                 <input type="hidden" name="user_id" value="{{.ID}}">
                                 <label class="sr-only" for="confirm-reset-{{.ID}}">Digite {{.Email}} para confirmar</label>
-                                <input id="confirm-reset-{{.ID}}" type="email" name="confirm_email" placeholder="Digite {{.Email}}" autocomplete="off" required class="h-9 w-full rounded-lg border border-amber-200 bg-white px-3 text-xs text-zinc-700 outline-none focus:border-amber-400 dark:border-amber-500/40 dark:bg-zinc-950/80 dark:text-white dark:focus:border-amber-400/70">
+                                <input id="confirm-reset-{{.ID}}" type="email" name="confirm_email" placeholder="Digite {{.Email}}" autocomplete="off" required class="cb-input border-[var(--cb-warning)]/40 focus:border-[var(--cb-warning)]">
                                 <div class="flex flex-wrap gap-2">
-                                    <button class="h-9 rounded-lg border border-violet-200 bg-violet-50 px-3 text-xs font-semibold text-violet-700 transition-all hover:bg-violet-100 active:scale-95 dark:border-violet-500/35 dark:bg-violet-500/15 dark:text-violet-100 dark:hover:bg-violet-500/25">Confirmar geração de senha temporária</button>
-                                    <button type="button" data-admin-recovery-cancel class="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-600 transition-all hover:bg-zinc-100 active:scale-95 dark:border-zinc-700/60 dark:bg-zinc-800/40 dark:text-zinc-200 dark:hover:bg-zinc-700/40">Cancelar</button>
+                                    <button class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-accent)]/30 bg-[var(--cb-accent-soft)] text-xs font-semibold text-[var(--cb-accent-solid)] transition-all hover:bg-[color-mix(in srgb,var(--cb-accent) 18%,transparent)] active:scale-95">Confirmar geração de senha temporária</button>
+                                    <button type="button" data-admin-recovery-cancel class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)] text-xs font-semibold text-[var(--cb-text-muted)] transition-all hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95">Cancelar</button>
                                 </div>
                             </form>
                             <form data-admin-recovery-form="sessions" class="hidden mt-3 space-y-3" hx-post="/admin/usuarios/revogar-sessoes" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Revogar todas as sessões deste administrador?">
                                 <input type="hidden" name="user_id" value="{{.ID}}">
                                 <label class="sr-only" for="confirm-sessions-{{.ID}}">Digite {{.Email}} para confirmar</label>
-                                <input id="confirm-sessions-{{.ID}}" type="email" name="confirm_email" placeholder="Digite {{.Email}}" autocomplete="off" required class="h-9 w-full rounded-lg border border-amber-200 bg-white px-3 text-xs text-zinc-700 outline-none focus:border-amber-400 dark:border-amber-500/40 dark:bg-zinc-950/80 dark:text-white dark:focus:border-amber-400/70">
+                                <input id="confirm-sessions-{{.ID}}" type="email" name="confirm_email" placeholder="Digite {{.Email}}" autocomplete="off" required class="cb-input border-[var(--cb-warning)]/40 focus:border-[var(--cb-warning)]">
                                 <div class="flex flex-wrap gap-2">
-                                    <button class="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-600 transition-all hover:bg-zinc-100 active:scale-95 dark:border-zinc-700/60 dark:bg-zinc-800/40 dark:text-zinc-200 dark:hover:bg-zinc-700/40">Confirmar revogação de sessões</button>
-                                    <button type="button" data-admin-recovery-cancel class="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-600 transition-all hover:bg-zinc-100 active:scale-95 dark:border-zinc-700/60 dark:bg-zinc-800/40 dark:text-zinc-200 dark:hover:bg-zinc-700/40">Cancelar</button>
+                                    <button class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)] text-xs font-semibold text-[var(--cb-text-muted)] transition-all hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95">Confirmar revogação de sessões</button>
+                                    <button type="button" data-admin-recovery-cancel class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)] text-xs font-semibold text-[var(--cb-text-muted)] transition-all hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95">Cancelar</button>
                                 </div>
                             </form>
                             <form data-admin-recovery-form="2fa" class="hidden mt-3 space-y-3" hx-post="/admin/usuarios/desativar-2fa" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Desativar 2FA deste administrador?">
                                 <input type="hidden" name="user_id" value="{{.ID}}">
                                 <label class="sr-only" for="confirm-2fa-{{.ID}}">Digite {{.Email}} para confirmar</label>
-                                <input id="confirm-2fa-{{.ID}}" type="email" name="confirm_email" placeholder="Digite {{.Email}}" autocomplete="off" required class="h-9 w-full rounded-lg border border-amber-200 bg-white px-3 text-xs text-zinc-700 outline-none focus:border-amber-400 dark:border-amber-500/40 dark:bg-zinc-950/80 dark:text-white dark:focus:border-amber-400/70">
+                                <input id="confirm-2fa-{{.ID}}" type="email" name="confirm_email" placeholder="Digite {{.Email}}" autocomplete="off" required class="cb-input border-[var(--cb-warning)]/40 focus:border-[var(--cb-warning)]">
                                 <div class="flex flex-wrap gap-2">
-                                    <button class="h-9 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-700 transition-all hover:bg-amber-100 active:scale-95 dark:border-amber-500/35 dark:bg-amber-500/15 dark:text-amber-100 dark:hover:bg-amber-500/25">Confirmar desativação de 2FA</button>
-                                    <button type="button" data-admin-recovery-cancel class="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-600 transition-all hover:bg-zinc-100 active:scale-95 dark:border-zinc-700/60 dark:bg-zinc-800/40 dark:text-zinc-200 dark:hover:bg-zinc-700/40">Cancelar</button>
+                                    <button class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-warning)]/30 bg-[color-mix(in srgb,var(--cb-warning) 12%,transparent)] text-xs font-semibold text-[color-mix(in srgb,var(--cb-warning) 75%,var(--cb-text-main))] transition-all hover:bg-[color-mix(in srgb,var(--cb-warning) 18%,transparent)] active:scale-95">Confirmar desativação de 2FA</button>
+                                    <button type="button" data-admin-recovery-cancel class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)] text-xs font-semibold text-[var(--cb-text-muted)] transition-all hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95">Cancelar</button>
                                 </div>
                             </form>
                         </div>
@@ -157,15 +147,15 @@
                             <div class="flex flex-wrap gap-2">
                                 <form hx-post="/admin/usuarios/reset-senha" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Gerar senha temporária e revogar sessões deste usuário?">
                                     <input type="hidden" name="user_id" value="{{.ID}}">
-                                    <button class="h-9 rounded-lg border border-violet-200 bg-violet-50 px-3 text-xs font-semibold text-violet-700 transition-all hover:bg-violet-100 active:scale-95 dark:border-violet-500/35 dark:bg-violet-500/15 dark:text-violet-100 dark:hover:bg-violet-500/25">Gerar senha temporária</button>
+                                    <button class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-accent)]/30 bg-[var(--cb-accent-soft)] text-xs font-semibold text-[var(--cb-accent-solid)] transition-all hover:bg-[color-mix(in srgb,var(--cb-accent) 18%,transparent)] active:scale-95">Gerar senha temporária</button>
                                 </form>
                                 <form hx-post="/admin/usuarios/revogar-sessoes" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Revogar todas as sessões deste usuário?">
                                     <input type="hidden" name="user_id" value="{{.ID}}">
-                                    <button class="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-xs font-semibold text-zinc-600 transition-all hover:bg-zinc-100 active:scale-95 dark:border-zinc-700/60 dark:bg-zinc-800/40 dark:text-zinc-200 dark:hover:bg-zinc-700/40">Revogar sessões</button>
+                                    <button class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)] text-xs font-semibold text-[var(--cb-text-muted)] transition-all hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95">Revogar sessões</button>
                                 </form>
                                 <form hx-post="/admin/usuarios/desativar-2fa" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Desativar 2FA deste usuário?">
                                     <input type="hidden" name="user_id" value="{{.ID}}">
-                                    <button class="h-9 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-700 transition-all hover:bg-amber-100 active:scale-95 dark:border-amber-500/35 dark:bg-amber-500/15 dark:text-amber-100 dark:hover:bg-amber-500/25">Desativar 2FA</button>
+                                    <button class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-warning)]/30 bg-[color-mix(in srgb,var(--cb-warning) 12%,transparent)] text-xs font-semibold text-[color-mix(in srgb,var(--cb-warning) 75%,var(--cb-text-main))] transition-all hover:bg-[color-mix(in srgb,var(--cb-warning) 18%,transparent)] active:scale-95">Desativar 2FA</button>
                                 </form>
                             </div>
                         </div>
@@ -185,13 +175,13 @@
                             <span class="cb-label">Vínculos de workspace</span>
                             <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
                                 {{$userID := .ID}}{{$wids := .WorkspaceIDs}}
-                                {{range $.SystemWorkspaces}}<label class="flex items-center gap-2.5 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-4 py-2.5 text-sm cursor-pointer transition-all hover:border-[var(--cb-border-strong)]"><input type="checkbox" name="workspace_ids" value="{{.ID}}" class="h-4 w-4 rounded border-zinc-300 text-violet-500"> <span class="text-[var(--cb-text-main)]">{{.Name}}</span></label>{{end}}
+                                {{range $.SystemWorkspaces}}<label class="flex items-center gap-2.5 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-4 py-2.5 text-sm cursor-pointer transition-all hover:border-[var(--cb-border-strong)]"><input type="checkbox" name="workspace_ids" value="{{.ID}}" class="h-4 w-4 rounded border-[var(--cb-border-strong)] text-[var(--cb-accent)] focus:ring-[var(--cb-accent)]/30"> <span class="text-[var(--cb-text-main)]">{{.Name}}</span></label>{{end}}
                             </div>
                         </div>
                         <div class="mt-4 flex flex-wrap gap-2">
                             <button class="cb-button cb-button-primary h-9 px-3 text-xs">Salvar</button>
                             <button type="button" data-admin-user-cancel class="cb-button cb-button-secondary h-9 px-3 text-xs">Cancelar</button>
-                            <button type="button" hx-delete="/users/{{.ID}}" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="ATENÇÃO: Esta ação é irreversível! Deseja continuar?" class="h-9 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-600 transition-all hover:bg-red-100 active:scale-95 dark:border-red-500/35 dark:bg-red-500/15 dark:text-red-100 dark:hover:bg-red-500/25">Excluir usuário</button>
+                            <button type="button" hx-delete="/users/{{.ID}}" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="ATENÇÃO: Esta ação é irreversível! Deseja continuar?" class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-danger)]/30 bg-[color-mix(in srgb,var(--cb-danger) 12%,transparent)] text-xs font-semibold text-[var(--cb-danger)] transition-all hover:bg-[color-mix(in srgb,var(--cb-danger) 18%,transparent)] active:scale-95">Excluir usuário</button>
                         </div>
                     </form>
                 </div>

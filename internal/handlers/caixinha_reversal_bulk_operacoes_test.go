@@ -80,7 +80,7 @@ func TestBulkDeleteMixedCategoryReserveAdjustsPerItem(t *testing.T) {
 	}
 }
 
-func TestBulkDeleteFailsAndRollsBackReserveAdjustmentsWhenAnyItemIsImmutable(t *testing.T) {
+func TestBulkDeleteSucceedsWithPaidInvoiceTx(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	seedBoxConsumeCreationScenario(t, db)
@@ -97,18 +97,16 @@ func TestBulkDeleteFailsAndRollsBackReserveAdjustmentsWhenAnyItemIsImmutable(t *
 
 	handler := testBulkReserveHandler(db)
 	rr := bulkDeleteRequestForReserveTest(t, handler, []string{mutableID, "purchase-test"})
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want %d body=%q", rr.Code, http.StatusConflict, rr.Body.String())
+	if rr.Code == http.StatusConflict {
+		t.Fatalf("PAID invoice should no longer block bulk delete, got 409: %s", rr.Body.String())
 	}
 
-	assertTransactionExists(t, db, mutableID)
-	assertTransactionExists(t, db, "purchase-test")
-	afterMutable := activeConsumesBySourceTx(t, db, mutableID)
-	if len(afterMutable) != 1 || afterMutable[0].ID != beforeMutable[0].ID {
-		t.Fatalf("mutable active consume changed after rollback: before=%#v after=%#v", beforeMutable, afterMutable)
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE id IN (?, ?)`, mutableID, "purchase-test").Scan(&count); err != nil {
+		t.Fatalf("query: %v", err)
 	}
-	if got := countReversalsBySourceTx(t, db, mutableID); got != 0 {
-		t.Fatalf("mutable reversal count after rollback = %d, want 0", got)
+	if count != 0 {
+		t.Fatalf("both transactions should be deleted, count = %d", count)
 	}
 }
 

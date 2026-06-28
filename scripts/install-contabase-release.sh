@@ -238,14 +238,14 @@ configure_new_installation_runtime() {
     base_host="$(host_from_base_url "$APP_BASE_URL_VALUE")"
     base_host="${base_host:-$default_host}"
     default_allowed_hosts="${ALLOWED_HOSTS_VALUE:-localhost,127.0.0.1,${base_host}}"
-    read -r -p "Hosts permitidos / ALLOWED_HOSTS [${default_allowed_hosts}]: " answer
+    read -r -p "Domínios/IPs permitidos para acessar o ContaBase, separados por vírgula [${default_allowed_hosts}]: " answer
     ALLOWED_HOSTS_VALUE="${answer:-$default_allowed_hosts}"
 
-    read -r -p "Vai usar reverse proxy como Nginx Proxy Manager, Caddy, Traefik ou Cloudflare Tunnel? [s/N]: " answer
+    read -r -p "Vai usar reverse proxy? Ex.: Nginx Proxy Manager, Caddy, Traefik ou Cloudflare Tunnel [s/N]: " answer
     case "$answer" in
       s|S|sim|SIM|Sim)
         default_allowed_hosts="${TRUSTED_PROXIES_VALUE:-127.0.0.1,::1}"
-        read -r -p "TRUSTED_PROXIES [${default_allowed_hosts}]: " answer
+        read -r -p "IP(s) do proxy confiável, separados por vírgula [${default_allowed_hosts}]: " answer
         TRUSTED_PROXIES_VALUE="${answer:-$default_allowed_hosts}"
         ;;
       *)
@@ -635,6 +635,7 @@ env_create_initial() {
       printf 'APP_BASE_URL=%s\n' "$APP_BASE_URL_VALUE"
       printf 'ALLOWED_HOSTS=%s\n' "$ALLOWED_HOSTS_VALUE"
       printf 'TRUSTED_PROXIES=%s\n' "$TRUSTED_PROXIES_VALUE"
+      printf 'VERSION=%s\n' "$TAG"
     } > "$ENV_FILE"
   ); then
     [ "$xtrace_was_enabled" = false ] || set -x
@@ -741,6 +742,9 @@ env_manage_existing() {
 
   # PORT, DATABASE_URL, DB_FILE, APP_BASE_URL, ALLOWED_HOSTS, TRUSTED_PROXIES
   # are intentionally NOT merged — they must be preserved from user configuration.
+
+  # VERSION tracks the installed release tag; always update to current
+  env_set_key "VERSION" "$TAG" "$ENV_FILE"
 
   env_ensure_permissions
   say "Configuracao preservada. Secrets validados."
@@ -922,6 +926,158 @@ rollback_bundle() {
   wait_for_healthcheck
 }
 
+install_update_command() {
+  local update_wrapper="/usr/local/bin/contabase-update"
+  local mode_file="/etc/contabase/install-mode"
+
+  mkdir -p "$(dirname "$mode_file")"
+  printf '%s\n' "binary" > "$mode_file"
+  chown root:root "$mode_file" 2>/dev/null || true
+  chmod 0644 "$mode_file"
+
+  cat > "$update_wrapper" <<'WRAPPER_EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODE_FILE="/etc/contabase/install-mode"
+PUBLIC_RAW_BASE="${CONTABASE_RAW_BASE:-https://raw.githubusercontent.com/contabase-app/contabase}"
+
+say() { printf '%s\n' "$*"; }
+
+usage() {
+  cat <<EOF
+Uso:
+  sudo contabase-update [VERSAO]
+  sudo contabase-update v0.1.0-beta.2
+
+Atualiza o ContaBase detectando automaticamente o modo de instalacao
+(binary, docker ou source) e chamando o script de update correto.
+
+Opcional: sudo cb-update (atalho curto).
+
+Variaveis de ambiente:
+  CONTABASE_ASSUME_YES=1   Modo nao interativo (quando suportado).
+EOF
+}
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  usage
+  exit 0
+fi
+
+if [ ! -f "$MODE_FILE" ]; then
+  say "Nao foi possivel detectar o modo de instalacao do ContaBase."
+  say "Arquivo ausente: $MODE_FILE"
+  say ""
+  say "Se voce instalou manualmente, execute o script de update correspondente:"
+  say "  Release/LXC:  sudo env CONTABASE_VERSION=vX.Y.Z bash scripts/update-contabase-release.sh"
+  say "  Docker:       ./scripts/update-contabase-docker.sh"
+  say "  Source:       sudo ./scripts/update-contabase-source.sh"
+  exit 1
+fi
+
+MODE="$(head -n1 "$MODE_FILE" | awk '{print $1}' | tr -d '[:space:]')"
+
+case "$MODE" in
+  binary)
+    if [ "$(id -u)" -ne 0 ]; then
+      say "Este modo exige root. Execute com sudo:"
+      say "  sudo contabase-update [VERSAO]"
+      exit 1
+    fi
+
+    VERSION="${1:-}"
+    if [ -z "$VERSION" ]; then
+      if [ -t 0 ]; then
+        read -r -p "Versao para atualizar (ex.: v0.1.0-beta.1): " VERSION
+      else
+        say "Erro: informe a versao. Exemplo: sudo contabase-update v0.1.0-beta.1"
+        exit 1
+      fi
+    fi
+
+    case "$VERSION" in
+      *-internal*) say "Erro: versoes com -internal sao privadas."; exit 1 ;;
+    esac
+    if [[ ! "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
+      say "Erro: versao invalida: $VERSION"
+      exit 1
+    fi
+
+    TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/contabase-update.XXXXXX")"
+    # shellcheck disable=SC2064
+    trap 'rm -rf "$TMP_DIR"' EXIT
+
+    INSTALL_SCRIPT="${TMP_DIR}/install.sh"
+    INSTALL_URL="${PUBLIC_RAW_BASE}/${VERSION}/scripts/install.sh"
+
+    say "Baixando instalador da versao ${VERSION}..."
+    if ! curl --fail --location --silent --show-error \
+      --proto '=https' --tlsv1.2 \
+      "$INSTALL_URL" -o "$INSTALL_SCRIPT"; then
+      say "Erro: nao foi possivel baixar o instalador da versao ${VERSION}."
+      exit 1
+    fi
+
+    say "Executando atualizacao para ${VERSION}..."
+    exec env \
+      CONTABASE_INSTALL_METHOD=update-release \
+      CONTABASE_VERSION="$VERSION" \
+      CONTABASE_ASSUME_YES="${CONTABASE_ASSUME_YES:-0}" \
+      bash "$INSTALL_SCRIPT"
+    ;;
+
+  docker)
+    REPO_PATH="$(sed -n '2p' "$MODE_FILE" 2>/dev/null | tr -d '[:space:]')"
+    if [ -z "$REPO_PATH" ] || [ ! -d "$REPO_PATH" ]; then
+      say "Erro: repositorio Docker nao encontrado."
+      say "Va ate o diretorio do ContaBase e execute:"
+      say "  ./scripts/update-contabase-docker.sh"
+      exit 1
+    fi
+    cd "$REPO_PATH"
+    exec ./scripts/update-contabase-docker.sh "$@"
+    ;;
+
+  source)
+    if [ "$(id -u)" -ne 0 ]; then
+      say "Este modo exige root. Execute com sudo:"
+      say "  sudo contabase-update"
+      exit 1
+    fi
+
+    REPO_PATH="$(sed -n '2p' "$MODE_FILE" 2>/dev/null | tr -d '[:space:]')"
+    if [ -z "$REPO_PATH" ] || [ ! -d "$REPO_PATH" ]; then
+      say "Erro: repositorio source nao encontrado."
+      say "Va ate o diretorio do ContaBase e execute:"
+      say "  sudo ./scripts/update-contabase-source.sh"
+      exit 1
+    fi
+    cd "$REPO_PATH"
+    exec ./scripts/update-contabase-source.sh "$@"
+    ;;
+
+  *)
+    say "Modo de instalacao desconhecido: $MODE"
+    say "Valores aceitos: binary, docker, source"
+    exit 1
+    ;;
+esac
+WRAPPER_EOF
+
+  chown root:root "$update_wrapper" 2>/dev/null || true
+  chmod 0755 "$update_wrapper"
+
+  if [ ! -e /usr/local/bin/cb-update ]; then
+    ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
+  fi
+
+  say ""
+  say "Comando de atualizacao instalado:"
+  say "  sudo contabase-update [VERSAO]"
+  say "  sudo cb-update [VERSAO]"
+}
+
 install_bundle() {
   ensure_user_and_directories
   manage_env_file
@@ -955,6 +1111,8 @@ install_bundle() {
   if [ -n "$PREVIOUS_DIR" ] && [ -e "$PREVIOUS_DIR" ]; then
     say "Bundle anterior preservado em: $PREVIOUS_DIR"
   fi
+
+  install_update_command
 }
 
 main() {

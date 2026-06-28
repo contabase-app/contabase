@@ -31,16 +31,12 @@
             <span class="flex items-center justify-center w-4 h-4 shrink-0 transition-transform duration-200" data-cat-chevron style="transform: rotate(-90deg)">
                 <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-[var(--cb-text-muted)]"></i>
             </span>
-            <span class="flex h-7 w-7 items-center justify-center rounded-md transition-colors
-                {{if eq .Type "INCOME"}}
-                    bg-emerald-500/10 text-[var(--cb-success)]
-                {{else}}
-                    bg-red-500/10 text-[var(--cb-danger)]
-                {{end}} shrink-0">
+            <span class="flex h-7 w-7 items-center justify-center rounded-md transition-colors shrink-0"
+                style="{{if eq .Type "INCOME"}}background: color-mix(in srgb, var(--cb-success) 10%, transparent); color: var(--cb-success){{else}}background: color-mix(in srgb, var(--cb-danger) 10%, transparent); color: var(--cb-danger){{end}}">
                 <i data-lucide="{{if eq .Type "INCOME"}}arrow-up-right{{else}}arrow-down-right{{end}}" class="h-3.5 w-3.5"></i>
             </span>
             <p class="text-sm font-semibold text-[var(--cb-text-main)] truncate" data-cat-name>{{.Name}}</p>
-            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wider border border-violet-500/20 bg-violet-500/5 text-violet-500 dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/25 truncate max-w-[130px]" data-cat-macro>
+            <span class="cb-status-chip cb-status-chip-info truncate max-w-[130px]" data-cat-macro>
                 {{if .MacroGroup}}{{.MacroGroup}}{{else}}{{if eq .Type "INCOME"}}Receita{{else}}Despesa{{end}}{{end}}
             </span>
             {{if .Children}}
@@ -163,7 +159,7 @@
 {{end}}
 
 {{define "config-contas-row"}}
-<article class="group flex items-center justify-between rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 transition-all hover:border-[var(--cb-border-strong)] hover:-translate-y-0.5 hover:shadow-sm">
+<article class="cb-row-dense group flex items-center justify-between">
     <div class="flex items-center gap-3 min-w-0">
         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
             {{template "financial-emblem" .}}
@@ -195,7 +191,7 @@
             aria-label="Editar {{.Name}}">
             <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
         </button>
-        <button type="button" class="h-8 w-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-amber-600 hover:border-amber-300 active:scale-95 dark:hover:text-amber-400 dark:hover:border-amber-600 btn-tactile"
+        <button type="button" class="h-8 w-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-[var(--cb-warning)] hover:border-[var(--cb-warning)] active:scale-95 btn-tactile"
             hx-post="/configuracoes/contas/{{.ID}}/arquivar"
             hx-target="#settings-dynamic-payload"
             hx-swap="outerHTML"
@@ -217,13 +213,13 @@
             <p class="text-sm font-medium text-[var(--cb-text-muted)] truncate">{{.Name}}</p>
             <div class="flex items-center gap-2">
                 <p class="text-xs text-[var(--cb-text-muted)]">{{.TypeLabel}}</p>
-                <span class="inline-flex items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-[0.6rem] font-semibold text-amber-600 ring-1 ring-inset ring-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/15">Arquivado</span>
+                <span class="cb-status-chip cb-status-chip-warning">Arquivado</span>
             </div>
         </div>
     </div>
     <div class="flex items-center gap-3 shrink-0">
         <p class="text-sm font-semibold text-[var(--cb-text-muted)]" data-sensitive>{{.Balance}}</p>
-        <button type="button" class="h-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-3 text-xs font-medium text-emerald-600 transition-all hover:bg-emerald-50 hover:border-emerald-300 active:scale-95 dark:hover:bg-emerald-500/10 dark:hover:border-emerald-500/30 flex items-center gap-1 dark:text-emerald-400"
+        <button type="button" class="h-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-3 text-xs font-semibold flex items-center gap-1 transition-all active:scale-95" style="color: var(--cb-success); --hover-bg: color-mix(in srgb, var(--cb-success) 10%, transparent)"
             hx-post="/configuracoes/contas/{{.ID}}/reativar"
             hx-target="#settings-dynamic-payload"
             hx-swap="outerHTML"
@@ -304,7 +300,7 @@
 {{end}}
 
 {{define "config-cartoes-row"}}
-<article class="group rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 transition-all hover:border-[var(--cb-border-strong)] hover:-translate-y-0.5 hover:shadow-sm">
+<article class="cb-row-dense group">
     <div class="flex items-center justify-between gap-3 mb-2">
         <div class="flex items-center gap-3 min-w-0">
             <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
@@ -333,7 +329,7 @@
                 aria-label="Editar {{.Name}}">
                 <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
             </button>
-            <button type="button" class="h-8 w-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-amber-600 hover:border-amber-300 active:scale-95 dark:hover:text-amber-400 dark:hover:border-amber-600 btn-tactile"
+            <button type="button" class="h-8 w-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-[var(--cb-warning)] hover:border-[var(--cb-warning)] active:scale-95 btn-tactile"
                 hx-post="/configuracoes/cartoes/{{.AccountID}}/arquivar"
                 hx-target="#settings-dynamic-payload"
                 hx-swap="outerHTML"
@@ -360,10 +356,10 @@
             </span>
             <div class="min-w-0">
                 <p class="text-sm font-medium text-[var(--cb-text-muted)] truncate">{{.Name}}</p>
-                <span class="inline-flex items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-[0.6rem] font-semibold text-amber-600 ring-1 ring-inset ring-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/15">Arquivado</span>
+                <span class="cb-status-chip cb-status-chip-warning">Arquivado</span>
             </div>
         </div>
-        <button type="button" class="h-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-3 text-xs font-medium text-emerald-600 transition-all hover:bg-emerald-50 hover:border-emerald-300 active:scale-95 dark:hover:bg-emerald-500/10 dark:hover:border-emerald-500/30 flex items-center gap-1 shrink-0 dark:text-emerald-400"
+        <button type="button" class="h-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-3 text-xs font-semibold flex items-center gap-1 shrink-0 transition-all active:scale-95" style="color: var(--cb-success)"
             hx-post="/configuracoes/cartoes/{{.AccountID}}/reativar"
             hx-target="#settings-dynamic-payload"
             hx-swap="outerHTML"

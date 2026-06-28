@@ -18,11 +18,13 @@ Se você quer o guia rápido, leia:
 Você precisa de:
 
 - Linux com Docker;
-- Docker Compose funcionando com `docker compose`;
+- Docker e Docker Compose (`docker compose` ou `docker-compose` standalone).
 - Git, se usar o instalador guiado;
 - porta `8080` livre, ou outra porta escolhida.
 
 Se Docker não estiver instalado e você usa Debian/Ubuntu, o instalador pode perguntar se você deseja instalar as dependências.
+
+**Debian 13 (Trixie):** o pacote `docker-compose-plugin` pode não estar disponível nos repositórios oficiais. Nesse caso, o instalador tenta automaticamente o pacote `docker-compose` (standalone). Se nenhum dos dois estiver disponível, instale o plugin manualmente seguindo a [documentação oficial do Docker](https://docs.docker.com/compose/install/linux/) ou use o binário standalone.
 
 ## Caminho 1: instalador guiado com Docker
 
@@ -31,7 +33,7 @@ Este caminho usa o repositório completo.
 Clone a versão desejada:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.1
+export CONTABASE_VERSION=vX.Y.Z
 
 git clone --branch "${CONTABASE_VERSION}" https://github.com/contabase-app/contabase.git
 cd contabase
@@ -128,6 +130,19 @@ Esse comando valida pré-requisitos e Compose. Ele não sobe containers.
 
 ## Atualizar Docker
 
+Após instalar, use o comando global:
+
+```bash
+contabase-update
+```
+
+O comando detecta o modo Docker automaticamente e chama o script de update
+no diretório onde o ContaBase foi instalado.
+
+Opcional: `contabase-update --yes` ou `contabase-update --dry-run`
+
+### Atualização manual
+
 Entre na pasta do projeto:
 
 ```bash
@@ -182,7 +197,7 @@ Copie este conteúdo:
 ```yaml
 services:
   contabase:
-    image: ghcr.io/contabase-app/contabase:v0.1.0-beta.1
+    image: ghcr.io/contabase-app/contabase:vX.Y.Z
     container_name: contabase
     restart: unless-stopped
     env_file:
@@ -339,7 +354,7 @@ docker compose down
 Use tag fixa:
 
 ```text
-ghcr.io/contabase-app/contabase:v0.1.0-beta.1
+ghcr.io/contabase-app/contabase:vX.Y.Z
 ```
 
 A tag `beta` pode mudar.

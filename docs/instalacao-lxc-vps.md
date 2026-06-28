@@ -46,10 +46,7 @@ O servidor precisa ter ferramentas básicas como `curl`, `tar` e `sha256sum`.
 Baixe o instalador:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.1
-
-curl -fsSL -o /tmp/contabase-install.sh \
-  "https://raw.githubusercontent.com/contabase-app/contabase/${CONTABASE_VERSION}/scripts/install.sh"
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
 ```
 
 Execute:
@@ -67,7 +64,7 @@ sudo bash /tmp/contabase-install.sh
 Escolha a opção:
 
 ```text
-2) Instalar por binário pronto de GitHub Release
+2) Instalar via binário da Release
 ```
 
 ## Perguntas feitas pelo instalador
@@ -101,7 +98,7 @@ https://financeiro.seudominio.com
 Depois:
 
 ```text
-Hosts permitidos / ALLOWED_HOSTS [localhost,127.0.0.1,servidor]:
+Domínios/IPs permitidos para acessar o ContaBase, separados por vírgula [localhost,127.0.0.1,servidor]:
 ```
 
 Inclua o domínio ou IP que você vai usar no navegador.
@@ -115,7 +112,7 @@ financeiro.seudominio.com,localhost,127.0.0.1
 Depois:
 
 ```text
-Vai usar reverse proxy como Nginx Proxy Manager, Caddy, Traefik ou Cloudflare Tunnel? [s/N]:
+Vai usar reverse proxy? Ex.: Nginx Proxy Manager, Caddy, Traefik ou Cloudflare Tunnel [s/N]:
 ```
 
 Responda:
@@ -126,7 +123,7 @@ Responda:
 Se responder `s`, o instalador pergunta:
 
 ```text
-TRUSTED_PROXIES [127.0.0.1,::1]:
+IP(s) do proxy confiável, separados por vírgula [127.0.0.1,::1]:
 ```
 
 Se o proxy roda no mesmo servidor, pode aceitar o padrão.
@@ -176,13 +173,10 @@ sudo systemctl restart contabase
 Use este modo se você já sabe os valores.
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.1
-
-curl -fsSL -o /tmp/contabase-install.sh \
-  "https://raw.githubusercontent.com/contabase-app/contabase/${CONTABASE_VERSION}/scripts/install.sh"
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
 
 CONTABASE_INSTALL_METHOD=release \
-CONTABASE_VERSION=v0.1.0-beta.1 \
+CONTABASE_VERSION=vX.Y.Z \
 CONTABASE_ASSUME_YES=1 \
 PORT=8080 \
 APP_BASE_URL=https://financeiro.exemplo.com \
@@ -206,9 +200,9 @@ Se `CONTABASE_PORT` e `PORT` existirem ao mesmo tempo, `CONTABASE_PORT` vence.
 Este modo é avançado. Use apenas se você já clonou o repositório.
 
 ```bash
-git clone --branch v0.1.0-beta.1 https://github.com/contabase-app/contabase.git
+git clone --branch vX.Y.Z https://github.com/contabase-app/contabase.git
 cd contabase
-sudo env CONTABASE_VERSION=v0.1.0-beta.1 ./scripts/install-contabase-release.sh
+sudo env CONTABASE_VERSION=vX.Y.Z ./scripts/install-contabase-release.sh
 ```
 
 Na maioria dos casos, prefira o `install.sh` mostrado no início deste guia.
@@ -225,20 +219,28 @@ Isso baixa e valida o artifact, mas não instala no sistema.
 
 ## Atualizar LXC/VPS
 
+Após instalar, use o comando global:
+
+```bash
+sudo contabase-update vX.Y.Z
+```
+
+O comando baixa o instalador da versão desejada, valida e executa a atualização.
+Opcional: `sudo cb-update vX.Y.Z`
+
+### Atualização manual
+
 Baixe o instalador da versão desejada:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.1
-
-curl -fsSL -o /tmp/contabase-install.sh \
-  "https://raw.githubusercontent.com/contabase-app/contabase/${CONTABASE_VERSION}/scripts/install.sh"
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
 ```
 
 Execute:
 
 ```bash
 CONTABASE_INSTALL_METHOD=update-release \
-CONTABASE_VERSION=v0.1.0-beta.1 \
+CONTABASE_VERSION=vX.Y.Z \
 CONTABASE_ASSUME_YES=1 \
 bash /tmp/contabase-install.sh
 ```

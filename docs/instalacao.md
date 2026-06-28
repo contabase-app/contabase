@@ -32,27 +32,27 @@ Se você não sabe qual escolher:
 - use `2` para VPS/LXC sem Docker;
 - use `1` se você já usa Docker.
 
-## 1. Escolha a versão
+## 1. Use o canal de instalação
 
-A versão atual é:
-
-```bash
-v0.1.0-beta.1
-```
-
-Nos comandos, a versão fica nesta linha:
+O canal recomendado aponta para a versão pública recomendada:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.1
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh && bash /tmp/contabase-install.sh
 ```
 
-Quando sair uma nova versão, troque somente o valor depois do sinal `=`.
-
-Exemplo:
+O canal beta aponta para a beta pública atual:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.2
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/beta/install.sh && bash /tmp/contabase-install.sh
 ```
+
+Para fixar uma versão específica, informe `CONTABASE_VERSION` ao executar o instalador:
+
+```bash
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh && CONTABASE_VERSION=vX.Y.Z bash /tmp/contabase-install.sh
+```
+
+Exemplo: substitua `vX.Y.Z` por uma tag publicada, como `v0.1.0-beta.2`.
 
 Não use `main`.
 
@@ -65,10 +65,7 @@ Use sempre uma versão publicada no GitHub Releases.
 Copie e cole no terminal do servidor:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.1
-
-curl -fsSL -o /tmp/contabase-install.sh \
-  "https://raw.githubusercontent.com/contabase-app/contabase/${CONTABASE_VERSION}/scripts/install.sh"
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
 ```
 
 ## 3. Execute o instalador
@@ -90,12 +87,12 @@ sudo bash /tmp/contabase-install.sh
 O instalador vai mostrar um menu parecido com este:
 
 ```text
-1) Instalar com Docker Compose
-2) Instalar por binário pronto de GitHub Release
-3) Instalar por build local/source
-4) Atualizar instalação Docker
-5) Atualizar instalação source/systemd
-6) Atualizar instalação release/LXC
+1) Instalar via Docker Compose
+2) Instalar via binário da Release
+3) Instalar via código-fonte/systemd
+4) Atualizar via Docker Compose
+5) Atualizar via binário da Release
+6) Atualizar via código-fonte/systemd
 7) Sair
 ```
 
@@ -189,13 +186,10 @@ Use este modo somente se você já sabe todos os valores.
 Exemplo para VPS/LXC sem Docker:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.1
-
-curl -fsSL -o /tmp/contabase-install.sh \
-  "https://raw.githubusercontent.com/contabase-app/contabase/${CONTABASE_VERSION}/scripts/install.sh"
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
 
 CONTABASE_INSTALL_METHOD=release \
-CONTABASE_VERSION=v0.1.0-beta.1 \
+CONTABASE_VERSION=vX.Y.Z \
 CONTABASE_ASSUME_YES=1 \
 PORT=8080 \
 APP_BASE_URL=https://financeiro.exemplo.com \
@@ -211,7 +205,7 @@ Para entender cada variável, leia [Configuração](configuracao.md).
 Para Docker pelo instalador, use um clone completo do repositório:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.1
+export CONTABASE_VERSION=vX.Y.Z
 
 git clone --branch "${CONTABASE_VERSION}" https://github.com/contabase-app/contabase.git
 cd contabase
@@ -247,7 +241,16 @@ Guia completo:
 
 ## Atualização
 
-Para atualizar, use a nova versão em `CONTABASE_VERSION` e escolha a opção de atualização no menu.
+Após instalar, você pode atualizar o ContaBase com um comando simples:
+
+```bash
+sudo contabase-update vX.Y.Z
+```
+
+O comando detecta automaticamente o modo de instalação (binary, docker ou source)
+e chama o script de update correto. Opcionalmente use `sudo cb-update`.
+
+Também é possível usar a nova versão em `CONTABASE_VERSION` e escolher a opção de atualização no menu do instalador.
 
 Guia completo:
 
@@ -260,14 +263,14 @@ Guia completo:
 Use `export`:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.1
+export CONTABASE_VERSION=vX.Y.Z
 bash /tmp/contabase-install.sh
 ```
 
 Não faça apenas isto:
 
 ```bash
-CONTABASE_VERSION=v0.1.0-beta.1
+CONTABASE_VERSION=vX.Y.Z
 bash /tmp/contabase-install.sh
 ```
 

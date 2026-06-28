@@ -36,6 +36,8 @@ node_modules/
 # Binário standalone do Tailwind CLI (build tool, não projeto)
 tailwindcss
 
+.playwright-mcp
+
 # CSS compilado (gerado automaticamente a partir de assets/css/input.css)
 assets/css/style.css
 

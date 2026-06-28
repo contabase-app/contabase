@@ -71,11 +71,11 @@
     cb.options.forEach(function(opt) {
       var optType = opt.dataset.catOptionType;
       var optMacro = opt.dataset.catOptionMacro || '';
-      var optName = (opt.dataset.catOptionName || '').toLowerCase();
+      var optName = normalizeSearchText(opt.dataset.catOptionName);
       var optValue = opt.dataset.catOptionValue;
 
       var typeMatch = !optType || optType === st.currentTab;
-      var searchMatch = !st.parentSearch || optName.indexOf(st.parentSearch.toLowerCase()) !== -1 || optValue === '';
+      var searchMatch = !st.parentSearch || optName.indexOf(st.parentSearch) !== -1 || optValue === '';
 
       opt.classList.toggle('hidden', !(typeMatch && searchMatch));
 
@@ -230,8 +230,17 @@
     setParentCollapsed(block, isOpen);
   }
 
+  function normalizeSearchText(value) {
+    return (value || '')
+      .toString()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
   function filterCategoriesBySearch(container, query) {
-    query = (query || '').toLowerCase().trim();
+    query = normalizeSearchText(query);
     var parentBlocks = container.querySelectorAll('[data-cat-parent-block]');
 
     if (!query) {
@@ -250,7 +259,7 @@
     parentBlocks.forEach(function(block) {
       var parentName = '';
       var nameEl = block.querySelector('[data-cat-parent-header] [data-cat-name]');
-      if (nameEl) parentName = (nameEl.textContent || '').toLowerCase();
+      if (nameEl) parentName = normalizeSearchText(nameEl.textContent);
 
       var childrenContainer = block.querySelector('[data-cat-children]');
       var childRows = childrenContainer ? childrenContainer.querySelectorAll('[data-cat-name]') : [];
@@ -258,7 +267,7 @@
       var parentMatch = !query || parentName.indexOf(query) !== -1;
       var anyChildMatch = false;
       childRows.forEach(function(row) {
-        var childName = (row.textContent || '').toLowerCase();
+        var childName = normalizeSearchText(row.textContent);
         var match = !query || childName.indexOf(query) !== -1;
         var article = row.closest('article');
         if (article) article.classList.toggle('hidden', !match);
@@ -319,7 +328,7 @@
       // Combobox search
       if (cb && cb.search) {
         cb.search.addEventListener('input', function() {
-          state(container).parentSearch = cb.search.value;
+          state(container).parentSearch = normalizeSearchText(cb.search.value);
           updateComboboxFilter(cb);
         });
         cb.search.addEventListener('keydown', function(e) {

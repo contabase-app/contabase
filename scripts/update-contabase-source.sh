@@ -426,6 +426,164 @@ print_summary() {
   fi
 }
 
+backfill_update_command() {
+  local update_wrapper="/usr/local/bin/contabase-update"
+  local mode_file="/etc/contabase/install-mode"
+  local repo_path
+  repo_path="$REPO_ROOT"
+
+  printf '%s\n' "source" > "$mode_file"
+  printf '%s\n' "$repo_path" >> "$mode_file"
+  chown root:root "$mode_file" 2>/dev/null || true
+  chmod 0644 "$mode_file"
+
+  if [ -f "$update_wrapper" ]; then
+    return 0
+  fi
+
+  cat > "$update_wrapper" <<'WRAPPER_EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODE_FILE="/etc/contabase/install-mode"
+PUBLIC_RAW_BASE="${CONTABASE_RAW_BASE:-https://raw.githubusercontent.com/contabase-app/contabase}"
+
+say() { printf '%s\n' "$*"; }
+
+usage() {
+  cat <<EOF
+Uso:
+  sudo contabase-update [VERSAO]
+  sudo contabase-update v0.1.0-beta.2
+
+Atualiza o ContaBase detectando automaticamente o modo de instalacao
+(binary, docker ou source) e chamando o script de update correto.
+
+Opcional: sudo cb-update (atalho curto).
+
+Variaveis de ambiente:
+  CONTABASE_ASSUME_YES=1   Modo nao interativo (quando suportado).
+EOF
+}
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  usage
+  exit 0
+fi
+
+if [ ! -f "$MODE_FILE" ]; then
+  say "Nao foi possivel detectar o modo de instalacao do ContaBase."
+  say "Arquivo ausente: $MODE_FILE"
+  say ""
+  say "Se voce instalou manualmente, execute o script de update correspondente:"
+  say "  Release/LXC:  sudo env CONTABASE_VERSION=vX.Y.Z bash scripts/update-contabase-release.sh"
+  say "  Docker:       ./scripts/update-contabase-docker.sh"
+  say "  Source:       sudo ./scripts/update-contabase-source.sh"
+  exit 1
+fi
+
+MODE="$(head -n1 "$MODE_FILE" | awk '{print $1}' | tr -d '[:space:]')"
+
+case "$MODE" in
+  binary)
+    if [ "$(id -u)" -ne 0 ]; then
+      say "Este modo exige root. Execute com sudo:"
+      say "  sudo contabase-update [VERSAO]"
+      exit 1
+    fi
+
+    VERSION="${1:-}"
+    if [ -z "$VERSION" ]; then
+      if [ -t 0 ]; then
+        read -r -p "Versao para atualizar (ex.: v0.1.0-beta.1): " VERSION
+      else
+        say "Erro: informe a versao. Exemplo: sudo contabase-update v0.1.0-beta.1"
+        exit 1
+      fi
+    fi
+
+    case "$VERSION" in
+      *-internal*) say "Erro: versoes com -internal sao privadas."; exit 1 ;;
+    esac
+    if [[ ! "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
+      say "Erro: versao invalida: $VERSION"
+      exit 1
+    fi
+
+    TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/contabase-update.XXXXXX")"
+    # shellcheck disable=SC2064
+    trap 'rm -rf "$TMP_DIR"' EXIT
+
+    INSTALL_SCRIPT="${TMP_DIR}/install.sh"
+    INSTALL_URL="${PUBLIC_RAW_BASE}/${VERSION}/scripts/install.sh"
+
+    say "Baixando instalador da versao ${VERSION}..."
+    if ! curl --fail --location --silent --show-error \
+      --proto '=https' --tlsv1.2 \
+      "$INSTALL_URL" -o "$INSTALL_SCRIPT"; then
+      say "Erro: nao foi possivel baixar o instalador da versao ${VERSION}."
+      exit 1
+    fi
+
+    say "Executando atualizacao para ${VERSION}..."
+    exec env \
+      CONTABASE_INSTALL_METHOD=update-release \
+      CONTABASE_VERSION="$VERSION" \
+      CONTABASE_ASSUME_YES="${CONTABASE_ASSUME_YES:-0}" \
+      bash "$INSTALL_SCRIPT"
+    ;;
+
+  docker)
+    REPO_PATH="$(sed -n '2p' "$MODE_FILE" 2>/dev/null | tr -d '[:space:]')"
+    if [ -z "$REPO_PATH" ] || [ ! -d "$REPO_PATH" ]; then
+      say "Erro: repositorio Docker nao encontrado."
+      say "Va ate o diretorio do ContaBase e execute:"
+      say "  ./scripts/update-contabase-docker.sh"
+      exit 1
+    fi
+    cd "$REPO_PATH"
+    exec ./scripts/update-contabase-docker.sh "$@"
+    ;;
+
+  source)
+    if [ "$(id -u)" -ne 0 ]; then
+      say "Este modo exige root. Execute com sudo:"
+      say "  sudo contabase-update"
+      exit 1
+    fi
+
+    REPO_PATH="$(sed -n '2p' "$MODE_FILE" 2>/dev/null | tr -d '[:space:]')"
+    if [ -z "$REPO_PATH" ] || [ ! -d "$REPO_PATH" ]; then
+      say "Erro: repositorio source nao encontrado."
+      say "Va ate o diretorio do ContaBase e execute:"
+      say "  sudo ./scripts/update-contabase-source.sh"
+      exit 1
+    fi
+    cd "$REPO_PATH"
+    exec ./scripts/update-contabase-source.sh "$@"
+    ;;
+
+  *)
+    say "Modo de instalacao desconhecido: $MODE"
+    say "Valores aceitos: binary, docker, source"
+    exit 1
+    ;;
+esac
+WRAPPER_EOF
+
+  chown root:root "$update_wrapper" 2>/dev/null || true
+  chmod 0755 "$update_wrapper"
+
+  if [ ! -e /usr/local/bin/cb-update ]; then
+    ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
+  fi
+
+  echo ""
+  echo -e "${GREEN}Comando global de atualizacao instalado:${NC}"
+  echo "  sudo contabase-update"
+  echo "  sudo cb-update"
+}
+
 main() {
   if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
     usage
@@ -483,6 +641,7 @@ main() {
   if run_healthcheck; then
     UPDATE_SUCCEEDED=true
     log_ok "Healthcheck retornou healthy."
+    backfill_update_command
     print_summary
     exit 0
   fi

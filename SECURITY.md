@@ -1,6 +1,6 @@
 # Política de Segurança do ContaBase
 
-Esta política descreve as práticas, os recursos reais e as limitações de segurança da **Beta pública controlada v0.1.0-beta.1**, atualmente preparada para publicação. A release ainda não foi publicada. Leia o modelo de ameaças e as responsabilidades operacionais antes de adotar o sistema.
+Esta política descreve as práticas, os recursos reais e as limitações de segurança da **Beta pública controlada** do ContaBase. Leia o modelo de ameaças e as responsabilidades operacionais antes de adotar o sistema.
 
 ---
 

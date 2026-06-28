@@ -46,6 +46,8 @@ scripts/local/ export-ignore
 init-dev.sh export-ignore
 tailwindcss export-ignore
 
+.playwright-mcp export-ignore
+
 # Workflows privados/dev, se existirem
 .github/workflows/dev-* export-ignore
 

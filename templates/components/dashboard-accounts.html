@@ -1,16 +1,16 @@
 {{define "dashboard-accounts"}}
-<section id="dashboard-accounts" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} hx-trigger="refreshFinancials from:body" hx-get="/" hx-select="#dashboard-accounts" hx-swap="outerHTML" class="cb-card w-full"{{if and (not .Accounts) (not .Cards)}} data-onboarding-empty="true"{{end}}>
-    <div class="flex items-center justify-between mb-4">
+<section id="dashboard-accounts" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} hx-trigger="refreshFinancials from:body" hx-get="/" hx-select="#dashboard-accounts" hx-swap="outerHTML" class="cb-card-dense w-full"{{if and (not .Accounts) (not .Cards)}} data-onboarding-empty="true"{{end}}>
+    <div class="flex items-center justify-between mb-3">
         <h2 class="text-sm font-semibold text-[var(--cb-text-muted)] uppercase tracking-wider">Minhas Contas</h2>
 
         <!-- Desktop Button -->
         <a href="/configuracoes/contas"
-            class="!hidden md:!flex cb-button cb-button-secondary w-10 h-10 p-0 rounded-lg items-center justify-center transition-all btn-tactile">
+            class="!hidden md:!flex cb-button cb-button-secondary w-8 h-8 p-0 rounded-lg items-center justify-center transition-all btn-tactile">
             <i data-lucide="plus" class="w-4 h-4"></i>
         </a>
         <!-- Mobile Button -->
         <a href="/configuracoes/contas"
-           class="!flex md:!hidden cb-button cb-button-secondary w-10 h-10 p-0 rounded-lg items-center justify-center transition-all btn-tactile">
+           class="!flex md:!hidden cb-button cb-button-secondary w-8 h-8 p-0 rounded-lg items-center justify-center transition-all btn-tactile">
             <i data-lucide="plus" class="w-4 h-4"></i>
         </a>
     </div>
@@ -23,26 +23,23 @@
            hx-target="#main-content"
            hx-select="#main-content"
            hx-push-url="true"
-            class="cb-row flex items-center justify-between gap-3 active:scale-[0.98] cursor-pointer">
-            <div class="flex items-center gap-3 min-w-0">
-                <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+            class="cb-row-dense flex items-center justify-between gap-3 active:scale-[0.98] cursor-pointer">
+            <div class="flex items-center gap-2.5 min-w-0">
+                <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border emblem-wrap-solid select-none" style="--ic: {{.Color}}">
                     {{template "financial-emblem" .}}
                 </span>
                 <div class="min-w-0">
                     <h3 class="text-xs font-bold text-[var(--cb-text-main)] truncate leading-tight">{{.Name}}</h3>
-                    <span class="inline-flex items-center gap-0.5 rounded-md bg-[var(--cb-surface-3)] px-2 py-0.5 text-[10px] font-bold text-[var(--cb-text-muted)] mt-1 uppercase tracking-wide leading-none select-none">
+                    <span class="inline-flex items-center gap-0.5 rounded-md bg-[var(--cb-surface-3)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--cb-text-muted)] mt-0.5 uppercase tracking-wide leading-none select-none">
                         <i data-lucide="wallet" class="w-2.5 h-2.5"></i>
                         {{if eq .TypeLabel "Conta Corrente"}}Corrente{{else if eq .TypeLabel "Investimento"}}Invest.{{else if eq .TypeLabel "Carteira / Dinheiro"}}Dinheiro{{else}}{{.TypeLabel}}{{end}}
                     </span>
                 </div>
             </div>
 
-            <div class="text-right flex-shrink-0">
-                <span class="text-[10px] font-bold text-[var(--cb-text-muted)] uppercase tracking-widest block mb-0.5">Saldo Disponível</span>
-                <p class="text-sm sm:text-base font-black text-[var(--cb-text-main)] tracking-tight leading-none" data-sensitive>
-                    R$ {{.Money.Reais}}{{.Money.Cents}}
-                </p>
-            </div>
+            <p class="text-sm sm:text-base font-black text-[var(--cb-text-main)] tracking-tight leading-none" data-sensitive>
+                R$ {{.Money.Reais}}{{.Money.Cents}}
+            </p>
         </a>
         {{end}}
     </div>
@@ -61,13 +58,13 @@
         <div class="mt-4 flex justify-center">
             <!-- Desktop Button -->
             <a href="/configuracoes/contas"
-                class="!hidden md:!inline-flex cb-button cb-button-primary btn-tactile h-11 items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold sm:px-5">
+                class="!hidden md:!inline-flex cb-button cb-button-primary btn-tactile mt-4 h-11 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold active:scale-[0.98]">
                 <i data-lucide="plus" class="h-4 w-4"></i>
                 Criar primeira conta
             </a>
             <!-- Mobile Button -->
             <a href="/configuracoes/contas"
-               class="!flex md:!hidden cb-button cb-button-primary btn-tactile h-11 items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold sm:px-5">
+               class="!flex md:!hidden cb-button cb-button-primary btn-tactile mt-4 h-11 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold active:scale-[0.98]">
                 <i data-lucide="plus" class="h-4 w-4"></i>
                 Criar primeira conta
             </a>

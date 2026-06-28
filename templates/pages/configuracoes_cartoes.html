@@ -1,11 +1,7 @@
 {{define "configuracoes-cartoes-page"}}
 {{template "layout-start" .}}
 <div class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pb-28 pt-5 md:pb-10 md:pt-8 relative">
-    <!-- Liquid blurs + dot pattern -->
-    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-60">
-        <div class="absolute top-[5%] left-[-20%] w-[55vw] h-[55vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
-        <div class="absolute bottom-[10%] right-[-15%] w-[45vw] h-[45vw] rounded-full bg-indigo-400/10 dark:bg-indigo-500/5 blur-[80px]"></div>
-    </div>
+    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
 
     <!-- Desktop View: SaaS Split Layout -->
     <div class="hidden md:flex gap-8 w-full max-w-full">
@@ -47,23 +43,18 @@
         </div>
     </header>
 
-    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative">
-        <!-- Liquid blurs + dot pattern -->
-        <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-60 md:hidden">
-            <div class="absolute top-[5%] left-[-20%] w-[55vw] h-[55vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
-            <div class="absolute bottom-[10%] right-[-15%] w-[45vw] h-[45vw] rounded-full bg-indigo-400/10 dark:bg-indigo-500/5 blur-[80px]"></div>
+    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
+        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-danger) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 8%, transparent); color: var(--cb-danger)">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-success) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-success) 8%, transparent); color: var(--cb-success)">{{.FlashSuccess}}</div>{{end}}
+
+        <!-- Section header -->
+        <div class="mb-6">
+            <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Cartões de Crédito</h1>
+            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Configure seus cartões com datas de fechamento e vencimento.</p>
         </div>
-        
 
-        {{if .FlashError}}<div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-100">{{.FlashError}}</div>{{end}}
-        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100">{{.FlashSuccess}}</div>{{end}}
-
-        <div class="md:premium-card md:bg-[var(--cb-surface-1)]/75 md:backdrop-blur-xl md:border md:border-[var(--cb-border-subtle)] md:shadow-sm md:rounded-3xl p-0 md:p-8">
-            <div class="mb-6">
-                <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Cartões de Crédito</h2>
-                <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Configure seus cartões com datas de fechamento e vencimento.</p>
-            </div>
-            <form data-provider-select class="mb-6 rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 md:p-5" hx-post="/configuracoes/cartoes" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
+        <div class="cb-card-dense p-4 md:p-6">
+            <form data-provider-select class="cb-card-muted mb-6 p-4 md:p-5" hx-post="/configuracoes/cartoes" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
                         <span class="{{template "field-label" .}}">Banco / Carteira</span>

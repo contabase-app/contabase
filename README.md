@@ -1,7 +1,7 @@
 <div align="center">
   <h1>ContaBase</h1>
   <p>Base financeira privada, self-hosted e pensada para quem quer manter os dados sob controle.</p>
-  <p><strong>v0.1.0-beta.1:</strong> primeira Beta pública controlada, já publicada como prerelease.</p>
+  <p><strong>Beta pública controlada:</strong> use o canal de instalação para receber a versão recomendada.</p>
 </div>
 
 ---
@@ -21,18 +21,24 @@ Não é SaaS, não possui telemetria e não envia seus dados financeiros para te
 
 ## Instalação rápida com o instalador guiado
 
-O `scripts/install.sh` é a entrada principal para instalar e atualizar o ContaBase. Baixe o script e execute:
+O canal público temporário de instalação é `https://get-contabase.pages.dev`.
+Quando o domínio final `https://get.contabase.net` estiver ativo, ele substituirá o endpoint temporário na documentação.
+
+Baixe o instalador pelo canal recomendado e execute:
 
 ```bash
-export CONTABASE_VERSION=v0.1.0-beta.1
-
-curl -fsSL -o /tmp/contabase-install.sh \
-  "https://raw.githubusercontent.com/contabase-app/contabase/${CONTABASE_VERSION}/scripts/install.sh"
-
-bash /tmp/contabase-install.sh
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh && bash /tmp/contabase-install.sh
 ```
 
 O script abre um **menu interativo** com todas as opções (instalar via Docker, instalar em LXC/VPS, atualizar, etc.) e chama automaticamente o script correto por baixo. Quando necessário, ele pergunta versão, porta, URL pública, hosts permitidos e proxy. No método Docker, quando executado dentro de um checkout completo, ele valida dependências e pode instalar Docker/Compose em Debian/Ubuntu se você autorizar.
+
+Para fixar uma versão específica:
+
+```bash
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh && CONTABASE_VERSION=vX.Y.Z bash /tmp/contabase-install.sh
+```
+
+Exemplo: substitua `vX.Y.Z` por uma tag publicada, como `v0.1.0-beta.2`.
 
 ### Modo não interativo
 
@@ -40,12 +46,10 @@ Defina `CONTABASE_INSTALL_METHOD` para pular o menu:
 
 ```bash
 # Instalar em LXC/VPS (binário pronto) — funciona sem clone
-export CONTABASE_VERSION=v0.1.0-beta.1
-curl -fsSL -o /tmp/contabase-install.sh \
-  "https://raw.githubusercontent.com/contabase-app/contabase/${CONTABASE_VERSION}/scripts/install.sh"
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
 
 CONTABASE_INSTALL_METHOD=release \
-CONTABASE_VERSION=v0.1.0-beta.1 \
+CONTABASE_VERSION=vX.Y.Z \
 CONTABASE_ASSUME_YES=1 \
 PORT=8080 \
 APP_BASE_URL=https://financeiro.exemplo.com \
@@ -57,7 +61,7 @@ bash /tmp/contabase-install.sh
 Para Docker headless em Debian/Ubuntu com instalação assistida de dependências, use um checkout completo:
 
 ```bash
-git clone --branch v0.1.0-beta.1 https://github.com/contabase-app/contabase.git
+git clone --branch vX.Y.Z https://github.com/contabase-app/contabase.git
 cd contabase
 
 CONTABASE_INSTALL_METHOD=docker \
@@ -69,7 +73,7 @@ CONTABASE_INSTALL_DEPS=1 \
 ```bash
 # Atualizar instalação LXC/VPS existente
 CONTABASE_INSTALL_METHOD=update-release \
-CONTABASE_VERSION=v0.1.0-beta.1 \
+CONTABASE_VERSION=vX.Y.Z \
 CONTABASE_ASSUME_YES=1 \
 bash /tmp/contabase-install.sh
 ```
@@ -89,6 +93,19 @@ Os métodos `docker`, `source`, `update-docker` e `update-source` exigem um clon
 
 Se não tem certeza de qual método usar, leia [Primeiros passos](docs/primeiros-passos.md).
 
+### Atualização rápida
+
+Após instalar, use o comando global registrado no sistema:
+
+```bash
+sudo contabase-update vX.Y.Z
+```
+
+O comando detecta automaticamente o modo de instalação (binary, docker ou source)
+e chama o script de update correto. Também funciona como `sudo cb-update`.
+
+→ [Guia completo de atualização](docs/atualizacao.md)
+
 → [Guia completo de instalação](docs/instalacao.md)
 
 ### Docker manual sem clonar o repositório
@@ -106,16 +123,16 @@ Se você já usa Docker, Dockge, Portainer ou CasaOS e quer subir o ContaBase di
 - [Segurança](SECURITY.md)
 - [Privacidade](PRIVACY.md)
 - [Termos de uso](TERMS.md)
-- [Release notes da v0.1.0-beta.1](docs/releases/v0.1.0-beta.1.md)
+- [Release notes da beta atual](docs/releases/v0.1.0-beta.2.md)
+- [Histórico da primeira beta](docs/releases/v0.1.0-beta.1.md)
 
 ## Avisos da Beta
 
-A `v0.1.0-beta.1` não é uma versão stable.
+A Beta pública não é uma versão stable. Ainda não existe release stable pública do ContaBase.
 
-- **B4:** recorrências e parcelamentos ainda aguardam auditoria crítica completa.
-- **B5:** pagamento parcial de faturas continua em validação.
+- A primeira beta permanece disponível apenas como histórico.
 - Os instaladores guiados (Docker e LXC/VPS) geram secrets fortes automaticamente e os updaters preservam configuração, banco, uploads e backups.
-- A imagem Docker no GHCR e os artifacts da GitHub Release já estão disponíveis para a `v0.1.0-beta.1`.
+- A imagem Docker no GHCR e os artifacts da nova beta devem ser validados antes de atualizar o canal público.
 - O operador é responsável por backup, restore, HTTPS, proxy, domínio e segredos.
 
 Antes de usar dados importantes:

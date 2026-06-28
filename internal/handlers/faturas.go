@@ -45,6 +45,10 @@ type FaturaData struct {
 	StatusLabel             string
 	StatusIcon              string
 	StatusBadgeClass        string
+	CycleLabel              string
+	FinancialLabel          string
+	HasCycleBadge           bool
+	HasFinancialBadge       bool
 	MonthOptions            []MonthOption
 	MesAnteriorURL          string
 	MesSeguinteURL          string
@@ -79,6 +83,8 @@ type FaturaData struct {
 	LegacyPaymentNotice     string
 	IsBusiness              bool
 	ActiveWorkspaceName     string
+	ShowSensitiveWarning    bool
+	SensitiveWarningText    string
 }
 
 type InvoicePaymentRow struct {
@@ -585,6 +591,8 @@ func (h *FaturasHandler) HandlePagarFatura(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	_ = reconcileInvoiceStatusTx(tx, h.WorkspaceID, invoiceID)
+
 	if err := tx.Commit(); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -677,10 +685,14 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 	}
 	data.Total = MoneyMinor(total)
 	data.CreditLimit = MoneyMinor(creditLimitCents)
-	data.LimitUsed = MoneyMinor(total)
 	if creditLimitCents > 0 {
 		data.HasCreditLimit = true
-		limitAvailable := creditLimitCents - total
+		outstandingLimit, err := sumCardOutstandingLimit(db, workspaceID, data.AccountID)
+		if err != nil {
+			return data, err
+		}
+		data.LimitUsed = MoneyMinor(outstandingLimit)
+		limitAvailable := creditLimitCents - outstandingLimit
 		if limitAvailable < 0 {
 			limitAvailable = 0
 		}
@@ -697,11 +709,13 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 	data.PaymentDateInput = time.Now().Format("2006-01-02")
 
 	pendingAmountRaw := total
+	paidActive := int64(0)
 	payments, err := QueryActiveInvoicePayments(db, workspaceID, invoiceID)
 	if err == nil && len(payments) > 0 {
 		totalPaid, payErr := SumActiveInvoicePayments(db, workspaceID, invoiceID)
 		if payErr == nil {
 			pendingAmountRaw = CalculateInvoicePendingAmount(total, totalPaid)
+			paidActive = totalPaid
 			data.HasPayments = true
 			data.TotalPaid = MoneyMinor(totalPaid)
 			data.PendingAmount = MoneyMinor(pendingAmountRaw)
@@ -739,6 +753,25 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 
 	data.CanAttemptPayment = data.Status == models.InvoiceStatusOpen || data.Status == models.InvoiceStatusClosed
 	data.CanSubmitPayment = data.CanAttemptPayment && pendingAmountRaw > 0 && len(data.PaymentAccounts) > 0
+
+	cycleBadge := computeCycleBadge(closingUnix, time.Now())
+	finBadge := computeFinancialBadge(pendingAmountRaw, paidActive)
+	data.CycleLabel = cycleBadge
+	data.HasCycleBadge = cycleBadge != ""
+	data.FinancialLabel = finBadge
+	data.HasFinancialBadge = finBadge != "" && finBadge != data.StatusLabel
+	data.ShowSensitiveWarning = data.Status == models.InvoiceStatusClosed || data.Status == models.InvoiceStatusPaid
+	if data.ShowSensitiveWarning {
+		now := time.Now().Unix()
+		closingPassed := closingUnix > 0 && closingUnix <= now
+		if data.Status == models.InvoiceStatusClosed {
+			data.SensitiveWarningText = "Esta fatura está fechada. Alterações aqui são tratadas como correção manual e podem reabrir pendência."
+		} else if closingPassed {
+			data.SensitiveWarningText = "Esta fatura está fechada e paga. Alterações aqui são tratadas como correção manual e podem reabrir pendência."
+		} else {
+			data.SensitiveWarningText = "Esta fatura está paga. Novos lançamentos neste ciclo podem reabrir pendência e alterar o limite disponível."
+		}
+	}
 	if data.CanAttemptPayment && pendingAmountRaw <= 0 {
 		data.PaymentDisabledReason = "Sem valor para pagar"
 	} else if data.CanAttemptPayment && len(data.PaymentAccounts) == 0 {
@@ -1397,18 +1430,8 @@ func ensureOpenInvoiceTx(tx *sql.Tx, workspaceID, accountID string, txDate int64
 		return "", "", "", 0, 0, err
 	}
 
-	for i := 0; i < 24; i++ {
-		invoiceID, reference, status, closingUnix, dueUnix, err = ensureInvoiceForReferenceTx(tx, workspaceID, accountID, refYear, refMonth)
-		if err != nil {
-			return "", "", "", 0, 0, err
-		}
-		if status != models.InvoiceStatusPaid {
-			return invoiceID, reference, status, closingUnix, dueUnix, nil
-		}
-		refYear, refMonth = nextInvoiceMonth(refYear, refMonth)
-	}
-
-	return "", "", "", 0, 0, fmt.Errorf("nenhuma fatura ativa encontrada")
+	invoiceID, reference, status, closingUnix, dueUnix, err = ensureInvoiceForReferenceTx(tx, workspaceID, accountID, refYear, refMonth)
+	return invoiceID, reference, status, closingUnix, dueUnix, err
 }
 
 func resolveCardTransactionInvoiceTx(tx *sql.Tx, workspaceID, accountID string, txDate int64, faturaOffset string) (invoiceID, reference, status string, closingUnix, dueUnix int64, err error) {
@@ -1465,17 +1488,8 @@ func ensureFirstOpenInvoiceFromReferenceTx(tx *sql.Tx, workspaceID, accountID st
 	if err != nil {
 		return "", "", "", 0, 0, err
 	}
-	for i := 0; i < 24; i++ {
-		invoiceID, resolvedReference, status, closingUnix, dueUnix, err = ensureInvoiceForReferenceTx(tx, workspaceID, accountID, year, month)
-		if err != nil {
-			return "", "", "", 0, 0, err
-		}
-		if status == models.InvoiceStatusOpen {
-			return invoiceID, resolvedReference, status, closingUnix, dueUnix, nil
-		}
-		year, month = nextInvoiceMonth(year, month)
-	}
-	return "", "", "", 0, 0, fmt.Errorf("nenhuma fatura aberta encontrada")
+	invoiceID, resolvedReference, status, closingUnix, dueUnix, err = ensureInvoiceForReferenceTx(tx, workspaceID, accountID, year, month)
+	return invoiceID, resolvedReference, status, closingUnix, dueUnix, err
 }
 
 func normalizeFaturaOffset(raw string) string {
@@ -1541,6 +1555,70 @@ func ensureNextInvoiceTx(tx *sql.Tx, workspaceID, accountID string, reference st
 	return ensureInvoiceForReferenceTx(tx, workspaceID, accountID, year, month)
 }
 
+func queryInvoiceOptionsForAccount(db *sql.DB, workspaceID, accountID string) []InvoiceOption {
+	if accountID == "" {
+		return nil
+	}
+	rows, err := db.Query(`
+		SELECT i.id, i.reference, i.status, i.closing_date, i.due_date
+		FROM invoices i
+		WHERE i.account_id = ?
+		ORDER BY i.reference ASC
+		LIMIT 24
+	`, accountID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	type invoiceRow struct {
+		id          string
+		reference   string
+		status      string
+		closingUnix int64
+		dueUnix     int64
+	}
+	var raw []invoiceRow
+	for rows.Next() {
+		var r invoiceRow
+		if err := rows.Scan(&r.id, &r.reference, &r.status, &r.closingUnix, &r.dueUnix); err != nil {
+			return nil
+		}
+		raw = append(raw, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil
+	}
+	rows.Close()
+
+	now := time.Now()
+	var out []InvoiceOption
+	for _, r := range raw {
+		total, _ := sumInvoiceTotal(db, workspaceID, r.id)
+		paidActive, _ := sumActiveInvoicePaymentsDB(db, workspaceID, r.id)
+		pending := total - paidActive
+		if pending < 0 {
+			pending = 0
+		}
+		opt := InvoiceOption{
+			ID:             r.id,
+			Reference:      r.reference,
+			Status:         r.status,
+			CycleLabel:     computeCycleBadge(r.closingUnix, now),
+			FinLabel:       computeFinancialBadge(pending, paidActive),
+			StatusLabel:    invoiceStatusLabel(r.status),
+			ReferenceLabel: formatReferenceLabel(r.reference),
+			DueLabel:       formatDateLabel(r.dueUnix),
+			ClosingLabel:   formatDateLabel(r.closingUnix),
+			TotalDisplay:   "R$ " + formatCurrencyCentsBase(total),
+			PendingDisplay: "R$ " + formatCurrencyCentsBase(pending),
+			IsSensitive:    r.status == models.InvoiceStatusClosed || r.status == models.InvoiceStatusPaid,
+		}
+		out = append(out, opt)
+	}
+	return out
+}
+
 func (h *FaturasHandler) HandleResolverDestinoFatura(w http.ResponseWriter, r *http.Request, accountID string) {
 	dataRaw := strings.TrimSpace(r.URL.Query().Get("data"))
 	refDate := time.Now().Unix()
@@ -1582,6 +1660,10 @@ func (h *FaturasHandler) HandleResolverDestinoFatura(w http.ResponseWriter, r *h
 		"closing_date": closingUnix,
 		"due_date":     dueUnix,
 		"notice":       fmt.Sprintf("Fatura prevista: %s. Fecha dia %d e vence dia %d.", monthLabel, closingDate.Day(), dueDate.Day()),
+	}
+
+	if strings.EqualFold(r.URL.Query().Get("include_options"), "true") {
+		payload["options"] = queryInvoiceOptionsForAccount(h.DB, h.WorkspaceID, accountID)
 	}
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -1787,6 +1869,61 @@ func sumInvoiceTotalTx(tx *sql.Tx, workspaceID, invoiceID string) int64 {
 		WHERE workspace_id = ? AND invoice_id = ? AND type = 'EXPENSE'
 	`, workspaceID, invoiceID).Scan(&total)
 	return total
+}
+
+func sumCardOutstandingLimit(db *sql.DB, workspaceID, cardAccountID string) (int64, error) {
+	if strings.TrimSpace(workspaceID) == "" {
+		return 0, fmt.Errorf("workspace_id obrigatorio para soma de limite do cartao")
+	}
+	if strings.TrimSpace(cardAccountID) == "" {
+		return 0, fmt.Errorf("card_account_id obrigatorio para soma de limite do cartao")
+	}
+
+	rows, err := db.Query(`
+		SELECT i.id, i.closing_date,
+		       COALESCE((
+		           SELECT SUM(t.amount)
+		           FROM transactions t
+		           WHERE t.workspace_id = ?
+		             AND t.invoice_id = i.id
+		             AND t.type = 'EXPENSE'
+		       ), 0) AS invoice_total,
+		       COALESCE((
+		           SELECT SUM(ip.amount_cents)
+		           FROM invoice_payments ip
+		           WHERE ip.workspace_id = ?
+		             AND ip.invoice_id = i.id
+		             AND ip.reversed_at IS NULL
+		       ), 0) AS invoice_paid
+		FROM invoices i
+		JOIN accounts a ON a.id = i.account_id AND a.workspace_id = ?
+		WHERE i.account_id = ?
+		  AND a.type = ?
+	`, workspaceID, workspaceID, workspaceID, cardAccountID, models.AccountTypeCreditCard)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var outstanding int64
+	for rows.Next() {
+		var invoiceID string
+		var closingUnix int64
+		var invoiceTotal int64
+		var invoicePaid int64
+		if err := rows.Scan(&invoiceID, &closingUnix, &invoiceTotal, &invoicePaid); err != nil {
+			return 0, err
+		}
+		pending := invoiceTotal - invoicePaid
+		if pending <= 0 {
+			continue
+		}
+		outstanding += pending
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return outstanding, nil
 }
 
 func sumActiveInvoicePaymentsTx(tx *sql.Tx, workspaceID, invoiceID string) (int64, error) {

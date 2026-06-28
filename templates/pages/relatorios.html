@@ -21,46 +21,46 @@
     <!-- Contexto de Fechamento Mensal -->
     <div class="mb-4">
         <h2 class="text-sm font-bold text-[var(--cb-text-main)]">Fechamento de {{.MonthLabel}}</h2>
-        <p class="text-[11px] text-[var(--cb-text-muted)] mt-0.5">Resumo por competência registrada. Inclui lançamentos pendentes e pagos.</p>
+        <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">Resumo por competência registrada. Inclui lançamentos pendentes e pagos.</p>
     </div>
 
     <!-- KPIs -->
     <section class="mb-5 grid grid-cols-1 min-[390px]:grid-cols-2 sm:grid-cols-4 gap-3">
-        <div class="reports-kpi-card cb-card">
-            <div class="reports-kpi-header">
-                <span class="reports-kpi-label">Receitas do mês</span>
-                <i data-lucide="arrow-down-left" class="reports-kpi-icon"></i>
+        <div class="cb-card-dense flex flex-col gap-1.5">
+            <div class="flex items-center justify-between gap-1.5">
+                <span class="cb-section-title">Receitas do mês</span>
+                <i data-lucide="arrow-down-left" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
             </div>
-            <span class="reports-kpi-value text-emerald-600 dark:text-emerald-400" data-sensitive>R$ {{.TotalReceitas.Reais}}{{.TotalReceitas.Cents}}</span>
+            <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-success)] whitespace-nowrap" data-sensitive>R$ {{.TotalReceitas.Reais}}{{.TotalReceitas.Cents}}</span>
         </div>
-        <div class="reports-kpi-card cb-card">
-            <div class="reports-kpi-header">
-                <span class="reports-kpi-label">Despesas do mês</span>
-                <i data-lucide="arrow-up-right" class="reports-kpi-icon"></i>
+        <div class="cb-card-dense flex flex-col gap-1.5">
+            <div class="flex items-center justify-between gap-1.5">
+                <span class="cb-section-title">Despesas do mês</span>
+                <i data-lucide="arrow-up-right" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
             </div>
-            <span class="reports-kpi-value text-red-600 dark:text-red-400" data-sensitive>R$ {{.TotalDespesas.Reais}}{{.TotalDespesas.Cents}}</span>
+            <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-danger)] whitespace-nowrap" data-sensitive>R$ {{.TotalDespesas.Reais}}{{.TotalDespesas.Cents}}</span>
         </div>
-        <div class="reports-kpi-card cb-card {{if .SaldoNegativo}}border-red-200/50 dark:border-red-500/20{{else}}border-violet-200/50 dark:border-violet-500/20{{end}}">
-            <div class="reports-kpi-header">
-                <span class="reports-kpi-label">Resultado líquido</span>
-                <i data-lucide="scale" class="reports-kpi-icon"></i>
+        <div class="cb-card-dense flex flex-col gap-1.5">
+            <div class="flex items-center justify-between gap-1.5">
+                <span class="cb-section-title">Resultado líquido</span>
+                <i data-lucide="scale" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
             </div>
-            <span class="reports-kpi-value {{if .SaldoNegativo}}text-red-600 dark:text-red-400{{else}}text-violet-600 dark:text-violet-400{{end}}" data-sensitive>R$ {{.SaldoLiquido.Reais}}{{.SaldoLiquido.Cents}}</span>
+            <span class="text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap {{if .SaldoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-accent)]{{end}}" data-sensitive>R$ {{.SaldoLiquido.Reais}}{{.SaldoLiquido.Cents}}</span>
         </div>
-        <div class="reports-kpi-card cb-card {{if .SaldoAcumuladoNegativo}}border-red-200/50 dark:border-red-500/20{{else}}border-blue-200/50 dark:border-blue-500/20{{end}}">
-            <div class="reports-kpi-header">
-                <span class="reports-kpi-label">Saldo acumulado</span>
-                <i data-lucide="wallet" class="reports-kpi-icon"></i>
+        <div class="cb-card-dense flex flex-col gap-1.5">
+            <div class="flex items-center justify-between gap-1.5">
+                <span class="cb-section-title">Saldo acumulado</span>
+                <i data-lucide="wallet" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
             </div>
-            <span class="reports-kpi-value {{if .SaldoAcumuladoNegativo}}text-red-600 dark:text-red-400{{else}}text-blue-600 dark:text-blue-400{{end}}" data-sensitive>R$ {{.SaldoAcumulado.Reais}}{{.SaldoAcumulado.Cents}}</span>
+            <span class="text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap {{if .SaldoAcumuladoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-info)]{{end}}" data-sensitive>R$ {{.SaldoAcumulado.Reais}}{{.SaldoAcumulado.Cents}}</span>
         </div>
     </section>
 
     <!-- DRE Table -->
-    <section class="cb-card p-4 md:p-5 mb-5">
+    <section class="cb-card-dense p-4 md:p-5 mb-5">
         <div class="flex items-center justify-between mb-4">
             <div>
-                <p class="reports-eyebrow">Demonstrativo de Resultados</p>
+                <p class="cb-section-title">Demonstrativo de Resultados</p>
                 <h2 class="text-xs font-bold text-[var(--cb-text-main)] mt-0.5">DRE Simplificada — Competência</h2>
             </div>
             <div class="flex items-center gap-2">
@@ -102,10 +102,10 @@
     <!-- Charts Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
         {{if .IsBusiness}}
-        <section class="cb-card p-4 md:p-5">
-            <p class="reports-eyebrow mb-1">Distribuição</p>
+        <section class="cb-card-dense p-4 md:p-5">
+            <p class="cb-section-title mb-1">Distribuição</p>
             <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">Receitas pagas por Categoria</h2>
-            <p class="text-[11px] text-[var(--cb-text-muted)] -mt-0.5 mb-4">Apenas receitas com status pago no período.</p>
+            <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">Apenas receitas com status pago no período.</p>
             {{if .RevenueByCategory}}
             <div class="flex flex-col sm:flex-row items-center gap-6">
                 <svg viewBox="0 0 42 42" class="h-36 w-36 -rotate-90 shrink-0">
@@ -133,10 +133,10 @@
             {{end}}
         </section>
         {{else}}
-        <section class="cb-card p-4 md:p-5">
-            <p class="reports-eyebrow mb-1">Composição</p>
+        <section class="cb-card-dense p-4 md:p-5">
+            <p class="cb-section-title mb-1">Composição</p>
             <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">Custo de Vida</h2>
-            <p class="text-[11px] text-[var(--cb-text-muted)] -mt-0.5 mb-4">Despesas por competência registrada.</p>
+            <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">Despesas por competência registrada.</p>
             <div class="flex flex-col sm:flex-row items-center gap-6">
                 <svg viewBox="0 0 42 42" class="h-36 w-36 -rotate-90 shrink-0">
                     <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(228 228 231)" stroke-width="4.5" class="dark:stroke-zinc-700/80"></circle>
@@ -149,22 +149,22 @@
                 </svg>
                 <div class="space-y-3 text-xs flex-1 w-full">
                     <div class="flex items-center justify-between gap-3">
-                        <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-emerald-600 shrink-0"></span><span class="text-emerald-600 font-semibold">Essencial</span></div>
-                        <span class="text-[var(--cb-text-muted)] dark:text-[var(--cb-text-muted)]" data-sensitive>{{.DonutEssentialPercent}}% · R$ {{.DonutEssentialTotal.Reais}}{{.DonutEssentialTotal.Cents}}</span>
+                        <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-[var(--cb-success)] shrink-0"></span><span class="font-semibold" style="color: color-mix(in srgb, var(--cb-success) 90%, var(--cb-text-main))">Essencial</span></div>
+                        <span class="text-[var(--cb-text-muted)]" data-sensitive>{{.DonutEssentialPercent}}% · R$ {{.DonutEssentialTotal.Reais}}{{.DonutEssentialTotal.Cents}}</span>
                     </div>
                     <div class="flex items-center justify-between gap-3">
-                        <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-violet-600 shrink-0"></span><span class="text-violet-600 font-semibold">Estilo de Vida</span></div>
-                        <span class="text-[var(--cb-text-muted)] dark:text-[var(--cb-text-muted)]" data-sensitive>{{.DonutLifestylePercent}}% · R$ {{.DonutLifestyleTotal.Reais}}{{.DonutLifestyleTotal.Cents}}</span>
+                        <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-[var(--cb-accent)] shrink-0"></span><span class="font-semibold" style="color: color-mix(in srgb, var(--cb-accent) 90%, var(--cb-text-main))">Estilo de Vida</span></div>
+                        <span class="text-[var(--cb-text-muted)]" data-sensitive>{{.DonutLifestylePercent}}% · R$ {{.DonutLifestyleTotal.Reais}}{{.DonutLifestyleTotal.Cents}}</span>
                     </div>
                 </div>
             </div>
         </section>
         {{end}}
 
-        <section class="cb-card p-4 md:p-5">
-            <p class="reports-eyebrow mb-1">Tendência</p>
+        <section class="cb-card-dense p-4 md:p-5">
+            <p class="cb-section-title mb-1">Tendência</p>
             <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">Tendência de caixa</h2>
-            <p class="text-[11px] text-[var(--cb-text-muted)] -mt-0.5 mb-4">Histórico pago + projeção por recorrências.</p>
+            <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">Histórico pago + projeção por recorrências.</p>
             <svg viewBox="0 0 500 220" class="w-full h-48" preserveAspectRatio="xMidYMid meet">
                 {{range .CashflowGridLines}}
                 <line x1="0" y1="{{.}}" x2="500" y2="{{.}}" stroke="currentColor" stroke-width="0.5" class="text-zinc-200 dark:text-zinc-800" />
@@ -180,11 +180,11 @@
     </div>
 
     <!-- Gastos por Categoria -->
-    <section class="cb-card p-4 md:p-5">
+    <section class="cb-card-dense p-4 md:p-5">
         <div class="mb-4">
-            <p class="reports-eyebrow">Breakdown</p>
+            <p class="cb-section-title">Breakdown</p>
             <h2 class="text-xs font-bold text-[var(--cb-text-main)] mt-0.5">Gastos por Categoria</h2>
-            <p class="text-[11px] text-[var(--cb-text-muted)]">Despesas registradas no período (competência).</p>
+            <p class="cb-text-micro text-[var(--cb-text-muted)]">Despesas registradas no período (competência).</p>
         </div>
         <div class="space-y-3">
             {{range .Categorias}}

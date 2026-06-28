@@ -1,30 +1,94 @@
 # Changelog
 
-All notable changes to ContaBase will be documented in this file.
+Registro das alterações relevantes do ContaBase.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Este arquivo organiza as mudanças por versão e por tipo:
 
-Types of changes:
-- **Added** for new features.
-- **Changed** for changes in existing functionality.
-- **Deprecated** for soon-to-be removed features.
-- **Removed** for now removed features.
-- **Fixed** for any bug fixes.
-- **Security** in case of vulnerabilities.
+* **Adicionado**: novos recursos.
+* **Alterado**: mudanças em funcionalidades existentes.
+* **Corrigido**: correções de bugs.
+* **Removido**: funcionalidades ou arquivos removidos.
+* **Segurança**: mudanças relacionadas à segurança.
+* **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
-## [Unreleased]
+## [v0.1.0-beta.2]
+
+### Adicionado
+- **Busca de categorias sem acento:** em Configurações > Categorias, o campo de busca agora ignora acentos e diacríticos via normalização Unicode (NFD), permitindo encontrar "Saúde" ao digitar `saude`, "Educação" com `educacao` e "Cartão" com `cartao`. Acentuação original preservada na exibição. A mesma normalização foi aplicada ao combobox de seleção de categoria pai.
+- **Testes de regressão para edição de séries:** 13 testes cobrindo alteração de data de lançamentos recorrentes nos escopos single, future e all, em faturas de cartão e contas corrente, para frente e para trás, com limite de ocorrências e garantia de fatura paga bloqueada.
+- **Testes de regressão para limite disponível de cartão:** 14 testes cobrindo cálculo de limite usado/disponível com compras únicas, parcelamentos, recorrências, faturas OPEN/CLOSED/PAID, isolamento por workspace e cartão, exclusão de pagamentos e transações sem invoice_id.
+- **Estados derivados de fatura por ciclo e situação financeira,** com badges independentes como `Aberta`, `Fecha em X dias`, `Fechada`, `Vazia`, `Pendente`, `Parcial` e `Paga`.
+- **Seletor manual de fatura no Form Lançamento** para compras no cartão, com opção automática por ciclo, escolha avançada e atalhos para fatura anterior/próxima quando existirem.
+- **Alerta visual para correção manual** em fatura fechada ou paga.
+- **Identificação mais clara de cartões com nomes iguais no Form Lançamento,** exibindo subtítulo com informações disponíveis como emissor/bandeira e limite.
+
+### Corrigido
+- **Corrigida duplicidade ao editar lançamentos recorrentes com mudança de data.** Ao alterar a data de um lançamento recorrente nos escopos "somente este", "este e futuros" ou "toda a série", o sistema agora move corretamente as datas das ocorrências, recalcula as faturas vinculadas e preserva a projeção futura sem duplicar registros. Causas raiz: (1) o campo `date` estava ausente do UPDATE em `updateFutureRecurringTransactions`; (2) a projeção recorrente (`generateRecurrenceProjection`) era executada antes de atualizar as ocorrências existentes, usando a data antiga do banco como base; (3) o parâmetro `fromDate` usava a nova data em vez da data original. Correção cobre cartão de crédito e conta corrente. Regressão de lançamentos parcelados coberta por testes.
+- **Corrigido cálculo de limite usado/disponível do cartão.** O limite em uso agora considera todas as despesas comprometidas em faturas abertas (OPEN) ou fechadas (CLOSED) ainda não pagas, incluindo parcelas de compras futuras e projeções de recorrentes materializadas em faturas. Faturas pagas (PAID) não consomem limite. Pagamentos de fatura não entram no consumo. Dashboard e página de Fatura usam a mesma regra canônica. Exemplo: uma compra parcelada de R$ 10.000,00 em 10x em um cartão com limite de R$ 10.000,00 passa a mostrar limite disponível R$ 0,00 (antes mostrava R$ 9.000,00 incorretamente, considerando apenas a parcela da fatura atual).
+- **Corrigido cálculo de limite de cartão em faturas com pagamento parcial.**
+- **Corrigido caso em que fatura quitada antecipadamente era pulada** e lançamentos do mesmo ciclo caíam indevidamente na próxima fatura.
+- **Corrigido travamento/deadlock no endpoint `/cartoes/fatura-destino/...`** ao carregar opções com `include_options=true`.
+- **Corrigido loop/flicker das ações rápidas de fatura no Form Lançamento.**
+- **Corrigida ordenação do seletor avançado de fatura** para exibir faturas em ordem cronológica crescente.
+- **Corrigida exibição de quick actions** para impedir seleção de faturas inexistentes ou sem `invoice_id` válido.
+- **Corrigido estado transiente** em que quick actions podiam mostrar o mês automático como opção de mover.
+- **Corrigido cache de opções de fatura ao trocar de cartão** no Form Lançamento.
+- **Corrigido badge financeiro `Parcial`,** que aparecia como `Pendente` em faturas parcialmente pagas.
+- **Corrigido teste de badge de ciclo** que dependia de horário/timezone.
+- **Corrigido layout do Form Lançamento ao ativar parcelamento,** evitando corte de conteúdo, sobreposição do botão de confirmação e grande vazio inferior.
+
+### Alterado
+- **Redesign visual do financeiro denso (Dense Financial UI):** aplicado padrão visual com cards densos, chips, barras de progresso, linhas compactas e tokens visuais nas principais telas incluindo Dashboard, Metas, Lançamentos, Faturas, Relatórios, Contas, Contatos, Ajuda e Configurações. O Dashboard foi refinado com cards de cartões mais visuais, hierarquia de saldo melhorada e barras de progresso para limites e metas. Configurações foi reorganizada visualmente, incluindo Perfil, Workspace, Categorias, Contas, Cartões, Auditoria e telas administrativas. Ajustes de legibilidade e responsividade no Dashboard e nas telas de faturas e cartões.
+- **Scripts de atualização revisados:** scripts privados de deploy passaram a espelhar a branch remota com `git fetch` + `git reset --hard`, evitando falha de divergência. Scripts públicos preservam comportamento seguro com fast-forward ou `--force-reset` explícito. Melhorias na robustez dos fluxos de atualização sem alterar dados, `.env`, banco ou volumes.
+- **Cálculo canônico de limite de cartão implementado:** criada função compartilhada `sumCardOutstandingLimit` que soma despesas EXPENSE em faturas OPEN/CLOSED isoladas por workspace e cartão. Dashboard e página de Fatura foram migrados para essa função, substituindo o cálculo anterior que considerava apenas uma fatura.
+- **Limite usado/disponível do cartão** passou a ser calculado pelo saldo pendente das faturas, e não mais pelo total bruto das compras.
+- **Pagamentos parciais** liberam limite proporcionalmente.
+- **Quitação total de fatura** zera o consumo de limite daquela fatura.
+- **Fatura paga deixou de ser bloqueio rígido** para correções manuais.
+- **Fatura paga antecipadamente** antes do fechamento continua no ciclo atual e pode receber novos lançamentos automáticos do mesmo ciclo.
+- **Roteamento automático de compras no cartão** passou a considerar o ciclo da fatura, não apenas o status `OPEN`.
+- **O Form Lançamento** passou a usar `invoice_id` para seleção manual de fatura, mantendo `fatura_offset` como comportamento automático.
+- **Seletor de fatura** passou a recarregar opções ao trocar de cartão, evitando opções antigas/estagnadas.
+- **Formulário** passou a tratar parcelamento e despesa fixa/recorrente como opções mutuamente exclusivas na interface.
+- **Quick actions de fatura** agora limpam opções antigas ao trocar de cartão e só aparecem após carregar opções compatíveis com o cartão atual.
+- **O estado financeiro `Parcial`** passou a ser exibido quando a fatura possui pagamento ativo e ainda tem saldo pendente.
+- **Refinado o visual dos cards da seção Meus cartões no Dashboard,** removendo o texto repetitivo `Cartão de Crédito`, melhorando hierarquia, espaçamentos, tipografia e mantendo a barra inferior de limite.
+- **Cards de cartões compactados no mobile,** com `Fatura atual` e `Vencimento` em layout inline para reduzir altura sem perder legibilidade.
+- **Fundo sutil tom sobre tom/glass** adicionado aos cards de cartões para melhor separação visual em light/dark theme.
+- **Layout responsivo do Dashboard refinado** para manter a ordem mobile: `Posição financeira`, `Minhas contas`, `Meus cartões`, `Limites`, `Metas & Reservas` e demais blocos.
+- **Alinhamento desktop da linha superior do Dashboard ajustado,** alinhando `Posição financeira` com os cards à direita.
+- **Atalhos Extrato, Obrigações, Reservas e Fechamento** ocultados no mobile, mantendo-os no desktop.
+- **Legibilidade mobile dos valores secundários melhorada** para `Reservado` e `Disponível` no card de posição financeira.
+- **Página `/notificacoes` alinhada ao Design System atual,** com cards de notificação visualmente mais consistentes, bordas/severidades suavizadas e melhor consistência em dark/light theme, desktop e mobile.
+- **Ações Aportar e Liberar em Reservas** migradas de controles inline pequenos para modal/bottom sheet com campo monetário maior, contexto da reserva e botões claros.
+- **Botões primários dos sheets simplificados** para `Confirmar`.
+- **Erros de aporte/liberação** passaram a aparecer dentro do sheet, preservando a experiência do usuário.
+- **Resumos de Reservas e Limites** redesenhados como painéis compactos de estatísticas, diferenciando-os dos cards da lista.
+- **Compatibilidade visual com light/dark theme** preservada nos sheets e painéis de Reservas e Limites.
+
+### Validação
+- Testes permanentes para estados de fatura, limite por saldo pendente, pagamento parcial, quitação, fatura paga não bloqueante, roteamento por ciclo e fatura paga antecipadamente.
+- Smoke financeiro validou pagamento parcial seguido de quitação total, reabertura de fatura paga, ausência de 409 indevido e limite usado/disponível coerente.
+- Smoke visual validou Form Lançamento, quick actions, cards do Dashboard, Notificações, Metas/Reservas, light/dark theme, desktop e mobile.
+- Validações executadas ao longo das fases:
+
+  - `git diff --check`
+  - `bash scripts/build-css.sh`
+  - `go test ./...`
+  - `go vet ./...`
+  - `go build ./...`
+  - `node --check assets/js/form-lancamento.js`
 
 ## [0.1.0-beta.1] - 2026-06-22
 
 *Release Beta preparada localmente. A tag e a publicação remotas ainda não foram executadas.*
 
-### Added
+### Adicionado
 - **Instalação por release artifact:** adicionados o dispatcher `scripts/install.sh`, o instalador `scripts/install-contabase-release.sh` e o workflow que gera bundles Linux `amd64`/`arm64` com `checksums.txt`. A instalação valida SHA-256 e estrutura do tarball antes de alterar o sistema.
 - **Documentação pública da Beta:** preparados README, índice de release notes, nota completa de `v0.1.0-beta.1`, guias de instalação/atualização e URLs públicas dos assets esperados. A release e os assets ainda não foram publicados.
 - **Canal Docker GHCR:** preparado workflow multi-arch para publicar as tags fixas da versão e o canal mutável `beta`, sem `latest`, quando houver tag pública ou opt-in manual explícito.
 
-### Changed
+### Alterado
 - **Trilhas de instalação:** separados os caminhos Docker Compose, release artifact e source/build local. Docker continua recomendado para teste rápido e isolamento; release artifact é o caminho indicado para VPS/LXC Debian sem Docker; source permanece avançado.
 - **Update Docker seguro:** o updater passou a fazer backup com a stack parada, reler a versão após o pull, validar healthcheck e tentar rollback do runtime em falha, sem restore automático de dados.
 - **Deploy binario/systemd (P.29.d.2):** corrigida a instalacao binaria/systemd em Debian 12 descartavel. Causa raiz: o `apt` do Debian 12 entrega Node 18, e nesse caso o `npm` pula o binario nativo `@tailwindcss/oxide` (Tailwind 4 exige Node 20+), quebrando o `build-css.sh` com `Cannot find native binding` / `@tailwindcss/oxide-linux-arm64-gnu` ausente. `scripts/install-contabase-source.sh`, `scripts/update-contabase-source.sh` e `scripts/build-css.sh` passaram a exigir Node 20+ no preflight e abortam com mensagem clara em vez de falhar de forma obscura. A deteccao de PID 1 systemd deixou de depender de `ps`/`procps` e passou a ler `/proc/1/comm`. O healthcheck do instalador agora usa retry (30 tentativas) antes de declarar falha. `docs/instalacao-lxc-vps.md` e `docs/binario/README.md` documentam o requisito de Node 20+ via NodeSource e a necessidade de `chmod +x`. Nenhuma alteracao em auth, RBAC, workspace, banco, calculo financeiro ou no fluxo de Docker. `VERSION` nao foi alterada.
@@ -61,7 +125,7 @@ Types of changes:
 - **Faturas (P.28):** adicionada visualização de limite do cartão na tela de fatura, exibindo limite total, valor em uso na fatura, disponível estimado e barra de percentual disponível. A implementação reutiliza a semântica do Dashboard, sem alterar pagamento, quitação, invoice_payments, rotas, Dashboard, JS/CSS separados ou cálculo financeiro ativo.
 - **Faturas (ed955bd):** ajustado o bloco de limite do cartão dentro da fatura para reduzir a leitura como valor principal da tela, deixando total da fatura, total pago e pendente como destaque dominante e mantendo limite em uso/disponível como informação secundária. Nenhum cálculo, SQL, handler, ViewModel ou regra de fatura foi alterado.
 
-### Fixed
+### Corrigido
 - **Limites:** corrigida a validacao de Limites para impedir limite duplicado por categoria no mesmo workspace, exibindo erro amigavel.
 - **Contas (P.19.d):** corrigido refresh visual apos editar lancamento dentro de `/contas`. O endpoint de save retornava fragmento `lancamento-row` (formato de `/lancamentos`) que era inserido nos cards de `/contas`, quebrando o layout. Agora detecta origem via `HX-Current-URL` e dispara `refreshFinancials` para atualizar `#contas-body` com template correto. Sem regressao em `/lancamentos`.
 - **Lancamentos (P.17.e — filtros + navegacao mensal):** corrigida a perda de filtros ativos ao trocar mes em `/lancamentos`. Causa raiz: o seletor mensal OOB era renderizado sem filtros no query string dos botoes, descartando `situacao`, `tipo`, `origem`, `destino`, `categoria`, `q` e `ordem`. Tentativas client-side P.17.b/c/d (injecao de filtros via `htmx:configRequest`) foram descartadas por divergencia de estado entre URL, hidden inputs e seletor OOB. Correcao server-side: criado helper `lancamentosMonthQueryWithFilters` que preserva filtros multi-value nos URLs do seletor; hidden `mes`/`ano` do formulario sincronizados por OOB minimo (`lancamentos-filter-period`); removidos handlers especificos de `htmx:configRequest` para filtros e mes; mantido apenas handler generico `data-preserve-month`. Sem alteracao de SQL financeiro, competencia, saldo, fatura/pagamento, recorrencia/parcelamento, schema/migration ou workspace/RBAC/auth.
@@ -70,7 +134,7 @@ Types of changes:
 
 *Alterações validadas durante a preparação da primeira Beta pública controlada.*
 
-### Added
+### Adicionado
 - **Faturas (Pagamento Parcial):** Adicionado suporte a pagamento parcial de faturas de cartão de crédito. Agora é possível pagar valores parciais de faturas abertas ou fechadas, registrando pagamentos parciais no histórico `invoice_payments` e debitando a conta de pagamento correspondente.
 - **Faturas (Visual):** Adicionado modal de pagamento parcial dinâmico e responsivo na tela de detalhes de fatura, apresentando em tempo real o cálculo do saldo restante antes da confirmação.
 - **Testes:** Criado teste de integração robusto `TestDashboardMonthlyCashSummaryAndCompetenceLimits` em `internal/handlers/dashboard_monthly_limits_test.go` para validar o resumo de caixa mensal do Dashboard, os limites por competência e a exclusão correta de faturas/pagamentos.
@@ -78,7 +142,7 @@ Types of changes:
 - **Testes:** Adicionados testes de conciliação estrutural de faturas (`TestExcludeInvoicePaymentCompetenceClauseUsesStructuralLink` em `internal/handlers/invoice_payment_test.go` e `TestRelatoriosCompetenciaExcluiPagamentoFaturaDescricaoAlterada` em `internal/handlers/relatorios_invoice_payment_test.go`) para garantir o funcionamento correto com nomes/descrições alterados pelo usuário.
 - **Relatórios:** Adicionado quarto card "Saldo Acumulado" no topo de `/relatorios`, reutilizando a mesma regra financeira já existente em `/lancamentos` (`projectedAccumulatedBalance`). A lógica foi extraída para funções package-level compartilhadas (`calcProjectedAccumulatedBalance`, `calcProjectedTransactionNetCashFlowBetween`, `calcProjectedRecurringNetCashFlowBetween`, `calcPaidNetCashFlowBetween`), sem duplicação de SQL e sem alteração do cálculo original.
 
-### Changed
+### Alterado
 - **Lançamentos (DS):** Alinhado background/base de `/lancamentos` com o padrão DS compartilhado usado em `/relatorios` e demais telas atualizadas.
 - **Lançamentos (DS):** Rows de lançamentos e faturas em `/lancamentos` passaram a usar superfície neutra. Status continua indicado por ícones, valores e badges, não por fundo vermelho/amarelo dominante.
 - **Categorias (DS):** Alinhados background, wrapper, formulários, rows, tabs e empty states de Configurações > Categorias com tokens e componentes DS atuais.
@@ -102,7 +166,7 @@ Types of changes:
 - **Dashboard/Relatórios:** Alinhada a política híbrida de conciliação financeira: fluxo de caixa para o Resumo do Mês (caixa realizado) e regime de competência por data de compra para o Relatório DRE e para os Limites de Gastos.
 - **Limites de Gastos:** Os limites mensais por categoria agora são baseados em competência (data da compra) e passam a excluir transações de pagamentos de faturas de cartão de crédito (mesmo se categorizados), prevenindo duplicidade no consumo de limites.
 
-### Fixed
+### Corrigido
 - **Form Lançamento (CSP):** Removidos bloqueadores pontuais de `unsafe-inline` em fallbacks, dead code, modais simples, caixinha e helpers visuais de `form_lancamento.html`. Core sensível (submit, categoria, origem, status_pagamento, recorrência) mantido inline por segurança. (D.5.3.9)
 - **Faturas (CSP):** Removidos bloqueadores de `script-src 'unsafe-inline'` na página de faturas sem alterar regras financeiras, payloads ou handlers Go.
 - **Recorrências (Refresh):** Corrigido o refresh pós-exclusão de recorrências e parcelamentos em série, garantindo atualização imediata da lista após sucesso do DELETE.
@@ -115,12 +179,12 @@ Types of changes:
 - **Relatórios:** Correção em Gastos por Categoria de `/relatorios` para garantir que subcategorias não sumam da visualização quando houver lançamentos apenas em categorias filhas (preservando a árvore hierárquica completa).
 - **Relatórios:** Implementada exclusão de pagamentos de faturas do regime de competência dos relatórios de forma totalmente estrutural (via `invoice_payments.transaction_id`), garantindo consistência mesmo com descrições customizadas.
 
-### Removed
+### Removido
 - **Lançamentos:** Removido `templates/components/transacao-detalhe.html`, template legado dark-only de edição inline de transação. Substituído por `form_lancamento.html` renderizado via `#bottom-sheet-container`.
 - **Handlers:** Corrigido texto de log em `HandleTransacaoDetalhe`: "template detalhe error" → "template form-lancamento error" (refletia template errado).
 
 
-### Fixed
+### Corrigido
 - **UI:** Ajustado o layout das tabs de contatos (`/contatos`) para dispositivos móveis: reduzida a fonte para `text-[11px] min-[375px]:text-xs`, o gap para `gap-1 sm:gap-2` e adicionada abreviação responsiva ("Fornec." no mobile < 375px e "Fornecedores" em telas maiores/desktop) para evitar que a aba de fornecedores seja espremida ou escape do container.
 - **UI:** Corrigido o transbordamento e corte visual de valores monetários longos (ex: na casa dos milhões com sinal negativo) nos 4 cards de KPIs superiores em `/relatorios` no mobile. Adotado fallback seguro para grid de 1 coluna abaixo de 390px (`grid-cols-1 min-[390px]:grid-cols-2 sm:grid-cols-4 gap-3`), tipografia sintonizada (`text-[0.92rem] min-[390px]:text-base sm:text-xl xl:text-2xl`) com tracking reduzido (`tracking-[-0.03em]`), garantindo que nenhum valor financeiro seja truncado ou cortado por overflow.
 - **UI:** Padronizado o cabeçalho contextual global em desktop e mobile: a barra de workspace exibe o nome da página atual à direita (ex: "Lançamentos", "Contas", "Relatórios") em ambos os breakpoints. O indicador `#page-indicator` (anteriormente `#mobile-page-indicator`) teve a classe `md:hidden` removida, unificando o comportamento. Cabeçalhos internos grandes redundantes removidos definitivamente de todas as páginas principais, sem HTML comentado residual.
@@ -138,7 +202,7 @@ Types of changes:
 - **HTMX:** Corrigida navegação mobile do botão "+" de "Minhas Contas" no Dashboard para `/configuracoes/contas`. O `HandleConfiguracoesSection` retorna fragmento sem `#main-content` em requisições HTMX (`configuracoes-contas-content`), e o `hx-select="#main-content"` causava extração vazia (tela em branco). Substituído por `hx-swap="innerHTML"` sem `hx-select`, alinhando ao padrão já usado pela navegação mobile da própria página de Configurações. Desktop preservado com `hx-select` pois `/configuracoes?secao=contas` retorna página completa com `#main-content`.
 - **UI:** Correção da fase de otimização mobile dos cabeçalhos das páginas principais. Três causas raiz: (1) `assets/css/style.css` não foi regenerado após as alterações de template — as classes `hidden`, `md:flex` e `md:block` não existiam no CSS compilado; (2) as comparações de string no Mobile Page Indicator de `layout.html` usavam strings sem acento (`"Lancamentos"`, `"Relatorios"`) enquanto os handlers Go definem `.Title` com acentos (`"Lançamentos"`, `"Relatórios"`), fazendo o indicador mobile nunca aparecer; (3) o link do CSS não tinha query string de cache-busting, permitindo que navegadores servissem CSS stale. Adicionado `?v=3` ao link do stylesheet.
 
-### Changed
+### Alterado
 - **Doc/Ops:** Reformulada toda a documentação pública ([README.md](README.md), [SECURITY.md](SECURITY.md) e guias em [docs/](docs/)) para reposicionar o projeto de Alpha para a fase **Beta Controlada (Beta self-hosted)**, reforçando avisos de precaução com dados reais, obrigações de backup e de infraestrutura.
 - **Doc/Ops:** Criado e estruturado o checklist interno de release e mapeamento de pendências para a fase Beta Controlada.
 - **UI (Dashboard):** Restaurada a seção "Meus Cartões" para o formato visual premium clássico com blocos unificados (150px de altura), ambientação de glow colorido radial (`.blob-colored`) e o mesmo layout e hierarquia estrutural para todos os emissores. Adicionado override local de CSS no template para forçar texto preto de alto contraste nos badges com fundo amarelo brilhante (XP), garantindo a legibilidade do cartão no tema escuro sem introduzir discrepâncias estruturais ou estilização fragmentada.
@@ -184,7 +248,7 @@ Types of changes:
 - **Fix (Contatos):** Página `/contatos` quebrava ao acessar via HTMX com `range can't iterate over`. Causa: `{{define "contatos-list"}}` duplicado — o componente legado (`templates/components/contatos.html`, `{{range .}}` esperando slice) sobrescrevia a definição da página promovida (`templates/pages/contatos.html`, `{{range .Contatos}}` esperando struct). Definições conflitantes removidas do componente. `renderContatosList` atualizado para usar o template da página com `ContatosData`. Templates `contato-row`, `contato-row-form` e `contatos-options` preservados no componente.
 - **UI (Header):** Adicionada faixa contextual de workspace abaixo do header, visível em desktop e mobile (32px altura). Exibe ícone de tipo (`building-2` violeta para business, `user` verde para personal) + nome truncado + tipo. Campo `ActiveWorkspaceName` adicionado a 6 data structs de página.
 
-### Fixed
+### Corrigido
 - **SQLite WAL Consistency:** `database.Open()` now injects `_pragma=journal_mode(WAL)`, `_pragma=foreign_keys(1)`, `_pragma=synchronous(NORMAL)`, and `_pragma=busy_timeout(5000)` directly into the SQLite DSN via `normalizeSQLiteDSN()`. This ensures every connection opened by the `modernc.org/sqlite` driver operates in WAL mode with correct pragmas, eliminating the race condition where the server stays in DELETE mode and becomes blind to writes made by the admin CLI process.
 - **Testes:** `TestHandleListarTransacoesRenderBranches` atualizado para templates conceito. `testMetasMutationTemplates` e `testBulkReserveTemplates` atualizados para incluir `metas-conceito-tabs` e `lancamentos-table-body-conceito`.
 - **Metas:** Máscara monetária (`data-money-mask`) restaurada nos inputs de Aportar e Liberar das caixinhas no template conceito.
@@ -197,7 +261,7 @@ Types of changes:
 - **UI:** Adicionado link de "Recibo" no `lancamento-row` desktop — ícone `receipt` entre editar e excluir, visibilidade condicionada a `CanGenerateReceipt` (workspace business). Acesso mobile será tratado futuramente no detalhe/form de lançamento (`form_lancamento.html`) durante fase de CSP hard.
 - **Testes:** Templates de teste `testMetasMutationTemplates` e `testBulkReserveTemplates` atualizados para incluir definições dos novos templates conceito.
 
-### Added
+### Adicionado
 - **Faturas:** tabela `invoice_payments` adicionada via migration para suportar histórico 1:N de pagamentos de faturas (Fase 1A da refatoração de regras de faturas/cartões).
 - **Faturas:** funções de leitura puras para listar pagamentos ativos e calcular saldo pendente de faturas criadas, sem acoplamento à UI atual (Fase 1B da refatoração de faturas).
 - **Faturas:** gravação de registro em `invoice_payments` ao pagar uma fatura, mantendo compatibilidade total com o comportamento atual de pagamento (Fase 2A da refatoração de faturas).
@@ -214,7 +278,7 @@ Types of changes:
 - **Admin:** ações no painel de usuários para desativar 2FA e revogar sessões de contas `ADMIN`, `MANAGER` e `USER`, com confirmação reforçada para alvo administrador.
 - **Admin:** geração de senha temporária pelo painel de usuários, exibida uma única vez, com expiração de 1 hora e bloqueio de acesso ao app até a troca.
 
-### Changed
+### Alterado
 - **PWA/Mobile (Fase D8 — Trigger Real HTMX History):** identificado e corrigido o trigger real: `fab-controller.js` dinamicamente reconfigura o botão FAB via `updateFAB()` mas NÃO setava `hx-push-url="false"`, apesar do template original ter o atributo. Adicionado `button.setAttribute('hx-push-url', 'false')` em ambos os caminhos do `updateFAB()` (default e metas). `debug-perf.js` atualizado para: (a) classificar `history.pushState` com `state.contabaseOverlay` como `origin: 'overlay-sentinel'` (não 'htmx'), eliminando confusão visual; (b) logar `htmx:configRequest` com `triggerInfo` completo (tag, id, hx-get, hx-push-url, hx-target, ancestry de 5 pais). Diagnóstico permite identificar exatamente qual elemento real dispara cada request. Templates D7 já estavam corretos — o problema era o `fab-controller.js` dinâmico.
 - **PWA/Mobile (Fase D7 — HTMX Overlay History):** auditoria e correção de todos os triggers de overlay para usar `hx-push-url="false"`. FAB (`fab.html`, `fab-default`, `fab-metas`, `fab-default-oob`, `fab-metas-oob`), picker de categoria (`form_lancamento.html`, `form_meta.html`), bottom sheet triggers (`dashboard.html`, `dashboard_conceito.html`, `contas.html`, `faturas.html`, `lancamento-row.html`, `metas.html`), e tabs de metas (`metas.html`) agora explicitamente desabilitam push de URL pelo HTMX. Tab switching de metas (`/metas?aba=limites`/`caixinhas`) já usa `hx-replace-url` — reforçado com `hx-push-url="false"`. Navegação real entre páginas (nav links, dashboard cards) mantém `hx-push-url="true"`. Elimina `history.pushState origin: htmx` indevido em ações de overlay.
 - **PWA/Mobile (Fase D6 — Overlay Popstate Stability):** reescrita da lógica de sentinela para determinismo total. `overlayDidOpen()` não depende mais de `history.state.contabaseOverlay` — usa `_sentinelPushed` (in-memory) como guarda exclusiva, eliminando dessincronia com `replaceState` do HTMX. Sentinela `pushState` preserva estado do HTMX via `_mergeState()`. Popstate handler usa detecção DOM (`getTopOverlay()`) exclusivamente. Removida função `_syncSentinelState()`. Diagnóstico expandido com `lastPopstateDecision`. Fluxo correto: FAB → 1 pushState; picker sobre bottom sheet → 0 pushState extra; Back fecha picker; Back fecha bottom sheet; Back navega.
@@ -254,12 +318,12 @@ Types of changes:
 - **CSP/UI — F2.6-E4-B1:** infraestrutura vanilla para seleção em massa de `/lancamentos` — criado módulo `lancamentos-selection.js` com API pública `window.LancamentosSelection` (estado central `selectionMode`, `selectedIds` como Set, `toggleSelection`, `enterSelectionMode`, `exitSelectionMode`, `clearSelection`, `reset`, `syncUI`). Template `lancamentos.html` instrumentado com data-attributes de preparação (`data-selection-toggle-btn`, `data-selection-counter`, `data-selection-select-all`, `data-selection-select-all-label`, `data-selection-actions-bar`, `data-bulk-delete-btn`, `data-selection-delete-modal`, `data-selection-delete-cancel`, `data-selection-delete-confirm`, `data-selection-delete-choice`) e containers de hidden inputs (`id="bulk-paid-inputs"`, `bulk-pending-inputs`, `bulk-delete-inputs`, `bulk-delete-form`, `bulk-delete-modal`). Alpine permanece ativo em `/lancamentos` — módulo coexiste sem interferir nos eventos das rows. Script registrado em `layout.html`.
 - **CSP/UI — F2.6-E4-B2:** migração de `lancamento-row.html` para JS vanilla com delegação de eventos em `#transactions-list`. Removidas todas as 10 diretivas Alpine das linhas (`x-on:touchstart/end/cancel/move`, `x-on:click`, `x-show`, `x-transition`, `x-on:change`, `:checked`). Adicionados data-attributes `data-tx-row="{{.ID}}"` e `data-row-action="{{.ID}}"`. Módulo `lancamentos-selection.js` expandido com `handleRowClick` (delegação de click → toggle ou deixa HTMX agir), `handleRowActionClick` (botão de descrição em selectionMode → toggle), `handleCheckboxChange`, long press mobile com timer de 500ms (`handleTouchStart`/`TouchMove`/`TouchEnd`), `syncCheckboxes()` (leitura do estado Alpine via `Alpine.$data`/`__x.$data`, sincronização bidirecional) e `handleToolbarSync` (requestAnimationFrame após clique em botão da toolbar para re-sincronizar checkboxes). `syncCheckboxes()` mostra/oculta checkboxes via classe `hidden` e atualiza `.checked` com base em `selectedIds`. Alpine mantido como fonte da verdade no `x-data` pai de `lancamentos.html` (toolbar, actions bar, hidden inputs e modal continuam com Alpine) — JS manipula Alpine state via `container.__x.$data` e `Alpine.$data()`.
 
-### Removed
+### Removido
 - **PWA/Mobile (Higienização Pós-D8):** removida função morta `window.closeTopOverlay()` em `overlay-stack.js` (nenhum chamador em JS, HTML ou docs); removidos handler ESC duplicado e click-outside duplicado do filtro "Mais" em `htmx-lifecycle.js` (cobertos por `modal-interceptor.js` Priority 5 e `onclick` inline respectivamente); tooltip dismissal e LEGACY_OVERLAYS preservados como safety net.
 - **Setup/Seed:** removida a criação automática de contas e cartões financeiros padrão como `Conta Corrente`, `Conta Digital`, `Conta XP`, `Conta PagBank`, `Cartão Principal` e equivalentes empresariais.
 - **Configuração:** remoção do template `.env.example` do fluxo público/exportado, mantendo apenas o `.env.docker.example` como padrão de deploy público.
 
-### Fixed
+### Corrigido
 - **Modais Globais (UI — Crítico):** corrigido bug global que impedia botões Confirmar/Cancelar em modais de confirmação e exclusão (`global-confirm-modal`, `global-delete-scope-modal`). Causa raiz: `onclick="event.stopPropagation()"` no container interno dos modais interrompia o bubbling do clique até o `document`, impedindo que a delegação JS (`data-onclick` em `event-handlers.js`) detectasse e executasse os handlers `cancelGlobalConfirm`, `submitGlobalConfirm`, `cancelGlobalDelete` e `submitGlobalDelete`. O ESC continuava funcionando por usar listener global em `window`.
 - **Lançamentos (UX):** corrigida atualização visual após exclusão recorrente com escopos amplos (`future`, `all`) em `/lancamentos`. Introduzida função central `deleteTransactionAndRefresh(txId, scope)` em `modals-global.js` que, para escopos amplos, envia o DELETE com `swap: 'none'` e, após sucesso, dispara refresh da lista reutilizando o mecanismo HTMX já configurado no form `#lancamentosFilters` (`htmx.trigger(form, 'change')`), preservando mês, ano, filtros, situação, ordenação e busca ativos. Substitui abordagem anterior com `htmx.ajax(GET, /lancamentos, {values})` que não serializava corretamente os campos do form como query string. Aplica-se ao fluxo de swipe/delete pelo modal global e à exclusão inline pelo formulário de edição (branch não-invoice).
 - **Lançamentos (UX):** corrigida atualização visual após edição de recorrência com escopos amplos (`future`, `all`) em `/lancamentos`. Causa: `HandleAtualizarTransacao` com `scope != "single"` respondia via `respondRowAndCloseSheet`, que renderizava apenas uma linha + fechava sheet + OOB de resumo — outras ocorrências alteradas não atualizavam no DOM até refresh manual da página. Introduzida `respondBroadEditAndCloseSheet` que envia `HX-Reswap: "none"` + `HX-Trigger: "refreshLancamentosList"`, e listener JS em `modals-global.js` que dispara refresh da lista via `htmx.trigger(filtersForm, 'change')` preservando URL. Scope `single` mantém comportamento original (swap da linha individual).
@@ -307,7 +371,7 @@ Types of changes:
 - **Cartões:** atualização de configuração de cartão agora detecta e reporta ausência de configuração interna.
 - **Lançamentos:** correção de consulta quebrada na listagem de faturas virtuais futuras.
 
-### Security
+### Segurança
 - **Cookies:** padronização dos cookies de sessão, pré-2FA e CSRF para o prefixo `contabase_*`, eliminando referências legadas ao nome antigo; sessões antigas exigem novo login após a atualização.
 - **Autenticação:** adição de bloqueio temporário persistente para tentativas repetidas de login e 2FA, reforçando a proteção local contra força bruta sem expor detalhes de contas.
 - **Autenticação:** remoção do bypass web de 2FA por variável de ambiente; recuperação de TOTP agora exige ADMIN autenticado ou acesso local ao Admin CLI, revoga sessões/pré-auth e não altera senha, RBAC ou dados financeiros.
@@ -345,7 +409,7 @@ Types of changes:
 
 ## [0.1.0-alpha.1] - 2026-06-03
 
-### Added
+### Adicionado
 - **Core:** Arquitetura SSR Go/HTMX/SQLite de alta performance sem dependência de Node.js.
 - **Interface:** PWA completo com design Premium (Tailwind, dark/light, splash screens, ícones high-res).
 - **Workspace:** Suporte dual-core (Personal e Business) com alternância fluida no mesmo login.
@@ -360,18 +424,18 @@ Types of changes:
 - **Docker:** Configuração `docker-compose` completa com proxy de rede sugerido e endpoint `/health`.
 - **Docs:** Documentação pública oficial abrangente (Instalação, Segurança, Backups e Docker).
 
-### Changed
+### Alterado
 - Refinamento visual extensivo em toda a interface.
 - Adaptação das rotas e controladores em Go para suportar multi-tenant isolado entre Workspaces.
 
-### Fixed
+### Corrigido
 - Pequenos ajustes em layouts responsivos mobile.
 
-### Security
+### Segurança
 - **Proteção Total:** Implementação de CSP parcial, limitadores de taxa agressivos em auth e blindagem contra XSS e CSRF.
 - Revogação instantânea de sessões de outros aparelhos.
 - Prevenção ativa contra brute-force em login.
 
-### Known Limitations
+### Limitações conhecidas
 - A exportação em lote (CSV/XLS) ainda não está totalmente disponível.
 - Algumas telas Business receberão detalhamentos (DRE) em patches futuros.

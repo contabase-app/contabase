@@ -1316,6 +1316,34 @@ func main() {
 		h.UserID = ctx.UserID
 		h.HandleResgateCaixinha(w, r)
 	}))
+	mux.HandleFunc("/metas/caixinha/aporte/sheet", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !hasPermission(ctx.Role, permGoalsWrite) {
+			respondForbidden(w, r)
+			return
+		}
+		h := metasBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleAporteCaixinhaSheet(w, r)
+	}))
+	mux.HandleFunc("/metas/caixinha/resgate/sheet", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !hasPermission(ctx.Role, permGoalsWrite) {
+			respondForbidden(w, r)
+			return
+		}
+		h := metasBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleResgateCaixinhaSheet(w, r)
+	}))
 	mux.HandleFunc("/metas/caixinha/historico", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -20,19 +20,17 @@
 [data-swipe-bg-left]{left:0;transform-origin:left;justify-content:flex-start;border-radius:.75rem 0 0 .75rem;background:#ef4444}
 [data-swipe-bg-right]{right:0;transform-origin:right;justify-content:flex-end;border-radius:0 .75rem .75rem 0}
 .swipe-icon{width:1.25rem;height:1.25rem;color:#fff}
-.tx-content{position:relative;z-index:10;display:flex;align-items:center;gap:.75rem;border-radius:.75rem;border:1px solid var(--cb-border-subtle);background:var(--cb-surface-1);padding:.875rem;cursor:pointer}
+.tx-content{position:relative;z-index:10;display:flex;align-items:center;gap:.625rem;border-radius:.75rem;border:1px solid var(--cb-border-subtle);background:var(--cb-surface-1);padding:.625rem .75rem;cursor:pointer}
 .tx-content:hover{background:var(--cb-surface-2)}
-.tx-status{width:2.5rem;height:2.5rem;border-radius:.75rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.tx-row.overdue .tx-status{background:#fee2e2;color:#dc2626}
-.tx-row.pending .tx-status{background:#fef3c7;color:#d97706}
-.tx-row:not(.overdue):not(.pending) .tx-status{background:#d1fae5;color:#059669}
-.dark .tx-row.overdue .tx-status{background:rgba(239,68,68,0.1);color:#f87171}
-.dark .tx-row.pending .tx-status{background:rgba(245,158,11,0.1);color:#fbbf24}
-.dark .tx-row:not(.overdue):not(.pending) .tx-status{background:rgba(16,185,129,0.1);color:#34d399}
+.tx-status{width:2rem;height:2rem;border-radius:.625rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.tx-row.overdue .tx-status{background:color-mix(in srgb, var(--cb-danger) 12%, transparent);color:color-mix(in srgb, var(--cb-danger) 80%, var(--cb-text-main))}
+.tx-row.pending .tx-status{background:color-mix(in srgb, var(--cb-warning) 12%, transparent);color:color-mix(in srgb, var(--cb-warning) 80%, var(--cb-text-main))}
+.tx-row:not(.overdue):not(.pending) .tx-status{background:color-mix(in srgb, var(--cb-success) 12%, transparent);color:color-mix(in srgb, var(--cb-success) 80%, var(--cb-text-main))}
 .tx-desktop-actions{display:none}
-@media(min-width:768px){.tx-desktop-actions{display:flex;align-items:center;gap:.375rem}}
-.tx-action-btn{display:flex;height:1.75rem;width:1.75rem;align-items:center;justify-content:center;border-radius:.5rem;color:var(--cb-text-muted)}
+@media(min-width:768px){.tx-desktop-actions{display:flex;align-items:center;gap:.25rem}}
+.tx-action-btn{display:flex;height:1.75rem;width:1.75rem;align-items:center;justify-content:center;border-radius:.5rem;color:var(--cb-text-muted);transition:all .15s}
 .tx-action-btn:hover{color:var(--cb-text-main);background:var(--cb-surface-3)}
+.tx-action-btn-danger:hover{color:var(--cb-danger);background:color-mix(in srgb, var(--cb-danger) 12%, transparent)}
 
 .tx-row.overdue .tx-content button i {
     animation: pulse-overdue-icon 2s infinite;
@@ -46,12 +44,12 @@
 /* === SEARCH INPUT === */
 .search-input {
     width: 100%;
-    height: 44px;
+    height: 40px;
     border-radius: 12px;
     border: 1px solid var(--cb-border-subtle);
     background: var(--cb-surface-1);
-    padding: 0 16px 0 44px;
-    font-size: 14px;
+    padding: 0 14px 0 38px;
+    font-size: 13px;
     color: var(--cb-text-main);
     transition: border-color 0.2s ease;
 }
@@ -126,15 +124,18 @@
     max-width: 500px;
     margin: 0 auto;
     border-radius: 16px;
-    padding: 14px 18px;
+    padding: 12px 14px;
     z-index: 50;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
+    background: var(--cb-surface-overlay);
+    border: 1px solid var(--cb-border-subtle);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
     animation: barSlideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @media (min-width: 768px) {
     .bulk-action-bar {
         bottom: 24px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.16);
     }
 }
 
@@ -152,7 +153,8 @@
 
 /* === RESPONSIVE === */
 @media (max-width: 640px) {
-    .tx-content { padding: 10px 12px; }
+    .tx-content { padding: 8px 10px; gap: .5rem; }
+    .invoice-content { padding: .625rem .75rem; }
 }
 
 /* === BULK SELECTION VISIBILITY (CSP-compliant, class-based) === */

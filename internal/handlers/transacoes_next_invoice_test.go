@@ -104,14 +104,12 @@ func TestInsertTransactionNextInvoiceReusesExistingNextInvoice(t *testing.T) {
 	assertInvoiceCount(t, db, "card-test", "2026-09", 1)
 }
 
-func TestInsertTransactionAutoSkipsClosedAndPaidInvoices(t *testing.T) {
+func TestInsertTransactionAutoUsesPaidInvoiceWithinCycle(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
 	seedInvoicePaymentScenario(t, db)
-	setInvoiceStatusForTest(t, db, "invoice-2026-08", "CLOSED")
-	seedInvoiceForStatusTest(t, db, "card-test", "2026-09", "PAID")
-	seedInvoiceForStatusTest(t, db, "card-test", "2026-10", "OPEN")
+	setInvoiceStatusForTest(t, db, "invoice-2026-08", "PAID")
 
 	handler := TransactionHandler{
 		DB:          db,
@@ -123,7 +121,7 @@ func TestInsertTransactionAutoSkipsClosedAndPaidInvoices(t *testing.T) {
 	_, err := handler.insertTransaction(
 		"EXPENSE",
 		15000,
-		"Compra Auto Pula Fechadas",
+		"Compra Apos Quitacao Antecipada",
 		"",
 		"",
 		date,
@@ -142,21 +140,27 @@ func TestInsertTransactionAutoSkipsClosedAndPaidInvoices(t *testing.T) {
 		false,
 	)
 	if err != nil {
-		t.Fatalf("insertTransaction auto skips closed/paid: %v", err)
+		t.Fatalf("insertTransaction auto paid within cycle: %v", err)
 	}
 
-	txID := findTransactionByDescription(t, db, "Compra Auto Pula Fechadas")
-	assertTransactionInvoiceReference(t, db, txID, "2026-10")
+	txID := findTransactionByDescription(t, db, "Compra Apos Quitacao Antecipada")
+	assertTransactionInvoiceReference(t, db, txID, "2026-08")
+
+	var status string
+	if err := db.QueryRow(`SELECT status FROM invoices WHERE id = 'invoice-2026-08'`).Scan(&status); err != nil {
+		t.Fatalf("query invoice status: %v", err)
+	}
+	if status == "PAID" {
+		t.Fatalf("invoice should have left PAID status after new transaction, got %q", status)
+	}
 }
 
-func TestInsertTransactionNextSkipsClosedAndPaidInvoicesAfterCandidate(t *testing.T) {
+func TestInsertTransactionAutoUsesClosedInvoiceWithinCycle(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
 	seedInvoicePaymentScenario(t, db)
-	seedInvoiceForStatusTest(t, db, "card-test", "2026-09", "CLOSED")
-	seedInvoiceForStatusTest(t, db, "card-test", "2026-10", "PAID")
-	seedInvoiceForStatusTest(t, db, "card-test", "2026-11", "OPEN")
+	setInvoiceStatusForTest(t, db, "invoice-2026-08", "CLOSED")
 
 	handler := TransactionHandler{
 		DB:          db,
@@ -168,7 +172,94 @@ func TestInsertTransactionNextSkipsClosedAndPaidInvoicesAfterCandidate(t *testin
 	_, err := handler.insertTransaction(
 		"EXPENSE",
 		15000,
-		"Compra Next Pula Fechadas",
+		"Compra Fatura Fechada Mesmo Ciclo",
+		"",
+		"",
+		date,
+		"card-test",
+		"",
+		"",
+		1,
+		"paid",
+		false,
+		"",
+		"",
+		0,
+		false,
+		nil,
+		"",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("insertTransaction auto closed within cycle: %v", err)
+	}
+
+	txID := findTransactionByDescription(t, db, "Compra Fatura Fechada Mesmo Ciclo")
+	assertTransactionInvoiceReference(t, db, txID, "2026-08")
+}
+
+func TestInsertTransactionAutoAfterClosingGoesToNextInvoice(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	seedInvoicePaymentScenario(t, db)
+	setInvoiceStatusForTest(t, db, "invoice-2026-08", "PAID")
+	seedInvoiceForStatusTest(t, db, "card-test", "2026-09", "OPEN")
+
+	handler := TransactionHandler{
+		DB:          db,
+		WorkspaceID: "ws-test",
+		UserID:      "user-test",
+	}
+
+	date := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC).Unix()
+	_, err := handler.insertTransaction(
+		"EXPENSE",
+		15000,
+		"Compra Apos Fechamento",
+		"",
+		"",
+		date,
+		"card-test",
+		"",
+		"",
+		1,
+		"paid",
+		false,
+		"",
+		"",
+		0,
+		false,
+		nil,
+		"",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("insertTransaction auto after closing: %v", err)
+	}
+
+	txID := findTransactionByDescription(t, db, "Compra Apos Fechamento")
+	assertTransactionInvoiceReference(t, db, txID, "2026-09")
+}
+
+func TestInsertTransactionNextUsesNextReferenceRegardlessOfStatus(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	seedInvoicePaymentScenario(t, db)
+	seedInvoiceForStatusTest(t, db, "card-test", "2026-09", "PAID")
+
+	handler := TransactionHandler{
+		DB:          db,
+		WorkspaceID: "ws-test",
+		UserID:      "user-test",
+	}
+
+	date := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC).Unix()
+	_, err := handler.insertTransaction(
+		"EXPENSE",
+		15000,
+		"Compra Next Fatura Paga",
 		"",
 		"",
 		date,
@@ -187,11 +278,11 @@ func TestInsertTransactionNextSkipsClosedAndPaidInvoicesAfterCandidate(t *testin
 		false,
 	)
 	if err != nil {
-		t.Fatalf("insertTransaction next skips closed/paid: %v", err)
+		t.Fatalf("insertTransaction next paid reference: %v", err)
 	}
 
-	txID := findTransactionByDescription(t, db, "Compra Next Pula Fechadas")
-	assertTransactionInvoiceReference(t, db, txID, "2026-11")
+	txID := findTransactionByDescription(t, db, "Compra Next Fatura Paga")
+	assertTransactionInvoiceReference(t, db, txID, "2026-09")
 }
 
 func TestHandleAtualizarTransacaoRespeitaFaturaOffsetNext(t *testing.T) {
@@ -241,14 +332,12 @@ func TestHandleAtualizarTransacaoRespeitaFaturaOffsetNext(t *testing.T) {
 	assertTransactionInvoiceReference(t, db, "purchase-test", "2026-09")
 }
 
-func TestHandleResolverDestinoFaturaUsaMesmaRegraAberta(t *testing.T) {
+func TestHandleResolverDestinoFaturaUsaFaturaPagaNoCiclo(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
 	seedInvoicePaymentScenario(t, db)
-	setInvoiceStatusForTest(t, db, "invoice-2026-08", "CLOSED")
-	seedInvoiceForStatusTest(t, db, "card-test", "2026-09", "PAID")
-	seedInvoiceForStatusTest(t, db, "card-test", "2026-10", "OPEN")
+	setInvoiceStatusForTest(t, db, "invoice-2026-08", "PAID")
 
 	handler := FaturasHandler{
 		DB:          db,
@@ -272,11 +361,8 @@ func TestHandleResolverDestinoFaturaUsaMesmaRegraAberta(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if payload.Reference != "2026-10" || payload.Status != "OPEN" {
-		t.Fatalf("destination = %s/%s, want 2026-10/OPEN", payload.Reference, payload.Status)
-	}
-	if !strings.Contains(payload.Notice, "outubro/2026") {
-		t.Fatalf("notice = %q, want outubro/2026", payload.Notice)
+	if payload.Reference != "2026-08" {
+		t.Fatalf("destination reference = %s, want 2026-08", payload.Reference)
 	}
 }
 

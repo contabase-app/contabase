@@ -1,12 +1,6 @@
 {{define "configuracoes-admin_workspaces-page"}}
 {{template "layout-start" .}}
 <div class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pb-28 pt-5 md:pb-10 md:pt-8 relative">
-    <!-- Liquid blurs + dot pattern -->
-    <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-60">
-        <div class="absolute top-[5%] left-[-20%] w-[55vw] h-[55vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
-        <div class="absolute bottom-[10%] right-[-15%] w-[45vw] h-[45vw] rounded-full bg-indigo-400/10 dark:bg-indigo-500/5 blur-[80px]"></div>
-    </div>
-
     <!-- Desktop View: SaaS Split Layout -->
     <div class="hidden md:flex gap-8 w-full max-w-full">
         <!-- Sidebar Navigation -->
@@ -47,204 +41,195 @@
         </div>
     </header>
 
-    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative">
-        <!-- Liquid blurs + dot pattern -->
-        <div class="fixed inset-0 pointer-events-none z-[-1] overflow-hidden premium-dot-pattern opacity-60 md:hidden">
-            <div class="absolute top-[5%] left-[-20%] w-[55vw] h-[55vw] rounded-full bg-violet-400/10 dark:bg-violet-500/5 blur-[80px]"></div>
-            <div class="absolute bottom-[10%] right-[-15%] w-[45vw] h-[45vw] rounded-full bg-indigo-400/10 dark:bg-indigo-500/5 blur-[80px]"></div>
-        </div>
-    
+    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
+        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-danger) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 8%, transparent); color: var(--cb-danger)">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-success) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-success) 8%, transparent); color: var(--cb-success)">{{.FlashSuccess}}</div>{{end}}
 
-    {{if .FlashError}}<div class="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-100">{{.FlashError}}</div>{{end}}
-    {{if .FlashSuccess}}<div class="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100">{{.FlashSuccess}}</div>{{end}}
+        <!-- Section header -->
+        <div class="mb-6">
+            <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Gerenciar Workspaces</h1>
+            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Painel administrativo global — crie e gerencie workspaces.</p>
+        </div>
 
-    <div class="md:premium-card md:bg-[var(--cb-surface-1)]/75 md:backdrop-blur-xl md:border md:border-[var(--cb-border-subtle)] md:shadow-sm md:rounded-3xl p-0 md:p-8">
-    <div class="mb-6">
-        <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Gerenciar Workspaces</h2>
-        <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Painel administrativo global — crie e gerencie workspaces.</p>
-    </div>
-    <form data-admin-ws-create class="mb-6 rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 md:p-5" hx-post="/admin/workspaces/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-encoding="multipart/form-data">
-        <div id="workspace-error-container" class="mb-4"></div>
-        <div class="space-y-4">
-            <!-- Row 1: Nome (w-full) -->
-            <div>
-                <span class="{{template "field-label" .}}">Nome do workspace</span>
-                <input type="text" name="name" placeholder="Ex: Família, ACME Corp..." class="{{template "field-class" .}}">
-            </div>
-            <!-- Row 2: Tipo, Cor de contexto, Descrição em colunas no desktop -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                    <span class="{{template "field-label" .}}">Tipo</span>
-                    <select name="type" data-admin-ws-type class="{{template "field-class" .}}">
-                        <option value="personal">Pessoal</option>
-                        <option value="business">Empresarial (Business)</option>
-                    </select>
+        <div class="cb-card-dense p-4 md:p-6">
+            <form data-admin-ws-create class="cb-card-muted mb-6 p-4 md:p-5" hx-post="/admin/workspaces/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+                <div id="workspace-error-container" class="mb-4"></div>
+                <div class="space-y-4">
+                    <div>
+                        <span class="{{template "field-label" .}}">Nome do workspace</span>
+                        <input type="text" name="name" placeholder="Ex: Família, ACME Corp..." class="{{template "field-class" .}}">
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div>
+                            <span class="{{template "field-label" .}}">Tipo</span>
+                            <select name="type" data-admin-ws-type class="{{template "field-class" .}}">
+                                <option value="personal">Pessoal</option>
+                                <option value="business">Empresarial (Business)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <span class="{{template "field-label" .}}">Cor de contexto</span>
+                            <select name="theme_token" class="{{template "field-class" .}}">
+                                <option value="violeta">Violeta</option>
+                                <option value="laranja">Laranja</option>
+                                <option value="amarelo">Amarelo</option>
+                                <option value="azul">Azul</option>
+                                <option value="esmeralda">Esmeralda</option>
+                                <option value="rosa">Rosa</option>
+                            </select>
+                        </div>
+                        <div class="md:col-span-2">
+                            <span class="{{template "field-label" .}}">Descrição</span>
+                            <input type="text" name="description" placeholder="Descrição opcional do workspace" class="{{template "field-class" .}}">
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <span class="{{template "field-label" .}}">Cor de contexto</span>
-                    <select name="theme_token" class="{{template "field-class" .}}">
-                        <option value="violeta">Violeta</option>
-                        <option value="laranja">Laranja</option>
-                        <option value="amarelo">Amarelo</option>
-                        <option value="azul">Azul</option>
-                        <option value="esmeralda">Esmeralda</option>
-                        <option value="rosa">Rosa</option>
-                    </select>
+                <div data-admin-ws-business class="hidden mt-4 cb-card-muted border-[var(--cb-accent)]/20 p-4">
+                    <p class="cb-section-title mb-3">Perfil corporativo</p>
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                            <span class="{{template "field-label" .}}">Razão social / Nome da empresa</span>
+                            <input type="text" name="company_name" placeholder="Ex: ACME Ltda" class="{{template "field-class" .}}">
+                        </div>
+                        <div>
+                            <span class="{{template "field-label" .}}">CNPJ / CPF</span>
+                            <input type="text" name="cnpj_cpf" data-admin-mask="cnpj" placeholder="00.000.000/0001-00" class="{{template "field-class" .}}">
+                        </div>
+                        <div>
+                            <span class="{{template "field-label" .}}">Endereço</span>
+                            <input type="text" name="address" placeholder="Rua, numero, bairro, cidade" class="{{template "field-class" .}}">
+                        </div>
+                        <div>
+                            <span class="{{template "field-label" .}}">Telefone</span>
+                            <input type="text" name="phone" data-admin-mask="phone" placeholder="(11) 99999-9999" class="{{template "field-class" .}}">
+                        </div>
+                    </div>
                 </div>
-                <div class="md:col-span-2">
-                    <span class="{{template "field-label" .}}">Descrição</span>
-                    <input type="text" name="description" placeholder="Descrição opcional do workspace" class="{{template "field-class" .}}">
+                <div data-admin-ws-business class="hidden mt-4 cb-card-muted border-[var(--cb-info)]/20 p-4">
+                    <p class="cb-section-title mb-1">Identidade visual (logos)</p>
+                    <p class="mb-3 text-xs text-[var(--cb-text-muted)]">PNG, SVG ou WebP · 200 × 60 px recomendado · fundo transparente · máx. 2 MB</p>
+                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                            <label class="cb-label">Logo claro <span class="font-normal text-[var(--cb-text-muted)]">(para fundo escuro)</span></label>
+                            <input type="file" name="logo_light_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="block w-full text-sm text-[var(--cb-text-muted)] file:mr-3 file:h-9 file:cursor-pointer file:rounded-xl file:border file:border-[var(--cb-accent)]/30 file:bg-[var(--cb-accent-soft)] file:px-3 file:text-xs file:font-semibold file:text-[var(--cb-accent-solid)] hover:file:bg-[color-mix(in srgb,var(--cb-accent) 18%,transparent)]">
+                        </div>
+                        <div>
+                            <label class="cb-label">Logo escuro <span class="font-normal text-[var(--cb-text-muted)]">(para impressão / fundo branco)</span></label>
+                            <input type="file" name="logo_dark_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="block w-full text-sm text-[var(--cb-text-muted)] file:mr-3 file:h-9 file:cursor-pointer file:rounded-xl file:border file:border-[var(--cb-accent)]/30 file:bg-[var(--cb-accent-soft)] file:px-3 file:text-xs file:font-semibold file:text-[var(--cb-accent-solid)] hover:file:bg-[color-mix(in srgb,var(--cb-accent) 18%,transparent)]">
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
-        <div data-admin-ws-business class="hidden mt-4 rounded-xl border border-fuchsia-200 bg-fuchsia-50 p-4 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/5">
-            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-fuchsia-600 dark:text-fuchsia-300/80">Perfil corporativo</p>
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                    <span class="{{template "field-label" .}}">Razão social / Nome da empresa</span>
-                    <input type="text" name="company_name" placeholder="Ex: ACME Ltda" class="{{template "field-class" .}}">
-                </div>
-                <div>
-                    <span class="{{template "field-label" .}}">CNPJ / CPF</span>
-                    <input type="text" name="cnpj_cpf" data-admin-mask="cnpj" placeholder="00.000.000/0001-00" class="{{template "field-class" .}}">
-                </div>
-                <div>
-                    <span class="{{template "field-label" .}}">Endereço</span>
-                    <input type="text" name="address" placeholder="Rua, numero, bairro, cidade" class="{{template "field-class" .}}">
-                </div>
-                <div>
-                    <span class="{{template "field-label" .}}">Telefone</span>
-                    <input type="text" name="phone" data-admin-mask="phone" placeholder="(11) 99999-9999" class="{{template "field-class" .}}">
-                </div>
-            </div>
-        </div>
-        <div data-admin-ws-business class="hidden mt-4 rounded-xl border border-violet-200 bg-violet-50/40 p-4 dark:border-violet-500/20 dark:bg-violet-500/5">
-            <p class="mb-1 text-xs font-medium uppercase tracking-wide text-violet-600 dark:text-violet-300/80">Identidade visual (logos)</p>
-            <p class="mb-3 text-xs text-zinc-500 dark:text-zinc-400">PNG, SVG ou WebP · 200 × 60 px recomendado · fundo transparente · máx. 2 MB</p>
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                    <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Logo claro <span class="font-normal text-zinc-400">(para fundo escuro)</span></label>
-                    <input type="file" name="logo_light_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="block w-full text-sm text-zinc-600 dark:text-zinc-300 file:mr-3 file:h-9 file:cursor-pointer file:rounded-lg file:border file:border-violet-300 file:bg-violet-50 file:px-3 file:text-xs file:font-semibold file:text-violet-700 hover:file:bg-violet-100 dark:file:border-violet-500/35 dark:file:bg-violet-500/15 dark:file:text-violet-200">
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Logo escuro <span class="font-normal text-zinc-400">(para impressão / fundo branco)</span></label>
-                    <input type="file" name="logo_dark_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="block w-full text-sm text-zinc-600 dark:text-zinc-300 file:mr-3 file:h-9 file:cursor-pointer file:rounded-lg file:border file:border-violet-300 file:bg-violet-50 file:px-3 file:text-xs file:font-semibold file:text-violet-700 hover:file:bg-violet-100 dark:file:border-violet-500/35 dark:file:bg-violet-500/15 dark:file:text-violet-200">
-                </div>
-            </div>
-        </div>
-        <button class="cb-button cb-button-primary h-11 px-6 text-sm mt-4">Criar workspace</button>
-    </form>
-    <div class="space-y-3">
-        {{range .AdminWorkspaces}}
-        <article data-admin-ws-card class="rounded-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 md:p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm">
-            <div class="flex items-start justify-between gap-3">
-                <div>
-                    <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">{{.Name}}</h3>
-                    <p class="mt-1 text-xs text-[var(--cb-text-muted)]">{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</p>
-                </div>
-                <button type="button" data-admin-ws-toggle class="h-9 rounded-lg border border-violet-300 bg-violet-50 px-3 text-xs font-semibold text-violet-700 transition-all hover:bg-violet-100 dark:border-violet-500/35 dark:bg-violet-500/15 dark:text-violet-100 dark:hover:bg-violet-500/25">
-                    <span data-admin-ws-toggle-text>Editar</span>
-                </button>
-            </div>
-            <div data-admin-ws-view class="mt-4 space-y-3">
-                <div class="inline-flex items-center rounded-lg border px-2.5 py-1 text-xs {{if eq .Type "business"}}border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700 dark:border-fuchsia-500/30 dark:bg-fuchsia-500/10 dark:text-fuchsia-200{{else}}border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)]{{end}}">
-                    {{if eq .Type "business"}}Empresarial (Business){{else}}Pessoal{{end}}
-                </div>
-                <div class="inline-flex items-center rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-2.5 py-1 text-xs text-[var(--cb-text-muted)]">
-                    Tema visual: {{.ThemeToken}}
-                </div>
-                {{if eq .Type "business"}}
-                <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <p class="text-xs text-[var(--cb-text-muted)]"><span class="text-[var(--cb-text-subtle)]">Empresa:</span> {{if .CompanyName}}{{.CompanyName}}{{else}}-{{end}}</p>
-                    <p class="text-xs text-[var(--cb-text-muted)]"><span class="text-[var(--cb-text-subtle)]">CNPJ/CPF:</span> {{if .CNPJCPF}}{{.CNPJCPF}}{{else}}-{{end}}</p>
-                    <p class="text-xs text-[var(--cb-text-muted)] md:col-span-2"><span class="text-[var(--cb-text-subtle)]">Endereço:</span> {{if .Address}}{{.Address}}{{else}}-{{end}}</p>
-                    <p class="text-xs text-[var(--cb-text-muted)]"><span class="text-[var(--cb-text-subtle)]">Telefone:</span> {{if .Phone}}{{.Phone}}{{else}}-{{end}}</p>
+                <button class="cb-button cb-button-primary h-11 px-6 text-sm mt-4">Criar workspace</button>
+            </form>
+
+            <div class="space-y-3">
+                {{range .AdminWorkspaces}}
+                <article data-admin-ws-card class="cb-row-dense">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">{{.Name}}</h3>
+                            <p class="mt-1 text-xs text-[var(--cb-text-muted)]">{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</p>
+                        </div>
+                        <button type="button" data-admin-ws-toggle class="cb-button cb-button-secondary h-9 px-3 text-xs">
+                            <span data-admin-ws-toggle-text>Editar</span>
+                        </button>
+                    </div>
+                    <div data-admin-ws-view class="mt-4 space-y-3">
+                        <div class="flex flex-wrap gap-2">
+                            <span class="cb-status-chip {{if eq .Type "business"}}cb-status-chip-info{{else}}cb-status-chip-neutral{{end}}">{{if eq .Type "business"}}Empresarial (Business){{else}}Pessoal{{end}}</span>
+                            <span class="cb-status-chip cb-status-chip-neutral">Tema visual: {{.ThemeToken}}</span>
+                        </div>
+                        {{if eq .Type "business"}}
+                        <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+                            <p class="text-xs text-[var(--cb-text-muted)]"><span class="text-[var(--cb-text-subtle)]">Empresa:</span> {{if .CompanyName}}{{.CompanyName}}{{else}}-{{end}}</p>
+                            <p class="text-xs text-[var(--cb-text-muted)]"><span class="text-[var(--cb-text-subtle)]">CNPJ/CPF:</span> {{if .CNPJCPF}}{{.CNPJCPF}}{{else}}-{{end}}</p>
+                            <p class="text-xs text-[var(--cb-text-muted)] md:col-span-2"><span class="text-[var(--cb-text-subtle)]">Endereço:</span> {{if .Address}}{{.Address}}{{else}}-{{end}}</p>
+                            <p class="text-xs text-[var(--cb-text-muted)]"><span class="text-[var(--cb-text-subtle)]">Telefone:</span> {{if .Phone}}{{.Phone}}{{else}}-{{end}}</p>
+                        </div>
+                        {{end}}
+                        <div>
+                            <p class="text-xs text-[var(--cb-text-muted)] mb-1.5">Membros:</p>
+                            <div class="space-y-1">
+                                {{range .Members}}
+                                <p class="text-xs text-[var(--cb-text-muted)]"><span class="text-[var(--cb-text-main)]">{{.Name}}</span> <span class="text-[var(--cb-text-muted)]">({{.Email}})</span> · <span class="text-[var(--cb-text-muted)]">{{.Role}}</span></p>
+                                {{else}}
+                                <p class="text-xs text-[var(--cb-text-muted)]">Sem membros</p>
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                    <form data-admin-ws-form class="hidden mt-4 space-y-3" hx-post="/admin/workspaces/editar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+                        <input type="hidden" name="workspace_id" value="{{.ID}}">
+                        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                            <div>
+                                <label class="cb-label">Nome do Workspace</label>
+                                <input type="text" name="name" value="{{.Name}}" placeholder="Ex: Nome do Workspace ou Empresa" class="cb-input">
+                            </div>
+                            <div>
+                                <label class="cb-label">Tipo de Workspace</label>
+                                <select name="type" data-admin-ws-type class="cb-input">
+                                    <option value="personal">Pessoal</option>
+                                    <option value="business">Empresarial (Business)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="cb-label">Tema Visual (Cor)</label>
+                                <select name="theme_token" class="cb-input">
+                                    <option value="violeta">Violeta</option>
+                                    <option value="laranja">Laranja</option>
+                                    <option value="amarelo">Amarelo</option>
+                                    <option value="azul">Azul</option>
+                                    <option value="esmeralda">Esmeralda</option>
+                                    <option value="rosa">Rosa</option>
+                                </select>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="cb-label">Descrição</label>
+                                <input type="text" name="description" value="{{.Description}}" placeholder="Ex: Controle financeiro da operação principal" class="cb-input">
+                            </div>
+                        </div>
+                        <div data-admin-ws-business class="hidden cb-card-muted border-[var(--cb-accent)]/20 p-4">
+                            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <input type="text" name="company_name" value="{{.CompanyName}}" placeholder="Ex: Minha Empresa LTDA" class="cb-input">
+                                <input type="text" name="cnpj_cpf" value="{{.CNPJCPF}}" data-admin-mask="cnpj" placeholder="Ex: 00.000.000/0001-00" class="cb-input">
+                                <input type="text" name="address" value="{{.Address}}" placeholder="Ex: Av. Paulista, 1000 - São Paulo/SP" class="cb-input md:col-span-2">
+                                <input type="text" name="phone" value="{{.Phone}}" data-admin-mask="phone" placeholder="Ex: (11) 99999-9999" class="cb-input">
+                            </div>
+                        </div>
+                        <div data-admin-ws-business class="hidden cb-card-muted border-[var(--cb-info)]/20 p-4">
+                            <p class="cb-section-title mb-1">Identidade visual (logos)</p>
+                            <p class="mb-3 text-xs text-[var(--cb-text-muted)]">PNG, SVG ou WebP · 200 × 60 px recomendado · fundo transparente · máx. 2 MB</p>
+                            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <div>
+                                    <label class="cb-label">Logo claro <span class="font-normal text-[var(--cb-text-muted)]">(para fundo escuro)</span></label>
+                                    {{if .LogoLightURL}}<img src="{{.LogoLightURL}}" alt="Logo claro atual" class="mb-2 h-8 max-w-[160px] object-contain rounded border border-[var(--cb-border-subtle)] bg-[var(--cb-text-main)] px-2 py-1" data-avatar-fallback>{{end}}
+                                    <input type="file" name="logo_light_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="block w-full text-sm text-[var(--cb-text-muted)] file:mr-3 file:h-9 file:cursor-pointer file:rounded-xl file:border file:border-[var(--cb-accent)]/30 file:bg-[var(--cb-accent-soft)] file:px-3 file:text-xs file:font-semibold file:text-[var(--cb-accent-solid)] hover:file:bg-[color-mix(in srgb,var(--cb-accent) 18%,transparent)]">
+                                    <input type="hidden" name="logo_light_url" value="{{.LogoLightURL}}">
+                                </div>
+                                <div>
+                                    <label class="cb-label">Logo escuro <span class="font-normal text-[var(--cb-text-muted)]">(para impressão / fundo branco)</span></label>
+                                    {{if .LogoDarkURL}}<img src="{{.LogoDarkURL}}" alt="Logo escuro atual" class="mb-2 h-8 max-w-[160px] object-contain rounded border border-[var(--cb-border-subtle)] bg-[var(--cb-bg)] px-2 py-1" data-avatar-fallback>{{end}}
+                                    <input type="file" name="logo_dark_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="block w-full text-sm text-[var(--cb-text-muted)] file:mr-3 file:h-9 file:cursor-pointer file:rounded-xl file:border file:border-[var(--cb-accent)]/30 file:bg-[var(--cb-accent-soft)] file:px-3 file:text-xs file:font-semibold file:text-[var(--cb-accent-solid)] hover:file:bg-[color-mix(in srgb,var(--cb-accent) 18%,transparent)]">
+                                    <input type="hidden" name="logo_dark_url" value="{{.LogoDarkURL}}">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button class="cb-button cb-button-primary h-9 px-3 text-xs">Salvar Alterações</button>
+                            <button type="button" class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-danger)]/30 bg-[color-mix(in srgb,var(--cb-danger) 12%,transparent)] text-xs font-semibold text-[var(--cb-danger)] transition-all hover:bg-[color-mix(in srgb,var(--cb-danger) 18%,transparent)] active:scale-95" hx-delete="/workspaces/{{.ID}}" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="ATENÇÃO: Esta ação é irreversível! Deseja continuar?">
+                                Excluir Workspace
+                            </button>
+                        </div>
+                    </form>
+                </article>
+                {{else}}
+                <div class="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-dashed border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)]/50">
+                    <div class="w-12 h-12 rounded-xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-3"><i data-lucide="building-2" class="w-5 h-5 text-[var(--cb-text-subtle)]"></i></div>
+                    <p class="text-sm text-[var(--cb-text-muted)]">Nenhum workspace cadastrado</p>
                 </div>
                 {{end}}
-                <div>
-                    <p class="text-xs text-[var(--cb-text-muted)] mb-1.5">Membros:</p>
-                    <div class="space-y-1">
-                        {{range .Members}}
-                        <p class="text-xs text-[var(--cb-text-muted)]"><span class="text-[var(--cb-text-main)]">{{.Name}}</span> <span class="text-[var(--cb-text-muted)]">({{.Email}})</span> · <span class="text-[var(--cb-text-muted)]">{{.Role}}</span></p>
-                        {{else}}
-                        <p class="text-xs text-[var(--cb-text-muted)]">Sem membros</p>
-                        {{end}}
-                    </div>
-                </div>
             </div>
-            <form data-admin-ws-form class="hidden mt-4 space-y-3" hx-post="/admin/workspaces/editar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-encoding="multipart/form-data">
-                <input type="hidden" name="workspace_id" value="{{.ID}}">
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div>
-                        <label class="cb-label">Nome do Workspace</label>
-                        <input type="text" name="name" value="{{.Name}}" placeholder="Ex: Nome do Workspace ou Empresa" class="cb-input">
-                    </div>
-                    <div>
-                        <label class="cb-label">Tipo de Workspace</label>
-                        <select name="type" data-admin-ws-type class="cb-input">
-                            <option value="personal">Pessoal</option>
-                            <option value="business">Empresarial (Business)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="cb-label">Tema Visual (Cor)</label>
-                        <select name="theme_token" class="cb-input">
-                            <option value="violeta">Violeta</option>
-                            <option value="laranja">Laranja</option>
-                            <option value="amarelo">Amarelo</option>
-                            <option value="azul">Azul</option>
-                            <option value="esmeralda">Esmeralda</option>
-                            <option value="rosa">Rosa</option>
-                        </select>
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="cb-label">Descrição</label>
-                        <input type="text" name="description" value="{{.Description}}" placeholder="Ex: Controle financeiro da operação principal" class="cb-input">
-                    </div>
-                </div>
-                <div data-admin-ws-business class="hidden rounded-xl border border-fuchsia-200 bg-fuchsia-50 p-4 dark:border-fuchsia-500/20 dark:bg-fuchsia-500/5">
-                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <input type="text" name="company_name" value="{{.CompanyName}}" placeholder="Ex: Minha Empresa LTDA" class="cb-input">
-                        <input type="text" name="cnpj_cpf" value="{{.CNPJCPF}}" data-admin-mask="cnpj" placeholder="Ex: 00.000.000/0001-00" class="cb-input">
-                        <input type="text" name="address" value="{{.Address}}" placeholder="Ex: Av. Paulista, 1000 - São Paulo/SP" class="cb-input md:col-span-2">
-                        <input type="text" name="phone" value="{{.Phone}}" data-admin-mask="phone" placeholder="Ex: (11) 99999-9999" class="cb-input">
-                    </div>
-                </div>
-                <div data-admin-ws-business class="hidden rounded-xl border border-violet-200 bg-violet-50/40 p-4 dark:border-violet-500/20 dark:bg-violet-500/5">
-                    <p class="mb-1 text-xs font-medium uppercase tracking-wide text-violet-600 dark:text-violet-300/80">Identidade visual (logos)</p>
-                    <p class="mb-3 text-xs text-zinc-500 dark:text-zinc-400">PNG, SVG ou WebP · 200 × 60 px recomendado · fundo transparente · máx. 2 MB</p>
-                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <div>
-                            <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Logo claro <span class="font-normal text-zinc-400">(para fundo escuro)</span></label>
-                            {{if .LogoLightURL}}<img src="{{.LogoLightURL}}" alt="Logo claro atual" class="mb-2 h-8 max-w-[160px] object-contain rounded border border-zinc-200 bg-zinc-800/60 px-2" data-avatar-fallback>{{end}}
-                            <input type="file" name="logo_light_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="block w-full text-sm text-zinc-600 dark:text-zinc-300 file:mr-3 file:h-9 file:cursor-pointer file:rounded-lg file:border file:border-violet-300 file:bg-violet-50 file:px-3 file:text-xs file:font-semibold file:text-violet-700 hover:file:bg-violet-100 dark:file:border-violet-500/35 dark:file:bg-violet-500/15 dark:file:text-violet-200">
-                            <input type="hidden" name="logo_light_url" value="{{.LogoLightURL}}">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">Logo escuro <span class="font-normal text-zinc-400">(para impressão / fundo branco)</span></label>
-                            {{if .LogoDarkURL}}<img src="{{.LogoDarkURL}}" alt="Logo escuro atual" class="mb-2 h-8 max-w-[160px] object-contain rounded border border-zinc-200 bg-white px-2" data-avatar-fallback>{{end}}
-                            <input type="file" name="logo_dark_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="block w-full text-sm text-zinc-600 dark:text-zinc-300 file:mr-3 file:h-9 file:cursor-pointer file:rounded-lg file:border file:border-violet-300 file:bg-violet-50 file:px-3 file:text-xs file:font-semibold file:text-violet-700 hover:file:bg-violet-100 dark:file:border-violet-500/35 dark:file:bg-violet-500/15 dark:file:text-violet-200">
-                            <input type="hidden" name="logo_dark_url" value="{{.LogoDarkURL}}">
-                        </div>
-                    </div>
-                </div>
-                <div class="flex flex-wrap gap-2">
-                    <button class="cb-button cb-button-primary h-9 px-3 text-xs">Salvar Alterações</button>
-                    <button type="button" class="h-9 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-600 transition-all hover:bg-red-100 dark:border-red-500/35 dark:bg-red-500/15 dark:text-red-100 dark:hover:bg-red-500/25" hx-delete="/workspaces/{{.ID}}" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="ATENÇÃO: Esta ação é irreversível! Deseja continuar?">
-                        Excluir Workspace
-                    </button>
-                </div>
-            </form>
-        </article>
-        {{else}}
-        <div class="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-dashed border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)]/50">
-            <div class="w-12 h-12 rounded-xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-3"><i data-lucide="building-2" class="w-5 h-5 text-[var(--cb-text-subtle)]"></i></div>
-            <p class="text-sm text-[var(--cb-text-muted)]">Nenhum workspace cadastrado</p>
         </div>
-        {{end}}
-    </div>
-
-    </div>
     </div>
 </div>
 {{end}}
