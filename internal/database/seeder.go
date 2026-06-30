@@ -5,7 +5,7 @@
 // qualquer workspace (setup inicial, registro de usuário e criação
 // administrativa via painel).
 //
-// Regras de segurança que este módulo respeita (ver .docs/AI_RULES.md):
+// Regras de segurança que este módulo respeita:
 //   - Todo INSERT carrega o workspace_id explícito → Isolamento Multi-Tenant.
 //   - Toda a carga é executada dentro de uma única *sql.Tx → Atomicidade.
 //   - Categorias filhas recebem o UUID do pai gerado na mesma iteração.

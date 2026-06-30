@@ -93,10 +93,10 @@ func TestDestructiveMigrationsRequireExplicitReview(t *testing.T) {
 	}
 
 	allowlist := map[int]string{
-		12: "categories rebuild documented in .docs/migrations-destrutivas.md",
-		30: "box_virtual_ledger rebuild documented in .docs/migrations-destrutivas.md",
-		31: "box_virtual_ledger rebuild documented in .docs/migrations-destrutivas.md",
-		35: "accounts rebuild to add WALLET type and icon column documented in .docs/migrations-destrutivas.md",
+		12: "categories rebuild — destructive migration reviewed and allowed",
+		30: "box_virtual_ledger rebuild — destructive migration reviewed and allowed",
+		31: "box_virtual_ledger rebuild — destructive migration reviewed and allowed",
+		35: "accounts rebuild to add WALLET type and icon column — destructive migration reviewed and allowed",
 	}
 	findings := destructiveMigrationFindings(t, string(sourceBytes))
 
