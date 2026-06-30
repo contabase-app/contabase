@@ -19,7 +19,7 @@ set -euo pipefail
 #   - Atualiza apenas VERSION= no .env para rastrear a tag instalada
 #   - Nunca altera secrets/tokens preenchidos
 #   - Nunca regenera AUTH_ENCRYPTION_KEY, SECURITY_MASTER_KEY, CONTABASE_SETUP_TOKEN
-#   - Preserva APP_BASE_URL, ALLOWED_HOSTS, TRUSTED_PROXIES, PORT
+#   - Preserva APP_BASE_URL, ALLOWED_HOSTS, TRUSTED_PROXIES, CONTABASE_ACCESS_MODE, PORT
 #   - Preserva DATABASE_URL, DATA_DIR, DB_FILE, UPLOADS_DIR
 #   - Preserva /var/lib/contabase (dados, uploads, backups, banco)
 #   - Nunca restaura banco SQLite automaticamente
@@ -29,11 +29,16 @@ set -euo pipefail
 
 REPO="${CONTABASE_REPO:-https://github.com/contabase-app/contabase}"
 TAG="${CONTABASE_VERSION:-}"
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" 2>/dev/null && pwd)"
+PUBLIC_RAW_BASE="${CONTABASE_RAW_BASE:-https://raw.githubusercontent.com/contabase-app/contabase}"
 PORT="${CONTABASE_PORT:-8080}"
 APP_USER="${CONTABASE_USER:-contabase}"
 INSTALL_DIR="${CONTABASE_INSTALL_DIR:-/opt/contabase}"
 DATA_DIR="${CONTABASE_DATA_DIR:-/var/lib/contabase}"
 CONFIG_DIR="${CONTABASE_CONFIG_DIR:-/etc/contabase}"
+STATE_FILE="${CONFIG_DIR}/install-state.env"
+INSTALL_CHANNEL="${CONTABASE_CHANNEL:-pinned}"
 ASSUME_YES="${CONTABASE_ASSUME_YES:-0}"
 HEALTHCHECK_ATTEMPTS="${CONTABASE_HEALTHCHECK_ATTEMPTS:-30}"
 VALIDATE_ONLY=false
@@ -121,20 +126,32 @@ prompt_version() {
   fi
 
   [ -t 0 ] || fail "CONTABASE_VERSION e obrigatorio em modo nao interativo."
-  read -r -p "Tag publica para atualizar (ex.: v0.1.0-beta.1): " TAG
+  read -r -p "Tag publica para atualizar (ex.: vMAJOR.MINOR.PATCH[-beta.N]): " TAG
 }
 
 validate_version() {
   [ -n "$TAG" ] || fail "tag vazia."
   case "$TAG" in
     latest|main|master|dev|develop|stable|*-internal*)
-      fail "versao invalida para update: ${TAG}. Use uma tag SemVer publica (ex.: v0.1.0-beta.1)."
+      fail "versao invalida para update: ${TAG}. Use uma tag SemVer publica (ex.: vMAJOR.MINOR.PATCH[-beta.N])."
       ;;
   esac
 
   if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
     fail "tag publica invalida: $TAG"
   fi
+}
+
+validate_install_channel() {
+  case "$INSTALL_CHANNEL" in
+    stable|beta|pinned) ;;
+    *) fail "CONTABASE_CHANNEL invalido: ${INSTALL_CHANNEL}. Use stable, beta ou pinned." ;;
+  esac
+  case "$INSTALL_CHANNEL:$TAG" in
+    beta:v*-beta.*) ;;
+    beta:*) fail "CONTABASE_CHANNEL=beta exige tag beta. Tag recebida: $TAG" ;;
+    stable:*-*) fail "CONTABASE_CHANNEL=stable exige tag stable. Tag recebida: $TAG" ;;
+  esac
 }
 
 validate_repo() {
@@ -251,6 +268,136 @@ env_set_key() {
   mv "$tmpfile" "$file"
 }
 
+host_from_base_url() {
+  local value="$1"
+  value="${value#http://}"
+  value="${value#https://}"
+  value="${value%%/*}"
+  case "$value" in
+    \[*\]*)
+      value="${value#\[}"
+      value="${value%%\]*}"
+      ;;
+    *)
+      value="${value%%:*}"
+      ;;
+  esac
+  printf '%s' "$value"
+}
+
+scheme_from_base_url() {
+  local value="$1"
+  case "$value" in
+    http://*) printf '%s' "http" ;;
+    https://*) printf '%s' "https" ;;
+    *) printf '' ;;
+  esac
+}
+
+host_is_localhost() {
+  case "$1" in
+    localhost|127.*|::1) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+host_is_private_ipv4() {
+  local host="$1"
+  local a b c d
+  IFS=. read -r a b c d <<EOF
+$host
+EOF
+  for part in "$a" "$b" "$c" "$d"; do
+    [[ "$part" =~ ^[0-9]+$ ]] || return 1
+    [ "$part" -ge 0 ] && [ "$part" -le 255 ] || return 1
+  done
+  [ -n "$d" ] || return 1
+  [ "$a" -eq 10 ] && return 0
+  [ "$a" -eq 192 ] && [ "$b" -eq 168 ] && return 0
+  [ "$a" -eq 172 ] && [ "$b" -ge 16 ] && [ "$b" -le 31 ] && return 0
+  return 1
+}
+
+infer_access_mode() {
+  local base_url="$1"
+  local proxies="$2"
+  local scheme host
+
+  if [ -n "$proxies" ]; then
+    printf '%s' "proxy"
+    return 0
+  fi
+
+  scheme="$(scheme_from_base_url "$base_url")"
+  host="$(host_from_base_url "$base_url")"
+  case "$scheme" in
+    https) printf '%s' "proxy"; return 0 ;;
+    http) ;;
+    *) printf '%s' "local"; return 0 ;;
+  esac
+
+  if host_is_localhost "$host"; then
+    printf '%s' "local"
+    return 0
+  fi
+  if host_is_private_ipv4 "$host"; then
+    printf '%s' "lan"
+    return 0
+  fi
+
+  printf '%s' "blocked"
+}
+
+validate_access_contract_values() {
+  local base_url="$1"
+  local proxies="$2"
+  local mode="$3"
+  local inferred host
+
+  inferred="$(infer_access_mode "$base_url" "$proxies")"
+  mode="${mode:-$inferred}"
+
+  case "$mode" in
+    local|lan|proxy) ;;
+    blocked)
+      fail "APP_BASE_URL em HTTP publico sem reverse proxy nao e permitido. Use HTTPS com proxy/tunnel ou um IP privado RFC1918 em modo LAN."
+      ;;
+    *) fail "CONTABASE_ACCESS_MODE invalido em ${ENV_FILE}: ${mode}. Use local, lan ou proxy." ;;
+  esac
+
+  if [ "$inferred" = "lan" ] && [ "$mode" != "lan" ]; then
+    fail "APP_BASE_URL usa IP privado por HTTP sem proxy; configure CONTABASE_ACCESS_MODE=lan em ${ENV_FILE}."
+  fi
+  if [ "$inferred" = "proxy" ] && [ "$mode" != "proxy" ]; then
+    fail "APP_BASE_URL/proxy indicam modo proxy; configure CONTABASE_ACCESS_MODE=proxy em ${ENV_FILE}."
+  fi
+  if [ "$mode" = "lan" ]; then
+    host="$(host_from_base_url "$base_url")"
+    host_is_private_ipv4 "$host" || fail "CONTABASE_ACCESS_MODE=lan exige APP_BASE_URL com IP privado RFC1918."
+    [ "$(scheme_from_base_url "$base_url")" = "http" ] || fail "CONTABASE_ACCESS_MODE=lan exige APP_BASE_URL http://IP_PRIVADO:PORTA."
+  fi
+  if [ "$inferred" = "blocked" ]; then
+    fail "APP_BASE_URL em HTTP publico sem reverse proxy nao e permitido. Use HTTPS com proxy/tunnel ou um IP privado RFC1918 em modo LAN."
+  fi
+}
+
+backfill_access_mode_in_env() {
+  local base_url proxies mode inferred
+  base_url="$(env_load_value "APP_BASE_URL" "$ENV_FILE" | tr -d "[:space:]'\"")"
+  proxies="$(env_load_value "TRUSTED_PROXIES" "$ENV_FILE" | tr -d "[:space:]'\"")"
+  mode="$(env_load_value "CONTABASE_ACCESS_MODE" "$ENV_FILE" | tr -d "[:space:]'\"")"
+  validate_access_contract_values "$base_url" "$proxies" "$mode"
+
+  if env_key_is_set "CONTABASE_ACCESS_MODE" "$ENV_FILE"; then
+    say "CONTABASE_ACCESS_MODE detectado: ${mode}"
+    return 0
+  fi
+
+  inferred="$(infer_access_mode "$base_url" "$proxies")"
+  env_set_key "CONTABASE_ACCESS_MODE" "$inferred" "$ENV_FILE"
+  say "CONTABASE_ACCESS_MODE adicionado ao .env: ${inferred}"
+}
+
 validate_existing_env() {
   say "Verificando configuracao existente..."
 
@@ -303,6 +450,10 @@ validate_existing_env() {
   [ -n "$custom_allowed_hosts" ] && say "ALLOWED_HOSTS detectado"
   custom_proxies="$(env_load_value "TRUSTED_PROXIES" "$ENV_FILE" | tr -d "[:space:]'\"")"
   [ -n "$custom_proxies" ] && say "TRUSTED_PROXIES detectado"
+  local custom_access_mode
+  custom_access_mode="$(env_load_value "CONTABASE_ACCESS_MODE" "$ENV_FILE" | tr -d "[:space:]'\"")"
+  [ -n "$custom_access_mode" ] && say "CONTABASE_ACCESS_MODE detectado: ${custom_access_mode}"
+  validate_access_contract_values "$custom_base_url" "$custom_proxies" "$custom_access_mode"
 
   # Detect PORT from existing env for healthcheck
   local configured_port
@@ -699,148 +850,54 @@ rollback_env() {
 # Global update command (backfill for existing installs)
 # ==============================================================================
 
+write_install_state() {
+  local method="$1"
+  local channel="$2"
+  local version="$3"
+  local repo_path="${4:-}"
+  local tmpfile
+
+  mkdir -p "$CONFIG_DIR"
+  tmpfile="$(mktemp "${TMPDIR:-/tmp}/contabase-install-state.XXXXXX")"
+  {
+    printf 'CONTABASE_STATE_VERSION=1\n'
+    printf 'CONTABASE_INSTALL_METHOD=%s\n' "$method"
+    printf 'CONTABASE_CHANNEL=%s\n' "$channel"
+    printf 'CONTABASE_INSTALLED_VERSION=%s\n' "$version"
+    printf 'CONTABASE_REPO_PATH=%s\n' "$repo_path"
+  } > "$tmpfile"
+  install -o root -g root -m 0644 "$tmpfile" "$STATE_FILE"
+  rm -f "$tmpfile"
+}
+
 backfill_update_command() {
   local update_wrapper="/usr/local/bin/contabase-update"
   local mode_file="/etc/contabase/install-mode"
+  local wrapper_source="${SCRIPT_DIR}/lib/contabase-update-wrapper.sh"
+  local wrapper_url="${PUBLIC_RAW_BASE}/${TAG}/scripts/lib/contabase-update-wrapper.sh"
+  local wrapper_tmp=""
+
+  write_install_state "release" "$INSTALL_CHANNEL" "$TAG" ""
 
   mkdir -p "$(dirname "$mode_file")"
-  printf '%s\n' "binary" > "$mode_file"
+  printf '%s\n' "release" > "$mode_file"
   chown root:root "$mode_file" 2>/dev/null || true
   chmod 0644 "$mode_file"
 
-  if [ -f "$update_wrapper" ]; then
-    return 0
-  fi
-
-  cat > "$update_wrapper" <<'WRAPPER_EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-MODE_FILE="/etc/contabase/install-mode"
-PUBLIC_RAW_BASE="${CONTABASE_RAW_BASE:-https://raw.githubusercontent.com/contabase-app/contabase}"
-
-say() { printf '%s\n' "$*"; }
-
-usage() {
-  cat <<EOF
-Uso:
-  sudo contabase-update [VERSAO]
-  sudo contabase-update v0.1.0-beta.2
-
-Atualiza o ContaBase detectando automaticamente o modo de instalacao
-(binary, docker ou source) e chamando o script de update correto.
-
-Opcional: sudo cb-update (atalho curto).
-
-Variaveis de ambiente:
-  CONTABASE_ASSUME_YES=1   Modo nao interativo (quando suportado).
-EOF
-}
-
-if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  usage
-  exit 0
-fi
-
-if [ ! -f "$MODE_FILE" ]; then
-  say "Nao foi possivel detectar o modo de instalacao do ContaBase."
-  say "Arquivo ausente: $MODE_FILE"
-  say ""
-  say "Se voce instalou manualmente, execute o script de update correspondente:"
-  say "  Release/LXC:  sudo env CONTABASE_VERSION=vX.Y.Z bash scripts/update-contabase-release.sh"
-  say "  Docker:       ./scripts/update-contabase-docker.sh"
-  say "  Source:       sudo ./scripts/update-contabase-source.sh"
-  exit 1
-fi
-
-MODE="$(head -n1 "$MODE_FILE" | awk '{print $1}' | tr -d '[:space:]')"
-
-case "$MODE" in
-  binary)
-    if [ "$(id -u)" -ne 0 ]; then
-      say "Este modo exige root. Execute com sudo:"
-      say "  sudo contabase-update [VERSAO]"
-      exit 1
-    fi
-
-    VERSION="${1:-}"
-    if [ -z "$VERSION" ]; then
-      if [ -t 0 ]; then
-        read -r -p "Versao para atualizar (ex.: v0.1.0-beta.1): " VERSION
-      else
-        say "Erro: informe a versao. Exemplo: sudo contabase-update v0.1.0-beta.1"
-        exit 1
-      fi
-    fi
-
-    case "$VERSION" in
-      *-internal*) say "Erro: versoes com -internal sao privadas."; exit 1 ;;
-    esac
-    if [[ ! "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
-      say "Erro: versao invalida: $VERSION"
-      exit 1
-    fi
-
-    TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/contabase-update.XXXXXX")"
-    # shellcheck disable=SC2064
-    trap 'rm -rf "$TMP_DIR"' EXIT
-
-    INSTALL_SCRIPT="${TMP_DIR}/install.sh"
-    INSTALL_URL="${PUBLIC_RAW_BASE}/${VERSION}/scripts/install.sh"
-
-    say "Baixando instalador da versao ${VERSION}..."
+  if [ -f "$wrapper_source" ]; then
+    install -o root -g root -m 0755 "$wrapper_source" "$update_wrapper"
+  else
+    command -v curl >/dev/null 2>&1 || fail "curl e obrigatorio para instalar o wrapper de update."
+    wrapper_tmp="$(mktemp "${TMPDIR:-/tmp}/contabase-update-wrapper.XXXXXX")"
     if ! curl --fail --location --silent --show-error \
       --proto '=https' --tlsv1.2 \
-      "$INSTALL_URL" -o "$INSTALL_SCRIPT"; then
-      say "Erro: nao foi possivel baixar o instalador da versao ${VERSION}."
-      exit 1
+      "$wrapper_url" -o "$wrapper_tmp"; then
+      rm -f "$wrapper_tmp"
+      fail "nao foi possivel baixar o wrapper de update da tag ${TAG}."
     fi
-
-    say "Executando atualizacao para ${VERSION}..."
-    exec env \
-      CONTABASE_INSTALL_METHOD=update-release \
-      CONTABASE_VERSION="$VERSION" \
-      CONTABASE_ASSUME_YES="${CONTABASE_ASSUME_YES:-0}" \
-      bash "$INSTALL_SCRIPT"
-    ;;
-
-  docker)
-    REPO_PATH="$(sed -n '2p' "$MODE_FILE" 2>/dev/null | tr -d '[:space:]')"
-    if [ -z "$REPO_PATH" ] || [ ! -d "$REPO_PATH" ]; then
-      say "Erro: repositorio Docker nao encontrado."
-      say "Va ate o diretorio do ContaBase e execute:"
-      say "  ./scripts/update-contabase-docker.sh"
-      exit 1
-    fi
-    cd "$REPO_PATH"
-    exec ./scripts/update-contabase-docker.sh "$@"
-    ;;
-
-  source)
-    if [ "$(id -u)" -ne 0 ]; then
-      say "Este modo exige root. Execute com sudo:"
-      say "  sudo contabase-update"
-      exit 1
-    fi
-
-    REPO_PATH="$(sed -n '2p' "$MODE_FILE" 2>/dev/null | tr -d '[:space:]')"
-    if [ -z "$REPO_PATH" ] || [ ! -d "$REPO_PATH" ]; then
-      say "Erro: repositorio source nao encontrado."
-      say "Va ate o diretorio do ContaBase e execute:"
-      say "  sudo ./scripts/update-contabase-source.sh"
-      exit 1
-    fi
-    cd "$REPO_PATH"
-    exec ./scripts/update-contabase-source.sh "$@"
-    ;;
-
-  *)
-    say "Modo de instalacao desconhecido: $MODE"
-    say "Valores aceitos: binary, docker, source"
-    exit 1
-    ;;
-esac
-WRAPPER_EOF
+    install -o root -g root -m 0755 "$wrapper_tmp" "$update_wrapper"
+    rm -f "$wrapper_tmp"
+  fi
 
   chown root:root "$update_wrapper" 2>/dev/null || true
   chmod 0755 "$update_wrapper"
@@ -851,8 +908,8 @@ WRAPPER_EOF
 
   say ""
   say "Comando global de atualizacao instalado:"
-  say "  sudo contabase-update [VERSAO]"
-  say "  sudo cb-update [VERSAO]"
+  say "  sudo contabase-update"
+  say "  sudo cb-update"
 }
 
 # ==============================================================================
@@ -888,6 +945,7 @@ perform_update() {
 
   # Backup env file (always, before any mutation)
   backup_env_file
+  backfill_access_mode_in_env
 
   # Stop service
   stop_service
@@ -945,6 +1003,8 @@ perform_update() {
 
   # Update VERSION in env file to track installed release tag
   env_set_key "VERSION" "$TAG" "$ENV_FILE"
+  env_set_key "CONTABASE_CHANNEL" "$INSTALL_CHANNEL" "$ENV_FILE"
+  env_set_key "CONTABASE_INSTALLED_VERSION" "$TAG" "$ENV_FILE"
 
   # Install/refresh global update command (backfill for existing installs)
   backfill_update_command
@@ -957,7 +1017,7 @@ perform_update() {
   say ""
   say "Servico:    systemctl status contabase"
   say "Health:     http://127.0.0.1:${PORT}/health"
-  say "Config:     ${ENV_FILE} (VERSION atualizado; demais valores preservados)"
+  say "Config:     ${ENV_FILE} (VERSION atualizado; CONTABASE_ACCESS_MODE preenchido se ausente; demais valores preservados)"
   say "Dados:      ${DATA_DIR} (preservados)"
   if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
     say "Env backup: ${ENV_BACKUP}"
@@ -975,6 +1035,7 @@ perform_update() {
 main() {
   prompt_version
   validate_version
+  validate_install_channel
   validate_repo
   detect_arch
   validate_numeric_settings

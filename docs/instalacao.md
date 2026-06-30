@@ -52,7 +52,7 @@ Para fixar uma versão específica, informe `CONTABASE_VERSION` ao executar o in
 curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh && CONTABASE_VERSION=vX.Y.Z bash /tmp/contabase-install.sh
 ```
 
-Exemplo: substitua `vX.Y.Z` por uma tag publicada, como `v0.1.0-beta.2`.
+Exemplo: substitua `vX.Y.Z` por uma tag publicada, como `v0.1.0-beta.3`.
 
 Não use `main`.
 
@@ -117,7 +117,7 @@ Vai usar reverse proxy como Nginx Proxy Manager, Caddy, Traefik ou Cloudflare Tu
 TRUSTED_PROXIES [127.0.0.1,::1]:
 ```
 
-Para uma instalação simples em rede local, normalmente você pode aceitar os valores sugeridos apertando `Enter`.
+Para uma instalação simples em rede local, informe o IP privado do servidor em `APP_BASE_URL`, por exemplo `http://192.168.1.50:8080`. Quando você responde que não usará proxy, o instalador grava `CONTABASE_ACCESS_MODE=lan` somente se esse host for IP privado RFC1918. `ALLOWED_HOSTS` precisa conter o IP, mas não libera sozinho HTTP remoto.
 
 Se você tem domínio com HTTPS, use algo assim:
 
@@ -193,8 +193,25 @@ CONTABASE_VERSION=vX.Y.Z \
 CONTABASE_ASSUME_YES=1 \
 PORT=8080 \
 APP_BASE_URL=https://financeiro.exemplo.com \
-ALLOWED_HOSTS=financeiro.exemplo.com,localhost,127.0.0.1 \
+ALLOWED_HOSTS=financeiro.exemplo.com \
 TRUSTED_PROXIES=127.0.0.1,::1 \
+CONTABASE_ACCESS_MODE=proxy \
+bash /tmp/contabase-install.sh
+```
+
+Exemplo LAN privada sem proxy:
+
+```bash
+curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
+
+CONTABASE_INSTALL_METHOD=release \
+CONTABASE_VERSION=vX.Y.Z \
+CONTABASE_ASSUME_YES=1 \
+PORT=8080 \
+APP_BASE_URL=http://192.168.1.50:8080 \
+ALLOWED_HOSTS=192.168.1.50 \
+TRUSTED_PROXIES= \
+CONTABASE_ACCESS_MODE=lan \
 bash /tmp/contabase-install.sh
 ```
 
@@ -290,7 +307,8 @@ Confira:
 2. `ALLOWED_HOSTS` contém seu domínio.
 3. Seu proxy reverso aponta para o ContaBase.
 4. O HTTPS está funcionando.
-5. O firewall libera o acesso necessário.
+5. `CONTABASE_ACCESS_MODE=proxy` para domínio HTTPS por proxy, ou `lan` somente para IP privado RFC1918.
+6. O firewall libera o acesso necessário.
 
 Leia [Configuração](configuracao.md) para ajustar essas variáveis.
 

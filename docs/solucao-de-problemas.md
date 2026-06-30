@@ -9,7 +9,7 @@ docker compose ps
 docker compose logs --tail 100 contabase
 ```
 
-Se a causa for configuracao, revise `APP_ENV`, `AUTH_ENCRYPTION_KEY`, `APP_BASE_URL` e `ALLOWED_HOSTS`.
+Se a causa for configuracao, revise `APP_ENV`, `AUTH_ENCRYPTION_KEY`, `APP_BASE_URL`, `ALLOWED_HOSTS` e `CONTABASE_ACCESS_MODE`.
 
 ## Healthcheck falha
 
@@ -20,7 +20,9 @@ curl -i http://localhost:8080/health
 docker compose logs --tail 100 contabase
 ```
 
-Se o app usa proxy, confira tambem `TRUSTED_PROXIES`.
+Se o app usa proxy, confira tambem `TRUSTED_PROXIES` e `CONTABASE_ACCESS_MODE=proxy`.
+
+Se o app roda em Docker local e `http://localhost:8080` mostra bloqueio remoto, use `CONTABASE_ACCESS_MODE=local-docker`, `APP_BASE_URL=http://localhost:8080` e `ALLOWED_HOSTS=localhost,127.0.0.1,::1`.
 
 ## Imagem ou upload nao aparece
 

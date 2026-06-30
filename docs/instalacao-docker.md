@@ -203,7 +203,7 @@ services:
     env_file:
       - .env.docker
     ports:
-      - "${PORT:-8080}:8080"
+      - "127.0.0.1:${PORT:-8080}:8080"
     volumes:
       - ./data:/app/data
       - ./uploads:/app/uploads
@@ -221,8 +221,9 @@ PORT=8080
 DATABASE_URL=file:/app/data/contabase.db
 
 APP_BASE_URL=http://localhost:8080
-ALLOWED_HOSTS=localhost,127.0.0.1
+ALLOWED_HOSTS=localhost,127.0.0.1,::1
 TRUSTED_PROXIES=
+CONTABASE_ACCESS_MODE=local-docker
 
 CONTABASE_SETUP_TOKEN=troque-por-um-token-aleatorio-min-32-caracteres
 AUTH_ENCRYPTION_KEY=troque-por-uma-chave-base64-com-32-bytes
@@ -292,8 +293,9 @@ Exemplo:
 
 ```env
 APP_BASE_URL=https://financeiro.seudominio.com
-ALLOWED_HOSTS=financeiro.seudominio.com,localhost,127.0.0.1
+ALLOWED_HOSTS=financeiro.seudominio.com
 TRUSTED_PROXIES=127.0.0.1,::1
+CONTABASE_ACCESS_MODE=proxy
 ```
 
 Seu proxy reverso deve apontar para:
@@ -311,6 +313,21 @@ http://127.0.0.1:8080
 se o proxy estiver no mesmo host.
 
 O ContaBase não configura o proxy automaticamente.
+
+Docker em produção com domínio deve usar `proxy`, não `local-docker`. Mantenha a porta publicada no loopback ou em rede privada do proxy.
+
+## Usar IP privado na LAN
+
+Para abrir por HTTP a partir de outro dispositivo da rede privada, use um IP privado do servidor. `Host: localhost` vindo de outra máquina continua bloqueado.
+
+```env
+APP_BASE_URL=http://192.168.1.50:8080
+ALLOWED_HOSTS=192.168.1.50
+TRUSTED_PROXIES=
+CONTABASE_ACCESS_MODE=lan
+```
+
+Não use modo `lan` com IP público ou domínio público em HTTP.
 
 ## Onde ficam os dados
 
@@ -377,7 +394,7 @@ docker compose logs --tail 100 contabase
 
 ### Erro de host
 
-Confira `ALLOWED_HOSTS` no `.env.docker`.
+Confira `ALLOWED_HOSTS` e `CONTABASE_ACCESS_MODE` no `.env.docker`.
 
 ### Domínio não funciona
 
@@ -386,9 +403,10 @@ Confira:
 1. `APP_BASE_URL`;
 2. `ALLOWED_HOSTS`;
 3. `TRUSTED_PROXIES`;
-4. proxy reverso;
-5. DNS;
-6. HTTPS.
+4. `CONTABASE_ACCESS_MODE=proxy`;
+5. proxy reverso;
+6. DNS;
+7. HTTPS.
 
 ## Leia também
 

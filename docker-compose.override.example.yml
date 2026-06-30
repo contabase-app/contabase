@@ -11,13 +11,20 @@ services:
     # Revise este arquivo antes de expor o ContaBase publicamente.
     # Nao edite docker-compose.yml para customizacoes locais.
 
-    # Exemplo seguro para proxy no mesmo host:
-    # publica a porta apenas no loopback, impedindo acesso direto pela internet.
+    # Padrao local-docker seguro:
+    # publica a porta apenas no loopback, impedindo acesso direto por outros dispositivos.
     # ports:
     #   - "127.0.0.1:8080:8080"
 
+    # Exemplo LAN explicito:
+    # use somente com CONTABASE_ACCESS_MODE=lan, APP_BASE_URL=http://IP_PRIVADO:8080
+    # e ALLOWED_HOSTS=IP_PRIVADO.
+    # ports:
+    #   - "8080:8080"
+
     # Evite expor 0.0.0.0:8080 em VPS publica sem firewall/proxy.
-    # Use "8080:8080" apenas quando souber que a rede/firewall esta protegida.
+    # Para dominio em producao, prefira proxy HTTPS e mantenha a porta no loopback
+    # ou em rede privada do proxy.
 
     # Exemplo: labels para um reverse proxy (Traefik/Caddy)
     # labels:

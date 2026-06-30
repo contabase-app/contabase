@@ -18,6 +18,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_TEMPLATE="${REPO_ROOT}/docs/binario/contabase.env.example"
 ENV_FILE="/etc/contabase/contabase.env"
+STATE_FILE="/etc/contabase/install-state.env"
 SERVICE_FILE="/etc/systemd/system/contabase.service"
 APP_DIR="/opt/contabase"
 DATA_DIR="${DATA_DIR:-/var/lib/contabase}"
@@ -28,6 +29,7 @@ BACKUPS_DIR="${DATA_DIR}/backups"
 TMP_BINARY="/tmp/contabase"
 HEALTH_URL="http://127.0.0.1:8080/health"
 APP_VERSION=""
+INSTALL_CHANNEL="${CONTABASE_CHANNEL:-}"
 
 error_handler() {
   echo ""
@@ -85,6 +87,47 @@ detect_app_version() {
     APP_VERSION="$(tr -d '[:space:]' < VERSION)"
   fi
   APP_VERSION="${APP_VERSION:-dev}"
+}
+
+infer_install_channel() {
+  if [ -n "$INSTALL_CHANNEL" ]; then
+    printf '%s' "$INSTALL_CHANNEL"
+    return 0
+  fi
+  if [ -n "${CONTABASE_VERSION:-}" ]; then
+    printf '%s' "pinned"
+    return 0
+  fi
+  case "$APP_VERSION" in
+    v*-beta.*) printf '%s' "beta" ;;
+    v*.*.*)
+      case "$APP_VERSION" in
+        *-*) printf '%s' "pinned" ;;
+        *) printf '%s' "stable" ;;
+      esac
+      ;;
+    *) printf '%s' "pinned" ;;
+  esac
+}
+
+write_install_state() {
+  local method="$1"
+  local channel="$2"
+  local version="$3"
+  local repo_path="$4"
+  local tmpfile
+
+  install -d -o root -g root -m 0755 /etc/contabase
+  tmpfile="$(mktemp "${TMPDIR:-/tmp}/contabase-install-state.XXXXXX")"
+  {
+    printf 'CONTABASE_STATE_VERSION=1\n'
+    printf 'CONTABASE_INSTALL_METHOD=%s\n' "$method"
+    printf 'CONTABASE_CHANNEL=%s\n' "$channel"
+    printf 'CONTABASE_INSTALLED_VERSION=%s\n' "$version"
+    printf 'CONTABASE_REPO_PATH=%s\n' "$repo_path"
+  } > "$tmpfile"
+  install -o root -g root -m 0644 "$tmpfile" "$STATE_FILE"
+  rm -f "$tmpfile"
 }
 
 check_linux_systemd() {
@@ -218,6 +261,7 @@ UPLOADS_DIR=/var/lib/contabase/uploads
 APP_BASE_URL=https://financeiro.seu-dominio.com
 ALLOWED_HOSTS=financeiro.seu-dominio.com
 TRUSTED_PROXIES=
+CONTABASE_ACCESS_MODE=proxy
 CONTABASE_SETUP_TOKEN=__PREENCHA_APENAS_NO_SETUP_INICIAL__
 AUTH_ENCRYPTION_KEY=
 SECURITY_MASTER_KEY=
@@ -282,6 +326,102 @@ set_env_value_if_missing() {
   printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
 }
 
+set_env_value() {
+  local key="$1"
+  local value="$2"
+
+  if grep -Eq "^${key}=" "$ENV_FILE"; then
+    sed -i.bak "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+    rm -f "${ENV_FILE}.bak"
+    return 0
+  fi
+
+  printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+}
+
+normalize_host_input() {
+  local host="$1"
+  host="${host#http://}"
+  host="${host#https://}"
+  host="${host%%/*}"
+  host="${host%%:*}"
+  printf '%s' "$host"
+}
+
+is_private_ipv4() {
+  local ip="$1"
+  local a b c d part
+
+  IFS=. read -r a b c d <<EOF
+$ip
+EOF
+
+  for part in "$a" "$b" "$c" "$d"; do
+    case "$part" in
+      ""|*[!0-9]*) return 1 ;;
+    esac
+    [ "$part" -ge 0 ] 2>/dev/null && [ "$part" -le 255 ] 2>/dev/null || return 1
+  done
+
+  [ "$a" -eq 10 ] && return 0
+  [ "$a" -eq 172 ] && [ "$b" -ge 16 ] && [ "$b" -le 31 ] && return 0
+  [ "$a" -eq 192 ] && [ "$b" -eq 168 ] && return 0
+  return 1
+}
+
+configure_access_mode_interactive() {
+  local choice host_raw host proxy_raw proxy
+
+  [ "${CONTABASE_ASSUME_YES:-0}" = "1" ] && return 0
+  [ -t 0 ] || return 0
+
+  echo ""
+  echo "Como voce vai acessar o ContaBase instalado por source/systemd?"
+  echo "1) Local somente nesta maquina"
+  echo "2) Rede local/LAN por IP privado"
+  echo "3) Dominio HTTPS/proxy reverso"
+  echo "4) Avancado/manual (preservar valores atuais)"
+  read -r -p "Opcao (1/2/3/4) [3]: " choice
+
+  case "${choice:-3}" in
+    1)
+      set_env_value "APP_BASE_URL" "http://localhost:8080"
+      set_env_value "ALLOWED_HOSTS" "localhost,127.0.0.1,::1"
+      set_env_value "TRUSTED_PROXIES" ""
+      set_env_value "CONTABASE_ACCESS_MODE" "local"
+      ;;
+    2)
+      read -r -p "IP privado LAN do servidor (ex: 192.168.1.50): " host_raw
+      host="$(normalize_host_input "$host_raw")"
+      if ! is_private_ipv4 "$host"; then
+        echo "Erro: modo LAN exige IP privado RFC1918. Nao use localhost, dominio ou IP publico."
+        exit 1
+      fi
+      set_env_value "APP_BASE_URL" "http://${host}:8080"
+      set_env_value "ALLOWED_HOSTS" "$host"
+      set_env_value "TRUSTED_PROXIES" ""
+      set_env_value "CONTABASE_ACCESS_MODE" "lan"
+      ;;
+    3)
+      read -r -p "Dominio HTTPS (ex: financeiro.exemplo.com): " host_raw
+      host="$(normalize_host_input "$host_raw")"
+      [ -n "$host" ] || { echo "Erro: dominio obrigatorio para modo proxy."; exit 1; }
+      read -r -p "TRUSTED_PROXIES (IP/CIDR do proxy que conecta no app): " proxy_raw
+      proxy="$(normalize_host_input "$proxy_raw")"
+      set_env_value "APP_BASE_URL" "https://${host}"
+      set_env_value "ALLOWED_HOSTS" "$host"
+      set_env_value "TRUSTED_PROXIES" "$proxy"
+      set_env_value "CONTABASE_ACCESS_MODE" "proxy"
+      ;;
+    4)
+      ;;
+    *)
+      echo "Opcao invalida."
+      exit 1
+      ;;
+  esac
+}
+
 set_secret_value_if_missing_or_invalid() {
   local key="$1"
   local value="$2"
@@ -310,6 +450,7 @@ ensure_env_values() {
   set_env_value_if_missing "APP_BASE_URL" "https://financeiro.seu-dominio.com"
   set_env_value_if_missing "ALLOWED_HOSTS" "financeiro.seu-dominio.com"
   set_env_value_if_missing "TRUSTED_PROXIES" ""
+  set_env_value_if_missing "CONTABASE_ACCESS_MODE" "proxy"
   set_secret_value_if_missing_or_invalid "CONTABASE_SETUP_TOKEN" "$(generate_setup_token)"
   set_secret_value_if_missing_or_invalid "AUTH_ENCRYPTION_KEY" "$(generate_auth_key)"
   set_secret_value_if_missing_or_invalid "SECURITY_MASTER_KEY" "$(generate_master_key)"
@@ -416,7 +557,7 @@ print_summary() {
   echo "Healthcheck:       ${HEALTH_URL}"
   echo "Status do servico: $(systemctl is-active contabase 2>/dev/null || echo desconhecido)"
   echo ""
-  log_warn "Edite ${ENV_FILE} para ajustar APP_BASE_URL, ALLOWED_HOSTS e TRUSTED_PROXIES."
+  log_warn "Edite ${ENV_FILE} para ajustar APP_BASE_URL, ALLOWED_HOSTS, TRUSTED_PROXIES e CONTABASE_ACCESS_MODE."
   log_warn "Apos concluir o setup inicial, remova ou comente CONTABASE_SETUP_TOKEN em ${ENV_FILE} e reinicie o servico."
   log_warn "Configure backup regular antes de operar com dados reais."
 }
@@ -424,13 +565,28 @@ print_summary() {
 install_update_command() {
   local update_wrapper="/usr/local/bin/contabase-update"
   local mode_file="/etc/contabase/install-mode"
-  local repo_path
+  local repo_path installed_channel wrapper_source
   repo_path="$REPO_ROOT"
+  installed_channel="$(infer_install_channel)"
+  wrapper_source="${repo_path}/scripts/lib/contabase-update-wrapper.sh"
 
+  write_install_state "source" "$installed_channel" "$APP_VERSION" "$repo_path"
   printf '%s\n' "source" > "$mode_file"
   printf '%s\n' "$repo_path" >> "$mode_file"
   chown root:root "$mode_file" 2>/dev/null || true
   chmod 0644 "$mode_file"
+
+  if [ -f "$wrapper_source" ]; then
+    install -o root -g root -m 0755 "$wrapper_source" "$update_wrapper"
+    if [ ! -e /usr/local/bin/cb-update ]; then
+      ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
+    fi
+    echo ""
+    echo -e "${GREEN}Comando de atualizacao instalado:${NC}"
+    echo "  sudo contabase-update"
+    echo "  sudo cb-update"
+    return 0
+  fi
 
   cat > "$update_wrapper" <<'WRAPPER_EOF'
 #!/usr/bin/env bash
@@ -445,7 +601,7 @@ usage() {
   cat <<EOF
 Uso:
   sudo contabase-update [VERSAO]
-  sudo contabase-update v0.1.0-beta.2
+  sudo contabase-update vMAJOR.MINOR.PATCH[-beta.N]
 
 Atualiza o ContaBase detectando automaticamente o modo de instalacao
 (binary, docker ou source) e chamando o script de update correto.
@@ -486,9 +642,9 @@ case "$MODE" in
     VERSION="${1:-}"
     if [ -z "$VERSION" ]; then
       if [ -t 0 ]; then
-        read -r -p "Versao para atualizar (ex.: v0.1.0-beta.1): " VERSION
+        read -r -p "Versao para atualizar (ex.: vMAJOR.MINOR.PATCH[-beta.N]): " VERSION
       else
-        say "Erro: informe a versao. Exemplo: sudo contabase-update v0.1.0-beta.1"
+        say "Erro: informe a versao. Exemplo: sudo contabase-update vMAJOR.MINOR.PATCH[-beta.N]"
         exit 1
       fi
     fi
@@ -601,6 +757,7 @@ main() {
   log_step "[3/8] Preparando ${ENV_FILE}"
   ensure_env_file
   ensure_env_values
+  configure_access_mode_interactive
   log_ok "Arquivo de ambiente preparado sem sobrescrever valores validos."
 
   log_step "[4/8] Validacoes locais de build"

@@ -168,16 +168,29 @@ func (s *csrfSigner) tokenFromRequest(r *http.Request) string {
 type httpBoundaryConfig struct {
 	allowedHosts       map[string]struct{}
 	trustedProxyRanges []*net.IPNet
+	accessMode         string
+	appBaseURLHost     string
 }
 
 func newHTTPBoundaryConfigFromEnv() httpBoundaryConfig {
-	return newHTTPBoundaryConfig(os.Getenv("ALLOWED_HOSTS"), os.Getenv("TRUSTED_PROXIES"))
+	return newHTTPBoundaryConfigWithAccess(
+		os.Getenv("ALLOWED_HOSTS"),
+		os.Getenv("TRUSTED_PROXIES"),
+		os.Getenv("CONTABASE_ACCESS_MODE"),
+		os.Getenv("APP_BASE_URL"),
+	)
 }
 
 func newHTTPBoundaryConfig(allowedHostsRaw, trustedProxiesRaw string) httpBoundaryConfig {
+	return newHTTPBoundaryConfigWithAccess(allowedHostsRaw, trustedProxiesRaw, "", "")
+}
+
+func newHTTPBoundaryConfigWithAccess(allowedHostsRaw, trustedProxiesRaw, accessModeRaw, appBaseURLRaw string) httpBoundaryConfig {
 	cfg := httpBoundaryConfig{
 		allowedHosts:       make(map[string]struct{}),
 		trustedProxyRanges: defaultTrustedProxyRanges(),
+		accessMode:         normalizeAccessMode(accessModeRaw),
+		appBaseURLHost:     normalizeHost(appBaseURLRaw),
 	}
 	for _, host := range []string{"localhost", "127.0.0.1", "::1"} {
 		cfg.allowedHosts[host] = struct{}{}
@@ -195,6 +208,19 @@ func newHTTPBoundaryConfig(allowedHostsRaw, trustedProxiesRaw string) httpBounda
 		}
 	}
 	return cfg
+}
+
+func normalizeAccessMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "lan":
+		return "lan"
+	case "proxy":
+		return "proxy"
+	case "local-docker", "docker-local":
+		return "local-docker"
+	default:
+		return "local"
+	}
 }
 
 func defaultTrustedProxyRanges() []*net.IPNet {
@@ -301,7 +327,7 @@ func requestHostName(r *http.Request) string {
 	return normalizeHost(host)
 }
 
-func isLoopbackLocalRequest(r *http.Request) bool {
+func requestHostIsLoopback(r *http.Request) bool {
 	switch requestHostName(r) {
 	case "localhost", "127.0.0.1", "::1":
 		return true
@@ -310,8 +336,86 @@ func isLoopbackLocalRequest(r *http.Request) bool {
 	}
 }
 
+func hostNameIsLoopback(host string) bool {
+	switch normalizeHost(host) {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
+	}
+}
+
+func isLoopbackLocalRequest(r *http.Request) bool {
+	return requestHostIsLoopback(r) && isLoopbackIP(remoteIP(r))
+}
+
 func shouldUseSecureCookie(r *http.Request) bool {
-	return requestIsHTTPS(r) || !isLoopbackLocalRequest(r)
+	cfg := newHTTPBoundaryConfigFromEnv()
+	return cfg.requestIsHTTPS(r) || !cfg.requestAllowsPlainHTTP(r)
+}
+
+func isLoopbackIP(ip net.IP) bool {
+	return ip != nil && ip.IsLoopback()
+}
+
+func isPrivateOrLoopbackIP(ip net.IP) bool {
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
+}
+
+func isPrivateOrLoopbackHost(host string) bool {
+	normalized := normalizeHost(host)
+	switch normalized {
+	case "localhost":
+		return true
+	}
+	return isPrivateOrLoopbackIP(net.ParseIP(normalized))
+}
+
+func isPrivateIPHost(host string) bool {
+	ip := net.ParseIP(normalizeHost(host))
+	return ip != nil && ip.IsPrivate()
+}
+
+func (c httpBoundaryConfig) requestAllowedLANHTTP(r *http.Request) bool {
+	if c.accessMode != "lan" {
+		return false
+	}
+	requestHost := requestHostName(r)
+	if !isPrivateIPHost(requestHost) {
+		return false
+	}
+	if c.appBaseURLHost == "" || !isPrivateIPHost(c.appBaseURLHost) {
+		return false
+	}
+	if normalizeHost(requestHost) != c.appBaseURLHost {
+		return false
+	}
+	return isPrivateOrLoopbackIP(remoteIP(r))
+}
+
+func (c httpBoundaryConfig) requestAllowedDockerLocalHTTP(r *http.Request) bool {
+	if c.accessMode != "local-docker" {
+		return false
+	}
+	for host := range c.allowedHosts {
+		if !hostNameIsLoopback(host) {
+			return false
+		}
+	}
+	if !requestHostIsLoopback(r) {
+		return false
+	}
+	if c.appBaseURLHost == "" || !hostNameIsLoopback(c.appBaseURLHost) {
+		return false
+	}
+	return isPrivateOrLoopbackIP(remoteIP(r))
+}
+
+func (c httpBoundaryConfig) requestAllowsPlainHTTP(r *http.Request) bool {
+	if !c.requestHostAllowed(r) {
+		return false
+	}
+	return isLoopbackLocalRequest(r) || c.requestAllowedDockerLocalHTTP(r) || c.requestAllowedLANHTTP(r)
 }
 
 func enforceRemoteHTTPS(next http.Handler) http.Handler {
@@ -324,7 +428,7 @@ func (c httpBoundaryConfig) enforceRemoteHTTPS(next http.Handler) http.Handler {
 			http.Error(w, "host not allowed", http.StatusMisdirectedRequest)
 			return
 		}
-		if isLoopbackLocalRequest(r) || c.requestIsHTTPS(r) || strings.HasPrefix(r.URL.Path, "/assets/") {
+		if c.requestAllowsPlainHTTP(r) || c.requestIsHTTPS(r) || strings.HasPrefix(r.URL.Path, "/assets/") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -369,10 +473,10 @@ func (c httpBoundaryConfig) enforceRemoteHTTPS(next http.Handler) http.Handler {
             Opção A: Acesso Local (Mesma Máquina)
           </h2>
           <p class="text-sm text-zinc-400 mt-2 leading-relaxed">
-            Por segurança, o ContaBase exige HTTPS para qualquer acesso remoto. Se você quer testar localmente sem configurar domínio ou proxy, acesse diretamente do navegador da própria máquina onde o servidor está rodando usando <code class="text-amber-400">http://localhost:8080</code> ou <code class="text-amber-400">http://127.0.0.1:8080</code>.
+            Por segurança, o ContaBase exige HTTPS para acesso remoto, exceto quando a instalação foi configurada explicitamente em modo LAN para um IP privado. Para uso somente local, acesse diretamente do navegador da própria máquina onde o servidor está rodando usando <code class="text-amber-400">http://localhost:8080</code> ou <code class="text-amber-400">http://127.0.0.1:8080</code>.
           </p>
           <p class="text-xs text-zinc-500 mt-2 leading-relaxed">
-            O acesso via IP de rede local (ex: 192.168.x.x) não é permitido sem HTTPS. Isso protege seus dados financeiros em redes compartilhadas.
+            Em Docker local somente nesta máquina, use <code class="text-amber-400">CONTABASE_ACCESS_MODE=local-docker</code> com <code class="text-amber-400">APP_BASE_URL=http://localhost:8080</code>. O acesso HTTP por IP de rede local (ex: 192.168.x.x) só é aceito quando <code class="text-amber-400">CONTABASE_ACCESS_MODE=lan</code>, <code class="text-amber-400">APP_BASE_URL</code> aponta para esse IP privado e o host está em <code class="text-amber-400">ALLOWED_HOSTS</code>. IP público ou domínio HTTP sem proxy continua bloqueado.
           </p>
         </div>
       </div>

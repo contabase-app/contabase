@@ -1,0 +1,120 @@
+{{define "dashboard-financial"}}
+<section id="dashboard-financial" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} hx-trigger="refreshFinancials from:body" hx-get="/" hx-select="#dashboard-financial" hx-swap="outerHTML" class="cb-card-dense w-full flex flex-col gap-4"{{if and (not .Accounts) (not .Cards)}} data-onboarding-empty="true"{{end}}>
+    <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+            <span class="cb-text-micro font-bold text-[var(--cb-text-muted)] uppercase tracking-wider truncate block">Posição financeira</span>
+            <p class="text-xs text-[var(--cb-text-subtle)] mt-0.5 truncate">Saldo consolidado das contas</p>
+        </div>
+        <span class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--cb-accent)] shrink-0" style="background: color-mix(in srgb, var(--cb-accent) 12%, transparent)">
+            <i data-lucide="landmark" class="w-3.5 h-3.5"></i>
+        </span>
+    </div>
+
+    <div class="space-y-1.5">
+        <span class="cb-text-micro font-bold text-[var(--cb-text-muted)] uppercase tracking-wider block">Saldo total</span>
+        <p class="text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight tabular-nums break-words {{if .Balance.IsNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.Balance.Money.Reais}}{{.Balance.Money.Cents}}</p>
+        <div class="flex items-center gap-2 pt-1">
+            {{if eq .Balance.TrendDirection "up"}}
+            <span class="cb-status-chip cb-status-chip-success">
+                <i data-lucide="trending-up" class="w-3 h-3"></i>
+                <span data-sensitive>{{.Balance.TrendPercent}}</span>
+            </span>
+            {{else if eq .Balance.TrendDirection "down"}}
+            <span class="cb-status-chip cb-status-chip-danger">
+                <i data-lucide="trending-down" class="w-3 h-3"></i>
+                <span data-sensitive>{{.Balance.TrendPercent}}</span>
+            </span>
+            {{else}}
+            <span class="cb-status-chip cb-status-chip-neutral">
+                <i data-lucide="circle" class="w-3 h-3"></i>
+                <span data-sensitive>{{.Balance.TrendPercent}}</span>
+            </span>
+            {{end}}
+            <span class="cb-text-micro text-[var(--cb-text-subtle)]">nos últimos 30 dias</span>
+        </div>
+    </div>
+
+    <div class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-2 sm:p-3">
+        <div class="grid grid-cols-2 gap-0 divide-x divide-[var(--cb-border-subtle)]">
+            <div class="flex items-center gap-1.5 min-w-0 pr-1.5 sm:pr-2.5">
+                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--cb-text-muted)]" style="background: color-mix(in srgb, var(--cb-text-muted) 10%, transparent)">
+                    <i data-lucide="lock" class="w-3 h-3"></i>
+                </span>
+                <div class="min-w-0 flex-1">
+                    <p class="text-[10px] font-bold text-[var(--cb-text-muted)] uppercase tracking-wider">Reservado</p>
+                    <p class="text-[11px] sm:text-sm font-semibold tabular-nums leading-tight break-words text-[var(--cb-text-main)] mt-0.5" data-sensitive>R$ {{.Balance.Reserved.Reais}}{{.Balance.Reserved.Cents}}</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-1.5 min-w-0 pl-1.5 sm:pl-2.5">
+                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--cb-success)]" style="background: color-mix(in srgb, var(--cb-success) 12%, transparent)">
+                    <i data-lucide="wallet" class="w-3 h-3"></i>
+                </span>
+                <div class="min-w-0 flex-1">
+                    <p class="text-[10px] font-bold text-[var(--cb-text-muted)] uppercase tracking-wider">Disponível</p>
+                    <p class="text-[11px] sm:text-sm font-semibold tabular-nums leading-tight break-words mt-0.5 {{if .Balance.FreeIsNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.Balance.Free.Reais}}{{.Balance.Free.Cents}}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex items-center justify-between gap-2 pt-1">
+        <h2 class="cb-text-micro font-bold text-[var(--cb-text-muted)] uppercase tracking-wider truncate">Minhas Contas</h2>
+        <a href="/configuracoes/contas" class="flex h-7 w-7 items-center justify-center rounded-md text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] transition-all shrink-0" aria-label="Gerenciar contas">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+        </a>
+    </div>
+
+    {{if .Accounts}}
+    <div class="space-y-2">
+        {{range $idx, $account := .Accounts}}
+        <a href="/lancamentos?conta={{$account.ID}}"
+           hx-get="/lancamentos?conta={{$account.ID}}"
+           hx-target="#main-content"
+           hx-select="#main-content"
+           hx-push-url="true"
+           class="cb-row-dense flex items-center justify-between gap-2 transition-all duration-200 btn-tactile cursor-pointer">
+            <span class="flex items-center gap-2.5 min-w-0 shrink">
+                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg emblem-wrap-solid select-none" style="--ic: {{$account.Color}}">
+                    {{template "financial-emblem" $account}}
+                </span>
+                <span class="min-w-0 flex flex-col">
+                    <span class="text-xs font-semibold text-[var(--cb-text-main)] truncate leading-tight">{{$account.Name}}</span>
+                    <span class="cb-text-micro text-[var(--cb-text-subtle)] uppercase tracking-wider leading-none mt-0.5">{{if eq $account.TypeLabel "Conta Corrente"}}Corrente{{else if eq $account.TypeLabel "Investimento"}}Invest.{{else if eq $account.TypeLabel "Carteira / Dinheiro"}}Dinheiro{{else if eq $account.TypeLabel "Poupança"}}Poup.{{else}}{{$account.TypeLabel}}{{end}}</span>
+                </span>
+            </span>
+            <span class="flex flex-col items-end gap-0.5 shrink-0">
+                <span class="text-xs sm:text-sm font-bold tabular-nums whitespace-nowrap text-[var(--cb-text-main)]" data-sensitive>R$ {{$account.Money.Reais}}{{$account.Money.Cents}}</span>
+                <span class="flex items-center gap-1.5">
+                    {{if eq $account.TrendDirection "up"}}
+                    <span class="cb-status-chip cb-status-chip-success text-[10px] py-0.5 px-1.5 gap-0.5">
+                        <i data-lucide="trending-up" class="w-2 h-2"></i>
+                        <span data-sensitive>{{$account.TrendPercent}}</span>
+                    </span>
+                    {{else if eq $account.TrendDirection "down"}}
+                    <span class="cb-status-chip cb-status-chip-danger text-[10px] py-0.5 px-1.5 gap-0.5">
+                        <i data-lucide="trending-down" class="w-2 h-2"></i>
+                        <span data-sensitive>{{$account.TrendPercent}}</span>
+                    </span>
+                    {{else}}
+                    <span class="cb-status-chip cb-status-chip-neutral text-[10px] py-0.5 px-1.5 gap-0.5">
+                        <i data-lucide="circle" class="w-2 h-2"></i>
+                        <span data-sensitive>{{$account.TrendPercent}}</span>
+                    </span>
+                    {{end}}
+                    <span class="text-[10px] font-normal text-[var(--cb-text-subtle)]">30d</span>
+                </span>
+            </span>
+        </a>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="cb-empty-state py-4 flex-1">
+        <div class="metas-empty-icon mb-2">
+            <i data-lucide="wallet" class="w-4 h-4"></i>
+        </div>
+        <p class="text-xs text-[var(--cb-text-muted)] font-medium">Comece criando sua primeira conta.</p>
+    </div>
+    {{end}}
+</section>
+{{end}}

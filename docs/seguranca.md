@@ -9,7 +9,7 @@ Ele nao substitui um administrador atento ou boas praticas do servidor.
 
 - Use senha forte para administradores.
 - Gere um `CONTABASE_SETUP_TOKEN` forte e remova depois do primeiro acesso.
-- Exponha a instancia somente por HTTPS.
+- Exponha a instancia na internet somente por HTTPS.
 - Use reverse proxy, tunnel ou CDN confiavel.
 - Mantenha backups regulares.
 - Proteja `AUTH_ENCRYPTION_KEY` e `SECURITY_MASTER_KEY`.
@@ -36,7 +36,34 @@ Exemplo:
 APP_BASE_URL=https://fin.seu-dominio.com
 ALLOWED_HOSTS=fin.seu-dominio.com
 TRUSTED_PROXIES=172.16.0.0/12
+CONTABASE_ACCESS_MODE=proxy
 ```
+
+## LAN privada sem proxy
+
+HTTP direto sem proxy so e aceito em modo LAN explicito, para IP privado RFC1918:
+
+```ini
+APP_BASE_URL=http://192.168.1.50:8080
+ALLOWED_HOSTS=192.168.1.50
+TRUSTED_PROXIES=
+CONTABASE_ACCESS_MODE=lan
+```
+
+Esse modo nao libera dominio publico, IP publico nem `0.0.0.0` como autorizacao ampla. `ALLOWED_HOSTS` continua obrigatorio, mas nao substitui `CONTABASE_ACCESS_MODE`.
+
+## Docker local somente nesta maquina
+
+Quando o ContaBase roda em container local, o app pode ver o host como IP privado da bridge/NAT mesmo que o navegador use `localhost`. Para esse caso, use modo explicito de Docker local:
+
+```ini
+APP_BASE_URL=http://localhost:8080
+ALLOWED_HOSTS=localhost,127.0.0.1,::1
+TRUSTED_PROXIES=
+CONTABASE_ACCESS_MODE=local-docker
+```
+
+Esse modo nao libera dominio publico, IP publico HTTP nem acesso por outros dispositivos da rede. Use apenas para Docker local nesta maquina.
 
 ## Chaves de seguranca
 

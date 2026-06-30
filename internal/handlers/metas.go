@@ -553,13 +553,15 @@ func (h *MetasHandler) HandleAporteCaixinha(w http.ResponseWriter, r *http.Reque
 }
 
 type BoxHistoryEvent struct {
-	Amount      int64
-	Type        string
-	Description string
-	DateLabel   string
-	TypeLabel   string
-	IsCredit    bool
-	Money       MoneyDisplay
+	Amount       int64
+	Type         string
+	Description  string
+	DateLabel    string
+	TypeLabel    string
+	AccountName  string
+	AccountLabel string
+	IsCredit     bool
+	Money        MoneyDisplay
 }
 
 func boxLedgerTypeLabel(typ string) string {
@@ -576,6 +578,15 @@ func boxLedgerTypeLabel(typ string) string {
 		return "Ajuste compensatorio"
 	default:
 		return typ
+	}
+}
+
+func transactionAccountLabel(accountType string) string {
+	switch strings.ToUpper(strings.TrimSpace(accountType)) {
+	case models.AccountTypeCreditCard:
+		return "Cartão"
+	default:
+		return "Conta"
 	}
 }
 
@@ -597,13 +608,16 @@ func (h *MetasHandler) HandleHistoricoCaixinha(w http.ResponseWriter, r *http.Re
 			CASE WHEN l.type = 'CONSUME' AND t.description IS NOT NULL AND t.description != ''
 			     THEN t.description
 			     ELSE l.description END as description,
-			l.reference_date, l.created_at
+			l.reference_date, l.created_at,
+			COALESCE(a.name, ''),
+			COALESCE(a.type, '')
 		FROM box_virtual_ledger l
-		LEFT JOIN transactions t ON l.source_transaction_id = t.id
+		LEFT JOIN transactions t ON l.source_transaction_id = t.id AND t.workspace_id = ?
+		LEFT JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		WHERE l.box_id = ?
 		ORDER BY l.created_at DESC, l.id DESC
 		LIMIT 100
-	`, boxID)
+	`, h.WorkspaceID, boxID)
 	if err != nil {
 		log.Printf("query box history error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -615,11 +629,13 @@ func (h *MetasHandler) HandleHistoricoCaixinha(w http.ResponseWriter, r *http.Re
 	for rows.Next() {
 		var e BoxHistoryEvent
 		var refDate, createdAt int64
-		if err := rows.Scan(&e.Amount, &e.Type, &e.Description, &refDate, &createdAt); err != nil {
+		var accountType string
+		if err := rows.Scan(&e.Amount, &e.Type, &e.Description, &refDate, &createdAt, &e.AccountName, &accountType); err != nil {
 			continue
 		}
 		e.DateLabel = formatDateLabel(refDate)
 		e.TypeLabel = boxLedgerTypeLabel(e.Type)
+		e.AccountLabel = transactionAccountLabel(accountType)
 		e.Money = MoneyMinor(e.Amount)
 		e.IsCredit = e.Amount >= 0
 		events = append(events, e)
@@ -665,7 +681,7 @@ func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Requ
 		SELECT cl.max_amount_monthly, COALESCE(c.name, ''), c.id,
 			COALESCE(c.icon, 'tag'), COALESCE(c.color, '#6b7280')
 		FROM cost_limits cl
-		JOIN categories c ON c.id = cl.category_id
+		JOIN categories c ON c.id = cl.category_id AND c.workspace_id = cl.workspace_id
 		WHERE cl.id = ? AND cl.workspace_id = ?
 	`, limitID, h.WorkspaceID).Scan(&maxAmount, &catName, &catID, &catIcon, &catColor); err != nil {
 		http.Error(w, "limite não encontrado", http.StatusNotFound)
@@ -677,15 +693,23 @@ func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Requ
 	monthEnd := time.Date(now.Year(), now.Month()+1, 0, 23, 59, 59, 0, time.UTC).Unix()
 
 	rows, err := h.DB.Query(`
-		SELECT t.id, t.description, t.amount, t.date
+		SELECT t.id, t.description, t.amount, t.date,
+			COALESCE(a.name, ''),
+			COALESCE(a.type, '')
 		FROM transactions t
+		LEFT JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		WHERE t.workspace_id = ?
-			AND t.category_id IN (SELECT id FROM categories WHERE id = ? OR parent_id = ?)
+			AND t.category_id IN (
+				SELECT id
+				FROM categories
+				WHERE workspace_id = ?
+				  AND (id = ? OR parent_id = ?)
+			)
 			AND t.type = 'EXPENSE'
 			AND t.date >= ? AND t.date <= ?
 		ORDER BY t.date DESC
 		LIMIT 50
-	`, h.WorkspaceID, catID, catID, monthStart, monthEnd)
+	`, h.WorkspaceID, h.WorkspaceID, catID, catID, monthStart, monthEnd)
 	if err != nil {
 		log.Printf("query limit history error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -694,10 +718,12 @@ func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Requ
 	defer rows.Close()
 
 	type LimitTx struct {
-		Description string
-		DateLabel   string
-		Amount      MoneyDisplay
-		ID          string
+		Description  string
+		DateLabel    string
+		Amount       MoneyDisplay
+		ID           string
+		AccountName  string
+		AccountLabel string
 	}
 	var transactions []LimitTx
 	var totalSpent int64
@@ -705,11 +731,13 @@ func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Requ
 		var tx LimitTx
 		var amount int64
 		var dateUnix int64
-		if err := rows.Scan(&tx.ID, &tx.Description, &amount, &dateUnix); err != nil {
+		var accountType string
+		if err := rows.Scan(&tx.ID, &tx.Description, &amount, &dateUnix, &tx.AccountName, &accountType); err != nil {
 			continue
 		}
 		tx.DateLabel = formatDateLabel(dateUnix)
 		tx.Amount = MoneyMinor(amount)
+		tx.AccountLabel = transactionAccountLabel(accountType)
 		totalSpent += amount
 		transactions = append(transactions, tx)
 	}
@@ -1336,15 +1364,15 @@ func formatMonthlyYieldRateForInput(rate float64) string {
 }
 
 type BoxSheetData struct {
-	BoxID              string
-	BoxName            string
-	CategoryName       string
-	Icon               string
-	Color              string
-	Balance            MoneyDisplay
-	Target             MoneyDisplay
+	BoxID               string
+	BoxName             string
+	CategoryName        string
+	Icon                string
+	Color               string
+	Balance             MoneyDisplay
+	Target              MoneyDisplay
 	AvailableForRelease MoneyDisplay
-	ErrorMessage       string
+	ErrorMessage        string
 }
 
 func (h *MetasHandler) buildBoxSheetData(boxID string) (BoxSheetData, error) {

@@ -50,6 +50,31 @@ blank() {
   printf '\n'
 }
 
+public_tag_example() {
+  printf '%s' 'vMAJOR.MINOR.PATCH[-beta.N]'
+}
+
+current_public_version() {
+  local version_file current_version
+
+  version_file="${REPO_ROOT}/VERSION"
+  [ -f "$version_file" ] || return 1
+
+  current_version="$(tr -d '[:space:]' < "$version_file")"
+  case "$current_version" in
+    ""|*-internal*|latest|main|master|dev|develop|stable)
+      return 1
+      ;;
+  esac
+
+  if [[ "$current_version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
+    printf '%s' "$current_version"
+    return 0
+  fi
+
+  return 1
+}
+
 require_script() {
   script_path="$1"
   if [ -z "$script_path" ] || [ ! -f "$script_path" ]; then
@@ -68,21 +93,39 @@ run_script() {
 }
 
 resolve_release_version() {
+  local default_version example_version user_input
+
   if [ -n "${CONTABASE_VERSION:-}" ]; then
     return 0
   fi
+
+  example_version="$(public_tag_example)"
   if [ ! -t 0 ]; then
     say "CONTABASE_VERSION nao definido e terminal nao interativo."
     say "Defina a versao da release. Exemplo:"
-    say "  export CONTABASE_VERSION=v0.1.0-beta.1"
-    say "  ou:  CONTABASE_VERSION=v0.1.0-beta.1 bash /tmp/contabase-install.sh"
+    say "  export CONTABASE_VERSION=${example_version}"
+    say "  ou:  CONTABASE_VERSION=${example_version} bash /tmp/contabase-install.sh"
     return 1
   fi
-  local default_version="v0.1.0-beta.1"
+
+  default_version="$(current_public_version || true)"
   blank
-  say "CONTABASE_VERSION nao definido. Informe a versao da release:"
-  read -r -p "Versao da release [${default_version}]: " user_input
-  CONTABASE_VERSION="${user_input:-$default_version}"
+
+  if [ -n "$default_version" ]; then
+    say "CONTABASE_VERSION nao definido. Informe a versao da release publica."
+    read -r -p "Versao da release [${default_version}]: " user_input
+    CONTABASE_VERSION="${user_input:-$default_version}"
+  else
+    say "CONTABASE_VERSION nao definido. Informe a versao da release publica."
+    read -r -p "Versao da release (ex.: ${example_version}): " user_input
+    CONTABASE_VERSION="$user_input"
+  fi
+
+  if [ -z "$CONTABASE_VERSION" ]; then
+    say "Erro: informe uma tag publica SemVer."
+    return 1
+  fi
+
   export CONTABASE_VERSION
   say "Usando versao: ${CONTABASE_VERSION}"
   blank
@@ -94,7 +137,7 @@ validate_public_release_version() {
   release_version="${CONTABASE_VERSION:-}"
   if [ -z "$release_version" ]; then
     say "Erro: CONTABASE_VERSION e obrigatorio para baixar o helper de release."
-    say "Exemplo: CONTABASE_VERSION=v0.1.0-beta.1"
+    say "Exemplo: CONTABASE_VERSION=$(public_tag_example)"
     return 1
   fi
   case "$release_version" in
@@ -242,23 +285,26 @@ show_menu() {
   say "   Avançado. Para desenvolvimento, customização ou repo privado."
   say "   Exige Go e Node."
   blank
-  say "4) Atualizar via Docker Compose"
+  say "4) Avançado/manual"
+  say "   Mostra os scripts específicos para executar manualmente."
+  blank
+  say "5) Atualizar via Docker Compose"
   say "   Atualiza instalação criada pela opção 1."
   blank
-  say "5) Atualizar via binário da Release"
+  say "6) Atualizar via binário da Release"
   say "   Atualiza instalação criada pela opção 2."
   blank
-  say "6) Atualizar via código-fonte/systemd"
+  say "7) Atualizar via código-fonte/systemd"
   say "   Atualiza instalação criada pela opção 3."
   blank
-  say "7) Sair"
+  say "8) Sair"
   blank
 }
 
 interactive_menu() {
   while true; do
     show_menu
-    read -r -p "Opcao (1-7): " choice
+    read -r -p "Opcao (1-8): " choice
     blank
     case "$choice" in
       1)
@@ -274,23 +320,35 @@ interactive_menu() {
         return 0
         ;;
       4)
-        dispatch_method update-docker
+        say "Scripts manuais disponíveis:"
+        say "  ./scripts/install-contabase-docker.sh"
+        say "  ./scripts/install-contabase-release.sh"
+        say "  ./scripts/install-contabase-source.sh"
+        say "Modos de acesso:"
+        say "  Docker local nesta maquina: local-docker"
+        say "  Binario/source local nesta maquina: local"
+        say "  Rede local por IP privado: lan"
+        say "  Dominio HTTPS/proxy: proxy"
         return 0
         ;;
       5)
-        dispatch_method update-release
+        dispatch_method update-docker
         return 0
         ;;
       6)
-        dispatch_method update-source
+        dispatch_method update-release
         return 0
         ;;
       7)
+        dispatch_method update-source
+        return 0
+        ;;
+      8)
         say "Saindo."
         return 0
         ;;
       *)
-        say "Opcao invalida. Escolha um numero de 1 a 7."
+        say "Opcao invalida. Escolha um numero de 1 a 8."
         blank
         ;;
     esac

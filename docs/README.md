@@ -14,7 +14,7 @@ Se você está começando, leia nesta ordem:
 - [Instalação rápida](instalacao.md) — caminho curto com o instalador principal.
 - [Instalação em LXC/VPS](instalacao-lxc-vps.md) — instalação sem Docker, com binário pronto e systemd.
 - [Instalação com Docker](instalacao-docker.md) — Docker Compose, Docker guiado e Docker manual com GHCR.
-- [Configuração](configuracao.md) — variáveis como `APP_BASE_URL`, `ALLOWED_HOSTS`, `TRUSTED_PROXIES` e secrets.
+- [Configuração](configuracao.md) — variáveis como `APP_BASE_URL`, `ALLOWED_HOSTS`, `TRUSTED_PROXIES`, `CONTABASE_ACCESS_MODE` e secrets.
 - [Atualização](atualizacao.md) — como trocar de versão.
 - [Backup e restauração](backup-restauracao.md) — como proteger os dados.
 - [Solução de problemas](solucao-de-problemas.md) — erros comuns.
@@ -63,6 +63,7 @@ Não use `latest`.
 
 ## Notas de versão
 
+- [v0.1.0-beta.3 — Beta pública controlada](releases/v0.1.0-beta.3.md)
 - [v0.1.0-beta.2 — Beta pública controlada](releases/v0.1.0-beta.2.md)
 - [v0.1.0-beta.1 — primeira Beta pública controlada](releases/v0.1.0-beta.1.md)
 - [v0.1.0-alpha.1 — Primeira validação pública](releases/v0.1.0-alpha.1.md)

@@ -180,8 +180,9 @@ CONTABASE_VERSION=vX.Y.Z \
 CONTABASE_ASSUME_YES=1 \
 PORT=8080 \
 APP_BASE_URL=https://financeiro.exemplo.com \
-ALLOWED_HOSTS=financeiro.exemplo.com,localhost,127.0.0.1 \
+ALLOWED_HOSTS=financeiro.exemplo.com \
 TRUSTED_PROXIES=127.0.0.1,::1 \
+CONTABASE_ACCESS_MODE=proxy \
 bash /tmp/contabase-install.sh
 ```
 
@@ -192,6 +193,7 @@ Notas:
 - `APP_BASE_URL` é a URL que você abre no navegador.
 - `ALLOWED_HOSTS` deve conter seu domínio ou IP.
 - `TRUSTED_PROXIES` é usado quando há proxy reverso.
+- `CONTABASE_ACCESS_MODE=proxy` é usado para domínio HTTPS por proxy/tunnel; use `lan` somente com IP privado em HTTP.
 
 Se `CONTABASE_PORT` e `PORT` existirem ao mesmo tempo, `CONTABASE_PORT` vence.
 
@@ -354,6 +356,7 @@ Confira:
 3. O proxy reverso aponta para `http://127.0.0.1:8080`.
 4. O DNS aponta para o servidor.
 5. O HTTPS está configurado.
+6. `CONTABASE_ACCESS_MODE=proxy` está definido.
 
 ### Perdi o token de setup
 

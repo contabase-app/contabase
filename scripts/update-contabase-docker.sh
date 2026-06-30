@@ -42,6 +42,8 @@ APP_VERSION=""
 BACKUP_PATH=""
 HEALTH_URL=""
 ENV_BACKUP_PATH=""
+STATE_FILE="/etc/contabase/install-state.env"
+INSTALL_CHANNEL="${CONTABASE_CHANNEL:-}"
 
 # Accept CONTABASE_ASSUME_YES=1 as headless mode (same as --yes)
 [ "${CONTABASE_ASSUME_YES:-0}" = "1" ] && YIELD=true
@@ -82,6 +84,28 @@ read_version_file() {
   fi
 
   tr -d '[:space:]' < VERSION
+}
+
+infer_install_channel() {
+  local version="$1"
+  if [ -n "$INSTALL_CHANNEL" ]; then
+    printf '%s' "$INSTALL_CHANNEL"
+    return 0
+  fi
+  if [ -n "${CONTABASE_VERSION:-}" ]; then
+    printf '%s' "pinned"
+    return 0
+  fi
+  case "$version" in
+    v*-beta.*) printf '%s' "beta" ;;
+    v*.*.*)
+      case "$version" in
+        *-*) printf '%s' "pinned" ;;
+        *) printf '%s' "stable" ;;
+      esac
+      ;;
+    *) printf '%s' "pinned" ;;
+  esac
 }
 
 # ==============================================================================
@@ -539,9 +563,6 @@ if [ -n "$PREVIOUS_ROLLBACK_TAG" ]; then
   docker image rm "$PREVIOUS_ROLLBACK_TAG" >/dev/null 2>&1 || true
 fi
 
-# Install/refresh global update command (backfill for existing installs)
-backfill_update_command || true
-
 echo ""
 echo "Healthcheck saudavel: $HEALTH_URL"
 echo "Backup preventivo: ${BACKUP_PATH:-nao criado}"
@@ -555,8 +576,10 @@ echo "=== Atualizacao concluida ==="
 backfill_update_command() {
   local update_wrapper="/usr/local/bin/contabase-update"
   local mode_file="/etc/contabase/install-mode"
-  local repo_path
+  local repo_path installed_channel wrapper_source
   repo_path="$(pwd)"
+  installed_channel="$(infer_install_channel "$APP_VERSION")"
+  wrapper_source="${repo_path}/scripts/lib/contabase-update-wrapper.sh"
   local has_priv=false
 
   if [ "$(id -u)" -eq 0 ]; then
@@ -587,14 +610,33 @@ backfill_update_command() {
     return 0
   fi
 
+  {
+    printf 'CONTABASE_STATE_VERSION=1\n'
+    printf 'CONTABASE_INSTALL_METHOD=docker\n'
+    printf 'CONTABASE_CHANNEL=%s\n' "$installed_channel"
+    printf 'CONTABASE_INSTALLED_VERSION=%s\n' "$APP_VERSION"
+    printf 'CONTABASE_REPO_PATH=%s\n' "$repo_path"
+  } | run_priv tee "$STATE_FILE" >/dev/null 2>/dev/null || {
+    echo "Aviso: nao foi possivel escrever $STATE_FILE."
+    return 0
+  }
+  run_priv chmod 0644 "$STATE_FILE" 2>/dev/null || true
+
   if ! printf 'docker\n%s\n' "$repo_path" | run_priv tee "$mode_file" >/dev/null 2>/dev/null; then
     echo "Aviso: nao foi possivel escrever $mode_file."
     return 0
   fi
   run_priv chmod 0644 "$mode_file" 2>/dev/null || true
 
-  if [ -f "$update_wrapper" ]; then
-    echo "OK: contabase-update ja instalado."
+  if [ -f "$wrapper_source" ]; then
+    run_priv install -m 0755 "$wrapper_source" "$update_wrapper" 2>/dev/null || {
+      echo "Aviso: nao foi possivel instalar $update_wrapper."
+      return 0
+    }
+    if [ ! -e /usr/local/bin/cb-update ]; then
+      run_priv ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
+    fi
+    echo "OK: contabase-update atualizado."
     return 0
   fi
 
@@ -615,7 +657,7 @@ usage() {
   cat <<EOF
 Uso:
   sudo contabase-update [VERSAO]
-  sudo contabase-update v0.1.0-beta.2
+  sudo contabase-update vMAJOR.MINOR.PATCH[-beta.N]
 
 Atualiza o ContaBase detectando automaticamente o modo de instalacao
 (binary, docker ou source) e chamando o script de update correto.
@@ -656,9 +698,9 @@ case "$MODE" in
     VERSION="${1:-}"
     if [ -z "$VERSION" ]; then
       if [ -t 0 ]; then
-        read -r -p "Versao para atualizar (ex.: v0.1.0-beta.1): " VERSION
+        read -r -p "Versao para atualizar (ex.: vMAJOR.MINOR.PATCH[-beta.N]): " VERSION
       else
-        say "Erro: informe a versao. Exemplo: sudo contabase-update v0.1.0-beta.1"
+        say "Erro: informe a versao. Exemplo: sudo contabase-update vMAJOR.MINOR.PATCH[-beta.N]"
         exit 1
       fi
     fi
@@ -745,3 +787,5 @@ WRAPPER_EOF
   echo "  cb-update [--yes] [--dry-run]"
   echo "  sudo contabase-update --help"
 }
+
+backfill_update_command || true

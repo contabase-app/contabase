@@ -8,6 +8,8 @@ set -euo pipefail
 INTERACTIVE=true
 CHECK_ONLY=false
 ACCESS_URL="http://localhost:8080"
+STATE_FILE="/etc/contabase/install-state.env"
+INSTALL_CHANNEL="${CONTABASE_CHANNEL:-}"
 
 say() {
   printf '%s\n' "$*"
@@ -120,6 +122,14 @@ set_env_var_safe() {
   set_env_var "$key" "$value" "$file"
 }
 
+set_env_var_for_profile() {
+  local key="$1"
+  local value="$2"
+  local file="${3:-.env.docker}"
+
+  set_env_var "$key" "$value" "$file"
+}
+
 # Create timestamped backup of the env file.
 env_backup() {
   local file="${1:-.env.docker}"
@@ -211,6 +221,71 @@ normalize_domain() {
   domain="${domain%%/*}"
   domain="${domain%%:*}"
   printf '%s' "$domain"
+}
+
+is_private_ipv4() {
+  local ip="$1"
+  local a b c d
+
+  IFS=. read -r a b c d <<EOF
+$ip
+EOF
+
+  for part in "$a" "$b" "$c" "$d"; do
+    case "$part" in
+      ""|*[!0-9]*) return 1 ;;
+    esac
+    [ "$part" -ge 0 ] 2>/dev/null && [ "$part" -le 255 ] 2>/dev/null || return 1
+  done
+
+  [ "$a" -eq 10 ] && return 0
+  [ "$a" -eq 172 ] && [ "$b" -ge 16 ] && [ "$b" -le 31 ] && return 0
+  [ "$a" -eq 192 ] && [ "$b" -eq 168 ] && return 0
+  return 1
+}
+
+read_public_version_file() {
+  [ -f VERSION ] || { printf '%s' "dev"; return 0; }
+  tr -d '[:space:]' < VERSION
+}
+
+infer_install_channel() {
+  local version="$1"
+  if [ -n "$INSTALL_CHANNEL" ]; then
+    printf '%s' "$INSTALL_CHANNEL"
+    return 0
+  fi
+  if [ -n "${CONTABASE_VERSION:-}" ]; then
+    printf '%s' "pinned"
+    return 0
+  fi
+  case "$version" in
+    v*-beta.*) printf '%s' "beta" ;;
+    v*.*.*)
+      case "$version" in
+        *-*) printf '%s' "pinned" ;;
+        *) printf '%s' "stable" ;;
+      esac
+      ;;
+    *) printf '%s' "pinned" ;;
+  esac
+}
+
+write_install_state() {
+  local method="$1"
+  local channel="$2"
+  local version="$3"
+  local repo_path="$4"
+
+  as_root mkdir -p /etc/contabase
+  {
+    printf 'CONTABASE_STATE_VERSION=1\n'
+    printf 'CONTABASE_INSTALL_METHOD=%s\n' "$method"
+    printf 'CONTABASE_CHANNEL=%s\n' "$channel"
+    printf 'CONTABASE_INSTALLED_VERSION=%s\n' "$version"
+    printf 'CONTABASE_REPO_PATH=%s\n' "$repo_path"
+  } | as_root tee "$STATE_FILE" >/dev/null
+  as_root chmod 0644 "$STATE_FILE" 2>/dev/null || true
 }
 
 show_override_warning() {
@@ -488,19 +563,41 @@ fi
 
 if [ "$INTERACTIVE" = true ]; then
   section "Selecione o perfil de instalacao:"
-  say "1) Local / LAN privada"
-  say "2) Domínio com HTTPS via proxy/tunnel/CDN"
-  say "3) Avançado / manual"
-  read -r -p "Opcao (1/2/3): " INSTALL_TYPE
+  say "1) Local Docker nesta maquina (http://localhost)"
+  say "2) Rede local/LAN por IP privado"
+  say "3) Domínio com HTTPS via proxy/tunnel/CDN"
+  say "4) Avançado / manual"
+  read -r -p "Opcao (1/2/3/4): " INSTALL_TYPE
   blank
 
   case "$INSTALL_TYPE" in
     1)
-      say "Modo Local / LAN privada selecionado."
-      say "Aviso: exposicao publica direta sem HTTPS/proxy/tunnel nao e recomendada e pode ser bloqueada."
+      say "Modo Local Docker selecionado."
+      say "Este perfil e apenas para acesso do host ao container por localhost."
+      set_env_var_for_profile "APP_BASE_URL" "http://localhost:8080"
+      set_env_var_for_profile "ALLOWED_HOSTS" "localhost,127.0.0.1,::1"
+      set_env_var_for_profile "TRUSTED_PROXIES" ""
+      set_env_var_for_profile "CONTABASE_ACCESS_MODE" "local-docker"
       ACCESS_URL="http://localhost:8080"
+      say "OK: modo local-docker configurado para Docker local somente nesta maquina."
       ;;
     2)
+      say "Modo LAN privada selecionado."
+      say "Informe o IP privado RFC1918 do servidor, por exemplo 192.168.1.50."
+      read -r -p "IP privado LAN: " LAN_HOST_RAW
+      LAN_HOST="$(normalize_domain "$LAN_HOST_RAW")"
+      if ! is_private_ipv4 "$LAN_HOST"; then
+        say "Erro: modo LAN exige IP privado RFC1918. Nao use localhost, dominio ou IP publico."
+        exit 1
+      fi
+      set_env_var_for_profile "APP_BASE_URL" "http://$LAN_HOST:8080"
+      set_env_var_for_profile "ALLOWED_HOSTS" "$LAN_HOST"
+      set_env_var_for_profile "TRUSTED_PROXIES" ""
+      set_env_var_for_profile "CONTABASE_ACCESS_MODE" "lan"
+      ACCESS_URL="http://$LAN_HOST:8080"
+      say "OK: modo LAN configurado. IP publico HTTP e dominio HTTP continuam bloqueados pelo app."
+      ;;
+    3)
       say "Modo Domínio com HTTPS via proxy/tunnel/CDN selecionado."
       say "Este perfil cobre Nginx Proxy Manager, Caddy, Traefik, Nginx,"
       say "Cloudflare Tunnel, Cloudflare Proxy/CDN, BunnyCDN/outro CDN,"
@@ -510,12 +607,13 @@ if [ "$INTERACTIVE" = true ]; then
       PUBLIC_DOMAIN="$(normalize_domain "$PUBLIC_DOMAIN_RAW")"
 
       if [ -n "$PUBLIC_DOMAIN" ]; then
-        set_env_var_safe "APP_BASE_URL" "https://$PUBLIC_DOMAIN"
-        set_env_var_safe "ALLOWED_HOSTS" "$PUBLIC_DOMAIN"
+        set_env_var_for_profile "APP_BASE_URL" "https://$PUBLIC_DOMAIN"
+        set_env_var_for_profile "ALLOWED_HOSTS" "$PUBLIC_DOMAIN"
+        set_env_var_for_profile "CONTABASE_ACCESS_MODE" "proxy"
         ACCESS_URL="https://$PUBLIC_DOMAIN"
-        say "OK: APP_BASE_URL e ALLOWED_HOSTS definidos em .env.docker (valores existentes preservados)."
+        say "OK: APP_BASE_URL, ALLOWED_HOSTS e CONTABASE_ACCESS_MODE definidos em .env.docker (valores existentes preservados)."
       else
-        say "Aviso: dominio vazio. Configure APP_BASE_URL e ALLOWED_HOSTS manualmente antes de expor."
+        say "Aviso: dominio vazio. Configure APP_BASE_URL, ALLOWED_HOSTS e CONTABASE_ACCESS_MODE manualmente antes de expor."
       fi
 
       ensure_override_for_profile
@@ -537,22 +635,31 @@ if [ "$INTERACTIVE" = true ]; then
       say "- IP/CIDR especifico do proxy/tunnel/container, se voce souber"
       read -r -p "TRUSTED_PROXIES (pode deixar vazio para configurar manualmente): " TRUSTED_PROXIES_VALUE
       if [ -n "$TRUSTED_PROXIES_VALUE" ]; then
-        set_env_var_safe "TRUSTED_PROXIES" "$TRUSTED_PROXIES_VALUE"
+        set_env_var_for_profile "TRUSTED_PROXIES" "$TRUSTED_PROXIES_VALUE"
         say "OK: TRUSTED_PROXIES definido em .env.docker (valor existente preservado)."
       else
         say "Aviso forte: TRUSTED_PROXIES vazio/incorreto pode fazer o app bloquear acesso remoto por seguranca."
       fi
       ;;
-    3)
+    4)
       say "Modo Avancado / manual selecionado."
       ensure_override_for_profile
       say "Revise .env.docker e docker-compose.override.yml antes de expor a aplicacao."
       ;;
     *)
       say "Opcao invalida. Prosseguindo com defaults locais."
+      set_env_var_for_profile "APP_BASE_URL" "http://localhost:8080"
+      set_env_var_for_profile "ALLOWED_HOSTS" "localhost,127.0.0.1,::1"
+      set_env_var_for_profile "TRUSTED_PROXIES" ""
+      set_env_var_for_profile "CONTABASE_ACCESS_MODE" "local-docker"
       ACCESS_URL="http://localhost:8080"
       ;;
   esac
+else
+  set_env_var_for_profile "APP_BASE_URL" "http://localhost:8080"
+  set_env_var_for_profile "ALLOWED_HOSTS" "localhost,127.0.0.1,::1"
+  set_env_var_for_profile "TRUSTED_PROXIES" ""
+  set_env_var_for_profile "CONTABASE_ACCESS_MODE" "local-docker"
 fi
 
 section "[5/5] Subindo aplicacao via Docker..."
@@ -568,15 +675,32 @@ fi
 install_update_command() {
   local update_wrapper="/usr/local/bin/contabase-update"
   local mode_file="/etc/contabase/install-mode"
-  local repo_path
+  local repo_path installed_version installed_channel wrapper_source
   repo_path="$(pwd)"
+  installed_version="${CONTABASE_VERSION:-$(read_public_version_file)}"
+  installed_channel="$(infer_install_channel "$installed_version")"
+  wrapper_source="${repo_path}/scripts/lib/contabase-update-wrapper.sh"
 
   as_root mkdir -p /etc/contabase
+  write_install_state "docker" "$installed_channel" "$installed_version" "$repo_path"
   as_root tee "$mode_file" >/dev/null <<MODE_EOF
 docker
 ${repo_path}
 MODE_EOF
   as_root chmod 0644 "$mode_file" 2>/dev/null || true
+
+  if [ -f "$wrapper_source" ]; then
+    as_root install -m 0755 "$wrapper_source" "$update_wrapper"
+    if [ ! -e /usr/local/bin/cb-update ]; then
+      as_root ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
+    fi
+    say ""
+    say "Comando de atualizacao instalado:"
+    say "  contabase-update"
+    say "  cb-update"
+    say "  sudo contabase-update --help"
+    return 0
+  fi
 
   as_root tee "$update_wrapper" >/dev/null <<'WRAPPER_EOF'
 #!/usr/bin/env bash
@@ -591,7 +715,7 @@ usage() {
   cat <<EOF
 Uso:
   sudo contabase-update [VERSAO]
-  sudo contabase-update v0.1.0-beta.2
+  sudo contabase-update vMAJOR.MINOR.PATCH[-beta.N]
 
 Atualiza o ContaBase detectando automaticamente o modo de instalacao
 (binary, docker ou source) e chamando o script de update correto.
@@ -632,9 +756,9 @@ case "$MODE" in
     VERSION="${1:-}"
     if [ -z "$VERSION" ]; then
       if [ -t 0 ]; then
-        read -r -p "Versao para atualizar (ex.: v0.1.0-beta.1): " VERSION
+        read -r -p "Versao para atualizar (ex.: vMAJOR.MINOR.PATCH[-beta.N]): " VERSION
       else
-        say "Erro: informe a versao. Exemplo: sudo contabase-update v0.1.0-beta.1"
+        say "Erro: informe a versao. Exemplo: sudo contabase-update vMAJOR.MINOR.PATCH[-beta.N]"
         exit 1
       fi
     fi

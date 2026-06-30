@@ -18,6 +18,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_DIR="/opt/contabase"
 DATA_DIR="${DATA_DIR:-/var/lib/contabase}"
+STATE_FILE="/etc/contabase/install-state.env"
 UPLOADS_DIR="${UPLOADS_DIR:-${DATA_DIR}/uploads}"
 PROFILE_UPLOADS_DIR="${UPLOADS_DIR}/profile"
 WORKSPACE_UPLOADS_DIR="${UPLOADS_DIR}/workspaces"
@@ -25,6 +26,7 @@ BACKUPS_DIR="${DATA_DIR}/backups"
 DB_FILE="${DATA_DIR}/contabase.db"
 TMP_BINARY="/tmp/contabase"
 HEALTH_URL="http://127.0.0.1:8080/health"
+INSTALL_CHANNEL="${CONTABASE_CHANNEL:-}"
 
 BACKUP_DIR=""
 APP_VERSION=""
@@ -128,6 +130,47 @@ detect_app_version() {
     APP_VERSION="$(tr -d '[:space:]' < VERSION)"
   fi
   APP_VERSION="${APP_VERSION:-dev}"
+}
+
+infer_install_channel() {
+  if [ -n "$INSTALL_CHANNEL" ]; then
+    printf '%s' "$INSTALL_CHANNEL"
+    return 0
+  fi
+  if [ -n "${CONTABASE_VERSION:-}" ]; then
+    printf '%s' "pinned"
+    return 0
+  fi
+  case "$APP_VERSION" in
+    v*-beta.*) printf '%s' "beta" ;;
+    v*.*.*)
+      case "$APP_VERSION" in
+        *-*) printf '%s' "pinned" ;;
+        *) printf '%s' "stable" ;;
+      esac
+      ;;
+    *) printf '%s' "pinned" ;;
+  esac
+}
+
+write_install_state() {
+  local method="$1"
+  local channel="$2"
+  local version="$3"
+  local repo_path="$4"
+  local tmpfile
+
+  install -d -o root -g root -m 0755 /etc/contabase
+  tmpfile="$(mktemp "${TMPDIR:-/tmp}/contabase-install-state.XXXXXX")"
+  {
+    printf 'CONTABASE_STATE_VERSION=1\n'
+    printf 'CONTABASE_INSTALL_METHOD=%s\n' "$method"
+    printf 'CONTABASE_CHANNEL=%s\n' "$channel"
+    printf 'CONTABASE_INSTALLED_VERSION=%s\n' "$version"
+    printf 'CONTABASE_REPO_PATH=%s\n' "$repo_path"
+  } > "$tmpfile"
+  install -o root -g root -m 0644 "$tmpfile" "$STATE_FILE"
+  rm -f "$tmpfile"
 }
 
 detect_branch_and_commit() {
@@ -429,15 +472,26 @@ print_summary() {
 backfill_update_command() {
   local update_wrapper="/usr/local/bin/contabase-update"
   local mode_file="/etc/contabase/install-mode"
-  local repo_path
+  local repo_path installed_channel wrapper_source
   repo_path="$REPO_ROOT"
+  installed_channel="$(infer_install_channel)"
+  wrapper_source="${repo_path}/scripts/lib/contabase-update-wrapper.sh"
 
+  write_install_state "source" "$installed_channel" "$APP_VERSION" "$repo_path"
   printf '%s\n' "source" > "$mode_file"
   printf '%s\n' "$repo_path" >> "$mode_file"
   chown root:root "$mode_file" 2>/dev/null || true
   chmod 0644 "$mode_file"
 
-  if [ -f "$update_wrapper" ]; then
+  if [ -f "$wrapper_source" ]; then
+    install -o root -g root -m 0755 "$wrapper_source" "$update_wrapper"
+    if [ ! -e /usr/local/bin/cb-update ]; then
+      ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
+    fi
+    echo ""
+    echo -e "${GREEN}Comando global de atualizacao instalado:${NC}"
+    echo "  sudo contabase-update"
+    echo "  sudo cb-update"
     return 0
   fi
 
@@ -454,7 +508,7 @@ usage() {
   cat <<EOF
 Uso:
   sudo contabase-update [VERSAO]
-  sudo contabase-update v0.1.0-beta.2
+  sudo contabase-update vMAJOR.MINOR.PATCH[-beta.N]
 
 Atualiza o ContaBase detectando automaticamente o modo de instalacao
 (binary, docker ou source) e chamando o script de update correto.
@@ -495,9 +549,9 @@ case "$MODE" in
     VERSION="${1:-}"
     if [ -z "$VERSION" ]; then
       if [ -t 0 ]; then
-        read -r -p "Versao para atualizar (ex.: v0.1.0-beta.1): " VERSION
+        read -r -p "Versao para atualizar (ex.: vMAJOR.MINOR.PATCH[-beta.N]): " VERSION
       else
-        say "Erro: informe a versao. Exemplo: sudo contabase-update v0.1.0-beta.1"
+        say "Erro: informe a versao. Exemplo: sudo contabase-update vMAJOR.MINOR.PATCH[-beta.N]"
         exit 1
       fi
     fi

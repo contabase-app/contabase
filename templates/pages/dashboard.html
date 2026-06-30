@@ -7,7 +7,7 @@
 {{define "dashboard-content"}}
 <link rel="stylesheet" href="/assets/css/dashboard.css">
 
-<main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative" data-tab-group="dashboard" data-tab-default="pagar" data-page-title="Dashboard">
+<main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[10rem] md:pb-10 font-sans relative" data-tab-group="dashboard" data-tab-default="pagar" data-page-title="Dashboard">
     <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
 
     <!-- Header/Cockpit Context -->
@@ -49,26 +49,24 @@
         </div>
     </div>
 
-    <!-- Layout: flex-col mobile, grid-cols-12 desktop -->
-    <div class="flex flex-col lg:grid lg:grid-cols-12 gap-4 w-full lg:items-start">
+    <!-- Layout: flex-col mobile, two independent stacks desktop -->
+    <div class="flex flex-col gap-4 lg:grid lg:grid-cols-12 w-full">
 
-        <!-- BALANCE: order-1 mobile, col-start-1 row-start-1 desktop -->
-        <div class="order-1 lg:col-span-4 lg:col-start-1 lg:row-start-1 flex">
-            {{template "dashboard-balance" .}}
+        <!-- LEFT COLUMN: financial + cards -->
+        <div class="order-1 lg:col-span-4 flex flex-col gap-4 min-w-0">
+            <div class="flex">
+                {{template "dashboard-financial" .}}
+            </div>
+            <div>
+                {{template "dashboard-cards" .}}
+            </div>
         </div>
 
-        <!-- ACCOUNTS: order-2 mobile, col-start-1 row-start-2 desktop -->
-        <div class="order-2 lg:col-span-4 lg:col-start-1 lg:row-start-2">
-            {{template "dashboard-accounts" .}}
-        </div>
+        <!-- RIGHT COLUMN: summary + limits/goals + pay/receive -->
+        <div class="order-2 lg:col-span-8 flex flex-col gap-4 min-w-0">
 
-        <!-- CARDS: order-3 mobile, col-start-1 row-start-3 desktop -->
-        <div class="order-3 lg:col-span-4 lg:col-start-1 lg:row-start-3">
-            {{template "dashboard-cards" .}}
-        </div>
-
-        <!-- ROW1: order-4 mobile, col-start-5 row-start-1 desktop -->
-        <div id="dashboard-metrics-row1" class="order-4 lg:col-span-8 lg:col-start-5 lg:row-start-1"
+        <!-- ROW1: summary cards (Caixa, Previsão, Próx 7d) -->
+        <div id="dashboard-metrics-row1"
             hx-trigger="refreshFinancials from:body"
             hx-get="/"
             hx-select="#dashboard-metrics-row1"
@@ -182,8 +180,8 @@
                 </div>
             </div>
 
-        <!-- ROW2+ROW3: order-5 mobile, col-start-5 row-start-2 row-span-2 desktop -->
-        <div id="dashboard-metrics" class="order-5 lg:col-span-8 lg:col-start-5 lg:row-start-2 lg:row-span-2 flex flex-col gap-4"
+        <!-- ROW2+ROW3: limits + goals + pay/receive -->
+        <div id="dashboard-metrics" class="flex flex-col gap-4"
             hx-trigger="refreshFinancials from:body"
             hx-get="/"
             hx-select="#dashboard-metrics"
@@ -366,6 +364,7 @@
                 </section>
             </div>
 
+        </div>
     </div>
 </main>
 {{end}}

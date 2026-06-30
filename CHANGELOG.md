@@ -11,6 +11,30 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
+## [v0.1.0-beta.3]
+
+### Adicionado
+- **Manifests públicos de canal:** preparado contrato para `stable` e `beta` via `contabase-canal/public/channels/*.json`, removendo a necessidade de manter versão padrão hardcoded nos bootstraps do canal.
+- **Estado unificado de instalação:** instaladores e updaters passam a registrar `CONTABASE_INSTALL_METHOD`, `CONTABASE_CHANNEL` e `CONTABASE_INSTALLED_VERSION` em `/etc/contabase/install-state.env`.
+- **`cb-update` orientado a canal:** o comando global agora consegue atualizar dentro do canal salvo, trocar canal explicitamente com `--channel beta|stable` ou fixar uma versão manual com `cb-update vX.Y.Z[-beta.N]`.
+- **Modo explícito de acesso:** instaladores release passam a persistir `CONTABASE_ACCESS_MODE=local|lan|proxy`, separando allowlist de Host (`ALLOWED_HOSTS`) da autorização para HTTP em LAN privada.
+- **Modo local-docker:** novo modo `CONTABASE_ACCESS_MODE=local-docker` para Docker local somente nesta máquina, com bind seguro em `127.0.0.1` e sem exposição em rede.
+- **Smoke de modos de acesso:** script `scripts/smoke-access-modes.sh` para validar modos `local`, `local-docker`, `lan` e `proxy`.
+
+### Alterado
+- **Canal stable fail-closed:** `/install.sh` passa a representar o canal stable e deve falhar de forma clara enquanto não houver stable publicada, em vez de instalar beta silenciosamente.
+- **Canal beta por manifest:** `/beta/install.sh` passa a resolver a versão atual pelo manifest beta e a persistir `CONTABASE_CHANNEL=beta` nas instalações iniciadas por esse canal.
+- **Publicação pública:** o gate interno de preparação pública valida coerência entre `VERSION`, docs, export e manifests locais do `contabase-canal`.
+
+### Corrigido
+- **Migração de installs beta existentes:** instalações legadas com tag beta, incluindo `v0.1.0-beta.2`, são inferidas como canal `beta` ao migrar do estado antigo para `install-state.env`.
+- **Acesso por IP privado/LAN:** instalações guiadas sem proxy com `APP_BASE_URL=http://IP_PRIVADO:PORTA` passam a gravar modo `lan`, permitindo HTTP apenas para esse IP RFC1918 e mantendo bloqueio para IP público ou domínio HTTP sem proxy.
+- **Remoção de versões fixas em scripts ativos:** exemplos de scripts públicos passam a usar placeholders SemVer, preservando tags históricas apenas em documentação de releases antigas.
+- **Dashboard — proteção de tendência percentual:** percentuais de evolução de 30 dias com explosão numérica (ex: `-21095903,6%`) agora são limitados visualmente para `>+999%`/`<-999%` ou substituídos por "novo" quando a base anterior é insuficiente (< 10 centavos). Cálculo financeiro em valor absoluto inalterado.
+- **Dashboard — sobreposição mobile:** aumentado espaçamento inferior do Dashboard no mobile (`pb-[7rem]` → `pb-[10rem]`) para evitar que FAB e bottom nav cubram valores e cards. Demais páginas preservadas.
+- **Metas — menu "mais opções":** corrigido para abrir completo, sem clipping dentro do card. Clique no menu não dispara mais abertura do histórico.
+- **Metas — histórico de Reservas:** título agora usa o nome da despesa (ex: "Academia") em vez do formato antigo "Consumo · Categoria". Conta/cartão relacionado ao lançamento aparece de forma discreta.
+
 ## [v0.1.0-beta.2]
 
 ### Adicionado
@@ -65,11 +89,18 @@ Este arquivo organiza as mudanças por versão e por tipo:
 - **Erros de aporte/liberação** passaram a aparecer dentro do sheet, preservando a experiência do usuário.
 - **Resumos de Reservas e Limites** redesenhados como painéis compactos de estatísticas, diferenciando-os dos cards da lista.
 - **Compatibilidade visual com light/dark theme** preservada nos sheets e painéis de Reservas e Limites.
+- **Dashboard — bloco "Posição Financeira":** novo bloco unificado no Dashboard reunindo Saldo Total (destaque), Reservado e Disponível lado a lado, Minhas Contas com tendência de 30 dias e Meus Cartões. Substitui a separação anterior entre os componentes `dashboard-balance` e `dashboard-accounts`.
+- **Dashboard — evolução consolidada de 30 dias:** Saldo Total ganha indicador de tendência com proteção contra percentuais extremos. Ajustes de tipografia, pesos, espaçamento e responsividade no mobile e desktop.
+- **Metas/Reservas/Limites:** card inteiro de Limites e Reservas agora abre o histórico rápido ao clicar. Menu "mais opções" reposicionado com abertura completa sem clipping e sem disparar histórico. Histórico rápido mostra conta/cartão relacionado ao lançamento.
+- **Segurança — modos de acesso:** política de acesso documentada e revisada para `local`, `local-docker`, `lan` e `proxy`. Docker local usa bind seguro em `127.0.0.1`; LAN exige IP privado real; proxy usa domínio HTTPS e proxy confiável. HTTP público e Host localhost remoto continuam bloqueados.
+- **Instaladores:** fluxo guiado revisado para perguntar modo de acesso conforme tipo de instalação. Docker oferece `local-docker`, LAN, proxy e manual. Release/binário/source oferecem `local`, LAN, proxy e manual. Exemplos e docs de configuração revisados para `APP_BASE_URL`, `ALLOWED_HOSTS`, `TRUSTED_PROXIES` e `CONTABASE_ACCESS_MODE`.
 
 ### Validação
 - Testes permanentes para estados de fatura, limite por saldo pendente, pagamento parcial, quitação, fatura paga não bloqueante, roteamento por ciclo e fatura paga antecipadamente.
 - Smoke financeiro validou pagamento parcial seguido de quitação total, reabertura de fatura paga, ausência de 409 indevido e limite usado/disponível coerente.
 - Smoke visual validou Form Lançamento, quick actions, cards do Dashboard, Notificações, Metas/Reservas, light/dark theme, desktop e mobile.
+- Smoke visual do Dashboard unificado validou "Posição Financeira", Saldo Total, Reservado/Disponível lado a lado, tendências 30d, proteção de percentuais extremos, padding mobile contra sobreposição de FAB/bottom nav e histórico rápido de Reservas/Limites em 3 viewports (390, 768, 1440).
+- Testes de unidade adicionados para `formatTrendPercent`: base zero, base ínfima, percentuais normais, clamp em `>+999%`/`<-999%`, delta zero e zero com base pequena.
 - Validações executadas ao longo das fases:
 
   - `git diff --check`

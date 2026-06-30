@@ -38,7 +38,7 @@ Para fixar uma versão específica:
 curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh && CONTABASE_VERSION=vX.Y.Z bash /tmp/contabase-install.sh
 ```
 
-Exemplo: substitua `vX.Y.Z` por uma tag publicada, como `v0.1.0-beta.2`.
+Exemplo: substitua `vX.Y.Z` por uma tag publicada, como `v0.1.0-beta.3`.
 
 ### Modo não interativo
 
@@ -53,8 +53,9 @@ CONTABASE_VERSION=vX.Y.Z \
 CONTABASE_ASSUME_YES=1 \
 PORT=8080 \
 APP_BASE_URL=https://financeiro.exemplo.com \
-ALLOWED_HOSTS=financeiro.exemplo.com,localhost,127.0.0.1 \
+ALLOWED_HOSTS=financeiro.exemplo.com \
 TRUSTED_PROXIES=127.0.0.1,::1 \
+CONTABASE_ACCESS_MODE=proxy \
 bash /tmp/contabase-install.sh
 ```
 
@@ -123,7 +124,7 @@ Se você já usa Docker, Dockge, Portainer ou CasaOS e quer subir o ContaBase di
 - [Segurança](SECURITY.md)
 - [Privacidade](PRIVACY.md)
 - [Termos de uso](TERMS.md)
-- [Release notes da beta atual](docs/releases/v0.1.0-beta.2.md)
+- [Release notes da beta atual](docs/releases/v0.1.0-beta.3.md)
 - [Histórico da primeira beta](docs/releases/v0.1.0-beta.1.md)
 
 ## Avisos da Beta

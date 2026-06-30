@@ -5,6 +5,13 @@
     dd.classList.remove('is-open');
     var panel = dd.querySelector('[data-ck-panel]');
     if (panel) panel.classList.add('hidden');
+    var link = dd.closest('[data-meta-card]')?.querySelector('[data-meta-card-link]');
+    if (link) {
+      link.classList.remove('pointer-events-none');
+      link.removeAttribute('aria-hidden');
+    }
+    var toggle = dd.querySelector('[data-ck-toggle]');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
     dd.dataset.ckMode = 'menu';
     dd.querySelectorAll('[data-ck-mode-panel]').forEach(function(p) {
       p.classList.toggle('hidden', p.dataset.ckModePanel !== 'menu');
@@ -26,6 +33,13 @@
     if (!panel) return;
     dd.classList.add('is-open');
     panel.classList.remove('hidden');
+    var link = dd.closest('[data-meta-card]')?.querySelector('[data-meta-card-link]');
+    if (link) {
+      link.classList.add('pointer-events-none');
+      link.setAttribute('aria-hidden', 'true');
+    }
+    var toggle = dd.querySelector('[data-ck-toggle]');
+    if (toggle) toggle.setAttribute('aria-expanded', 'true');
     setMode(dd, 'menu');
   }
 
@@ -36,6 +50,11 @@
       var toggle = dd.querySelector('[data-ck-toggle]');
       var panel = dd.querySelector('[data-ck-panel]');
       if (!toggle || !panel) return;
+      var link = dd.closest('[data-meta-card]')?.querySelector('[data-meta-card-link]');
+      if (link) {
+        link.classList.remove('pointer-events-none');
+        link.removeAttribute('aria-hidden');
+      }
 
       toggle.addEventListener('click', function(e) {
         e.preventDefault();

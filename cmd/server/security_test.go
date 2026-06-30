@@ -48,6 +48,331 @@ func TestAllowedHostsPermitLocalhostDev(t *testing.T) {
 	}
 }
 
+func TestAllowedHostsPermitLoopbackHTTP(t *testing.T) {
+	cfg := newHTTPBoundaryConfig("", "")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	tests := []struct {
+		name       string
+		targetURL  string
+		remoteAddr string
+	}{
+		{
+			name:       "ipv4",
+			targetURL:  "http://127.0.0.1:8080/",
+			remoteAddr: "127.0.0.1:44123",
+		},
+		{
+			name:       "ipv6",
+			targetURL:  "http://[::1]:8080/",
+			remoteAddr: "[::1]:44123",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.targetURL, nil)
+			req.RemoteAddr = tc.remoteAddr
+			rr := httptest.NewRecorder()
+
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusNoContent {
+				t.Fatalf("expected loopback request to pass, got %d", rr.Code)
+			}
+		})
+	}
+}
+
+func TestLocalhostHostFromLANRemoteIsBlocked(t *testing.T) {
+	cfg := newHTTPBoundaryConfig("", "")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/", nil)
+	req.RemoteAddr = "192.168.80.50:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUpgradeRequired {
+		t.Fatalf("expected remote request spoofing localhost Host to be blocked with 426, got %d", rr.Code)
+	}
+}
+
+func TestAccessDockerLocalHTTPAllowedWithExplicitMode(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("localhost,127.0.0.1,::1", "", "local-docker", "http://localhost:8080")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	tests := []struct {
+		name      string
+		targetURL string
+	}{
+		{name: "localhost", targetURL: "http://localhost:8080/"},
+		{name: "ipv4 loopback host", targetURL: "http://127.0.0.1:8080/"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.targetURL, nil)
+			req.RemoteAddr = "172.17.0.1:44123"
+			rr := httptest.NewRecorder()
+
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusNoContent {
+				t.Fatalf("expected Docker local request to pass, got %d", rr.Code)
+			}
+		})
+	}
+}
+
+func TestAccessDockerLocalHTTPBlockedForPublicRemote(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("localhost,127.0.0.1", "", "local-docker", "http://localhost:8080")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/", nil)
+	req.RemoteAddr = "198.51.100.20:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUpgradeRequired {
+		t.Fatalf("expected Docker local request from public remote to be blocked with 426, got %d", rr.Code)
+	}
+}
+
+func TestAccessDockerLocalHTTPBlockedWithPublicBaseURL(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("localhost,127.0.0.1,app.example.com", "", "local-docker", "https://app.example.com")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/", nil)
+	req.RemoteAddr = "172.17.0.1:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUpgradeRequired {
+		t.Fatalf("expected Docker local request with public APP_BASE_URL to be blocked with 426, got %d", rr.Code)
+	}
+}
+
+func TestAccessDockerLocalHTTPBlockedWithLANBaseURL(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("localhost,127.0.0.1", "", "local-docker", "http://192.168.80.27:8080")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/", nil)
+	req.RemoteAddr = "172.17.0.1:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUpgradeRequired {
+		t.Fatalf("expected Docker local request with LAN APP_BASE_URL to be blocked with 426, got %d", rr.Code)
+	}
+}
+
+func TestAccessDockerLocalHTTPBlockedWithPublicAllowedHost(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("localhost,127.0.0.1,app.example.com", "", "local-docker", "http://localhost:8080")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/", nil)
+	req.RemoteAddr = "172.17.0.1:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUpgradeRequired {
+		t.Fatalf("expected Docker local request with public ALLOWED_HOSTS to be blocked with 426, got %d", rr.Code)
+	}
+}
+
+func TestHealthRouteUsesHTTPBoundary(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("app.example.com", "", "proxy", "https://app.example.com")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	handler := cfg.enforceRemoteHTTPS(mux)
+	req := httptest.NewRequest(http.MethodGet, "http://app.example.com/health", nil)
+	req.RemoteAddr = "203.0.113.10:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUpgradeRequired {
+		t.Fatalf("expected /health to follow HTTP boundary with 426, got %d", rr.Code)
+	}
+}
+
+func TestPrivateLANHTTPAllowedWithExplicitLANMode(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("localhost,127.0.0.1,192.168.80.27", "", "lan", "http://192.168.80.27:8080")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://192.168.80.27:8080/", nil)
+	req.RemoteAddr = "192.168.80.50:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected private LAN HTTP request to pass in lan mode, got %d", rr.Code)
+	}
+}
+
+func TestPrivateLANHTTPAllowedFromEnvironment(t *testing.T) {
+	t.Setenv("APP_BASE_URL", "http://192.168.80.27:8080")
+	t.Setenv("ALLOWED_HOSTS", "localhost,127.0.0.1,192.168.80.27")
+	t.Setenv("TRUSTED_PROXIES", "")
+	t.Setenv("CONTABASE_ACCESS_MODE", "lan")
+
+	handler := enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://192.168.80.27:8080/", nil)
+	req.RemoteAddr = "192.168.80.50:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected env-configured private LAN HTTP request to pass, got %d", rr.Code)
+	}
+}
+
+func TestSecureCookieDisabledForExplicitLANHTTP(t *testing.T) {
+	t.Setenv("APP_BASE_URL", "http://192.168.80.27:8080")
+	t.Setenv("ALLOWED_HOSTS", "localhost,127.0.0.1,192.168.80.27")
+	t.Setenv("TRUSTED_PROXIES", "")
+	t.Setenv("CONTABASE_ACCESS_MODE", "lan")
+	req := httptest.NewRequest(http.MethodGet, "http://192.168.80.27:8080/", nil)
+	req.RemoteAddr = "192.168.80.50:44123"
+
+	if shouldUseSecureCookie(req) {
+		t.Fatalf("expected LAN HTTP request allowed by explicit lan mode to use non-secure cookies")
+	}
+}
+
+func TestSecureCookieEnabledForTrustedProxyHTTPS(t *testing.T) {
+	t.Setenv("APP_BASE_URL", "https://app.example.com")
+	t.Setenv("ALLOWED_HOSTS", "app.example.com,localhost,127.0.0.1")
+	t.Setenv("TRUSTED_PROXIES", "10.0.0.0/8")
+	t.Setenv("CONTABASE_ACCESS_MODE", "proxy")
+	req := httptest.NewRequest(http.MethodGet, "http://app.example.com/", nil)
+	req.RemoteAddr = "10.1.2.3:44123"
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	if !shouldUseSecureCookie(req) {
+		t.Fatalf("expected HTTPS request from trusted proxy to use secure cookies")
+	}
+}
+
+func TestPrivateLANHTTPBlockedWithoutExplicitLANMode(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("localhost,127.0.0.1,192.168.80.27", "", "", "http://192.168.80.27:8080")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://192.168.80.27:8080/", nil)
+	req.RemoteAddr = "192.168.80.50:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUpgradeRequired {
+		t.Fatalf("expected private LAN HTTP request without lan mode to be blocked with 426, got %d", rr.Code)
+	}
+}
+
+func TestPrivateLANHTTPBlockedWhenHostDiffersFromBaseURL(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("localhost,127.0.0.1,192.168.80.27,192.168.80.28", "", "lan", "http://192.168.80.27:8080")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://192.168.80.28:8080/", nil)
+	req.RemoteAddr = "192.168.80.50:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUpgradeRequired {
+		t.Fatalf("expected LAN HTTP host outside APP_BASE_URL to be blocked with 426, got %d", rr.Code)
+	}
+}
+
+func TestPrivateLANHTTPBlockedWhenHostNotAllowed(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("localhost,127.0.0.1,192.168.80.27", "", "lan", "http://192.168.80.27:8080")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://192.168.80.28:8080/", nil)
+	req.RemoteAddr = "192.168.80.50:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusMisdirectedRequest {
+		t.Fatalf("expected LAN HTTP host outside ALLOWED_HOSTS to be blocked with 421, got %d", rr.Code)
+	}
+}
+
+func TestLANHTTPDoesNotTreatLocalhostAsLANHost(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("localhost,127.0.0.1", "", "lan", "http://localhost:8080")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/", nil)
+	req.RemoteAddr = "192.168.80.50:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUpgradeRequired {
+		t.Fatalf("expected LAN mode with localhost host to be blocked with 426, got %d", rr.Code)
+	}
+}
+
+func TestPublicIPHTTPBlockedEvenWithLANMode(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("203.0.113.10", "", "lan", "http://203.0.113.10:8080")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://203.0.113.10:8080/", nil)
+	req.RemoteAddr = "198.51.100.20:44123"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUpgradeRequired {
+		t.Fatalf("expected public IP HTTP request to be blocked with 426, got %d", rr.Code)
+	}
+}
+
+func TestHTTPSViaTrustedProxyAllowedInProxyMode(t *testing.T) {
+	cfg := newHTTPBoundaryConfigWithAccess("app.example.com", "10.0.0.0/8", "proxy", "https://app.example.com")
+	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://app.example.com/", nil)
+	req.RemoteAddr = "10.1.2.3:44123"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected HTTPS request from trusted proxy to pass, got %d", rr.Code)
+	}
+}
+
 func TestForwardedProtoIgnoredFromUntrustedRemote(t *testing.T) {
 	cfg := newHTTPBoundaryConfig("app.example.com", "10.0.0.0/8")
 	handler := cfg.enforceRemoteHTTPS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

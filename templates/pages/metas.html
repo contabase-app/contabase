@@ -84,8 +84,17 @@
 {{define "metas-limit-card"}}
 {{$variant := "healthy"}}
 {{if ge .Percent 100}}{{$variant = "danger"}}{{else if ge .Percent 80}}{{$variant = "warning"}}{{end}}
-<article class="cb-card-dense flex flex-col gap-2.5">
-    <div class="metas-card-header">
+<article data-meta-card class="cb-card-dense relative flex flex-col gap-2.5">
+    <a data-meta-card-link
+        href="/metas/limite/historico?limit_id={{.ID}}"
+        hx-get="/metas/limite/historico?limit_id={{.ID}}"
+        hx-target="#bottom-sheet-container"
+        hx-swap="innerHTML"
+        hx-push-url="false"
+        aria-label="Abrir histórico do limite {{.CategoryName}}"
+        class="absolute inset-0 z-0 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cb-border-focus)] focus-visible:ring-inset"></a>
+
+    <div class="relative z-10 flex items-start justify-between gap-3 pointer-events-none">
         <div class="flex items-center gap-2.5 min-w-0">
             <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-{{.CategoryColor}}-500/10 text-{{.CategoryColor}}-600 dark:text-{{.CategoryColor}}-400">
                 <i data-lucide="{{.CategoryIcon}}" class="w-3.5 h-3.5"></i>
@@ -95,8 +104,8 @@
                 <p class="metas-card-subtitle">Máx: R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}</p>
             </div>
         </div>
-        <div class="cb-meta-menu" data-caixinha-dropdown data-ck-mode="menu">
-            <button type="button" data-ck-toggle class="cb-meta-menu-toggle" aria-label="Ações do limite">
+        <div class="cb-meta-menu relative z-20 pointer-events-auto" data-caixinha-dropdown data-ck-mode="menu">
+            <button type="button" data-ck-toggle class="cb-meta-menu-toggle" aria-label="Ações do limite" aria-expanded="false">
                 <i data-lucide="ellipsis-vertical" class="w-4 h-4"></i>
             </button>
             <div data-ck-panel class="metas-menu-panel hidden">
@@ -122,11 +131,7 @@
         </div>
     </div>
 
-    <div class="cursor-pointer flex flex-col gap-2"
-        hx-get="/metas/limite/historico?limit_id={{.ID}}"
-        hx-target="#bottom-sheet-container"
-        hx-swap="innerHTML"
-        hx-push-url="false">
+    <div class="relative z-10 flex flex-col gap-2 pointer-events-none">
         <div class="flex items-center justify-between gap-2">
             <span class="cb-status-chip cb-status-chip-{{$variant}}">{{.Percent}}% usado</span>
             {{if ge .Percent 100}}
@@ -209,8 +214,17 @@
     {{$status = "neutral"}}{{$statusLabel = "Sem prazo"}}
 {{end}}
 
-<article class="cb-card-dense flex flex-col gap-2.5">
-    <div class="metas-card-header">
+<article data-meta-card class="cb-card-dense relative flex flex-col gap-2.5">
+    <a data-meta-card-link
+        href="/metas/caixinha/historico?box_id={{.ID}}"
+        hx-get="/metas/caixinha/historico?box_id={{.ID}}"
+        hx-target="#bottom-sheet-container"
+        hx-swap="innerHTML"
+        hx-push-url="false"
+        aria-label="Abrir histórico da reserva {{.Name}}"
+        class="absolute inset-0 z-0 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cb-border-focus)] focus-visible:ring-inset"></a>
+
+    <div class="relative z-10 flex items-start justify-between gap-3 pointer-events-none">
         <div class="flex items-center gap-2.5 min-w-0">
             <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]">
                 <i data-lucide="{{.Icon}}" class="w-3.5 h-3.5 icon-colored" style="--ic: {{.Color}}"></i>
@@ -220,11 +234,11 @@
                 <p class="metas-card-subtitle">{{.CategoryName}}</p>
             </div>
         </div>
-        <div class="cb-meta-menu" data-caixinha-dropdown data-ck-mode="menu">
-                    <button type="button" data-ck-toggle class="cb-meta-menu-toggle" aria-label="Ações da reserva">
-                        <i data-lucide="ellipsis-vertical" class="w-4 h-4"></i>
-                        <span class="sr-only">Mais</span>
-                    </button>
+        <div class="cb-meta-menu relative z-20 pointer-events-auto" data-caixinha-dropdown data-ck-mode="menu">
+            <button type="button" data-ck-toggle class="cb-meta-menu-toggle" aria-label="Ações da reserva" aria-expanded="false">
+                <i data-lucide="ellipsis-vertical" class="w-4 h-4"></i>
+                <span class="sr-only">Mais</span>
+            </button>
             <div data-ck-panel class="metas-menu-panel hidden">
                 <div data-ck-mode-panel="menu">
                     <button type="button" data-ck-close
@@ -264,16 +278,11 @@
                     </button>
                     {{end}}
                 </div>
-
             </div>
         </div>
     </div>
 
-    <div class="cursor-pointer flex flex-col gap-2"
-        hx-get="/metas/caixinha/historico?box_id={{.ID}}"
-        hx-target="#bottom-sheet-container"
-        hx-swap="innerHTML"
-        hx-push-url="false">
+    <div class="relative z-10 flex flex-col gap-2 pointer-events-none">
         <div class="flex items-center justify-between gap-2">
             <span class="cb-status-chip cb-status-chip-info">{{.Percent}}%</span>
             <span class="cb-status-chip cb-status-chip-{{$status}}">{{$statusLabel}}</span>
@@ -333,13 +342,11 @@
                 {{range .Events}}
                 <div class="cb-card-muted flex items-center justify-between px-4 py-3">
                     <div class="min-w-0 flex-1 mr-3">
-                        <div class="flex items-center gap-2">
-                            <span class="text-xs font-semibold cb-text-main truncate">{{.TypeLabel}}</span>
-                            {{if .Description}}
-                            <span class="text-[11px] cb-text-subtle truncate hidden sm:inline">{{.Description}}</span>
-{{end}}
-                        </div>
-                        <p class="mt-0.5 text-[11px] cb-text-subtle">{{.DateLabel}}</p>
+                        <span class="text-xs font-semibold cb-text-main truncate block">{{.Description}}</span>
+                        <p class="mt-0.5 text-[11px] cb-text-subtle">{{.TypeLabel}} &middot; {{.DateLabel}}</p>
+                        {{if .AccountName}}
+                        <p class="mt-0.5 text-[11px] cb-text-subtle truncate">{{.AccountLabel}} · {{.AccountName}}</p>
+                        {{end}}
                     </div>
                     <span class="text-sm font-bold {{if .IsCredit}}text-[var(--cb-success)]{{else}}text-[var(--cb-danger)]{{end}} tabular-nums shrink-0">
                         {{if .IsCredit}}+{{end}}R$ {{.Money.Reais}}{{.Money.Cents}}
@@ -535,6 +542,9 @@
                     <div class="min-w-0 flex-1 mr-3">
                         <span class="text-xs font-semibold cb-text-main truncate block">{{.Description}}</span>
                         <p class="mt-0.5 text-[11px] cb-text-subtle">{{.DateLabel}}</p>
+                        {{if .AccountName}}
+                        <p class="mt-0.5 text-[11px] cb-text-subtle truncate">{{.AccountLabel}} · {{.AccountName}}</p>
+                        {{end}}
                     </div>
                     <span class="text-sm font-bold text-[var(--cb-danger)] tabular-nums shrink-0" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                 </div>

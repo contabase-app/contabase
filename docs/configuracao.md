@@ -46,8 +46,9 @@ docker compose up -d --build
 |---|---|---|
 | `PORT` | Porta local onde o ContaBase roda | `PORT=8080` |
 | `APP_BASE_URL` | URL que você abre no navegador | `APP_BASE_URL=https://financeiro.seudominio.com` |
-| `ALLOWED_HOSTS` | Domínios ou IPs aceitos | `ALLOWED_HOSTS=financeiro.seudominio.com,localhost,127.0.0.1` |
+| `ALLOWED_HOSTS` | Domínios ou IPs aceitos | `ALLOWED_HOSTS=financeiro.seudominio.com` |
 | `TRUSTED_PROXIES` | Proxy reverso confiável | `TRUSTED_PROXIES=127.0.0.1,::1` |
+| `CONTABASE_ACCESS_MODE` | Modo explícito de acesso HTTP/HTTPS | `CONTABASE_ACCESS_MODE=proxy` |
 | `DATABASE_URL` | Caminho do banco SQLite | `DATABASE_URL=file:/app/data/contabase.db` |
 | `DATA_DIR` | Pasta principal de dados | `DATA_DIR=/app/data` |
 | `UPLOADS_DIR` | Pasta de uploads | `UPLOADS_DIR=/app/data/uploads` |
@@ -80,13 +81,13 @@ Lista os domínios ou IPs que podem acessar o ContaBase.
 Exemplo com domínio:
 
 ```env
-ALLOWED_HOSTS=financeiro.seudominio.com,localhost,127.0.0.1
+ALLOWED_HOSTS=financeiro.seudominio.com
 ```
 
 Exemplo com IP local:
 
 ```env
-ALLOWED_HOSTS=192.168.1.50,localhost,127.0.0.1
+ALLOWED_HOSTS=192.168.1.50
 ```
 
 Se o domínio não estiver aqui, o acesso pode ser bloqueado.
@@ -113,6 +114,44 @@ Se você não usa proxy reverso, pode deixar vazio:
 
 ```env
 TRUSTED_PROXIES=
+```
+
+## CONTABASE_ACCESS_MODE
+
+Define o contrato de acesso aceito pela aplicacao.
+
+Valores:
+
+- `local`: somente `localhost`/`127.0.0.1` por HTTP.
+- `local-docker`: permite HTTP por `localhost`/`127.0.0.1` quando o app roda em Docker local somente nesta máquina e a origem vista pelo container e privada/loopback.
+- `lan`: permite HTTP direto apenas por IP privado RFC1918 configurado em `APP_BASE_URL` e listado em `ALLOWED_HOSTS`.
+- `proxy`: uso recomendado com domínio HTTPS por proxy, tunnel ou CDN confiável.
+
+Para Docker local somente nesta máquina:
+
+```env
+APP_BASE_URL=http://localhost:8080
+ALLOWED_HOSTS=localhost,127.0.0.1,::1
+TRUSTED_PROXIES=
+CONTABASE_ACCESS_MODE=local-docker
+```
+
+`ALLOWED_HOSTS` continua sendo uma allowlist de Host, mas não libera sozinho HTTP remoto. Para acessar por IP privado, use:
+
+```env
+APP_BASE_URL=http://192.168.1.50:8080
+ALLOWED_HOSTS=192.168.1.50
+TRUSTED_PROXIES=
+CONTABASE_ACCESS_MODE=lan
+```
+
+Domínio público em `http://` sem proxy não é aceito. Use HTTPS com proxy/tunnel:
+
+```env
+APP_BASE_URL=https://financeiro.seudominio.com
+ALLOWED_HOSTS=financeiro.seudominio.com
+TRUSTED_PROXIES=127.0.0.1,::1
+CONTABASE_ACCESS_MODE=proxy
 ```
 
 ## PORT
@@ -196,8 +235,9 @@ APP_ENV=production
 APP_DEBUG=false
 PORT=8080
 APP_BASE_URL=https://financeiro.seudominio.com
-ALLOWED_HOSTS=financeiro.seudominio.com,localhost,127.0.0.1
+ALLOWED_HOSTS=financeiro.seudominio.com
 TRUSTED_PROXIES=127.0.0.1,::1
+CONTABASE_ACCESS_MODE=proxy
 ```
 
 ## Exemplo simples por IP local
@@ -207,8 +247,9 @@ APP_ENV=production
 APP_DEBUG=false
 PORT=8080
 APP_BASE_URL=http://192.168.1.50:8080
-ALLOWED_HOSTS=192.168.1.50,localhost,127.0.0.1
+ALLOWED_HOSTS=192.168.1.50
 TRUSTED_PROXIES=
+CONTABASE_ACCESS_MODE=lan
 ```
 
 ## O que fazer depois de mudar configuração?

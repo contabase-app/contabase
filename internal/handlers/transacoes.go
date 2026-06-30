@@ -60,18 +60,18 @@ type FormCategory struct {
 }
 
 type InvoiceOption struct {
-	ID            string
-	Reference     string
+	ID             string
+	Reference      string
 	ReferenceLabel string
-	Status        string
-	StatusLabel   string
-	CycleLabel    string
-	FinLabel      string
-	DueLabel      string
-	ClosingLabel  string
-	TotalDisplay  string
+	Status         string
+	StatusLabel    string
+	CycleLabel     string
+	FinLabel       string
+	DueLabel       string
+	ClosingLabel   string
+	TotalDisplay   string
 	PendingDisplay string
-	IsSensitive   bool
+	IsSensitive    bool
 }
 
 type FormTransacaoData struct {
@@ -2070,14 +2070,16 @@ type DashboardHealthData struct {
 }
 
 type AccountCard struct {
-	ID           string
-	Name         string
-	Money        MoneyDisplay
-	Icon         string
-	Color        string
-	ProviderSlug string
-	ProviderMark string
-	TypeLabel    string
+	ID             string
+	Name           string
+	Money          MoneyDisplay
+	TrendPercent   string
+	TrendDirection string
+	Icon           string
+	Color          string
+	ProviderSlug   string
+	ProviderMark   string
+	TypeLabel      string
 }
 
 type CreditCardCard struct {
@@ -2170,10 +2172,10 @@ func BuildDashboardData(db *sql.DB, userID, workspaceID string) DashboardData {
 		data.Balance.Free = MoneyMinor(reserveBalance.FreeBalance)
 		data.Balance.FreeIsNegative = reserveBalance.FreeBalance < 0
 	}
-	data.Balance.Money = MoneyMajor(totalBalance)
-	data.Balance.TrendPercent, data.Balance.TrendDirection = queryBalanceTrend(db, workspaceID, totalBalance)
-	data.Balance.IsNegative = totalBalance < 0
 	now := time.Now()
+	data.Balance.Money = MoneyMajor(totalBalance)
+	data.Balance.TrendPercent, data.Balance.TrendDirection = queryBalanceTrend(db, workspaceID, totalBalance, now)
+	data.Balance.IsNegative = totalBalance < 0
 	data.Health = queryDashboardHealth(db, workspaceID, totalBalance, data.IsBusiness)
 	data.Limits = queryDashboardLimits(db, workspaceID, now)
 	data.PendingPayables = QueryDashboardPendingPayables7d(db, workspaceID, now)
@@ -2220,15 +2222,23 @@ func BuildDashboardData(db *sql.DB, userID, workspaceID string) DashboardData {
 		ORDER BY a.sort_order ASC, a.name ASC
 	`, workspaceID)
 	if err == nil {
-		defer rows.Close()
+		type accRaw struct {
+			id, name, accType, providerSlug, color, icon string
+			balance int64
+		}
+		var rawAccounts []accRaw
 		for rows.Next() {
-			var id, name, accType, providerSlug, color, icon string
-			var balance int64
-			if err := rows.Scan(&id, &name, &balance, &accType, &providerSlug, &color, &icon); err != nil {
+			var r accRaw
+			if err := rows.Scan(&r.id, &r.name, &r.balance, &r.accType, &r.providerSlug, &r.color, &r.icon); err != nil {
 				continue
 			}
+			rawAccounts = append(rawAccounts, r)
+		}
+		rows.Close()
+
+		for _, r := range rawAccounts {
 			var typeLabel string
-			switch strings.ToUpper(accType) {
+			switch strings.ToUpper(r.accType) {
 			case "CHECKING":
 				typeLabel = "Conta Corrente"
 			case "SAVINGS":
@@ -2240,30 +2250,35 @@ func BuildDashboardData(db *sql.DB, userID, workspaceID string) DashboardData {
 			default:
 				typeLabel = "Conta"
 			}
-			accIcon := icon
+			accIcon := r.icon
 			if accIcon == "" {
-				accIcon = accountVisualByProvider(providerSlug, accType)
+				accIcon = accountVisualByProvider(r.providerSlug, r.accType)
 			}
+			trendPercent, trendDirection := queryAccountTrend(db, workspaceID, r.id, r.balance, now)
 			data.Accounts = append(data.Accounts, AccountCard{
-				ID:           id,
-				Name:         name,
-				Money:        MoneyMinor(balance),
-				Icon:         accIcon,
-				Color:        normalizeHexColor(color, "#6B7280"),
-				ProviderSlug: normalizeAccountProviderSlug(providerSlug),
-				ProviderMark: accountProviderMark(providerSlug, name),
-				TypeLabel:    typeLabel,
+				ID:             r.id,
+				Name:           r.name,
+				Money:          MoneyMinor(r.balance),
+				TrendPercent:   trendPercent,
+				TrendDirection: trendDirection,
+				Icon:           accIcon,
+				Color:          normalizeHexColor(r.color, "#6B7280"),
+				ProviderSlug:   normalizeAccountProviderSlug(r.providerSlug),
+				ProviderMark:   accountProviderMark(r.providerSlug, r.name),
+				TypeLabel:      typeLabel,
 			})
-			if accType == models.AccountTypeChecking || accType == models.AccountTypeSavings {
+			if r.accType == models.AccountTypeChecking || r.accType == models.AccountTypeSavings {
 				data.PaymentAccounts = append(data.PaymentAccounts, AccountCard{
-					ID:           id,
-					Name:         name,
-					Money:        MoneyMinor(balance),
-					Icon:         accIcon,
-					Color:        normalizeHexColor(color, "#6B7280"),
-					ProviderSlug: normalizeAccountProviderSlug(providerSlug),
-					ProviderMark: accountProviderMark(providerSlug, name),
-					TypeLabel:    typeLabel,
+					ID:             r.id,
+					Name:           r.name,
+					Money:          MoneyMinor(r.balance),
+					TrendPercent:   trendPercent,
+					TrendDirection: trendDirection,
+					Icon:           accIcon,
+					Color:          normalizeHexColor(r.color, "#6B7280"),
+					ProviderSlug:   normalizeAccountProviderSlug(r.providerSlug),
+					ProviderMark:   accountProviderMark(r.providerSlug, r.name),
+					TypeLabel:      typeLabel,
 				})
 			}
 		}
@@ -2889,44 +2904,140 @@ func queryWorkspaceName(db *sql.DB, workspaceID string) string {
 	return name
 }
 
-func queryBalanceTrend(db *sql.DB, workspaceID string, currentBalance int64) (string, string) {
-	now := time.Now()
-	currentStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Unix()
+func queryBalanceTrend(db *sql.DB, workspaceID string, currentBalance int64, now time.Time) (string, string) {
+	currentStart := now.AddDate(0, 0, -30).Unix()
 	currentNet := queryRealAccountNetCashFlow(db, workspaceID, currentStart, now.Unix())
 	previousClosingBalance := currentBalance - currentNet
-	direction := "up"
-	if currentBalance < previousClosingBalance {
-		direction = "down"
+	return formatTrendPercent(currentBalance, previousClosingBalance), trendDirectionFromDelta(currentBalance - previousClosingBalance)
+}
+
+func queryAccountTrend(db *sql.DB, workspaceID, accountID string, currentBalance int64, now time.Time) (string, string) {
+	currentStart := now.AddDate(0, 0, -30).Unix()
+	var netFlow int64
+	_ = db.QueryRow(`
+		SELECT COALESCE(SUM(CASE
+			WHEN t.type = 'INCOME' THEN t.amount
+			WHEN t.type = 'EXPENSE' THEN -t.amount
+			WHEN t.type = 'TRANSFER' AND t.account_id = ? THEN -t.amount
+			WHEN t.type = 'TRANSFER' AND t.destination_account_id = ? THEN t.amount
+			ELSE 0
+		END), 0)
+		FROM transactions t
+		WHERE t.workspace_id = ?
+		  AND t.status = 'paid'
+		  AND t.date >= ? AND t.date < ?
+		  AND (t.account_id = ? OR t.destination_account_id = ?)
+	`, accountID, accountID, workspaceID, currentStart, now.Unix(), accountID, accountID).Scan(&netFlow)
+
+	previousBalance := currentBalance - netFlow
+	return formatTrendPercent(currentBalance, previousBalance), trendDirectionFromDelta(currentBalance - previousBalance)
+}
+
+func trendDirectionFromDelta(delta int64) string {
+	switch {
+	case delta > 0:
+		return "up"
+	case delta < 0:
+		return "down"
+	default:
+		return "flat"
 	}
-	diff := currentBalance - previousClosingBalance
-	if diff < 0 {
-		diff = -diff
+}
+
+func formatTrendPercent(current, previous int64) string {
+	delta := current - previous
+	if delta == 0 {
+		return "0,0%"
 	}
-	if previousClosingBalance == 0 {
-		if diff == 0 {
-			return "0,0%", direction
+	base := absInt64(previous)
+	if base < 10 {
+		return "novo"
+	}
+	absDelta := delta
+	if absDelta < 0 {
+		absDelta = -absDelta
+	}
+	percentTenths := (absDelta*1000 + base/2) / base
+	if percentTenths > 9990 {
+		if delta > 0 {
+			return ">+999%"
 		}
-		return "100,0%", direction
+		return "<-999%"
 	}
-	percentTenths := (diff*1000 + absInt64(previousClosingBalance)/2) / absInt64(previousClosingBalance)
-	return fmt.Sprintf("%d,%d%%", percentTenths/10, percentTenths%10), direction
+	sign := "+"
+	if delta < 0 {
+		sign = "-"
+	}
+	return fmt.Sprintf("%s%d,%d%%", sign, percentTenths/10, percentTenths%10)
 }
 
 func queryRealAccountNetCashFlow(db *sql.DB, workspaceID string, startUnix, endUnix int64) int64 {
-	var income, expense int64
-	db.QueryRow(`
-		SELECT COALESCE(SUM(CASE WHEN type = 'INCOME' THEN amount ELSE 0 END), 0),
-		       COALESCE(SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END), 0)
+	query := `
+	SELECT COALESCE(SUM(net), 0) FROM (
+		SELECT t.amount AS net
 		FROM transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		WHERE t.workspace_id = ?
-		  AND a.workspace_id = ?
-		  AND a.type != ?
+		  AND a.type != 'CREDIT_CARD' AND a.archived_at IS NULL
 		  AND t.status = 'paid'
-		  AND t.type IN ('INCOME', 'EXPENSE')
+		  AND t.type = 'INCOME'
 		  AND t.date >= ? AND t.date < ?
-	`, workspaceID, workspaceID, models.AccountTypeCreditCard, startUnix, endUnix).Scan(&income, &expense)
-	return income - expense
+
+		UNION ALL
+
+		SELECT -t.amount AS net
+		FROM transactions t
+		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		WHERE t.workspace_id = ?
+		  AND a.type != 'CREDIT_CARD' AND a.archived_at IS NULL
+		  AND t.status = 'paid'
+		  AND t.type = 'EXPENSE'
+		  AND t.date >= ? AND t.date < ?
+
+		UNION ALL
+
+		SELECT -t.amount AS net
+		FROM transactions t
+		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		WHERE t.workspace_id = ?
+		  AND a.type != 'CREDIT_CARD' AND a.archived_at IS NULL
+		  AND t.status = 'paid'
+		  AND t.type = 'TRANSFER'
+		  AND t.date >= ? AND t.date < ?
+		  AND NOT EXISTS (
+			SELECT 1 FROM accounts da
+			WHERE da.id = t.destination_account_id
+			  AND da.workspace_id = t.workspace_id
+			  AND da.type != 'CREDIT_CARD'
+			  AND da.archived_at IS NULL
+		  )
+
+		UNION ALL
+
+		SELECT t.amount AS net
+		FROM transactions t
+		JOIN accounts a ON a.id = t.destination_account_id AND a.workspace_id = t.workspace_id
+		WHERE t.workspace_id = ?
+		  AND a.type != 'CREDIT_CARD' AND a.archived_at IS NULL
+		  AND t.status = 'paid'
+		  AND t.type = 'TRANSFER'
+		  AND t.date >= ? AND t.date < ?
+		  AND NOT EXISTS (
+			SELECT 1 FROM accounts sa
+			WHERE sa.id = t.account_id
+			  AND sa.workspace_id = t.workspace_id
+			  AND sa.type != 'CREDIT_CARD'
+			  AND sa.archived_at IS NULL
+		  )
+	)`
+	var net int64
+	_ = db.QueryRow(query,
+		workspaceID, startUnix, endUnix,
+		workspaceID, startUnix, endUnix,
+		workspaceID, startUnix, endUnix,
+		workspaceID, startUnix, endUnix,
+	).Scan(&net)
+	return net
 }
 
 func queryDashboardHealth(db *sql.DB, workspaceID string, totalBalance int64, isBusiness bool) DashboardHealthData {
@@ -4062,7 +4173,7 @@ func (h *TransactionHandler) renderDashboardOOB(w http.ResponseWriter) error {
 }
 
 func dashboardOOBTemplateNames() []string {
-	return []string{"dashboard-summary", "dashboard-balance", "dashboard-accounts", "dashboard-cards", "dashboard-health-cards"}
+	return []string{"dashboard-summary", "dashboard-financial", "dashboard-balance", "dashboard-accounts", "dashboard-cards", "dashboard-health-cards"}
 }
 
 func (h *TransactionHandler) HandleDetalheTransacao(w http.ResponseWriter, r *http.Request, id string) {

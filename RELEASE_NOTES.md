@@ -5,6 +5,12 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Em preparação
 
+- **[v0.1.0-beta.3](docs/releases/v0.1.0-beta.3.md)** — *Beta pública controlada*
+
+  Terceira Beta pública do ContaBase, com novo Dashboard unificado ("Posição Financeira"), proteção visual de tendências percentuais, melhorias nos históricos rápidos de Reservas e Limites, novo modo de acesso `local-docker`, revisão da política de modos de acesso (`local`, `local-docker`, `lan`, `proxy`) e fluxo guiado de instalação com pergunta de modo de acesso conforme tipo de instalação.
+
+  A release ainda não foi publicada. Backup e teste de restore são obrigatórios antes de usar dados importantes.
+
 - **[v0.1.0-beta.2](docs/releases/v0.1.0-beta.2.md)** — *Beta pública controlada*
 
   Segunda Beta pública do ContaBase, com redesign visual do financeiro (Dense Financial UI), correção do cálculo de limite de cartão por saldo pendente das faturas, correção de duplicidade na edição de lançamentos recorrentes, busca de categorias sem acento, seletor manual de fatura no formulário de lançamento e scripts de atualização revisados.

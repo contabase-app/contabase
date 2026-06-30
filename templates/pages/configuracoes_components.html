@@ -159,46 +159,48 @@
 {{end}}
 
 {{define "config-contas-row"}}
-<article class="cb-row-dense group flex items-center justify-between">
+<article class="cb-row-dense group flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between overflow-hidden">
     <div class="flex items-center gap-3 min-w-0">
         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
             {{template "financial-emblem" .}}
         </span>
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
             <p class="text-sm font-medium text-[var(--cb-text-main)] truncate">{{.Name}}</p>
             <p class="text-xs text-[var(--cb-text-muted)]">{{.TypeLabel}}</p>
         </div>
     </div>
-    <div class="flex items-center gap-1 shrink-0">
-        <p class="text-sm font-semibold text-[var(--cb-text-main)] mr-2" data-sensitive>{{.Balance}}</p>
-        <button type="button" class="h-6 w-6 rounded-md border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-subtle)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile"
-            hx-post="/configuracoes/contas/{{.ID}}/subir"
-            hx-target="#settings-dynamic-payload"
-            hx-swap="outerHTML"
-            aria-label="Mover {{.Name}} para cima">
-            <i data-lucide="chevron-up" class="h-3 w-3"></i>
-        </button>
-        <button type="button" class="h-6 w-6 rounded-md border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-subtle)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile mr-1"
-            hx-post="/configuracoes/contas/{{.ID}}/descer"
-            hx-target="#settings-dynamic-payload"
-            hx-swap="outerHTML"
-            aria-label="Mover {{.Name}} para baixo">
-            <i data-lucide="chevron-down" class="h-3 w-3"></i>
-        </button>
-        <button type="button" class="h-8 w-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile"
-            hx-get="/configuracoes/contas/{{.ID}}/formulario"
-            hx-target="closest article" hx-swap="outerHTML"
-            aria-label="Editar {{.Name}}">
-            <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
-        </button>
-        <button type="button" class="h-8 w-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-[var(--cb-warning)] hover:border-[var(--cb-warning)] active:scale-95 btn-tactile"
-            hx-post="/configuracoes/contas/{{.ID}}/arquivar"
-            hx-target="#settings-dynamic-payload"
-            hx-swap="outerHTML"
-            hx-confirm="Arquivar esta conta? Ela deixará de aparecer no dashboard e nos formulários, mas o histórico será mantido."
-            aria-label="Arquivar {{.Name}}">
-            <i data-lucide="archive" class="h-3.5 w-3.5"></i>
-        </button>
+    <div class="flex items-center justify-between sm:justify-end gap-1 sm:shrink-0">
+        <p class="text-sm font-semibold text-[var(--cb-text-main)] sm:mr-2" data-sensitive>{{.Balance}}</p>
+        <div class="flex items-center gap-1">
+            <button type="button" class="h-6 w-6 rounded-md border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-subtle)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile"
+                hx-post="/configuracoes/contas/{{.ID}}/subir"
+                hx-target="#settings-dynamic-payload"
+                hx-swap="outerHTML"
+                aria-label="Mover {{.Name}} para cima">
+                <i data-lucide="chevron-up" class="h-3 w-3"></i>
+            </button>
+            <button type="button" class="h-6 w-6 rounded-md border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-subtle)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile sm:mr-1"
+                hx-post="/configuracoes/contas/{{.ID}}/descer"
+                hx-target="#settings-dynamic-payload"
+                hx-swap="outerHTML"
+                aria-label="Mover {{.Name}} para baixo">
+                <i data-lucide="chevron-down" class="h-3 w-3"></i>
+            </button>
+            <button type="button" class="h-8 w-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile"
+                hx-get="/configuracoes/contas/{{.ID}}/formulario"
+                hx-target="closest article" hx-swap="outerHTML"
+                aria-label="Editar {{.Name}}">
+                <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+            </button>
+            <button type="button" class="h-8 w-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-muted)] transition-all hover:text-[var(--cb-warning)] hover:border-[var(--cb-warning)] active:scale-95 btn-tactile"
+                hx-post="/configuracoes/contas/{{.ID}}/arquivar"
+                hx-target="#settings-dynamic-payload"
+                hx-swap="outerHTML"
+                hx-confirm="Arquivar esta conta? Ela deixará de aparecer no dashboard e nos formulários, mas o histórico será mantido."
+                aria-label="Arquivar {{.Name}}">
+                <i data-lucide="archive" class="h-3.5 w-3.5"></i>
+            </button>
+        </div>
     </div>
 </article>
 {{end}}

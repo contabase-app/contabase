@@ -20,6 +20,7 @@ func TestDashboardEmblemsRenderProviderMark(t *testing.T) {
 		},
 	}).ParseFiles(
 		resolveTemplatePath(t, "templates/pages/dashboard.html"),
+		resolveTemplatePath(t, "templates/components/dashboard-financial.html"),
 		resolveTemplatePath(t, "templates/components/dashboard-accounts.html"),
 		resolveTemplatePath(t, "templates/components/dashboard-cards.html"),
 		resolveTemplatePath(t, "templates/components/financial-emblem.html"),
@@ -120,6 +121,23 @@ func TestDashboardEmblemsRenderProviderMark(t *testing.T) {
 		assertContains(t, html, "emblem-len-2") // len("MP")
 	})
 
+	t.Run("dashboard-financial template rendering", func(t *testing.T) {
+		var buf bytes.Buffer
+		err := tpl.ExecuteTemplate(&buf, "dashboard-financial", data)
+		if err != nil {
+			t.Fatalf("failed to execute dashboard-financial template: %v", err)
+		}
+
+		html := buf.String()
+
+		assertContains(t, html, "Posição financeira")
+		assertContains(t, html, "Saldo total")
+		assertContains(t, html, "Minhas Contas")
+		assertContains(t, html, "nos últimos 30 dias")
+		assertContains(t, html, "30d")
+		assertContains(t, html, `/lancamentos?conta=acc-inter`)
+	})
+
 	// 4. Test rendering dashboard-cards template
 	t.Run("dashboard-cards template rendering", func(t *testing.T) {
 		var buf bytes.Buffer
@@ -155,6 +173,8 @@ func TestDashboardEmblemsRenderProviderMark(t *testing.T) {
 		assertContains(t, html, "MP")
 		assertContains(t, html, "NU")
 		assertContains(t, html, "XP")
+		assertContains(t, html, "Saldo total")
+		assertContains(t, html, "Minhas Contas")
 		assertContains(t, html, "Previsão")
 		assertContains(t, html, "Pendentes do mês + faturas em aberto/fechadas.")
 		assertContains(t, html, "A receber previsto")
@@ -165,6 +185,24 @@ func TestDashboardEmblemsRenderProviderMark(t *testing.T) {
 		assertContains(t, html, "emblem-text")
 		assertContains(t, html, "emblem-len-5")
 		assertContains(t, html, "emblem-len-2")
+	})
+
+	t.Run("dashboard financial block empty state", func(t *testing.T) {
+		var buf bytes.Buffer
+		emptyData := DashboardData{
+			CurrentWorkspaceName: "Workspace Novo",
+			ActiveWorkspaceName:  "Workspace Novo",
+			Title:                "Dashboard",
+		}
+		err := tpl.ExecuteTemplate(&buf, "dashboard-financial", emptyData)
+		if err != nil {
+			t.Fatalf("failed to execute empty dashboard-financial template: %v", err)
+		}
+
+		html := buf.String()
+		assertContains(t, html, "Saldo total")
+		assertContains(t, html, "Comece criando sua primeira conta.")
+		assertContains(t, html, `data-onboarding-empty="true"`)
 	})
 
 	t.Run("dashboard empty onboarding rendering", func(t *testing.T) {
