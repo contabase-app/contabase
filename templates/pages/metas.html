@@ -205,13 +205,19 @@
 {{else if eq .RequiredState "completed"}}
     {{$status = "success"}}{{$statusLabel = "Concluída"}}
 {{else if eq .RequiredState "value"}}
-    {{if .MonthlyRecharge.Reais}}
-        {{$status = "success"}}{{$statusLabel = "No prazo"}}
+    {{if .DeadlineLabel}}
+        {{$status = "success"}}{{$statusLabel = .DeadlineLabel}}
     {{else}}
         {{$status = "warning"}}{{$statusLabel = "Atenção"}}
     {{end}}
 {{else if eq .RequiredState "no_deadline"}}
     {{$status = "neutral"}}{{$statusLabel = "Sem prazo"}}
+{{else if .DeadlineLabel}}
+    {{if eq .DeadlineLabel "Sem prazo"}}
+        {{$status = "neutral"}}{{$statusLabel = .DeadlineLabel}}
+    {{else}}
+        {{$status = "info"}}{{$statusLabel = .DeadlineLabel}}
+    {{end}}
 {{end}}
 
 <article data-meta-card class="cb-card-dense relative flex flex-col gap-2.5">

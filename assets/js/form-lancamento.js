@@ -106,25 +106,42 @@
         if (contactInput) contactInput.setAttribute('aria-expanded', 'true');
     }
 
-    function filterContactOptions(contactInput, contactOptions, contactEmpty) {
-        if (!contactInput || !contactOptions.length) {
-            if (contactEmpty) contactEmpty.classList.toggle('hidden', contactOptions.length > 0);
-            return;
-        }
-        var query = normalizeComboboxText(contactInput.value.trim());
+    function filterContactOptions(contactInput, contactOptions, contactEmpty, createOption, createLabel) {
+        if (!contactInput) return;
+        var rawQuery = contactInput.value.trim();
+        var query = normalizeComboboxText(rawQuery);
+
+        // Derive options from live DOM so newly appended buttons (e.g. from
+        // inline contact creation) participate in matching.
+        var optionsContainer = document.getElementById('contato-options');
+        var liveOptions = optionsContainer ? Array.prototype.slice.call(optionsContainer.querySelectorAll('.js-contact-option')) : contactOptions;
+
         var visibleCount = 0;
-        contactOptions.forEach(function(option) {
+        liveOptions.forEach(function(option) {
+            var docRaw = option.querySelector('.js-contact-document') ? option.querySelector('.js-contact-document').textContent : '';
+            var phoneRaw = option.querySelector('.js-contact-phone') ? option.querySelector('.js-contact-phone').textContent : '';
             var searchText = [
                 option.querySelector('.js-contact-name') ? option.querySelector('.js-contact-name').textContent : '',
-                option.querySelector('.js-contact-document') ? option.querySelector('.js-contact-document').textContent : '',
-                option.querySelector('.js-contact-phone') ? option.querySelector('.js-contact-phone').textContent : '',
+                docRaw,
+                phoneRaw,
+                docRaw.replace(/\D/g, ''),
+                phoneRaw.replace(/\D/g, ''),
                 option.textContent || ''
             ].join(' ');
             var visible = !query || normalizeComboboxText(searchText).includes(query);
             option.classList.toggle('hidden', !visible);
             if (visible) visibleCount += 1;
         });
-        if (contactEmpty) contactEmpty.classList.toggle('hidden', visibleCount > 0);
+        if (contactEmpty) contactEmpty.classList.toggle('hidden', visibleCount > 0 || rawQuery === '');
+        if (createOption) {
+            var showCreate = rawQuery !== '' && visibleCount === 0;
+            createOption.classList.toggle('hidden', !showCreate);
+            createOption.classList.toggle('flex', showCreate);
+            if (showCreate && createLabel) {
+                createLabel.textContent = 'Criar contato "' + rawQuery + '"';
+                createOption.setAttribute('hx-vals', '{"name":"' + rawQuery.replace(/"/g, '\\"') + '"}');
+            }
+        }
     }
 
     function contactDisplayLabel(option) {
@@ -146,7 +163,7 @@
             contactHidden.value = option.value;
             contactInput.value = label;
         }
-        filterContactOptions(contactInput, contactOptions, contactEmpty);
+        filterContactOptions(contactInput, contactOptions, contactEmpty, document.getElementById('contatoCreateOption'), document.getElementById('contatoCreateLabel'));
         setContactValidity(contactInput, contactErrorEl(), true);
         closeContactList(contactList, contactInput);
     }
@@ -212,6 +229,8 @@
 
         var contactOptions = Array.prototype.slice.call(contactRoot.querySelectorAll('.js-contact-option'));
         var contactEmpty = findInRoot(root, '#contato-empty');
+        var contactCreateOption = findInRoot(root, '#contatoCreateOption');
+        var contactCreateLabel = findInRoot(root, '#contatoCreateLabel');
 
         // Restore selected label from data attribute (survives HTMX swaps)
         if (contactHidden && contactHidden.value && !getSelectedLabel(contactInput)) {
@@ -219,7 +238,7 @@
         }
 
         contactInput.addEventListener('focus', function() {
-            filterContactOptions(contactInput, contactOptions, contactEmpty);
+            filterContactOptions(contactInput, contactOptions, contactEmpty, contactCreateOption, contactCreateLabel);
             openContactList(contactList, contactInput);
         });
 
@@ -228,8 +247,7 @@
                 contactHidden.value = '';
                 setSelectedLabel(contactInput, '');
             }
-            filterContactOptions(contactInput, contactOptions, contactEmpty);
-            setContactValidity(contactInput, contactErrorEl(), isContactSelectionValid(contactInput, contactHidden));
+            filterContactOptions(contactInput, contactOptions, contactEmpty, contactCreateOption, contactCreateLabel);
             openContactList(contactList, contactInput);
         });
 
@@ -261,7 +279,7 @@
             document.addEventListener('click', clickAwayHandler);
         }
 
-        filterContactOptions(contactInput, contactOptions, contactEmpty);
+        filterContactOptions(contactInput, contactOptions, contactEmpty, contactCreateOption, contactCreateLabel);
         setContactValidity(contactInput, contactErrorEl(), true);
         closeContactList(contactList, contactInput);
     }
@@ -374,6 +392,61 @@
         if (typeof cb.onBoxOverdraftChange === 'function') cb.onBoxOverdraftChange();
 
         if (typeof cb.onCloseModal === 'function') cb.onCloseModal();
+    };
+
+    // --- Contact selection bridge (inline create from transaction form) ---
+
+    ns.applyContactSelection = function(payload) {
+        if (!payload || !payload.id) return;
+        var contactInput = document.getElementById('contato-input');
+        var contactHidden = document.querySelector('input[name="contact_id"]');
+        var contactList = document.getElementById('contato-options');
+        if (!contactInput || !contactHidden) return;
+
+        var label = payload.name || '';
+        if (payload.customClientId) label += ' \u00b7 ID ' + payload.customClientId;
+        if (payload.document) label += ' \u00b7 ' + payload.document;
+
+        contactHidden.value = payload.id;
+        contactInput.value = label;
+        setSelectedLabel(contactInput, label);
+
+        var contactOptions = contactList ? Array.prototype.slice.call(contactList.querySelectorAll('.js-contact-option')) : [];
+        var existing = contactOptions.filter(function(opt) { return opt.getAttribute('value') === payload.id; })[0];
+        if (!existing && contactList) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'sheet-popover-option js-contact-option flex w-full items-center rounded-lg px-2.5 py-2 text-left text-xs';
+            btn.setAttribute('value', payload.id);
+            btn.addEventListener('click', function() {
+                selectContactOption(btn, contactInput, contactHidden, contactOptions, contactList, document.getElementById('contato-empty'));
+            });
+            var nameSpan = document.createElement('span');
+            nameSpan.className = 'js-contact-name';
+            nameSpan.textContent = payload.name || '';
+            btn.appendChild(nameSpan);
+            var typeSpan = document.createElement('span');
+            typeSpan.className = 'text-[var(--cb-text-muted)]';
+            typeSpan.textContent = '\u00a0\u00b7 ' + (payload.typeLabel || '');
+            btn.appendChild(typeSpan);
+            var docSpan = document.createElement('span');
+            docSpan.className = 'js-contact-document hidden';
+            docSpan.textContent = payload.document || '';
+            btn.appendChild(docSpan);
+            var phoneSpan = document.createElement('span');
+            phoneSpan.className = 'js-contact-phone hidden';
+            phoneSpan.textContent = '';
+            btn.appendChild(phoneSpan);
+            var cidSpan = document.createElement('span');
+            cidSpan.className = 'js-contact-custom-client hidden';
+            cidSpan.textContent = payload.customClientId || '';
+            btn.appendChild(cidSpan);
+            contactList.appendChild(btn);
+        }
+
+        setContactValidity(contactInput, contactErrorEl(), true);
+        filterContactOptions(contactInput, [], document.getElementById('contato-empty'), document.getElementById('contatoCreateOption'), document.getElementById('contatoCreateLabel'));
+        closeContactList(contactList, contactInput);
     };
 
     // --- Origin selection bridge (Phase D.5.3.8.3.a) ---

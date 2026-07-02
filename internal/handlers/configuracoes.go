@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,9 +79,10 @@ type ConfiguracoesData struct {
 	Categorias                []ConfigCategoryRow
 	CategoryTree              []*ConfigCategoryRow
 	Contas                    []ConfigAccountRow
-	Cartoes                   []ConfigCardRow
 	ContasArquivadas          []ConfigAccountRow
+	Cartoes                   []ConfigCardRow
 	CartoesArquivados         []ConfigCardRow
+	ConfigPaymentAccounts     []InvoicePaymentAccountOption
 	Workspace                 ConfigWorkspaceRow
 	WorkspaceProfile          ConfigWorkspaceProfileRow
 	Membros                   []ConfigMemberRow
@@ -146,18 +148,20 @@ type ConfigAccountRow struct {
 }
 
 type ConfigCardRow struct {
-	AccountID        string
-	Name             string
-	Color            string
-	Icon             string
-	ProviderSlug     string
-	ProviderMark     string
-	ClosingDay       int64
-	DueDay           int64
-	CreditLimit      string
-	CreditLimitCents int64
-	CreditLimitInput string
-	SortOrder        int64
+	AccountID               string
+	Name                    string
+	Color                   string
+	Icon                    string
+	ProviderSlug            string
+	ProviderMark            string
+	ClosingDay              int64
+	DueDay                  int64
+	CreditLimit             string
+	CreditLimitCents        int64
+	CreditLimitInput        string
+	DefaultPaymentAccountID string
+	PaymentAccounts         []InvoicePaymentAccountOption
+	SortOrder               int64
 }
 
 type ConfigWorkspaceRow struct {
@@ -213,7 +217,9 @@ type AdminUserRow struct {
 	PhotoPath         string
 	PrimaryRole       string
 	WorkspaceIDs      string
+	WorkspaceIDList   []string
 	WorkspaceRoles    []AdminWorkspaceRoleRow
+	WorkspaceRoleMap  map[string]string
 	CustomPermissions []string
 	CanBackupExport   bool
 	CanContactsDelete bool
@@ -835,6 +841,18 @@ func (h *ConfiguracoesHandler) HandleCartoesCreate(w http.ResponseWriter, r *htt
 		h.renderConfigSectionWithFlash(w, "cartoes", "Nome do cartão é obrigatório.", "")
 		return
 	}
+	defaultPaymentAccountID := strings.TrimSpace(r.FormValue("default_payment_account_id"))
+	if defaultPaymentAccountID != "" {
+		var paymentAccountType string
+		err := h.DB.QueryRow(`
+			SELECT type FROM accounts
+			WHERE id = ? AND workspace_id = ? AND type IN (?, ?)
+		`, defaultPaymentAccountID, h.WorkspaceID, models.AccountTypeChecking, models.AccountTypeSavings).Scan(&paymentAccountType)
+		if err != nil {
+			h.renderConfigSectionWithFlash(w, "cartoes", "Conta padrão de pagamento inválida ou não pertence a este workspace.", "")
+			return
+		}
+	}
 	now := time.Now().Unix()
 	tx, err := h.DB.Begin()
 	if err != nil {
@@ -852,9 +870,9 @@ func (h *ConfiguracoesHandler) HandleCartoesCreate(w http.ResponseWriter, r *htt
 		return
 	}
 	if err := execOneTx(tx, `
-		INSERT INTO credit_cards (id, account_id, closing_day, due_day, credit_limit)
-		VALUES (?, ?, ?, ?, ?)
-	`, uuid.NewString(), accountID, closingDay, dueDay, creditLimit); err != nil {
+		INSERT INTO credit_cards (id, account_id, closing_day, due_day, credit_limit, default_payment_account_id)
+		VALUES (?, ?, ?, ?, ?, NULLIF(?, ''))
+	`, uuid.NewString(), accountID, closingDay, dueDay, creditLimit, defaultPaymentAccountID); err != nil {
 		log.Printf("create credit card error: %v", err)
 		h.renderConfigSectionWithFlash(w, "cartoes", "Não foi possível criar dados do cartão.", "")
 		return
@@ -989,11 +1007,11 @@ func (h *ConfiguracoesHandler) HandleCartoesView(w http.ResponseWriter, r *http.
 func (h *ConfiguracoesHandler) HandleCartoesInlineForm(w http.ResponseWriter, r *http.Request, accountID string) {
 	var row ConfigCardRow
 	err := h.DB.QueryRow(`
-		SELECT a.id, a.name, COALESCE(NULLIF(a.color, ''), '#6B7280'), COALESCE(NULLIF(a.icon, ''), ''), COALESCE(NULLIF(a.provider_slug, ''), 'custom'), cc.closing_day, cc.due_day, cc.credit_limit
+		SELECT a.id, a.name, COALESCE(NULLIF(a.color, ''), '#6B7280'), COALESCE(NULLIF(a.icon, ''), ''), COALESCE(NULLIF(a.provider_slug, ''), 'custom'), cc.closing_day, cc.due_day, cc.credit_limit, COALESCE(cc.default_payment_account_id, '')
 		FROM accounts a
 		JOIN credit_cards cc ON cc.account_id = a.id
 		WHERE a.id = ? AND a.workspace_id = ? AND a.type = 'CREDIT_CARD'
-	`, accountID, h.WorkspaceID).Scan(&row.AccountID, &row.Name, &row.Color, &row.Icon, &row.ProviderSlug, &row.ClosingDay, &row.DueDay, &row.CreditLimitCents)
+	`, accountID, h.WorkspaceID).Scan(&row.AccountID, &row.Name, &row.Color, &row.Icon, &row.ProviderSlug, &row.ClosingDay, &row.DueDay, &row.CreditLimitCents, &row.DefaultPaymentAccountID)
 	if err != nil {
 		http.Error(w, "cartão não encontrado", http.StatusNotFound)
 		return
@@ -1006,6 +1024,7 @@ func (h *ConfiguracoesHandler) HandleCartoesInlineForm(w http.ResponseWriter, r 
 	if row.Icon == "" {
 		row.Icon = accountVisualByProvider(row.ProviderSlug, "CREDIT_CARD")
 	}
+	row.PaymentAccounts = queryPaymentAccounts(h.DB, h.WorkspaceID)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	h.Templates.ExecuteTemplate(w, "config-cartoes-row-edit", row)
 }
@@ -1037,6 +1056,18 @@ func (h *ConfiguracoesHandler) HandleCartoesInlineSave(w http.ResponseWriter, r 
 		http.Error(w, "nome do cartão obrigatório", http.StatusBadRequest)
 		return
 	}
+	defaultPaymentAccountID := strings.TrimSpace(r.FormValue("default_payment_account_id"))
+	if defaultPaymentAccountID != "" {
+		var paymentAccountType string
+		err := h.DB.QueryRow(`
+			SELECT type FROM accounts
+			WHERE id = ? AND workspace_id = ? AND type IN (?, ?)
+		`, defaultPaymentAccountID, h.WorkspaceID, models.AccountTypeChecking, models.AccountTypeSavings).Scan(&paymentAccountType)
+		if err != nil {
+			http.Error(w, "conta padrão de pagamento inválida ou não pertence a este workspace", http.StatusBadRequest)
+			return
+		}
+	}
 	tx, err := h.DB.Begin()
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -1053,9 +1084,9 @@ func (h *ConfiguracoesHandler) HandleCartoesInlineSave(w http.ResponseWriter, r 
 	}
 	result, err := tx.Exec(`
 		UPDATE credit_cards
-		SET closing_day = ?, due_day = ?, credit_limit = ?
+		SET closing_day = ?, due_day = ?, credit_limit = ?, default_payment_account_id = NULLIF(?, '')
 		WHERE account_id = ?
-	`, closingDay, dueDay, creditLimit, accountID)
+	`, closingDay, dueDay, creditLimit, defaultPaymentAccountID, accountID)
 	if err != nil {
 		http.Error(w, "não foi possível atualizar o cartão", http.StatusInternalServerError)
 		return
@@ -1323,11 +1354,11 @@ func (h *ConfiguracoesHandler) renderAccountRow(w http.ResponseWriter, accountID
 func (h *ConfiguracoesHandler) renderCardRow(w http.ResponseWriter, accountID string) {
 	var row ConfigCardRow
 	err := h.DB.QueryRow(`
-		SELECT a.id, a.name, COALESCE(NULLIF(a.color, ''), '#6B7280'), COALESCE(NULLIF(a.icon, ''), ''), COALESCE(NULLIF(a.provider_slug, ''), 'custom'), cc.closing_day, cc.due_day, cc.credit_limit
+		SELECT a.id, a.name, COALESCE(NULLIF(a.color, ''), '#6B7280'), COALESCE(NULLIF(a.icon, ''), ''), COALESCE(NULLIF(a.provider_slug, ''), 'custom'), cc.closing_day, cc.due_day, cc.credit_limit, COALESCE(cc.default_payment_account_id, '')
 		FROM accounts a
 		JOIN credit_cards cc ON cc.account_id = a.id
 		WHERE a.id = ? AND a.workspace_id = ? AND a.type = 'CREDIT_CARD'
-	`, accountID, h.WorkspaceID).Scan(&row.AccountID, &row.Name, &row.Color, &row.Icon, &row.ProviderSlug, &row.ClosingDay, &row.DueDay, &row.CreditLimitCents)
+	`, accountID, h.WorkspaceID).Scan(&row.AccountID, &row.Name, &row.Color, &row.Icon, &row.ProviderSlug, &row.ClosingDay, &row.DueDay, &row.CreditLimitCents, &row.DefaultPaymentAccountID)
 	if err != nil {
 		http.Error(w, "cartão não encontrado", http.StatusNotFound)
 		return
@@ -1548,7 +1579,11 @@ func (h *ConfiguracoesHandler) HandleAdminUsersSave(w http.ResponseWriter, r *ht
 	userID := strings.TrimSpace(r.FormValue("user_id"))
 	name := strings.TrimSpace(r.FormValue("name"))
 	email := strings.ToLower(strings.TrimSpace(r.FormValue("email")))
-	role := normalizeWorkspaceRole(r.FormValue("role"), models.RoleAdmin)
+	isCreate := userID == ""
+	defaultRole := normalizeWorkspaceRole(r.FormValue("role"), models.RoleAdmin)
+	if !isCreate && defaultRole == "" {
+		defaultRole = models.RoleUser
+	}
 	status := strings.ToLower(strings.TrimSpace(r.FormValue("status")))
 	if status != "pending" {
 		status = "active"
@@ -1556,8 +1591,16 @@ func (h *ConfiguracoesHandler) HandleAdminUsersSave(w http.ResponseWriter, r *ht
 	workspaceIDs := collectWorkspaceIDs(r)
 	customPermissions := normalizeCustomPermissions(r.Form["custom_permissions"])
 
-	if name == "" || email == "" || role == "" || len(workspaceIDs) == 0 {
-		h.renderConfigSectionWithFlash(w, "admin-users", "Preencha nome, e-mail, permissão e selecione os workspaces.", "")
+	if isCreate && len(workspaceIDs) == 0 {
+		h.renderConfigSectionWithFlash(w, "admin-users", "Preencha nome, e-mail, permissão e selecione ao menos um workspace para criar o usuário.", "")
+		return
+	}
+	if name == "" || email == "" || defaultRole == "" {
+		h.renderConfigSectionWithFlash(w, "admin-users", "Preencha nome, e-mail e permissão.", "")
+		return
+	}
+	if !isCreate && userID == h.UserID && len(workspaceIDs) == 0 {
+		h.renderConfigSectionWithFlash(w, "admin-users", "Você não pode remover seu próprio acesso a todos os workspaces.", "")
 		return
 	}
 
@@ -1568,38 +1611,126 @@ func (h *ConfiguracoesHandler) HandleAdminUsersSave(w http.ResponseWriter, r *ht
 		return
 	}
 	defer tx.Rollback()
+	renderTxError := func(message string) {
+		_ = tx.Rollback()
+		h.renderConfigSectionWithFlash(w, "admin-users", message, "")
+	}
 
-	if userID == "" {
+	validWorkspaceIDs, err := queryWorkspaceIDSetTx(tx)
+	if err != nil {
+		renderTxError("Não foi possível validar os workspaces.")
+		return
+	}
+	for _, workspaceID := range workspaceIDs {
+		if !validWorkspaceIDs[workspaceID] {
+			renderTxError("Workspace inválido.")
+			return
+		}
+	}
+
+	existingRows, err := tx.Query(`SELECT workspace_id, role FROM workspace_members WHERE user_id = ?`, userID)
+	if err != nil {
+		renderTxError("Não foi possível consultar vínculos atuais.")
+		return
+	}
+	existingWS := map[string]string{}
+	for existingRows.Next() {
+		var wsID, wsRole string
+		if err := existingRows.Scan(&wsID, &wsRole); err != nil {
+			_ = existingRows.Close()
+			renderTxError("Não foi possível ler vínculo atual.")
+			return
+		}
+		existingWS[wsID] = wsRole
+	}
+	if err := existingRows.Close(); err != nil {
+		renderTxError("Não foi possível fechar consulta de vínculos.")
+		return
+	}
+	if err := existingRows.Err(); err != nil {
+		renderTxError("Não foi possível iterar vínculos atuais.")
+		return
+	}
+
+	workspaceRoles, err := workspaceRolesFromForm(r, workspaceIDs, defaultRole, existingWS)
+	if err != nil {
+		renderTxError("Permissão de workspace inválida.")
+		return
+	}
+
+	if isCreate {
 		userID = uuid.NewString()
 		userStatus := "pending"
 		if err := execOneTx(tx, `
 			INSERT INTO users (id, name, email, password_hash, profile_photo_path, status, created_at, updated_at)
 			VALUES (?, ?, ?, ?, '', ?, ?, ?)
 		`, userID, name, email, "pending", userStatus, now, now); err != nil {
-			h.renderConfigSectionWithFlash(w, "admin-users", "Não foi possível criar o usuário.", "")
+			renderTxError("Não foi possível criar o usuário.")
 			return
 		}
 	} else {
+		var deletedAt int64
+		if err := tx.QueryRow(`SELECT COALESCE(deleted_at, 0) FROM users WHERE id = ?`, userID).Scan(&deletedAt); err != nil {
+			renderTxError("Não foi possível verificar o usuário.")
+			return
+		}
+		if deletedAt > 0 {
+			renderTxError("Não é possível editar um usuário removido.")
+			return
+		}
 		if _, err := tx.Exec(`
 			UPDATE users
 			SET name = ?, email = ?, status = ?, updated_at = ?
 			WHERE id = ?
 		`, name, email, status, now, userID); err != nil {
-			h.renderConfigSectionWithFlash(w, "admin-users", "Não foi possível atualizar o usuário.", "")
+			renderTxError("Não foi possível atualizar o usuário.")
 			return
 		}
 	}
 
-	if _, err := tx.Exec(`DELETE FROM workspace_members WHERE user_id = ?`, userID); err != nil {
-		h.renderConfigSectionWithFlash(w, "admin-users", "Não foi possível atualizar os vínculos.", "")
-		return
+	formWS := map[string]bool{}
+	for _, wsID := range workspaceIDs {
+		formWS[wsID] = true
 	}
-	for _, workspaceID := range workspaceIDs {
-		if _, err := tx.Exec(`
-			INSERT INTO workspace_members (workspace_id, user_id, role, custom_permissions, joined_at)
-			VALUES (?, ?, ?, ?, ?)
-		`, workspaceID, userID, role, models.PermissionListToJSON(customPermissions), now); err != nil {
-			h.renderConfigSectionWithFlash(w, "admin-users", "Não foi possível atualizar os vínculos de workspace.", "")
+
+	for wsID := range existingWS {
+		if !formWS[wsID] {
+			if _, err := tx.Exec(`DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?`, wsID, userID); err != nil {
+				renderTxError("Não foi possível remover vínculo de workspace.")
+				return
+			}
+		}
+	}
+
+	for _, wsID := range workspaceIDs {
+		selectedRole := workspaceRoles[wsID]
+		if _, alreadyPresent := existingWS[wsID]; alreadyPresent {
+			if _, err := tx.Exec(`
+				UPDATE workspace_members
+				SET role = ?
+				WHERE workspace_id = ? AND user_id = ?
+			`, selectedRole, wsID, userID); err != nil {
+				renderTxError("Não foi possível atualizar permissão de workspace.")
+				return
+			}
+		} else {
+			if _, err := tx.Exec(`
+				INSERT INTO workspace_members (workspace_id, user_id, role, custom_permissions, joined_at)
+				VALUES (?, ?, ?, ?, ?)
+			`, wsID, userID, selectedRole, models.PermissionListToJSON(customPermissions), now); err != nil {
+				renderTxError("Não foi possível vincular novo workspace.")
+				return
+			}
+		}
+	}
+
+	if len(existingWS) > 0 && len(workspaceIDs) == 0 {
+		if _, err := tx.Exec(`UPDATE sessions SET revoked_at = unixepoch() WHERE user_id = ? AND revoked_at IS NULL`, userID); err != nil {
+			renderTxError("Não foi possível revogar sessões do usuário.")
+			return
+		}
+		if _, err := tx.Exec(`UPDATE pre_auth_sessions SET consumed_at = unixepoch() WHERE user_id = ? AND consumed_at IS NULL`, userID); err != nil {
+			renderTxError("Não foi possível revogar desafios pendentes do usuário.")
 			return
 		}
 	}
@@ -1609,6 +1740,43 @@ func (h *ConfiguracoesHandler) HandleAdminUsersSave(w http.ResponseWriter, r *ht
 		return
 	}
 	h.renderConfigSectionWithFlash(w, "admin-users", "", "Usuário salvo com sucesso.")
+}
+
+func queryWorkspaceIDSetTx(tx *sql.Tx) (map[string]bool, error) {
+	rows, err := tx.Query(`SELECT id FROM workspaces`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
+func workspaceRolesFromForm(r *http.Request, workspaceIDs []string, defaultRole string, existing map[string]string) (map[string]string, error) {
+	out := make(map[string]string, len(workspaceIDs))
+	for _, workspaceID := range workspaceIDs {
+		role := strings.TrimSpace(r.FormValue("workspace_roles[" + workspaceID + "]"))
+		if role == "" {
+			if existingRole, ok := existing[workspaceID]; ok {
+				role = existingRole
+			} else {
+				role = defaultRole
+			}
+		}
+		role = normalizeWorkspaceRole(role, models.RoleAdmin)
+		if role == "" {
+			return nil, fmt.Errorf("invalid workspace role for %s", workspaceID)
+		}
+		out[workspaceID] = role
+	}
+	return out, nil
 }
 
 func (h *ConfiguracoesHandler) HandleAdminUsersResetPassword(w http.ResponseWriter, r *http.Request) {
@@ -2150,29 +2318,139 @@ func (h *ConfiguracoesHandler) HandleAdminUserDelete(w http.ResponseWriter, r *h
 		h.renderConfigSectionWithFlash(w, "admin-users", "Não é possível excluir seu próprio usuário.", "")
 		return
 	}
-	if h.ActorRole == models.RoleManager {
-		var targetRole string
-		if err := h.DB.QueryRow(`
-			SELECT role
-			FROM workspace_members
-			WHERE workspace_id = ? AND user_id = ?
-			LIMIT 1
-		`, h.WorkspaceID, userID).Scan(&targetRole); err == nil && strings.TrimSpace(targetRole) == models.RoleAdmin {
-			h.renderConfigSectionWithFlash(w, "admin-users", "Manager não pode excluir usuários Admin.", "")
-			return
-		}
+
+	deletedAt, err := h.adminUserDeletedAt(userID)
+	if err != nil {
+		h.renderConfigSectionWithFlash(w, "admin-users", "Não foi possível verificar o usuário.", "")
+		return
 	}
-	if err := execOne(h.DB, `DELETE FROM users WHERE id = ?`, userID); err != nil {
-		if isSQLiteForeignKeyConstraint(err) {
-			msg := "⚠️ Não é possível excluir este usuário porque ele possui Workspaces ativos ou registros financeiros atrelados. Remova ou transfira os Workspaces dele antes de prosseguir."
-			w.Header().Set("HX-Trigger", fmt.Sprintf(`{"mostrarAlerta":%q}`, msg))
-			h.renderConfigSectionWithFlashStatus(w, "admin-users", msg, "", http.StatusUnprocessableEntity)
+	if deletedAt > 0 {
+		h.renderConfigSectionWithFlash(w, "admin-users", "Este usuário já foi removido.", "")
+		return
+	}
+
+	if err := h.anonymizeUser(userID); err != nil {
+		if err == errLastAdminCannotBeRemoved {
+			h.renderConfigSectionWithFlash(w, "admin-users", "Não é possível remover o último administrador de um workspace.", "")
 			return
 		}
 		h.renderConfigSectionWithFlash(w, "admin-users", "Não foi possível excluir o usuário.", "")
 		return
 	}
-	h.renderConfigSectionWithFlash(w, "admin-users", "", "Usuário excluído com sucesso.")
+
+	msg := "Usuário removido com sucesso. O histórico financeiro do workspace foi preservado."
+	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"mostrarAlerta":%s}`, quoteASCII(msg)))
+	h.renderConfigSectionWithFlash(w, "admin-users", "", "Usuário removido com sucesso.")
+}
+
+var errLastAdminCannotBeRemoved = errors.New("last admin cannot be removed")
+
+func (h *ConfiguracoesHandler) adminUserDeletedAt(userID string) (int64, error) {
+	var deletedAt int64
+	err := h.DB.QueryRow(`SELECT COALESCE(deleted_at, 0) FROM users WHERE id = ?`, userID).Scan(&deletedAt)
+	if err != nil {
+		return 0, err
+	}
+	return deletedAt, nil
+}
+
+func (h *ConfiguracoesHandler) anonymizeUser(userID string) error {
+	tx, err := h.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`SELECT workspace_id FROM workspace_members WHERE user_id = ? AND role = ?`, userID, models.RoleAdmin)
+	if err != nil {
+		return err
+	}
+	var adminWorkspaces []string
+	for rows.Next() {
+		var wsID string
+		if err := rows.Scan(&wsID); err != nil {
+			rows.Close()
+			return err
+		}
+		adminWorkspaces = append(adminWorkspaces, wsID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	for _, wsID := range adminWorkspaces {
+		var adminCount int
+		if err := tx.QueryRow(`SELECT COUNT(1) FROM workspace_members WHERE workspace_id = ? AND role = ?`, wsID, models.RoleAdmin).Scan(&adminCount); err != nil {
+			return err
+		}
+		if adminCount <= 1 {
+			return errLastAdminCannotBeRemoved
+		}
+	}
+
+	if _, err := tx.Exec(`UPDATE sessions SET revoked_at = unixepoch() WHERE user_id = ? AND revoked_at IS NULL`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE pre_auth_sessions SET consumed_at = unixepoch() WHERE user_id = ? AND consumed_at IS NULL`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM auth_lockouts WHERE user_id = ?`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM user_notifications WHERE user_id = ?`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM user_notification_dismissals WHERE user_id = ?`, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM workspace_members WHERE user_id = ?`, userID); err != nil {
+		return err
+	}
+
+	now := time.Now().Unix()
+	placeholderEmail := fmt.Sprintf("deleted-%s@contabase.local", userID)
+	_, err = tx.Exec(`
+		UPDATE users
+		SET name = 'Usuário removido',
+		    email = ?,
+		    password_hash = '',
+		    profile_photo_path = '',
+		    totp_secret_enc = NULL,
+		    totp_backup_codes = '[]',
+		    totp_enabled = 0,
+		    totp_enabled_at = NULL,
+		    activation_token_hash = NULL,
+		    activation_expires_at = NULL,
+		    must_change_password = 0,
+		    temporary_password_expires_at = NULL,
+		    default_workspace_id = NULL,
+		    deleted_at = ?,
+		    deleted_reason = 'admin_removed',
+		    updated_at = unixepoch()
+		WHERE id = ?
+	`, placeholderEmail, now, userID)
+	if err != nil {
+		return err
+	}
+
+	metadataJSON, err := json.Marshal(map[string]string{"removed_by": h.UserID})
+	if err != nil {
+		metadataJSON = []byte("{}")
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO auth_audit_events (id, user_id, workspace_id, event_type, ip, user_agent, metadata_json, created_at)
+		VALUES (?, ?, NULL, 'user_removed', 'admin-panel', 'admin-panel', ?, unixepoch())
+	`, uuid.NewString(), userID, string(metadataJSON)); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func quoteASCII(s string) string {
+	return strconv.QuoteToASCII(s)
 }
 
 func (h *ConfiguracoesHandler) renderConfigSectionWithFlash(w http.ResponseWriter, section, errMsg, okMsg string) {
@@ -2304,6 +2582,7 @@ func (h *ConfiguracoesHandler) loadConfigSectionData(data *ConfiguracoesData, sh
 			return err
 		}
 		data.CartoesArquivados = archivedRows
+		data.ConfigPaymentAccounts = queryPaymentAccounts(h.DB, h.WorkspaceID)
 	case "workspace":
 		profile, err := h.queryWorkspaceCorporateProfile()
 		if err != nil {
@@ -2409,6 +2688,7 @@ func (h *ConfiguracoesHandler) buildConfigData(section, errMsg, okMsg string) (C
 			return data, err
 		}
 		data.CartoesArquivados = archivedRows
+		data.ConfigPaymentAccounts = queryPaymentAccounts(h.DB, h.WorkspaceID)
 	case "workspace":
 		ws, members, err := h.queryWorkspaceAndMembers(repo)
 		if err != nil {
@@ -2830,18 +3110,19 @@ func (h *ConfiguracoesHandler) queryCartoes(repo *repository.ConfigRepository) (
 			icon = accountVisualByProvider(providerSlug, "CREDIT_CARD")
 		}
 		out = append(out, ConfigCardRow{
-			AccountID:        item.AccountID,
-			Name:             item.Name,
-			Color:            normalizeHexColor(item.Color, "#6B7280"),
-			Icon:             icon,
-			ProviderSlug:     providerSlug,
-			ProviderMark:     accountProviderMark(providerSlug, item.Name),
-			ClosingDay:       item.ClosingDay,
-			DueDay:           item.DueDay,
-			CreditLimit:      formatCurrencyLabel(item.CreditLimit),
-			CreditLimitCents: item.CreditLimit,
-			CreditLimitInput: centsToInput(item.CreditLimit),
-			SortOrder:        item.SortOrder,
+			AccountID:               item.AccountID,
+			Name:                    item.Name,
+			Color:                   normalizeHexColor(item.Color, "#6B7280"),
+			Icon:                    icon,
+			ProviderSlug:            providerSlug,
+			ProviderMark:            accountProviderMark(providerSlug, item.Name),
+			ClosingDay:              item.ClosingDay,
+			DueDay:                  item.DueDay,
+			CreditLimit:             formatCurrencyLabel(item.CreditLimit),
+			CreditLimitCents:        item.CreditLimit,
+			CreditLimitInput:        centsToInput(item.CreditLimit),
+			DefaultPaymentAccountID: item.DefaultPaymentAccountID,
+			SortOrder:               item.SortOrder,
 		})
 	}
 	return out, nil
@@ -2890,18 +3171,19 @@ func (h *ConfiguracoesHandler) queryArchivedCartoes(repo *repository.ConfigRepos
 			icon = accountVisualByProvider(providerSlug, "CREDIT_CARD")
 		}
 		out = append(out, ConfigCardRow{
-			AccountID:        item.AccountID,
-			Name:             item.Name,
-			Color:            normalizeHexColor(item.Color, "#6B7280"),
-			Icon:             icon,
-			ProviderSlug:     providerSlug,
-			ProviderMark:     accountProviderMark(providerSlug, item.Name),
-			ClosingDay:       item.ClosingDay,
-			DueDay:           item.DueDay,
-			CreditLimit:      formatCurrencyLabel(item.CreditLimit),
-			CreditLimitCents: item.CreditLimit,
-			CreditLimitInput: centsToInput(item.CreditLimit),
-			SortOrder:        item.SortOrder,
+			AccountID:               item.AccountID,
+			Name:                    item.Name,
+			Color:                   normalizeHexColor(item.Color, "#6B7280"),
+			Icon:                    icon,
+			ProviderSlug:            providerSlug,
+			ProviderMark:            accountProviderMark(providerSlug, item.Name),
+			ClosingDay:              item.ClosingDay,
+			DueDay:                  item.DueDay,
+			CreditLimit:             formatCurrencyLabel(item.CreditLimit),
+			CreditLimitCents:        item.CreditLimit,
+			CreditLimitInput:        centsToInput(item.CreditLimit),
+			DefaultPaymentAccountID: item.DefaultPaymentAccountID,
+			SortOrder:               item.SortOrder,
 		})
 	}
 	return out, nil
@@ -2972,6 +3254,7 @@ func (h *ConfiguracoesHandler) queryAdminUsers() ([]AdminUserRow, error) {
 	rows, err := h.DB.Query(`
 		SELECT id, name, email, COALESCE(status, 'active'), COALESCE(profile_photo_path, ''), COALESCE(totp_enabled, 0)
 		FROM users
+		WHERE COALESCE(deleted_at, 0) = 0
 		ORDER BY name, email
 	`)
 	if err != nil {
@@ -3038,6 +3321,12 @@ func (h *ConfiguracoesHandler) queryAdminUsers() ([]AdminUserRow, error) {
 		}
 		out[i].CustomPermissions = uniqueCustomPermissions(out[i].CustomPermissions)
 		out[i].WorkspaceIDs = strings.Join(ids, ",")
+		out[i].WorkspaceIDList = ids
+		roleMap := make(map[string]string, len(out[i].WorkspaceRoles))
+		for _, wr := range out[i].WorkspaceRoles {
+			roleMap[wr.WorkspaceID] = wr.Role
+		}
+		out[i].WorkspaceRoleMap = roleMap
 		out[i].PrimaryRole = primary
 		out[i].CanBackupExport = hasCustomPermission(out[i].CustomPermissions, models.PermissionBackupExport)
 		out[i].CanContactsDelete = hasCustomPermission(out[i].CustomPermissions, models.PermissionContactsDelete)
@@ -3061,7 +3350,7 @@ func (h *ConfiguracoesHandler) lookupAdminRecoveryTarget(userID string) (adminRe
 	}
 	var target adminRecoveryTarget
 	target.UserID = userID
-	if err := h.DB.QueryRow(`SELECT lower(email) FROM users WHERE id = ?`, userID).Scan(&target.Email); err != nil {
+	if err := h.DB.QueryRow(`SELECT lower(email) FROM users WHERE id = ? AND COALESCE(deleted_at, 0) = 0`, userID).Scan(&target.Email); err != nil {
 		return adminRecoveryTarget{}, err
 	}
 	rows, err := h.DB.Query(`

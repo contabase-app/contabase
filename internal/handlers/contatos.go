@@ -97,6 +97,37 @@ func (h *ContatosHandler) HandleContatosConceito(w http.ResponseWriter, r *http.
 	buf.WriteTo(w)
 }
 
+// createContactRow valida e insere um contato no workspace atual dentro de tx.
+// Reutilizada por HandleCriarContato (CRUD da página) e pela criação inline no
+// formulário de lançamento, evitando duplicar a lógica de validação.
+func createContactRow(tx *sql.Tx, workspaceID, name, contactType, document, email, phone, customClientIDInput string) (ContatoRow, error) {
+	customClientID, err := resolveCustomClientID(tx, workspaceID, customClientIDInput, "")
+	if err != nil {
+		return ContatoRow{}, err
+	}
+	id := uuid.NewString()
+	now := time.Now().Unix()
+	if _, err := tx.Exec(`
+		INSERT INTO contacts (id, workspace_id, custom_client_id, name, document, type, email, phone, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, id, workspaceID, customClientID, name, document, contactType, email, phone, now); err != nil {
+		if isContactCustomIDUniqueViolation(err) {
+			return ContatoRow{}, errDuplicateCustomClientID
+		}
+		return ContatoRow{}, err
+	}
+	return ContatoRow{
+		ID:             id,
+		CustomClientID: customClientID,
+		Name:           name,
+		Document:       document,
+		Type:           contactType,
+		TypeLabel:      contactTypeLabel(contactType),
+		Email:          email,
+		Phone:          phone,
+	}, nil
+}
+
 func (h *ContatosHandler) HandleCriarContato(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		respondContatoFormError(w, "formulário inválido")
@@ -109,41 +140,24 @@ func (h *ContatosHandler) HandleCriarContato(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	customClientIDInput := normalizeCustomClientID(r.FormValue("custom_client_id"))
-	now := time.Now().Unix()
+	document := strings.TrimSpace(r.FormValue("document"))
+	email := strings.TrimSpace(r.FormValue("email"))
+	phone := strings.TrimSpace(r.FormValue("phone"))
+
 	tx, err := h.DB.Begin()
 	if err != nil {
 		http.Error(w, "erro ao criar contato", http.StatusInternalServerError)
 		return
 	}
 	defer tx.Rollback()
-
-	customClientID, err := resolveCustomClientID(tx, h.WorkspaceID, customClientIDInput, "")
+	_, err = createContactRow(tx, h.WorkspaceID, name, contactType, document, email, phone, customClientIDInput)
 	if err != nil {
 		if errors.Is(err, errDuplicateCustomClientID) {
 			respondContatoFormError(w, "Este ID de cliente já está em uso neste workspace.")
 			return
 		}
-		log.Printf("resolve custom client id error: %v", err)
-		respondContatoFormError(w, "erro ao criar contato")
-		return
-	}
-
-	res, err := tx.Exec(`
-		INSERT INTO contacts (id, workspace_id, custom_client_id, name, document, type, email, phone, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, uuid.NewString(), h.WorkspaceID, customClientID, name, strings.TrimSpace(r.FormValue("document")), contactType, strings.TrimSpace(r.FormValue("email")), strings.TrimSpace(r.FormValue("phone")), now)
-	if err != nil {
-		if isContactCustomIDUniqueViolation(err) {
-			respondContatoFormError(w, "Este ID de cliente já está em uso neste workspace.")
-			return
-		}
 		log.Printf("insert contact error: %v", err)
 		respondContatoFormError(w, "erro ao criar contato")
-		return
-	}
-	affected, err := res.RowsAffected()
-	if err != nil || affected != 1 {
-		http.Error(w, "erro ao criar contato", http.StatusInternalServerError)
 		return
 	}
 	if err := tx.Commit(); err != nil {
@@ -397,13 +411,45 @@ func (h *ContatosHandler) queryContatoByID(id string) (ContatoRow, error) {
 
 func normalizeContactType(v string) string {
 	switch strings.TrimSpace(strings.ToLower(v)) {
-	case "client":
+	case "client", "cliente":
 		return "client"
-	case "vendor":
+	case "vendor", "fornecedor":
 		return "vendor"
 	default:
 		return ""
 	}
+}
+
+// splitNameDocument separa "Nome · Documento" em name e document quando
+// a segunda parte contém dígitos suficientes para parecer CPF/CNPJ.
+// Separadores aceitos: " · ", " - ", ", ".
+func splitNameDocument(raw string) (name, document string) {
+	name = strings.TrimSpace(raw)
+	if name == "" {
+		return "", ""
+	}
+	separators := []string{" · ", " - ", ", "}
+	for _, sep := range separators {
+		if idx := strings.LastIndex(raw, sep); idx > 0 {
+			candidate := strings.TrimSpace(raw[idx+len(sep):])
+			digits := stripNonDigits(candidate)
+			if len(digits) >= 3 {
+				return strings.TrimSpace(raw[:idx]), candidate
+			}
+		}
+	}
+	return name, ""
+}
+
+func stripNonDigits(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 func contactTypeLabel(v string) string {
@@ -456,6 +502,121 @@ func nextSequentialClientID(tx *sql.Tx, workspaceID string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("CLI-%03d", maxSeq+1), nil
+}
+
+// ContatoInlineCreateData alimenta o template contato-picker-create (criação
+// inline a partir do formulário de lançamento em Workspace Business).
+type ContatoInlineCreateData struct {
+	Name                      string
+	Type                      string
+	Error                     string
+	Document                  string
+	Email                     string
+	Phone                     string
+	CustomClientID            string
+	CustomClientIDPlaceholder string
+}
+
+// HandleContatoInlineForm renderiza o formulário de criação rápida de contato
+// dentro do seletor do formulário de lançamento. Reutiliza o chrome do picker
+// (#modalPickerBackdrop) para integrar com a pilha de overlays.
+func (h *ContatosHandler) HandleContatoInlineForm(w http.ResponseWriter, r *http.Request) {
+	if workspaceType(h.DB, h.WorkspaceID) != "business" {
+		http.NotFound(w, r)
+		return
+	}
+	rawName := strings.TrimSpace(r.URL.Query().Get("name"))
+	contactType := normalizeContactType(r.URL.Query().Get("type"))
+	if contactType == "" {
+		contactType = "vendor"
+	}
+	name, document := splitNameDocument(rawName)
+	data := ContatoInlineCreateData{
+		Name:                      name,
+		Type:                      contactType,
+		Document:                  document,
+		CustomClientIDPlaceholder: "CLI-001",
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.Templates.ExecuteTemplate(w, "contato-picker-create", data); err != nil {
+		log.Printf("template contato-picker-create error: %v", err)
+	}
+}
+
+// HandleContatoInlineCreate cria um contato no workspace atual a partir do
+// formulário de lançamento e dispara HX-Trigger contactCreated para que o
+// cliente preencha o lançamento com o novo contato selecionado.
+func (h *ContatosHandler) HandleContatoInlineCreate(w http.ResponseWriter, r *http.Request) {
+	if workspaceType(h.DB, h.WorkspaceID) != "business" {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		h.renderContatoInlineError(w, r, "formulário inválido")
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	contactType := normalizeContactType(r.FormValue("type"))
+	if name == "" {
+		h.renderContatoInlineError(w, r, "Nome do contato é obrigatório.")
+		return
+	}
+	if contactType == "" {
+		h.renderContatoInlineError(w, r, "Tipo do contato é obrigatório.")
+		return
+	}
+	customClientIDInput := normalizeCustomClientID(r.FormValue("custom_client_id"))
+	document := strings.TrimSpace(r.FormValue("document"))
+	email := strings.TrimSpace(r.FormValue("email"))
+	phone := strings.TrimSpace(r.FormValue("phone"))
+
+	tx, err := h.DB.Begin()
+	if err != nil {
+		h.renderContatoInlineError(w, r, "erro ao criar contato")
+		return
+	}
+	defer tx.Rollback()
+	row, err := createContactRow(tx, h.WorkspaceID, name, contactType, document, email, phone, customClientIDInput)
+	if err != nil {
+		if errors.Is(err, errDuplicateCustomClientID) {
+			h.renderContatoInlineError(w, r, "Este ID de cliente já está em uso neste workspace.")
+			return
+		}
+		log.Printf("inline create contact error: %v", err)
+		h.renderContatoInlineError(w, r, "erro ao criar contato")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		h.renderContatoInlineError(w, r, "erro ao criar contato")
+		return
+	}
+	triggerData := fmt.Sprintf(
+		`{"contactCreated": {"id":"%s","name":"%s","document":"%s","type":"%s","typeLabel":"%s","customClientId":"%s"}}`,
+		row.ID, template.JSEscapeString(row.Name), template.JSEscapeString(row.Document), row.Type, row.TypeLabel, template.JSEscapeString(row.CustomClientID),
+	)
+	w.Header().Set("HX-Trigger", triggerData)
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *ContatosHandler) renderContatoInlineError(w http.ResponseWriter, r *http.Request, errMsg string) {
+	name := strings.TrimSpace(r.FormValue("name"))
+	contactType := normalizeContactType(r.FormValue("type"))
+	if contactType == "" {
+		contactType = "vendor"
+	}
+	data := ContatoInlineCreateData{
+		Name:           name,
+		Type:           contactType,
+		Error:          errMsg,
+		Document:       strings.TrimSpace(r.FormValue("document")),
+		Email:          strings.TrimSpace(r.FormValue("email")),
+		Phone:          strings.TrimSpace(r.FormValue("phone")),
+		CustomClientID: normalizeCustomClientID(r.FormValue("custom_client_id")),
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.Templates.ExecuteTemplate(w, "contato-picker-create", data); err != nil {
+		log.Printf("template contato-picker-create error: %v", err)
+	}
 }
 
 func isContactCustomIDUniqueViolation(err error) bool {

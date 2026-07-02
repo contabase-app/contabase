@@ -1,0 +1,74 @@
+{{define "contato-picker-create"}}
+<div id="modalPickerBackdrop" data-contabase-overlay data-overlay-priority="120" data-overlay-close="closePickerModal" data-overlay-close-method="remove" class="fixed inset-0 z-[120] bg-black/80 md:px-4 md:py-6">
+    <section class="mx-auto flex h-full max-w-md items-end md:max-w-md md:items-center">
+        <div class="flex w-full flex-col overflow-hidden rounded-t-2xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] shadow-sm md:mx-auto md:my-12 md:h-auto md:rounded-xl animate-slide-up-mobile md:animate-scale-in">
+            <div class="flex items-center justify-between border-b border-[var(--cb-border-subtle)] p-4">
+                <div class="flex items-center gap-2.5">
+                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
+                        <i data-lucide="user-plus" class="h-4 w-4"></i>
+                    </span>
+                    <h3 class="text-sm font-bold text-[var(--cb-text-main)]">Criar contato</h3>
+                </div>
+                <button type="button" data-onclick-ev="closePickerModal" class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--cb-surface-3)] text-[var(--cb-text-muted)] transition-colors hover:bg-[var(--cb-surface-2)] hover:text-[var(--cb-text-main)]">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <div class="p-4">
+                {{if .Error}}
+                <div class="mb-3 rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-xs text-rose-400">{{.Error}}</div>
+                {{end}}
+                <form hx-post="/api/contatos/inline" hx-target="#picker-modal-container" hx-swap="innerHTML" class="flex flex-col gap-3">
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="block">
+                            <span class="cb-label text-[0.65rem] font-medium text-[var(--cb-text-subtle)] uppercase tracking-wider">Tipo</span>
+                            <select name="type"
+                                class="w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 py-3 text-sm text-[var(--cb-text-main)] focus:border-indigo-500/50 outline-none transition-colors">
+                                <option value="client" {{if eq .Type "client"}}selected{{end}}>Cliente</option>
+                                <option value="vendor" {{if eq .Type "vendor"}}selected{{end}}>Fornecedor</option>
+                            </select>
+                        </label>
+                        <label class="block">
+                            <span class="cb-label text-[0.65rem] font-medium text-[var(--cb-text-subtle)] uppercase tracking-wider">ID do Cliente</span>
+                            <input type="text" name="custom_client_id" value="{{.CustomClientID}}"{{if .CustomClientIDPlaceholder}} placeholder="{{.CustomClientIDPlaceholder}}"{{end}}
+                                class="w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 py-3 text-sm text-[var(--cb-text-main)] uppercase placeholder:text-[var(--cb-text-subtle)] focus:border-indigo-500/50 outline-none transition-colors">
+                        </label>
+                    </div>
+                    <label class="block">
+                        <span class="cb-label text-[0.65rem] font-medium text-[var(--cb-text-subtle)] uppercase tracking-wider">Nome</span>
+                        <input type="text" name="name" placeholder="Nome do contato" autofocus required maxlength="120"
+                            value="{{.Name}}"
+                            class="w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-4 py-3 text-sm text-[var(--cb-text-main)] placeholder:text-[var(--cb-text-subtle)] focus:border-indigo-500/50 outline-none transition-colors">
+                    </label>
+                    <label class="block">
+                        <span class="cb-label text-[0.65rem] font-medium text-[var(--cb-text-subtle)] uppercase tracking-wider">CPF/CNPJ</span>
+                        <input type="text" name="document" value="{{.Document}}" data-oninput="maskCnpjCpfContato"
+                            class="w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-4 py-3 text-sm text-[var(--cb-text-main)] placeholder:text-[var(--cb-text-subtle)] focus:border-indigo-500/50 outline-none transition-colors">
+                    </label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="block">
+                            <span class="cb-label text-[0.65rem] font-medium text-[var(--cb-text-subtle)] uppercase tracking-wider">E-mail</span>
+                            <input type="email" name="email" value="{{.Email}}"
+                                class="w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 py-3 text-sm text-[var(--cb-text-main)] placeholder:text-[var(--cb-text-subtle)] focus:border-indigo-500/50 outline-none transition-colors">
+                        </label>
+                        <label class="block">
+                            <span class="cb-label text-[0.65rem] font-medium text-[var(--cb-text-subtle)] uppercase tracking-wider">Telefone</span>
+                            <input type="text" name="phone" value="{{.Phone}}" data-oninput="maskPhoneContato"
+                                class="w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 py-3 text-sm text-[var(--cb-text-main)] placeholder:text-[var(--cb-text-subtle)] focus:border-indigo-500/50 outline-none transition-colors">
+                        </label>
+                    </div>
+                    <div class="flex gap-2 pt-1">
+                        <button type="submit" class="cb-button cb-button-primary inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold flex-1">
+                            <i data-lucide="check" class="h-3.5 w-3.5"></i>
+                            Criar
+                        </button>
+                        <button type="button" data-onclick-ev="closePickerModal"
+                            class="cb-button cb-button-secondary inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold flex-1">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </section>
+</div>
+{{end}}

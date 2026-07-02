@@ -76,6 +76,9 @@ func main() {
 	slog.Info("database initialized successfully")
 
 	seedIfEmpty(db)
+	scheduledPaymentCtx, stopScheduledPayments := context.WithCancel(context.Background())
+	defer stopScheduledPayments()
+	handlers.StartScheduledPaymentExecutor(scheduledPaymentCtx, db, 5*time.Minute)
 
 	debugMode := strings.EqualFold(strings.TrimSpace(os.Getenv("APP_DEBUG")), "true")
 	assets.SetDebugMode(debugMode)
@@ -740,6 +743,7 @@ func main() {
 		h := txBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.CanCreateContact = hasPermission(ctx.Role, permTransactionsCreate)
 		h.HandleNovaTransacao(w, r)
 	}))
 	mux.HandleFunc("/transacoes/preditiva", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -848,6 +852,35 @@ func main() {
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
 		h.HandleOptionsContato(w, r)
+	}))
+
+	mux.HandleFunc("/api/contatos/novo", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !hasPermission(ctx.Role, permTransactionsCreate) {
+			respondForbidden(w, r)
+			return
+		}
+		h := contatosBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleContatoInlineForm(w, r)
+	}))
+	mux.HandleFunc("/api/contatos/inline", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !hasPermission(ctx.Role, permTransactionsCreate) {
+			respondForbidden(w, r)
+			return
+		}
+		h := contatosBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleContatoInlineCreate(w, r)
 	}))
 	mux.HandleFunc("/contatos/", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		h := contatosBase
@@ -1116,6 +1149,7 @@ func main() {
 		}
 		if len(parts) == 2 && parts[1] == "editar" {
 			if r.Method == http.MethodGet {
+				h.CanCreateContact = hasPermission(ctx.Role, permTransactionsCreate)
 				h.HandleDetalheTransacao(w, r, id)
 				return
 			}
@@ -1176,6 +1210,7 @@ func main() {
 				respondForbidden(w, r)
 				return
 			}
+			h.CanCreateContact = hasPermission(ctx.Role, permTransactionsCreate)
 			h.HandleDetalheTransacao(w, r, id)
 		case http.MethodPut:
 			if !hasPermission(ctx.Role, permTransactionsUpdate) {
@@ -3364,6 +3399,9 @@ func buildFuncMap() template.FuncMap {
 				}
 			}
 			return false
+		},
+		"mapGet": func(m map[string]string, key string) string {
+			return m[key]
 		},
 		"filterCategories": func(cats []handlers.ConfigCategoryRow, typ string) []handlers.ConfigCategoryRow {
 			var result []handlers.ConfigCategoryRow

@@ -60,7 +60,7 @@ O workflow compila CSS, executa testes e `go vet`, gera os binários Linux, vali
 - **release artifact:** recomendado para VPS/LXC Debian sem Docker;
 - **source/build local:** avançado, para desenvolvimento e customização.
 
-A entrada recomendada é via canal público de instalação. O endpoint temporário é `https://get-contabase.pages.dev`; `https://get.contabase.net` é o domínio futuro e só deve virar comando principal quando estiver ativo.
+A entrada recomendada é via canal público de instalação em https://get-contabase.pages.dev.
 
 ```bash
 curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh && bash /tmp/contabase-install.sh

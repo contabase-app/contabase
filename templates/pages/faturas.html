@@ -263,7 +263,7 @@
                     <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Conta selecionada</span>
                     <select name="payment_account_id" required data-settle-payment-account class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]">
                         {{range .PaymentAccounts}}
-                        <option value="{{.ID}}" data-balance-after="R$ {{.BalanceAfterPayment.Reais}}{{.BalanceAfterPayment.Cents}}">{{.Name}} (R$ {{.Money.Reais}}{{.Money.Cents}})</option>
+                        <option value="{{.ID}}" data-balance-after="R$ {{.BalanceAfterPayment.Reais}}{{.BalanceAfterPayment.Cents}}" {{if eq .ID $.DefaultPaymentAccountID}}selected{{end}}>{{.Name}} (R$ {{.Money.Reais}}{{.Money.Cents}})</option>
                         {{end}}
                     </select>
                 </label>
@@ -283,7 +283,7 @@
                     </button>
                     <button type="submit" {{if not .CanSubmitPayment}}disabled{{end}}
                         class="cb-button cb-button-primary btn-tactile flex h-10 items-center justify-center gap-2 rounded-xl text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i data-lucide="check" class="h-4 w-4"></i>Confirmar quitação
+                        <i data-lucide="check" class="h-4 w-4"></i>Confirmar
                     </button>
                 </div>
             </form>
@@ -315,7 +315,7 @@
                     <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Conta</span>
                     <select name="payment_account_id" class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]">
                         {{range .PaymentAccounts}}
-                        <option value="{{.ID}}">{{.Name}} (R$ {{.Money.Reais}}{{.Money.Cents}})</option>
+                        <option value="{{.ID}}" {{if eq .ID $.DefaultPaymentAccountID}}selected{{end}}>{{.Name}} (R$ {{.Money.Reais}}{{.Money.Cents}})</option>
                         {{end}}
                     </select>
                 </label>
@@ -329,7 +329,7 @@
                 </div>
                 <button type="submit" {{if not .CanSubmitPayment}}disabled{{end}}
                     class="cb-button cb-button-primary btn-tactile flex h-10 w-full items-center justify-center gap-2 rounded-xl text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i data-lucide="check" class="h-4 w-4"></i>Confirmar pagamento
+                    <i data-lucide="check" class="h-4 w-4"></i>Confirmar
                 </button>
             </form>
         </div>
@@ -397,8 +397,9 @@
         {{$invoiceID := .InvoiceID}}
         {{range .TransactionGroups}}
             <section data-show-more-item="{{.FirstIndex}}" class="space-y-3">
-                <div class="sticky top-[8.75rem] z-[1] rounded-lg bg-[var(--cb-surface-2)] px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)] md:top-[8.25rem] border border-[var(--cb-border-subtle)] mb-2.5">
-                    {{.DateLabel}}
+                <div class="sticky top-[8.75rem] z-[1] flex items-center gap-2.5 mb-2.5 md:top-[8.25rem]">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)] whitespace-nowrap">{{.DateLabel}}</span>
+                    <span class="flex-1 h-px cb-date-separator-line"></span>
                 </div>
                 <div class="space-y-2">
                 {{range .Transactions}}

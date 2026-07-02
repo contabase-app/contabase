@@ -1,6 +1,9 @@
 package services
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 type BoxProjectionStatus string
 
@@ -123,18 +126,17 @@ func EstimateBoxProjectionWithYield(currentBalance, targetAmount, monthlyRecharg
 	months := 0
 	const maxMonths = 1200
 
-	for months < maxMonths && balance < target {
-		balance += recharge
-		balance *= (1.0 + r)
+	for months < maxMonths {
 		months++
+		growth := math.Pow(1.0+r, float64(months))
+		futureValue := balance*growth + recharge*((growth-1.0)/r)
+		if futureValue >= target {
+			return BoxProjection{
+				Status:     BoxProjectionStatusForecast,
+				MonthsLeft: months,
+			}
+		}
 	}
 
-	if months >= maxMonths || months <= 0 {
-		return BoxProjection{Status: BoxProjectionStatusNoForecast}
-	}
-
-	return BoxProjection{
-		Status:     BoxProjectionStatusForecast,
-		MonthsLeft: months,
-	}
+	return BoxProjection{Status: BoxProjectionStatusNoForecast}
 }

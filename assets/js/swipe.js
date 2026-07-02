@@ -27,8 +27,13 @@ function runSwipeAction(row, side) {
         url = row.dataset.swipeLeftUrl;
         if (!url && txId) url = '/transacoes/' + txId + '?escopo=single';
     } else {
+        if (row.dataset.swipeRightPaymentConfirm === 'true') {
+            if (typeof window.openPaymentConfirmModalFromElement === 'function') {
+                window.openPaymentConfirmModalFromElement(row);
+            }
+            return;
+        }
         url = row.dataset.swipeRightUrl;
-        if (!url && txId) url = '/transacoes/' + txId + '/status-pagamento';
     }
     if (!url || !window.htmx) return;
     if (side === 'left' && row.dataset.isSeries === 'true') {

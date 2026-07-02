@@ -68,6 +68,8 @@ CREATE TABLE IF NOT EXISTS users (
     totp_backup_codes TEXT NOT NULL DEFAULT '[]',
     totp_enabled_at INTEGER,
     last_notifications_clear_at INTEGER NOT NULL DEFAULT 0,
+    deleted_at      INTEGER NOT NULL DEFAULT 0,
+    deleted_reason  TEXT,
     created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -180,9 +182,11 @@ CREATE TABLE IF NOT EXISTS security_logs (
 CREATE TABLE IF NOT EXISTS user_notifications (
     id         TEXT PRIMARY KEY,
     user_id    TEXT NOT NULL,
+    workspace_id TEXT,
     title      TEXT NOT NULL DEFAULT '',
     message    TEXT NOT NULL DEFAULT '',
     type       TEXT NOT NULL DEFAULT '',
+    dedupe_key TEXT,
     is_read    INTEGER NOT NULL DEFAULT 0 CHECK (is_read IN (0, 1)),
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -205,11 +209,12 @@ CREATE TABLE IF NOT EXISTS accounts (
 );
 
 CREATE TABLE IF NOT EXISTS credit_cards (
-    id           TEXT PRIMARY KEY,
-    account_id   TEXT    NOT NULL UNIQUE,
-    closing_day  INTEGER NOT NULL CHECK (closing_day BETWEEN 1 AND 31),
-    due_day      INTEGER NOT NULL CHECK (due_day BETWEEN 1 AND 31),
-    credit_limit INTEGER NOT NULL DEFAULT 0,
+    id                          TEXT PRIMARY KEY,
+    account_id                  TEXT    NOT NULL UNIQUE,
+    closing_day                 INTEGER NOT NULL CHECK (closing_day BETWEEN 1 AND 31),
+    due_day                     INTEGER NOT NULL CHECK (due_day BETWEEN 1 AND 31),
+    credit_limit                INTEGER NOT NULL DEFAULT 0,
+    default_payment_account_id  TEXT,
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
 
@@ -306,6 +311,10 @@ CREATE TABLE IF NOT EXISTS transactions (
     payment_status          TEXT    NOT NULL DEFAULT 'PAID' CHECK (payment_status IN ('PAID', 'PENDING')),
     status                  TEXT    NOT NULL DEFAULT 'paid' CHECK (status IN ('paid', 'pending')),
     due_date                INTEGER,
+    paid_at                 INTEGER,
+    scheduled_payment_at    INTEGER,
+    scheduled_payment_created_by TEXT,
+    scheduled_payment_executed_at INTEGER,
     contact_id              TEXT REFERENCES contacts(id) ON DELETE RESTRICT,
     created_at              INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at              INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -336,7 +345,7 @@ CREATE TABLE IF NOT EXISTS boxes (
     workspace_id     TEXT    NOT NULL,
     name             TEXT    NOT NULL,
     description      TEXT    NOT NULL DEFAULT '',
-    category_id      TEXT    NOT NULL,
+    category_id      TEXT,
     target_amount    INTEGER NOT NULL DEFAULT 0,
     monthly_recharge INTEGER NOT NULL DEFAULT 0,
     target_date      INTEGER,
@@ -344,7 +353,7 @@ CREATE TABLE IF NOT EXISTS boxes (
     created_at       INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at       INTEGER NOT NULL DEFAULT (unixepoch()),
     FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-    FOREIGN KEY (category_id)  REFERENCES categories(id) ON DELETE CASCADE
+    FOREIGN KEY (category_id)  REFERENCES categories(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS box_virtual_ledger (
@@ -362,6 +371,19 @@ CREATE TABLE IF NOT EXISTS box_virtual_ledger (
     created_at     INTEGER NOT NULL DEFAULT (unixepoch()),
     FOREIGN KEY (box_id) REFERENCES boxes(id) ON DELETE CASCADE,
     FOREIGN KEY (reversal_of_ledger_id) REFERENCES box_virtual_ledger(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS transaction_status_history (
+    id              TEXT PRIMARY KEY,
+    transaction_id  TEXT NOT NULL,
+    workspace_id    TEXT NOT NULL,
+    user_id         TEXT NOT NULL,
+    previous_status TEXT,
+    new_status      TEXT,
+    previous_paid_at INTEGER,
+    new_paid_at     INTEGER,
+    source          TEXT NOT NULL DEFAULT 'manual',
+    created_at      INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_workspace_members_user      ON workspace_members(user_id);
@@ -398,6 +420,8 @@ CREATE INDEX IF NOT EXISTS idx_transactions_workspace_date_created ON transactio
 CREATE INDEX IF NOT EXISTS idx_transactions_workspace_type_date ON transactions(workspace_id, type, date);
 CREATE INDEX IF NOT EXISTS idx_transactions_workspace_category_type_date ON transactions(workspace_id, category_id, type, date);
 CREATE INDEX IF NOT EXISTS idx_transactions_workspace_invoice_date ON transactions(workspace_id, invoice_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_tsh_transaction ON transaction_status_history(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_tsh_workspace_created ON transaction_status_history(workspace_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_cost_limits_workspace       ON cost_limits(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_boxes_workspace             ON boxes(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_boxes_workspace_category    ON boxes(workspace_id, category_id);

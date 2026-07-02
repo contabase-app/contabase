@@ -86,6 +86,13 @@
                             Vencido
                         </label>
                         <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
+                            {{if .StatusAgendadoOn}}border-violet-500/30 bg-violet-500/10 text-violet-600 dark:border-violet-400/50 dark:bg-violet-500/20 dark:text-violet-200
+                            {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-violet-300{{end}}">
+                            <i data-lucide="timer" class="w-3 h-3"></i>
+                            <input class="hidden" type="checkbox" name="situacao" value="agendado" {{if .StatusAgendadoOn}}checked{{end}}>
+                            Agendado
+                        </label>
+                        <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
                             {{if .StatusPagoOn}}border-emerald-600/30 bg-emerald-600/10 text-emerald-600 dark:border-emerald-400/50 dark:bg-emerald-500/20 dark:text-emerald-200
                             {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-emerald-300{{end}}">
                             <i data-lucide="check-circle-2" class="w-3 h-3"></i>
@@ -260,6 +267,12 @@
 </section>
 {{end}}
 
+{{define "lancamentos-invoices"}}
+    {{if .Invoices}}
+        <div class="mb-4 space-y-2">{{range .Invoices}}{{template "invoice-row" .}}{{end}}</div>
+    {{end}}
+{{end}}
+
 {{define "lancamentos-list"}}
 <div id="lancamentos-list-wrapper">
     {{if .HasActiveFilters}}
@@ -274,8 +287,10 @@
     </div>
     {{end}}
 
+    {{template "lancamentos-invoices" .}}
+
     <div id="transactions-list" class="group" data-bulk-select>
-        {{if or .Transactions .Invoices}}
+        {{if .Transactions}}
             <div class="mb-3 flex items-center justify-between rounded-lg border border-[var(--cb-border-subtle)] px-3 py-2 text-xs text-[var(--cb-text-muted)] transition-all group-[.bulk-mode]:border-violet-500/25 group-[.bulk-mode]:bg-violet-500/[0.05] dark:group-[.bulk-mode]:border-violet-500/30 dark:group-[.bulk-mode]:bg-violet-500/[0.08]">
                 <label class="bulk-mode-label items-center gap-2 text-[var(--cb-text-muted)] font-medium cursor-pointer">
                     <input type="checkbox" class="w-4 h-4 rounded border-2 border-zinc-300 text-violet-600 focus:ring-violet-500 cursor-pointer" data-bulk-toggle-all>
@@ -286,17 +301,17 @@
             </div>
         {{end}}
         {{template "lancamentos-table-body" .}}
-        {{if or .Transactions .Invoices}}
+        {{if .Transactions}}
             <div class="bulk-action-bar" data-bulk-bar>
                 <div class="flex items-center justify-between gap-2">
                     <span class="text-xs font-bold text-[var(--cb-text-main)]">
                         <span class="text-violet-600 dark:text-violet-400" data-bulk-count-num>0</span> selecionados
                     </span>
                     <div class="flex items-center gap-1.5">
-                        <form hx-post="/transacoes/bulk/update" hx-target="#lancamentos-table-body" hx-swap="outerHTML" hx-confirm="Marcar como pagos?" data-hx-after="resetBulkSelection" class="contents">
+                        <form data-bulk-paid-form hx-post="/transacoes/bulk/update" hx-target="#lancamentos-table-body" hx-swap="outerHTML" data-hx-after="resetBulkSelection" class="contents">
                             <input type="hidden" name="status_pagamento" value="paid">
                             <input type="hidden" name="ids[]" value="" data-bulk-form-ids data-action="paid">
-                            <button type="submit" data-bulk-mark-paid class="inline-flex h-9 items-center gap-1.5 rounded-xl border-2 border-emerald-500 bg-emerald-500/10 px-3 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20">
+                            <button type="button" data-bulk-mark-paid class="inline-flex h-9 items-center gap-1.5 rounded-xl border-2 border-emerald-500 bg-emerald-500/10 px-3 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20">
                                 <i data-lucide="check" class="w-3.5 h-3.5"></i>Pago
                             </button>
                         </form>
@@ -349,10 +364,7 @@
 
 {{define "lancamentos-table-body"}}
 <div id="lancamentos-table-body">
-    {{if or .Transactions .Invoices}}
-        {{if .Invoices}}
-            <div class="mb-4 space-y-2">{{range .Invoices}}{{template "invoice-row" .}}{{end}}</div>
-        {{end}}
+    {{if .Transactions}}
         {{if .Transactions}}
             {{$currentDate := ""}}
             {{range .Transactions}}
@@ -366,6 +378,8 @@
                 {{template "lancamento-row" .}}
             {{end}}
         {{end}}
+    {{else if .Invoices}}
+        <div class="sr-only">Faturas exibidas acima</div>
     {{else}}
         <div class="cb-empty-state py-10">
             <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)] border border-[var(--cb-border-subtle)]">
@@ -379,16 +393,41 @@
 {{end}}
 
 {{define "lancamento-row"}}
-<article id="tx-{{.ID}}" class="tx-row relative mb-1.5 overflow-hidden rounded-xl {{if .IsOverdue}}overdue{{else if .IsPending}}pending{{end}}"
+<article id="tx-{{.ID}}" class="tx-row relative mb-1.5 overflow-hidden rounded-xl {{if .IsScheduled}}scheduled{{else if .IsOverdue}}overdue{{else if .IsPending}}pending{{end}}"
     data-tx-id="{{.ID}}"
+    data-payment-id="{{.ID}}"
+    data-payment-context="lancamentos"
+    data-payment-post-url="/transacoes/{{.ID}}/status-pagamento"
+    data-payment-target="#tx-{{.ID}}"
+    data-payment-swap="outerHTML"
+    data-payment-description="{{.Description}}"
+    data-payment-amount="{{.AmountDisplay}}"
+    data-payment-type="{{.Type}}"
+    {{- if .ScheduledPaymentAtDisplay}} data-payment-scheduled-at="{{.ScheduledPaymentAtDisplay}}"{{end}}
     {{- if .IsSeries}} data-is-series="true"{{end}}
-    data-swipe-row="true">
+    data-swipe-row="true"
+    {{if eq .PaymentStatus "paid"}}
+    data-swipe-right-url="/transacoes/{{.ID}}/status-pagamento"
+    data-swipe-right-method="POST"
+    data-swipe-right-target="#tx-{{.ID}}"
+    data-swipe-right-swap="outerHTML"
+    data-swipe-right-confirm="{{.PaymentConfirm}}"
+    {{else}}
+    data-swipe-right-payment-confirm="true"
+    {{end}}>
     <div data-swipe-bg-left><i data-lucide="trash-2" class="swipe-icon"></i></div>
     <div data-swipe-bg-right class="{{if or .IsOverdue .IsPending}}bg-emerald-500{{else}}bg-red-500{{end}}"><i data-lucide="{{if or .IsOverdue .IsPending}}check-circle-2{{else}}clock{{end}}" class="swipe-icon"></i></div>
     <div data-swipe-content class="tx-content">
         <input type="checkbox" class="bulk-checkbox h-4 w-4 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 shrink-0" data-tx-checkbox data-ignore-select value="{{.ID}}">
-        <button type="button" data-ignore-select data-stop-propagation hx-post="/transacoes/{{.ID}}/status-pagamento" hx-target="closest .tx-row" hx-swap="outerHTML" hx-confirm="{{.PaymentConfirm}}"
-            class="tx-status" title="{{.PaymentTitle}}" aria-label="{{.PaymentTitle}}">
+        <button type="button" data-ignore-select data-stop-propagation
+            {{if eq .PaymentStatus "paid"}}
+            hx-post="/transacoes/{{.ID}}/status-pagamento"
+            hx-target="closest .tx-row" hx-swap="outerHTML"
+            hx-confirm="{{.PaymentConfirm}}"
+            {{else}}
+            data-payment-confirm
+            {{end}}
+            class="tx-status tx-status-{{.PaymentTone}}" title="{{.PaymentTitle}}" aria-label="{{.PaymentTitle}}">
             <i data-lucide="{{.PaymentIcon}}" class="w-4 h-4"></i>
         </button>
         <button type="button" data-ignore-select class="flex flex-1 min-w-0 items-center gap-3 text-left" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false">
@@ -400,6 +439,8 @@
                 <p class="cb-text-micro text-[var(--cb-text-muted)] whitespace-normal break-words leading-snug">
                     {{if .IsBusiness}}{{if .ContactName}}{{.ContactName}} · {{end}}{{.AccountName}}{{if .CategoryName}} · {{.CategoryName}}{{end}}{{else}}{{.AccountName}}{{if .CategoryName}} · {{.CategoryName}}{{end}}{{end}}
                 </p>
+                {{if and (eq .PaymentStatus "paid") .PaidAt}}<p class="cb-text-micro text-emerald-600 dark:text-emerald-400 mt-0.5">Pago em {{.PaidAtDisplay}}</p>{{end}}
+                {{if .IsScheduled}}<p class="cb-text-micro text-violet-600 dark:text-violet-300 mt-0.5">Agendado para {{.ScheduledPaymentAtDisplay}}</p>{{end}}
                 {{if .HasInstallmentInfo}}
                     <p class="mt-1.5">
                         {{if and .IsSeries (le .TotalInstallments 1)}}
@@ -457,9 +498,10 @@
             <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">Vence em {{.DateLabel}} · {{.ItemCount}} {{if eq .ItemCount 1}}item{{else}}itens{{end}}</p>
         </span>
         <div class="flex flex-col items-end shrink-0 gap-0.5 min-w-0">
-            <p class="text-sm font-bold {{if .IsOverdue}}text-red-600 dark:text-red-400{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.TotalMoney.Reais}}{{.TotalMoney.Cents}}</p>
-            <span class="cb-status-chip {{if eq .Status "PAID"}}cb-status-chip-success{{else if .IsOverdue}}cb-status-chip-danger{{else if eq .Status "CLOSED"}}cb-status-chip-danger{{else}}cb-status-chip-warning{{end}}">
-                {{if eq .Status "PAID"}}Paga{{else if .IsOverdue}}Vencida{{else if eq .Status "CLOSED"}}Fechada{{else}}Aberta{{end}}
+            <p class="text-sm font-bold {{if .IsOverdue}}text-red-600 dark:text-red-400{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.PendingMoney.Reais}}{{.PendingMoney.Cents}}</p>
+            {{if .HasPartialPayment}}<span class="cb-text-micro text-[var(--cb-text-muted)]" data-sensitive>Total R$ {{.TotalMoney.Reais}}{{.TotalMoney.Cents}} · Pago R$ {{.PaidMoney.Reais}}{{.PaidMoney.Cents}}</span>{{end}}
+            <span class="cb-status-chip {{if eq .BadgeLabel "Paga"}}cb-status-chip-success{{else if eq .BadgeLabel "Parcial"}}cb-status-chip-info{{else if eq .BadgeLabel "Fechada"}}cb-status-chip-danger{{else}}cb-status-chip-warning{{end}}">
+                {{.BadgeLabel}}
             </span>
         </div>
     </div>

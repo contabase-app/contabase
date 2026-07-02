@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"html/template"
 	"io"
 	"net/http"
@@ -25,6 +26,21 @@ func (adminUsersRecoveryTestTemplates) ExecuteTemplate(w io.Writer, name string,
 }
 
 func (adminUsersRecoveryTestTemplates) Lookup(name string) *template.Template {
+	return template.New(name)
+}
+
+type adminUsersDeleteTestTemplates struct{}
+
+func (adminUsersDeleteTestTemplates) ExecuteTemplate(w io.Writer, name string, data any) error {
+	if d, ok := data.(ConfiguracoesData); ok {
+		_, _ = io.WriteString(w, d.FlashError+d.FlashSuccess)
+		return nil
+	}
+	_, _ = w.Write([]byte("ok"))
+	return nil
+}
+
+func (adminUsersDeleteTestTemplates) Lookup(name string) *template.Template {
 	return template.New(name)
 }
 
@@ -281,6 +297,617 @@ func TestHandleAdminUsersRecoveryRejectsManagerBeforeMutation(t *testing.T) {
 	assertAdminUser2FAEnabled(t, db, "target-user")
 }
 
+func TestHandleAdminUserDeleteAnonymizesAllowedUserAndPreservesFinancialHistory(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersDeleteScenario(t, db, true)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersDeleteTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/users/target-user", nil)
+	req.Header.Set("HX-Request", "true")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUserDelete(rr, req, "target-user")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertContains(t, rr.Body.String(), "Usuário removido com sucesso.")
+	assertUserField(t, db, "target-user", "name", "Usuário removido")
+	assertUserField(t, db, "target-user", "email", "deleted-target-user@contabase.local")
+	assertAdminUserPasswordHash(t, db, "target-user", "")
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM workspace_members WHERE user_id = ?`, "target-user", 0)
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM sessions WHERE user_id = ? AND revoked_at IS NULL`, "target-user", 0)
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM pre_auth_sessions WHERE user_id = ? AND consumed_at IS NULL`, "target-user", 0)
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM auth_lockouts WHERE user_id = ?`, "target-user", 0)
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM transactions WHERE user_id = ?`, "target-user", 1)
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM auth_audit_events WHERE user_id = ? AND event_type = 'user_removed'`, "target-user", 1)
+}
+
+func TestHandleAdminUserDeleteRejectsSelfDelete(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersDeleteScenario(t, db, false)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersDeleteTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/users/admin-actor", nil)
+	req.Header.Set("HX-Request", "true")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUserDelete(rr, req, "admin-actor")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertContains(t, rr.Body.String(), "Não é possível excluir seu próprio usuário.")
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM users WHERE id = ?`, "admin-actor", 1)
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM workspace_members WHERE user_id = ?`, "admin-actor", 1)
+}
+
+func TestHandleAdminUserDeletePreservesFinancialHistoryAndAnonymizes(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersDeleteScenario(t, db, true)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersDeleteTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/users/target-user", nil)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Target", "settings-dynamic-payload")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUserDelete(rr, req, "target-user")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertContains(t, rr.Header().Get("HX-Trigger"), "mostrarAlerta")
+	var triggerPayload map[string]string
+	if err := json.Unmarshal([]byte(rr.Header().Get("HX-Trigger")), &triggerPayload); err != nil {
+		t.Fatalf("HX-Trigger is not valid JSON: %v", err)
+	}
+	if got := triggerPayload["mostrarAlerta"]; got != "Usuário removido com sucesso. O histórico financeiro do workspace foi preservado." {
+		t.Fatalf("HX-Trigger mostrarAlerta = %q, want %q", got, "Usuário removido com sucesso. O histórico financeiro do workspace foi preservado.")
+	}
+	assertContains(t, rr.Body.String(), "Usuário removido com sucesso.")
+	assertUserField(t, db, "target-user", "name", "Usuário removido")
+	assertUserField(t, db, "target-user", "email", "deleted-target-user@contabase.local")
+	assertAdminUserPasswordHash(t, db, "target-user", "")
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM workspace_members WHERE user_id = ?`, "target-user", 0)
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM transactions WHERE user_id = ?`, "target-user", 1)
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM sessions WHERE user_id = ? AND revoked_at IS NULL`, "target-user", 0)
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM pre_auth_sessions WHERE user_id = ? AND consumed_at IS NULL`, "target-user", 0)
+}
+
+func TestHandleAdminUserDeleteRejectsLastAdmin(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersDeleteScenario(t, db, false)
+	_, err := db.Exec(`DELETE FROM workspace_members WHERE workspace_id = 'workspace-a' AND user_id = 'admin-actor'`)
+	if err != nil {
+		t.Fatalf("remove actor membership: %v", err)
+	}
+	_, err = db.Exec(`UPDATE workspace_members SET role = 'ADMIN' WHERE workspace_id = 'workspace-a' AND user_id = 'target-user'`)
+	if err != nil {
+		t.Fatalf("promote target to admin: %v", err)
+	}
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersDeleteTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/users/target-user", nil)
+	req.Header.Set("HX-Request", "true")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUserDelete(rr, req, "target-user")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertContains(t, rr.Body.String(), "último administrador")
+	assertUserField(t, db, "target-user", "name", "Target User")
+	assertAdminUsersHandlerCount(t, db, `SELECT COUNT(1) FROM workspace_members WHERE user_id = ?`, "target-user", 1)
+}
+
+func TestHandleAdminUserDeleteProducesUniquePlaceholderEmails(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	now := time.Now().Unix()
+	execTestSQL(t, db, `
+		INSERT INTO users (id, name, email, password_hash, status, created_at, updated_at)
+		VALUES
+			('admin-actor', 'Admin Actor', 'admin-actor@example.com', 'actor-hash', 'active', ?, ?),
+			('target-one', 'Target One', 'target-one@example.com', 'hash-one', 'active', ?, ?),
+			('target-two', 'Target Two', 'target-two@example.com', 'hash-two', 'active', ?, ?)
+	`, now, now, now, now, now, now)
+	execTestSQL(t, db, `INSERT INTO workspaces (id, name, description, type, created_at, updated_at) VALUES ('workspace-a', 'Workspace A', '', 'personal', ?, ?)`, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+		VALUES
+			('workspace-a', 'admin-actor', 'ADMIN', ?),
+			('workspace-a', 'target-one', 'USER', ?),
+			('workspace-a', 'target-two', 'USER', ?)
+	`, now, now, now)
+
+	for _, uid := range []string{"target-one", "target-two"} {
+		handler := ConfiguracoesHandler{
+			DB:          db,
+			Templates:   adminUsersDeleteTestTemplates{},
+			WorkspaceID: "workspace-a",
+			UserID:      "admin-actor",
+			ActorRole:   models.RoleAdmin,
+		}
+		req := httptest.NewRequest(http.MethodDelete, "/users/"+uid, nil)
+		req.Header.Set("HX-Request", "true")
+		rr := httptest.NewRecorder()
+		handler.HandleAdminUserDelete(rr, req, uid)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+		}
+	}
+
+	var emails []string
+	rows, err := db.Query(`SELECT email FROM users WHERE id IN ('target-one', 'target-two')`)
+	if err != nil {
+		t.Fatalf("query emails: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			t.Fatalf("scan email: %v", err)
+		}
+		emails = append(emails, email)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows err: %v", err)
+	}
+	if len(emails) != 2 || emails[0] == emails[1] {
+		t.Fatalf("expected 2 distinct placeholder emails, got %v", emails)
+	}
+}
+
+type adminUsersSaveTestTemplates struct{}
+
+func (adminUsersSaveTestTemplates) ExecuteTemplate(w io.Writer, name string, data any) error {
+	_, _ = w.Write([]byte("ok"))
+	return nil
+}
+
+func (adminUsersSaveTestTemplates) Lookup(name string) *template.Template {
+	return template.New(name)
+}
+
+func TestHandleAdminUsersSavePreservesExistingWorkspaceRoles(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersMultiWorkspaceScenario(t, db)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersSaveTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	form := url.Values{}
+	form.Set("user_id", "target-user")
+	form.Set("name", "Target Renamed")
+	form.Set("email", "target-renamed@example.com")
+	form.Set("role", "USER")
+	form.Set("status", "active")
+	form.Add("workspace_ids", "workspace-a")
+	form.Add("workspace_ids", "workspace-b")
+	req := httptest.NewRequest(http.MethodPost, "/admin/usuarios/salvar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUsersSave(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertWorkspaceMemberRole(t, db, "workspace-a", "target-user", models.RoleAdmin)
+	assertWorkspaceMemberRole(t, db, "workspace-b", "target-user", models.RoleUser)
+	assertWorkspaceMemberCount(t, db, "workspace-a", "target-user", 1)
+	assertWorkspaceMemberCount(t, db, "workspace-b", "target-user", 1)
+	assertUserField(t, db, "target-user", "name", "Target Renamed")
+	assertUserField(t, db, "target-user", "email", "target-renamed@example.com")
+}
+
+func TestHandleAdminUsersSaveUpdatesOnlyChangedWorkspaceRole(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersMultiWorkspaceScenario(t, db)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersSaveTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	form := url.Values{}
+	form.Set("user_id", "target-user")
+	form.Set("name", "Target User")
+	form.Set("email", "target@example.com")
+	form.Set("status", "active")
+	form.Add("workspace_ids", "workspace-a")
+	form.Add("workspace_ids", "workspace-b")
+	form.Set("workspace_roles[workspace-a]", models.RoleManager)
+	form.Set("workspace_roles[workspace-b]", models.RoleUser)
+	req := httptest.NewRequest(http.MethodPost, "/admin/usuarios/salvar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUsersSave(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertWorkspaceMemberRole(t, db, "workspace-a", "target-user", models.RoleManager)
+	assertWorkspaceMemberRole(t, db, "workspace-b", "target-user", models.RoleUser)
+	assertWorkspaceMemberCount(t, db, "workspace-a", "target-user", 1)
+	assertWorkspaceMemberCount(t, db, "workspace-b", "target-user", 1)
+}
+
+func TestHandleAdminUsersSaveStatusChangePreservesRoles(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersMultiWorkspaceScenario(t, db)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersSaveTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	form := url.Values{}
+	form.Set("user_id", "target-user")
+	form.Set("name", "Target User")
+	form.Set("email", "target@example.com")
+	form.Set("role", "USER")
+	form.Set("status", "pending")
+	form.Add("workspace_ids", "workspace-a")
+	form.Add("workspace_ids", "workspace-b")
+	req := httptest.NewRequest(http.MethodPost, "/admin/usuarios/salvar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUsersSave(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertWorkspaceMemberRole(t, db, "workspace-a", "target-user", models.RoleAdmin)
+	assertWorkspaceMemberRole(t, db, "workspace-b", "target-user", models.RoleUser)
+	assertUserField(t, db, "target-user", "status", "pending")
+}
+
+func TestHandleAdminUsersSaveRemoveWorkspaceFreesOnlyThatWorkspace(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersMultiWorkspaceScenario(t, db)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersSaveTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	form := url.Values{}
+	form.Set("user_id", "target-user")
+	form.Set("name", "Target User")
+	form.Set("email", "target@example.com")
+	form.Set("role", "USER")
+	form.Set("status", "active")
+	form.Add("workspace_ids", "workspace-a")
+	req := httptest.NewRequest(http.MethodPost, "/admin/usuarios/salvar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUsersSave(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertWorkspaceMemberRole(t, db, "workspace-a", "target-user", models.RoleAdmin)
+	assertWorkspaceMemberCount(t, db, "workspace-a", "target-user", 1)
+	assertWorkspaceMemberCount(t, db, "workspace-b", "target-user", 0)
+}
+
+func TestHandleAdminUsersSaveRemoveAllWorkspacesAllowedForOtherUser(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersMultiWorkspaceScenario(t, db)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersSaveTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	form := url.Values{}
+	form.Set("user_id", "target-user")
+	form.Set("name", "Target User")
+	form.Set("email", "target@example.com")
+	form.Set("role", "USER")
+	form.Set("status", "active")
+	req := httptest.NewRequest(http.MethodPost, "/admin/usuarios/salvar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUsersSave(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertWorkspaceMemberCount(t, db, "workspace-a", "target-user", 0)
+	assertWorkspaceMemberCount(t, db, "workspace-b", "target-user", 0)
+	assertUserField(t, db, "target-user", "name", "Target User")
+}
+
+func TestHandleAdminUsersSaveRemoveAllWorkspacesBlocksSelf(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersMultiWorkspaceScenario(t, db)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersDeleteTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	form := url.Values{}
+	form.Set("user_id", "admin-actor")
+	form.Set("name", "Admin Actor")
+	form.Set("email", "admin@example.com")
+	form.Set("role", "ADMIN")
+	form.Set("status", "active")
+	req := httptest.NewRequest(http.MethodPost, "/admin/usuarios/salvar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUsersSave(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertContains(t, rr.Body.String(), "Você não pode remover seu próprio acesso a todos os workspaces")
+	assertWorkspaceMemberCount(t, db, "workspace-a", "admin-actor", 1)
+}
+
+func TestHandleAdminUsersSaveRemoveAllWorkspacesRevokesSessions(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersMultiWorkspaceScenario(t, db)
+	now := time.Now().Unix()
+	execTestSQL(t, db, `INSERT INTO sessions (id, workspace_id, token_hash, user_id, expires_at, created_at) VALUES ('s1', 'workspace-a', 'hash1', 'target-user', ?, ?)`, now+3600, now)
+	execTestSQL(t, db, `INSERT INTO pre_auth_sessions (id, user_id, token_hash, method, expires_at, created_at) VALUES ('pre1', 'target-user', 'hashpre', 'TOTP', ?, ?)`, now+3600, now)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersSaveTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	form := url.Values{}
+	form.Set("user_id", "target-user")
+	form.Set("name", "Target User")
+	form.Set("email", "target@example.com")
+	form.Set("role", "USER")
+	form.Set("status", "active")
+	req := httptest.NewRequest(http.MethodPost, "/admin/usuarios/salvar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUsersSave(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	var revokedCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM sessions WHERE user_id = ? AND revoked_at IS NOT NULL`, "target-user").Scan(&revokedCount); err != nil {
+		t.Fatalf("query revoked sessions: %v", err)
+	}
+	if revokedCount != 1 {
+		t.Fatalf("revoked sessions = %d, want 1", revokedCount)
+	}
+	var consumedCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM pre_auth_sessions WHERE user_id = ? AND consumed_at IS NOT NULL`, "target-user").Scan(&consumedCount); err != nil {
+		t.Fatalf("query consumed pre_auth_sessions: %v", err)
+	}
+	if consumedCount != 1 {
+		t.Fatalf("consumed pre_auth_sessions = %d, want 1", consumedCount)
+	}
+}
+
+func TestHandleAdminUsersSaveCreateStillRequiresWorkspace(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersMultiWorkspaceScenario(t, db)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersDeleteTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	form := url.Values{}
+	form.Set("user_id", "")
+	form.Set("name", "New User")
+	form.Set("email", "new@example.com")
+	form.Set("role", "USER")
+	form.Set("status", "active")
+	req := httptest.NewRequest(http.MethodPost, "/admin/usuarios/salvar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUsersSave(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertContains(t, rr.Body.String(), "Preencha nome, e-mail, permissão e selecione ao menos um workspace para criar o usuário")
+}
+
+func TestHandleAdminUsersSaveAddWorkspaceAppliesSelectedRoleOnlyToNewBinding(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersMultiWorkspaceScenario(t, db)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersSaveTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	form := url.Values{}
+	form.Set("user_id", "target-user")
+	form.Set("name", "Target User")
+	form.Set("email", "target@example.com")
+	form.Set("status", "active")
+	form.Add("workspace_ids", "workspace-a")
+	form.Add("workspace_ids", "workspace-b")
+	form.Add("workspace_ids", "workspace-c")
+	form.Set("workspace_roles[workspace-c]", models.RoleManager)
+	req := httptest.NewRequest(http.MethodPost, "/admin/usuarios/salvar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUsersSave(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertWorkspaceMemberRole(t, db, "workspace-a", "target-user", models.RoleAdmin)
+	assertWorkspaceMemberRole(t, db, "workspace-b", "target-user", models.RoleUser)
+	assertWorkspaceMemberRole(t, db, "workspace-c", "target-user", models.RoleManager)
+	assertWorkspaceMemberCount(t, db, "workspace-a", "target-user", 1)
+	assertWorkspaceMemberCount(t, db, "workspace-b", "target-user", 1)
+	assertWorkspaceMemberCount(t, db, "workspace-c", "target-user", 1)
+}
+
+func TestHandleAdminUsersSaveRejectsInvalidWorkspaceRoleBeforeMutation(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedAdminUsersMultiWorkspaceScenario(t, db)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersSaveTestTemplates{},
+		WorkspaceID: "workspace-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	form := url.Values{}
+	form.Set("user_id", "target-user")
+	form.Set("name", "Target Mutated")
+	form.Set("email", "mutated@example.com")
+	form.Set("status", "pending")
+	form.Add("workspace_ids", "workspace-a")
+	form.Add("workspace_ids", "workspace-b")
+	form.Set("workspace_roles[workspace-a]", "OWNER")
+	req := httptest.NewRequest(http.MethodPost, "/admin/usuarios/salvar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUsersSave(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertWorkspaceMemberRole(t, db, "workspace-a", "target-user", models.RoleAdmin)
+	assertWorkspaceMemberRole(t, db, "workspace-b", "target-user", models.RoleUser)
+	assertUserField(t, db, "target-user", "name", "Target User")
+	assertUserField(t, db, "target-user", "email", "target@example.com")
+	assertUserField(t, db, "target-user", "status", "active")
+}
+
+func TestHandleAdminUsersSavePreservesWorkspaceRolesForAdminUser(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	now := time.Now().Unix()
+	execTestSQL(t, db, `
+		INSERT INTO users (id, name, email, password_hash, status, created_at, updated_at)
+		VALUES
+			('admin-actor', 'Admin Actor', 'admin@example.com', 'hash', 'active', ?, ?),
+			('multi-role-admin', 'Multi Role Admin', 'multi@example.com', 'hash', 'active', ?, ?)
+	`, now, now, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO workspaces (id, name, description, type, created_at, updated_at)
+		VALUES
+			('ws-a', 'Workspace A', '', 'personal', ?, ?),
+			('ws-b', 'Workspace B', '', 'business', ?, ?),
+			('ws-c', 'Workspace C', '', 'personal', ?, ?)
+	`, now, now, now, now, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+		VALUES
+			('ws-a', 'multi-role-admin', 'ADMIN', ?),
+			('ws-b', 'multi-role-admin', 'MANAGER', ?),
+			('ws-c', 'multi-role-admin', 'USER', ?)
+	`, now, now, now)
+
+	handler := ConfiguracoesHandler{
+		DB:          db,
+		Templates:   adminUsersSaveTestTemplates{},
+		WorkspaceID: "ws-a",
+		UserID:      "admin-actor",
+		ActorRole:   models.RoleAdmin,
+	}
+	form := url.Values{}
+	form.Set("user_id", "multi-role-admin")
+	form.Set("name", "Multi Admin Updated")
+	form.Set("email", "multi-updated@example.com")
+	form.Set("role", "USER")
+	form.Set("status", "active")
+	form.Add("workspace_ids", "ws-a")
+	form.Add("workspace_ids", "ws-b")
+	form.Add("workspace_ids", "ws-c")
+	req := httptest.NewRequest(http.MethodPost, "/admin/usuarios/salvar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+
+	handler.HandleAdminUsersSave(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	assertWorkspaceMemberRole(t, db, "ws-a", "multi-role-admin", models.RoleAdmin)
+	assertWorkspaceMemberRole(t, db, "ws-b", "multi-role-admin", models.RoleManager)
+	assertWorkspaceMemberRole(t, db, "ws-c", "multi-role-admin", models.RoleUser)
+	assertUserField(t, db, "multi-role-admin", "name", "Multi Admin Updated")
+}
+
 func TestNormalizeConfigSectionHidesAdminUsersFromManager(t *testing.T) {
 	if got := normalizeConfigSection("admin-users", models.RoleManager); got != "perfil" {
 		t.Fatalf("manager admin-users section = %q, want perfil", got)
@@ -361,6 +988,34 @@ func seedTargetAuthState(t *testing.T, db *sql.DB, userID string) {
 	execTestSQL(t, db, `INSERT INTO sessions (id, user_id, workspace_id, token_hash, expires_at, is_remember, created_at) VALUES (?, ?, 'workspace-a', ?, ?, 1, ?)`, "session-"+userID, userID, "hash-"+userID, now+3600, now)
 	execTestSQL(t, db, `INSERT INTO pre_auth_sessions (id, user_id, token_hash, method, expires_at, remember_me, created_at) VALUES (?, ?, ?, 'TOTP', ?, 1, ?)`, "preauth-"+userID, userID, "prehash-"+userID, now+300, now)
 	execTestSQL(t, db, `INSERT OR REPLACE INTO auth_lockouts (user_id, failed_password_count, failed_2fa_count, first_failed_at, last_failed_at, locked_until, lock_reason, updated_at) VALUES (?, 0, 3, ?, ?, ?, 'totp', ?)`, userID, now, now, now+600, now)
+}
+
+func seedAdminUsersDeleteScenario(t *testing.T, db *sql.DB, withFinancialReference bool) {
+	t.Helper()
+	now := time.Now().Unix()
+	execTestSQL(t, db, `
+		INSERT INTO users (id, name, email, password_hash, status, created_at, updated_at)
+		VALUES
+			('admin-actor', 'Admin Actor', 'admin-actor@example.com', 'actor-hash', 'active', ?, ?),
+			('target-user', 'Target User', 'target-delete@example.com', 'target-hash', 'active', ?, ?)
+	`, now, now, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO workspaces (id, name, description, type, created_at, updated_at)
+		VALUES ('workspace-a', 'Workspace A', '', 'personal', ?, ?)
+	`, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+		VALUES
+			('workspace-a', 'admin-actor', 'ADMIN', ?),
+			('workspace-a', 'target-user', 'USER', ?)
+	`, now, now)
+	execTestSQL(t, db, `INSERT INTO sessions (id, user_id, workspace_id, token_hash, expires_at, is_remember, created_at) VALUES ('session-target-delete', 'target-user', 'workspace-a', 'hash-target-delete', ?, 1, ?)`, now+3600, now)
+	execTestSQL(t, db, `INSERT INTO pre_auth_sessions (id, user_id, token_hash, method, expires_at, remember_me, created_at) VALUES ('preauth-target-delete', 'target-user', 'prehash-target-delete', 'TOTP', ?, 1, ?)`, now+300, now)
+	execTestSQL(t, db, `INSERT OR REPLACE INTO auth_lockouts (user_id, failed_password_count, failed_2fa_count, first_failed_at, last_failed_at, locked_until, lock_reason, updated_at) VALUES ('target-user', 0, 3, ?, ?, ?, 'totp', ?)`, now, now, now+600, now)
+	if withFinancialReference {
+		execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('account-delete-fk', 'workspace-a', 'Conta FK', 'CHECKING', 0, 0, ?, ?)`, now, now)
+		execTestSQL(t, db, `INSERT INTO transactions (id, workspace_id, user_id, account_id, type, amount, date, description, status, created_at, updated_at) VALUES ('tx-delete-fk', 'workspace-a', 'target-user', 'account-delete-fk', 'EXPENSE', 1000, ?, 'FK smoke', 'paid', ?, ?)`, now, now, now)
+	}
 }
 
 func assertAdminUser2FADisabled(t *testing.T, db *sql.DB, userID string) {
@@ -461,5 +1116,67 @@ func assertWorkspaceMemberCount(t *testing.T, db *sql.DB, workspaceID, userID st
 	}
 	if got != want {
 		t.Fatalf("workspace member count for %s/%s = %d, want %d", workspaceID, userID, got, want)
+	}
+}
+
+func seedAdminUsersMultiWorkspaceScenario(t *testing.T, db *sql.DB) {
+	t.Helper()
+	now := time.Now().Unix()
+	execTestSQL(t, db, `
+		INSERT INTO users (id, name, email, password_hash, status, created_at, updated_at)
+		VALUES
+			('admin-actor', 'Admin Actor', 'admin@example.com', 'hash', 'active', ?, ?),
+			('target-user', 'Target User', 'target@example.com', 'hash', 'active', ?, ?)
+	`, now, now, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO workspaces (id, name, description, type, created_at, updated_at)
+		VALUES
+			('workspace-a', 'Workspace A', '', 'personal', ?, ?),
+			('workspace-b', 'Workspace B', '', 'personal', ?, ?),
+			('workspace-c', 'Workspace C', '', 'personal', ?, ?)
+	`, now, now, now, now, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+		VALUES
+			('workspace-a', 'admin-actor', 'ADMIN', ?),
+			('workspace-a', 'target-user', 'ADMIN', ?),
+			('workspace-b', 'target-user', 'USER', ?)
+	`, now, now, now)
+}
+
+func assertWorkspaceMemberRole(t *testing.T, db *sql.DB, workspaceID, userID, wantRole string) {
+	t.Helper()
+	var gotRole string
+	if err := db.QueryRow(`
+		SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?
+	`, workspaceID, userID).Scan(&gotRole); err != nil {
+		t.Fatalf("query workspace member role for %s/%s: %v", workspaceID, userID, err)
+	}
+	if gotRole != wantRole {
+		t.Fatalf("workspace member role for %s/%s = %q, want %q", workspaceID, userID, gotRole, wantRole)
+	}
+}
+
+func assertUserField(t *testing.T, db *sql.DB, userID, field, want string) {
+	t.Helper()
+	var got string
+	switch field {
+	case "name":
+		if err := db.QueryRow(`SELECT name FROM users WHERE id = ?`, userID).Scan(&got); err != nil {
+			t.Fatalf("query user name: %v", err)
+		}
+	case "email":
+		if err := db.QueryRow(`SELECT email FROM users WHERE id = ?`, userID).Scan(&got); err != nil {
+			t.Fatalf("query user email: %v", err)
+		}
+	case "status":
+		if err := db.QueryRow(`SELECT status FROM users WHERE id = ?`, userID).Scan(&got); err != nil {
+			t.Fatalf("query user status: %v", err)
+		}
+	default:
+		t.Fatalf("unsupported field: %s", field)
+	}
+	if got != want {
+		t.Fatalf("user %s %s = %q, want %q", userID, field, got, want)
 	}
 }

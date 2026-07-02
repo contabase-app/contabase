@@ -104,7 +104,7 @@
                         <span id="contato-error" class="field-error text-[0.65rem] font-medium text-rose-400 hidden"></span>
                     </div>
                     <input type="hidden" name="contact_id" value="{{.ContatoIDPreenchido}}">
-                    <div id="contatoCombobox" class="relative">
+                    <div id="contatoCombobox" class="relative" {{if .CanCreateContact}}data-can-create-contact="true"{{end}}>
                         <input type="text"
                             id="contato-input"
                             value="{{range .Contacts}}{{if eq .ID $.ContatoIDPreenchido}}{{.Name}}{{if .Document}} · {{.Document}}{{end}}{{end}}{{end}}"
@@ -132,6 +132,17 @@
                             </button>
                             {{end}}
                             <p id="contato-empty" class="hidden px-2.5 py-2 text-xs text-[var(--cb-text-muted)]">Nenhum contato encontrado.</p>
+                            {{if .CanCreateContact}}
+                            <button type="button" id="contatoCreateOption" class="hidden w-full items-center gap-2 rounded-lg border-t border-[var(--cb-border-subtle)] px-2.5 py-2 text-left text-xs text-indigo-400 hover:bg-indigo-500/10"
+                                hx-get="/api/contatos/novo"
+                                hx-target="#picker-modal-container"
+                                hx-swap="beforeend"
+                                hx-vals='{"name":""}'
+                                hx-push-url="false">
+                                <i data-lucide="user-plus" class="h-3.5 w-3.5"></i>
+                                <span id="contatoCreateLabel">Criar contato</span>
+                            </button>
+                            {{end}}
                         </div>
                     </div>
                 </label>
@@ -343,6 +354,27 @@
                 </div>
             </section>
 
+            {{if .IsEdit}}
+            <section class="sheet-card rounded-xl border px-4 py-3 space-y-2">
+                <div class="flex items-center justify-between text-xs">
+                    <span class="font-medium text-[var(--cb-text-muted)]">Competência</span>
+                    <span class="font-semibold text-[var(--cb-text-main)]">{{if .CompetenciaDisplay}}{{.CompetenciaDisplay}}{{else}}-{{end}}</span>
+                </div>
+                {{if .VencimentoDisplay}}
+                <div class="flex items-center justify-between text-xs">
+                    <span class="font-medium text-[var(--cb-text-muted)]">Vencimento</span>
+                    <span class="font-semibold text-[var(--cb-text-main)]">{{.VencimentoDisplay}}</span>
+                </div>
+                {{end}}
+                {{if .PaidAtDisplay}}
+                <div class="flex items-center justify-between text-xs">
+                    <span class="font-medium text-[var(--cb-text-muted)]">Data de pagamento</span>
+                    <span class="font-semibold text-emerald-600 dark:text-emerald-400">{{.PaidAtDisplay}}</span>
+                </div>
+                {{end}}
+            </section>
+            {{end}}
+
             <section class="sheet-card rounded-xl border p-2">
                 <button type="button" id="detalhesAdicionaisToggle" aria-expanded="{{if or .AnotacoesPreenchidas .AttachmentViewURL}}true{{else}}false{{end}}"
                     class="sheet-details-toggle flex h-12 w-full items-center justify-between rounded-lg px-3 text-left text-sm font-medium transition-colors active:scale-[0.98]">
@@ -380,7 +412,26 @@
             <section class="sheet-card rounded-xl border px-4 py-3 text-xs leading-relaxed">
                 <p><span class="font-medium text-[var(--cb-text-muted)]">Lançado por:</span> {{if .AuditCreatedBy}}{{.AuditCreatedBy}}{{else}}-{{end}}</p>
                 <p class="mt-1"><span class="font-medium text-[var(--cb-text-muted)]">Última alteração:</span> {{if .AuditUpdatedAt}}{{.AuditUpdatedAt}}{{else}}-{{end}}</p>
+                {{if .ScheduledPaymentDisplay}}<p class="mt-1"><span class="font-medium text-[var(--cb-text-muted)]">Agendado para:</span> {{.ScheduledPaymentDisplay}}</p>{{end}}
             </section>
+            {{if .StatusHistory}}
+            <section class="sheet-card rounded-xl border px-4 py-3 space-y-2">
+                <h4 class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Histórico de pagamento</h4>
+                {{range .StatusHistory}}
+                <div class="flex items-start justify-between gap-2 text-xs border-b border-[var(--cb-border-subtle)] pb-2 last:border-b-0 last:pb-0">
+                    <div class="min-w-0">
+                        <p class="text-[var(--cb-text-main)] font-medium">{{.PreviousStatusLabel}} → {{.NewStatusLabel}}</p>
+                        <p class="text-[var(--cb-text-muted)] mt-0.5">por {{.UserName}} em {{.CreatedAtLabel}} · {{.SourceLabel}}</p>
+                    </div>
+                    {{if or (ne .PreviousPaidAt "-") (ne .NewPaidAt "-")}}
+                    <span class="shrink-0 text-[0.65rem] text-[var(--cb-text-muted)] text-right">
+                        {{if ne .PreviousPaidAt "-"}}{{.PreviousPaidAt}}{{else}}-{{end}} → {{if ne .NewPaidAt "-"}}{{.NewPaidAt}}{{else}}-{{end}}
+                    </span>
+                    {{end}}
+                </div>
+                {{end}}
+            </section>
+            {{end}}
             {{end}}
 
             <div class="pt-2 {{if .IsEdit}}flex items-center justify-end{{else}}hidden{{end}}">
@@ -513,13 +564,9 @@
                     {{range .Accounts}}{{if eq .Tipo "conta"}}
                     <button type="button" data-origin-kind="conta" data-origin-id="{{.ID}}" data-origin-name="{{.Name}}" data-origin-icon="{{.Icon}}" data-origin-color="{{.Color}}" data-origin-provider="{{.ProviderSlug}}" data-origin-provider-mark="{{.ProviderMark}}"
                         class="origin-option flex w-full items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 text-left text-sm font-medium text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]">
-                        {{if eq .ProviderSlug "custom"}}
-                        <span class="flex h-9 w-9 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
-                            <i data-lucide="landmark" class="h-4 w-4 icon-colored" style="--ic: {{.Color}}"></i>
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+                            {{template "financial-emblem" .}}
                         </span>
-                        {{else}}
-                        <span class="inline-flex h-7 min-w-[2.6rem] flex-shrink-0 items-center justify-center rounded-md border px-1.5 text-[0.62rem] font-bold uppercase tracking-wide text-white badge-colored" style="--ic: {{.Color}}">{{.ProviderMark}}</span>
-                        {{end}}
                         {{.Name}}
                     </button>
                     {{end}}{{end}}
@@ -529,13 +576,9 @@
                     {{range .Accounts}}{{if eq .Tipo "cartao"}}
                     <button type="button" data-origin-kind="cartao" data-origin-id="{{.ID}}" data-origin-name="{{.Name}}" data-origin-icon="{{.Icon}}" data-origin-color="{{.Color}}" data-origin-provider="{{.ProviderSlug}}" data-closing-day="{{.ClosingDay}}" data-due-day="{{.DueDay}}" data-origin-provider-mark="{{.ProviderMark}}"
                         class="origin-option flex w-full items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 text-left hover:bg-[var(--cb-surface-3)]">
-                        {{if eq .ProviderSlug "custom"}}
-                        <span class="flex h-9 w-9 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
-                            <i data-lucide="landmark" class="h-4 w-4 icon-colored" style="--ic: {{.Color}}"></i>
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+                            {{template "financial-emblem" .}}
                         </span>
-                        {{else}}
-                        <span class="inline-flex h-7 min-w-[2.6rem] flex-shrink-0 items-center justify-center rounded-md border px-1.5 text-[0.62rem] font-bold uppercase tracking-wide text-white badge-colored" style="--ic: {{.Color}}">{{.ProviderMark}}</span>
-                        {{end}}
                         <span class="min-w-0">
                             <span class="block truncate text-sm font-medium text-[var(--cb-text-main)]">{{.Name}}</span>
                             {{if .CreditLimitLabel}}<span class="mt-0.5 block truncate text-xs text-[var(--cb-text-muted)]">{{.CreditLimitLabel}}</span>{{end}}
@@ -549,7 +592,7 @@
 
     <div id="categoriaModal" class="hidden">
         {{range .Categories}}
-        <span class="category-option" data-category-id="{{.ID}}" data-category-name="{{.Name}}" data-category-icon="{{.Icon}}" data-category-color="{{.Color}}" data-category-type="{{.Type}}"{{if .BoxID}} data-box-id="{{.BoxID}}" data-box-reserved="{{.BoxReservedBalance}}" data-box-name="{{.BoxName}}"{{end}}{{if .LimitMax}} data-limit-max="{{.LimitMax}}" data-limit-spent="{{.LimitSpent}}"{{end}}></span>
+        <span class="category-option" data-category-id="{{.ID}}" data-category-name="{{.Name}}" data-category-icon="{{.Icon}}" data-category-color="{{.Color}}" data-category-type="{{.Type}}"{{if .BoxID}} data-box-id="{{.BoxID}}" data-box-reserved="{{.BoxReservedBalance}}" data-box-name="{{.BoxName}}"{{end}}{{if .LimitMax}} data-limit-max="{{.LimitMax}}" data-limit-spent="{{.LimitSpent}}"{{end}}{{if .ParentID}} data-category-parent-id="{{.ParentID}}" data-category-parent-name="{{.ParentName}}"{{end}}></span>
         {{end}}
     </div>
 </div>

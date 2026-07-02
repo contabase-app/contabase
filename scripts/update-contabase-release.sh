@@ -18,7 +18,8 @@ set -euo pipefail
 #   - Nunca sobrescreve secrets/tokens em /etc/contabase/contabase.env
 #   - Atualiza apenas VERSION= no .env para rastrear a tag instalada
 #   - Nunca altera secrets/tokens preenchidos
-#   - Nunca regenera AUTH_ENCRYPTION_KEY, SECURITY_MASTER_KEY, CONTABASE_SETUP_TOKEN
+#   - Nunca regenera AUTH_ENCRYPTION_KEY, SECURITY_MASTER_KEY ou CONTABASE_SETUP_TOKEN
+#   - CONTABASE_SETUP_TOKEN e token one-time de bootstrap; update nao exige nem recria
 #   - Preserva APP_BASE_URL, ALLOWED_HOSTS, TRUSTED_PROXIES, CONTABASE_ACCESS_MODE, PORT
 #   - Preserva DATABASE_URL, DATA_DIR, DB_FILE, UPLOADS_DIR
 #   - Preserva /var/lib/contabase (dados, uploads, backups, banco)
@@ -33,6 +34,7 @@ SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" 2>/dev/null && pwd)"
 PUBLIC_RAW_BASE="${CONTABASE_RAW_BASE:-https://raw.githubusercontent.com/contabase-app/contabase}"
 PORT="${CONTABASE_PORT:-8080}"
+CONTABASE_TIMEZONE_VALUE="${CONTABASE_TIMEZONE:-America/Sao_Paulo}"
 APP_USER="${CONTABASE_USER:-contabase}"
 INSTALL_DIR="${CONTABASE_INSTALL_DIR:-/opt/contabase}"
 DATA_DIR="${CONTABASE_DATA_DIR:-/var/lib/contabase}"
@@ -268,6 +270,18 @@ env_set_key() {
   mv "$tmpfile" "$file"
 }
 
+env_set_if_missing() {
+  local key="$1"
+  local value="$2"
+  local file="${3:-$ENV_FILE}"
+
+  if env_key_is_set "$key" "$file"; then
+    return 0
+  fi
+  env_set_key "$key" "$value" "$file"
+  say "${key} adicionado ao .env."
+}
+
 host_from_base_url() {
   local value="$1"
   value="${value#http://}"
@@ -409,26 +423,38 @@ validate_existing_env() {
     fail "Arquivo de configuracao sem permissao de leitura: ${ENV_FILE}"
   fi
 
-  # Validate mandatory secrets
+  # Validate persistent mandatory secrets. CONTABASE_SETUP_TOKEN is a one-time
+  # bootstrap token and is intentionally optional for existing installations.
   local missing=()
-  for key in AUTH_ENCRYPTION_KEY SECURITY_MASTER_KEY CONTABASE_SETUP_TOKEN; do
+  for key in AUTH_ENCRYPTION_KEY SECURITY_MASTER_KEY; do
     env_key_is_set "$key" "$ENV_FILE" || missing+=("$key")
   done
 
   if [ "${#missing[@]}" -gt 0 ]; then
     say ""
     say "====================================================================="
-    say "ERRO: Secret(s) obrigatorio(s) ausente(s) ou com placeholder em ${ENV_FILE}:"
+    say "ERRO: Secret(s) persistente(s) obrigatorio(s) ausente(s) ou com placeholder em ${ENV_FILE}:"
     for key in "${missing[@]}"; do
       say "  - ${key}"
     done
     say ""
     say "Para resolver:"
     say "  - Edite ${ENV_FILE}"
-    say "  - Gere valores fortes para cada secret (ex.: openssl rand -base64 32)."
+    say "  - Gere valores fortes para AUTH_ENCRYPTION_KEY e SECURITY_MASTER_KEY."
+    say "  - Nao gere CONTABASE_SETUP_TOKEN para update normal; ele e usado apenas no setup inicial."
     say "  - Execute o update novamente."
     say "====================================================================="
     return 1
+  fi
+
+  local setup_token_value
+  setup_token_value="$(env_load_value "CONTABASE_SETUP_TOKEN" "$ENV_FILE" | tr -d "[:space:]'\"")"
+  if [ -z "$setup_token_value" ]; then
+    say "CONTABASE_SETUP_TOKEN ausente/comentado; OK para update de instalacao existente."
+  elif env_is_placeholder "$setup_token_value"; then
+    say "Aviso: CONTABASE_SETUP_TOKEN esta vazio ou com placeholder; ignorado no update normal."
+  else
+    say "CONTABASE_SETUP_TOKEN existente preservado; valor nao exibido."
   fi
 
   # Load custom paths from existing env (preserve user configuration)
@@ -453,6 +479,9 @@ validate_existing_env() {
   local custom_access_mode
   custom_access_mode="$(env_load_value "CONTABASE_ACCESS_MODE" "$ENV_FILE" | tr -d "[:space:]'\"")"
   [ -n "$custom_access_mode" ] && say "CONTABASE_ACCESS_MODE detectado: ${custom_access_mode}"
+  local custom_timezone
+  custom_timezone="$(env_load_value "CONTABASE_TIMEZONE" "$ENV_FILE" | tr -d "[:space:]'\"")"
+  [ -n "$custom_timezone" ] && say "CONTABASE_TIMEZONE detectado: ${custom_timezone}"
   validate_access_contract_values "$custom_base_url" "$custom_proxies" "$custom_access_mode"
 
   # Detect PORT from existing env for healthcheck
@@ -946,6 +975,7 @@ perform_update() {
   # Backup env file (always, before any mutation)
   backup_env_file
   backfill_access_mode_in_env
+  env_set_if_missing "CONTABASE_TIMEZONE" "$CONTABASE_TIMEZONE_VALUE" "$ENV_FILE"
 
   # Stop service
   stop_service
@@ -1017,7 +1047,7 @@ perform_update() {
   say ""
   say "Servico:    systemctl status contabase"
   say "Health:     http://127.0.0.1:${PORT}/health"
-  say "Config:     ${ENV_FILE} (VERSION atualizado; CONTABASE_ACCESS_MODE preenchido se ausente; demais valores preservados)"
+  say "Config:     ${ENV_FILE} (VERSION atualizado; CONTABASE_ACCESS_MODE/CONTABASE_TIMEZONE preenchidos se ausentes; demais valores preservados)"
   say "Dados:      ${DATA_DIR} (preservados)"
   if [ -n "$ENV_BACKUP" ] && [ -f "$ENV_BACKUP" ]; then
     say "Env backup: ${ENV_BACKUP}"
@@ -1041,8 +1071,13 @@ main() {
   validate_numeric_settings
   require_commands
 
-  # Platform/env/install validation (skip only for validate-only mode)
-  if [ "$VALIDATE_ONLY" = false ]; then
+  # Platform/install validation is skipped in validate-only mode, but when a
+  # config file is explicitly present we still validate its update contract.
+  if [ "$VALIDATE_ONLY" = true ]; then
+    if [ -f "$ENV_FILE" ]; then
+      validate_existing_env
+    fi
+  else
     check_platform
     validate_existing_env
     validate_existing_installation

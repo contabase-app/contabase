@@ -70,6 +70,7 @@ type FaturaData struct {
 	Transactions            []TransactionRow
 	TransactionGroups       []TransactionDayGroup
 	PaymentAccounts         []InvoicePaymentAccountOption
+	DefaultPaymentAccountID string
 	CanAttemptPayment       bool
 	CanSubmitPayment        bool
 	PaymentDisabledReason   string
@@ -638,14 +639,26 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 		SELECT i.account_id, i.reference, i.status, i.closing_date, i.due_date, a.name,
 		       COALESCE(NULLIF(a.provider_slug, ''), 'custom'),
 		       COALESCE(NULLIF(a.color, ''), '#6B7280'),
-		       COALESCE(cc.credit_limit, 0)
+		       COALESCE(cc.credit_limit, 0),
+		       COALESCE(cc.default_payment_account_id, '')
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id
 		LEFT JOIN credit_cards cc ON cc.account_id = i.account_id
 		WHERE i.id = ? AND a.workspace_id = ? AND a.type = ?
-	`, invoiceID, workspaceID, models.AccountTypeCreditCard).Scan(&data.AccountID, &data.Reference, &data.Status, &closingUnix, &dueUnix, &data.CardName, &providerSlug, &cardColor, &creditLimitCents)
+	`, invoiceID, workspaceID, models.AccountTypeCreditCard).Scan(&data.AccountID, &data.Reference, &data.Status, &closingUnix, &dueUnix, &data.CardName, &providerSlug, &cardColor, &creditLimitCents, &data.DefaultPaymentAccountID)
 	if err != nil {
 		return data, fmt.Errorf("fatura: %w", err)
+	}
+
+	if data.DefaultPaymentAccountID != "" {
+		var validPaymentAccount string
+		err := db.QueryRow(`
+			SELECT id FROM accounts
+			WHERE id = ? AND workspace_id = ? AND type IN (?, ?)
+		`, data.DefaultPaymentAccountID, workspaceID, models.AccountTypeChecking, models.AccountTypeSavings).Scan(&validPaymentAccount)
+		if err != nil {
+			data.DefaultPaymentAccountID = ""
+		}
 	}
 
 	if data.Status != models.InvoiceStatusPaid {
@@ -786,12 +799,12 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 			t.installment_number,
 			t.total_installments,
 			a.name,
-			u.name,
+			COALESCE(u.name, 'Usuário removido'),
 			CASE WHEN t.total_installments > 1 OR t.recurring_rule_id IS NOT NULL THEN 1 ELSE 0 END
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
-		JOIN users u ON u.id = t.user_id
+		LEFT JOIN users u ON u.id = t.user_id
 		WHERE t.invoice_id = ? AND t.workspace_id = ?
 		ORDER BY t.date DESC, t.created_at DESC
 	`, invoiceID, workspaceID)

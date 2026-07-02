@@ -66,7 +66,7 @@
             </label>
             <div id="categoriaPicker_caixinha" class="space-y-1.5 relative">
                 <div class="flex items-center justify-between">
-                    <span class="cb-label mb-0">Categoria vinculada</span>
+                    <span class="cb-label mb-0">Categoria vinculada (Opcional)</span>
                     <span id="categoria-error-caixinha" class="field-error text-[0.65rem] font-medium text-[var(--cb-danger)] hidden"></span>
                 </div>
                 <button type="button"
@@ -80,23 +80,26 @@
                             <i id="categoriaIcon_caixinha" data-lucide="{{if .CategoryIcon}}{{.CategoryIcon}}{{else}}tag{{end}}" class="h-3.5 w-3.5 icon-colored" style="--ic: {{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}"></i>
                         </span>
                         <span class="min-w-0">
-                            <span id="categoriaNome_caixinha" class="block truncate text-sm font-semibold cb-text-main">{{if .CategoryName}}{{.CategoryName}}{{else}}Buscar categoria...{{end}}</span>
+                            <span id="categoriaNome_caixinha" class="block truncate text-sm font-semibold cb-text-main">{{if .CategoryName}}{{.CategoryName}}{{else}}Sem categoria{{end}}</span>
                         </span>
                     </span>
                     <i data-lucide="chevron-down" class="h-4 w-4 flex-shrink-0 cb-text-muted"></i>
                 </button>
                 <input id="categoriaId_caixinha" type="hidden" name="category_id" value="{{.CategoryID}}">
+                <button type="button" data-clear-meta-category="_caixinha" class="mt-1 text-[0.7rem] font-medium cb-text-subtle hover:text-[var(--cb-danger)]">
+                    Remover categoria
+                </button>
             </div>
             <label class="block">
                 <span class="cb-label">Valor alvo (Opcional)</span>
                 <input name="target_amount" inputmode="decimal" value="{{.TargetAmountInput}}" placeholder="R$ 0,00" data-money-mask class="cb-input font-semibold h-12">
             </label>
             <label class="block">
-                <span class="cb-label">Recarga mensal</span>
+                <span class="cb-label">Recarga mensal (Opcional)</span>
                 <input name="monthly_recharge" inputmode="decimal" value="{{.MonthlyRechargeInput}}" placeholder="R$ 0,00" data-money-mask class="cb-input font-semibold h-12">
             </label>
             <label class="block cursor-pointer">
-                <span class="cb-label">Data alvo</span>
+                <span class="cb-label">Data alvo (Opcional)</span>
                 <div class="relative">
                     <input id="targetMonthInput" name="target_month" type="month" value="{{.TargetMonthInput}}" class="cb-input h-12 pr-10 [color-scheme:dark]">
                     <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 cb-text-muted">

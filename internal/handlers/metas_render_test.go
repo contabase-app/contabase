@@ -115,9 +115,7 @@ func TestHandleListarMetasRendersCaixinhaStates(t *testing.T) {
 		VALUES ('lv-excedente', 'a-box-no-recharge', -2500, 'CONSUME', 'Consumo que gera excedente', ?, ?)
 	`, now, now)
 
-	execTestSQL(t, db, `PRAGMA foreign_keys = OFF`)
-	execTestSQL(t, db, `UPDATE boxes SET category_id = 'cat-inexistente' WHERE id = 'a-box-rounded'`)
-	execTestSQL(t, db, `PRAGMA foreign_keys = ON`)
+	execTestSQL(t, db, `UPDATE boxes SET category_id = NULL WHERE id = 'a-box-rounded'`)
 
 	h := MetasHandler{
 		DB:          db,
@@ -136,9 +134,16 @@ func TestHandleListarMetasRendersCaixinhaStates(t *testing.T) {
 		}
 
 		body := rr.Body.String()
-		// promoted template shows empty category name instead of "Sem categoria vinculada" text
+		currentMonth := time.Date(time.Now().UTC().Year(), time.Now().UTC().Month(), 1, 12, 0, 0, 0, time.UTC)
+		targetLabel := formatMonthLabelFromUnix(currentMonth.AddDate(0, 3, 0).Unix())
 		assertContains(t, body, "excedente")
 		assertContains(t, body, "Previsão:")
+		assertContains(t, body, "Sem categoria")
+		assertContains(t, body, "Sem prazo")
+		assertContains(t, body, targetLabel)
+		if strings.Contains(body, "No prazo") {
+			t.Fatalf("body should not contain generic deadline badge No prazo")
+		}
 		assertContains(t, body, `hx-get="/metas/novo?aba=caixinha&id=`)
 	})
 
@@ -158,8 +163,8 @@ func TestHandleListarMetasRendersCaixinhaStates(t *testing.T) {
 		if count := strings.Count(body, `id="fab-primary"`); count != 1 {
 			t.Fatalf("fab-primary count = %d, want 1\nbody=%s", count, body)
 		}
-		// promoted template shows empty category name instead of "Sem categoria vinculada" text
 		assertContains(t, body, "Previsão:")
+		assertContains(t, body, "Sem categoria")
 	})
 
 	t.Run("htmx full page keeps fab oob", func(t *testing.T) {
@@ -206,6 +211,36 @@ func TestHandleListarMetasRendersLimitCards(t *testing.T) {
 	assertContains(t, body, `hx-target="#bottom-sheet-container"`)
 	assertContains(t, body, `hx-get="/metas/novo?aba=limite&id=`)
 	assertContains(t, body, `hx-push-url="false"`)
+}
+
+func TestHandleNovaMetaEditsBoxWithoutCategory(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedCaixinhaProjectionScenario(t, db)
+	execTestSQL(t, db, `UPDATE boxes SET category_id = NULL WHERE id = 'a-box-rounded'`)
+
+	h := MetasHandler{
+		DB:          db,
+		Templates:   testMetasFormTemplates(t),
+		WorkspaceID: "ws-a",
+		UserID:      "user-a",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/metas/novo?aba=caixinha&id=a-box-rounded", nil)
+	req.Header.Set("HX-Request", "true")
+	rr := httptest.NewRecorder()
+
+	h.HandleNovaMeta(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rr.Code, rr.Body.String())
+	}
+
+	body := rr.Body.String()
+	assertContains(t, body, `data-open-tab="caixinha"`)
+	assertContains(t, body, `name="box_id" value="a-box-rounded"`)
+	assertContains(t, body, `name="category_id" value=""`)
+	assertContains(t, body, `Sem categoria`)
+	assertContains(t, body, `aria-label="Confirmar reserva"`)
 }
 
 func TestBuildMetasDataHandlesLegacyBoxesWithoutTargetDateColumn(t *testing.T) {
@@ -263,6 +298,17 @@ func testMetasPageTemplates(t *testing.T) *template.Template {
 {{define "fab-metas-oob"}}<div id="fab-primary" hx-swap-oob="outerHTML">fab</div>{{end}}
 `
 	return template.Must(template.New("metas-test").Parse(stubs + string(content)))
+}
+
+func testMetasFormTemplates(t *testing.T) *template.Template {
+	t.Helper()
+
+	formPath := resolveTemplatePath(t, "templates/components/form_meta.html")
+	content, err := os.ReadFile(formPath)
+	if err != nil {
+		t.Fatalf("read metas form template: %v", err)
+	}
+	return template.Must(template.New("metas-form-test").Parse(string(content)))
 }
 
 func resolveTemplatePath(t *testing.T, relative string) string {

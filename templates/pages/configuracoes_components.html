@@ -427,6 +427,17 @@
                     class="h-10 w-full rounded-xl border border-[var(--cb-border-strong)] p-1.5 bg-[var(--cb-surface-2)]">
             </div>
         </div>
+        {{if .PaymentAccounts}}
+        <div>
+            <label class="cb-label">Conta padrão para pagamento (opcional)</label>
+            <select name="default_payment_account_id" class="cb-input">
+                <option value="">Nenhuma (escolher ao pagar)</option>
+                {{range .PaymentAccounts}}
+                <option value="{{.ID}}" {{if eq .ID $.DefaultPaymentAccountID}}selected{{end}}>{{.Name}}</option>
+                {{end}}
+            </select>
+        </div>
+        {{end}}
         <div class="flex items-center gap-2 justify-end pt-1">
             <button type="button"
                 class="cb-button cb-button-secondary h-9 px-3 text-xs"

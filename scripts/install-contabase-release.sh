@@ -20,6 +20,7 @@ APP_BASE_URL_VALUE="${APP_BASE_URL:-}"
 ALLOWED_HOSTS_VALUE="${ALLOWED_HOSTS:-}"
 TRUSTED_PROXIES_VALUE="${TRUSTED_PROXIES:-}"
 CONTABASE_ACCESS_MODE_VALUE="${CONTABASE_ACCESS_MODE:-}"
+CONTABASE_TIMEZONE_VALUE="${CONTABASE_TIMEZONE:-America/Sao_Paulo}"
 SETUP_TOKEN_GENERATED_NOW=false
 SETUP_TOKEN_SUPPLIED_BY_ENV=false
 APP_USER="${CONTABASE_USER:-contabase}"
@@ -315,12 +316,13 @@ validate_access_contract() {
 
 validate_runtime_config_values() {
   local key value
-  for key in APP_BASE_URL ALLOWED_HOSTS TRUSTED_PROXIES CONTABASE_ACCESS_MODE; do
+  for key in APP_BASE_URL ALLOWED_HOSTS TRUSTED_PROXIES CONTABASE_ACCESS_MODE CONTABASE_TIMEZONE; do
     case "$key" in
       APP_BASE_URL) value="$APP_BASE_URL_VALUE" ;;
       ALLOWED_HOSTS) value="$ALLOWED_HOSTS_VALUE" ;;
       TRUSTED_PROXIES) value="$TRUSTED_PROXIES_VALUE" ;;
       CONTABASE_ACCESS_MODE) value="$CONTABASE_ACCESS_MODE_VALUE" ;;
+      CONTABASE_TIMEZONE) value="$CONTABASE_TIMEZONE_VALUE" ;;
     esac
     if printf '%s' "$value" | grep -q '[[:cntrl:]]'; then
       fail "${key} contem caractere de controle invalido."
@@ -785,6 +787,7 @@ env_create_initial() {
       printf 'DATA_DIR=%s\n' "$DATA_DIR"
       printf 'DB_FILE=%s/contabase.db\n' "$DATA_DIR"
       printf 'UPLOADS_DIR=%s/uploads\n' "$DATA_DIR"
+      printf 'CONTABASE_TIMEZONE=%s\n' "$CONTABASE_TIMEZONE_VALUE"
       printf 'APP_BASE_URL=%s\n' "$APP_BASE_URL_VALUE"
       printf 'ALLOWED_HOSTS=%s\n' "$ALLOWED_HOSTS_VALUE"
       printf 'TRUSTED_PROXIES=%s\n' "$TRUSTED_PROXIES_VALUE"
@@ -893,6 +896,7 @@ env_manage_existing() {
   # Merge missing non-sensitive config vars (preserve existing user values)
   env_set_if_missing "APP_ENV" "production" "$ENV_FILE"
   env_set_if_missing "APP_DEBUG" "false" "$ENV_FILE"
+  env_set_if_missing "CONTABASE_TIMEZONE" "$CONTABASE_TIMEZONE_VALUE" "$ENV_FILE"
   env_set_if_missing "DATA_DIR" "$DATA_DIR" "$ENV_FILE"
   env_set_if_missing "UPLOADS_DIR" "${DATA_DIR}/uploads" "$ENV_FILE"
   if ! env_key_is_set "CONTABASE_ACCESS_MODE" "$ENV_FILE"; then
@@ -951,14 +955,14 @@ show_setup_token_if_needed() {
   [ "$xtrace_was_enabled" = false ] || set -x
 }
 
-# Assert that mandatory secrets exist in an existing env file (for update/headless).
+# Assert that persistent mandatory secrets exist in an existing env file (for update/headless).
 # Exits with error if any secret is missing or is a placeholder.
 env_require_secrets() {
   local file="${1:-$ENV_FILE}"
   local missing=()
   local key
 
-  for key in AUTH_ENCRYPTION_KEY SECURITY_MASTER_KEY CONTABASE_SETUP_TOKEN; do
+  for key in AUTH_ENCRYPTION_KEY SECURITY_MASTER_KEY; do
     env_key_is_set "$key" "$file" || missing+=("$key")
   done
 
@@ -966,14 +970,15 @@ env_require_secrets() {
 
   say ""
   say "====================================================================="
-  say "ERRO: Secret(s) obrigatorio(s) ausente(s) ou nao preenchido(s) em ${file}:"
+  say "ERRO: Secret(s) persistente(s) obrigatorio(s) ausente(s) ou nao preenchido(s) em ${file}:"
   for key in "${missing[@]}"; do
     say "  - ${key}"
   done
   say ""
   say "Para resolver:"
   say "  - Edite ${file} manualmente."
-  say "  - Gere valores fortes para cada secret (ex.: openssl rand -base64 32)."
+  say "  - Gere valores fortes para AUTH_ENCRYPTION_KEY e SECURITY_MASTER_KEY."
+  say "  - CONTABASE_SETUP_TOKEN e gerado apenas no setup inicial e nao e obrigatorio para update."
   say "  - Execute novamente."
   say "====================================================================="
   return 1

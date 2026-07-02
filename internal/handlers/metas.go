@@ -110,6 +110,7 @@ type CaixinhaCard struct {
 	MonthsLeft         int
 	ForecastLabel      string
 	TargetMonth        string
+	DeadlineLabel      string
 	RequiredMonthly    MoneyDisplay
 	RequiredState      string
 	Expenses           MoneyDisplay
@@ -337,15 +338,8 @@ func (h *MetasHandler) HandleCriarCaixinha(w http.ResponseWriter, r *http.Reques
 	boxID := strings.TrimSpace(r.FormValue("box_id"))
 	name := strings.TrimSpace(r.FormValue("name"))
 	categoryID := strings.TrimSpace(r.FormValue("category_id"))
-	targetStr := strings.TrimSpace(r.FormValue("target_amount"))
-	var targetAmount int64
-	var err error
-	if targetStr == "" {
-		targetAmount = 0
-	} else {
-		targetAmount, err = parseCurrency(targetStr)
-	}
-	if err != nil || name == "" || categoryID == "" || targetAmount < 0 {
+	targetAmount, err := parseOptionalCurrency(r.FormValue("target_amount"))
+	if err != nil || name == "" || targetAmount < 0 {
 		respondMetaFormError(w, "caixinha", "dados inválidos")
 		return
 	}
@@ -366,28 +360,27 @@ func (h *MetasHandler) HandleCriarCaixinha(w http.ResponseWriter, r *http.Reques
 		respondMetaFormError(w, "caixinha", "data-alvo inválida")
 		return
 	}
-	if monthlyRecharge <= 0 {
-		respondMetaFormError(w, "caixinha", "recarga mensal inválida")
-		return
-	}
+	categoryValue := nullableStringValue(categoryID)
 
 	tMut := time.Now()
 	now := time.Now().Unix()
 	if err := h.execMetaMutation(func(tx *sql.Tx) error {
-		if err := ensureCategoryInWorkspaceTx(tx, categoryID, h.WorkspaceID); err != nil {
-			return err
+		if categoryID != "" {
+			if err := ensureCategoryInWorkspaceTx(tx, categoryID, h.WorkspaceID); err != nil {
+				return err
+			}
 		}
 		if boxID == "" {
 			return execOneTx(tx, `
 				INSERT INTO boxes (id, workspace_id, category_id, name, target_amount, monthly_recharge, monthly_yield_rate, target_date, created_at, updated_at)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`, uuid.NewString(), h.WorkspaceID, categoryID, name, targetAmount, monthlyRecharge, monthlyYieldRate, targetDateValue, now, now)
+			`, uuid.NewString(), h.WorkspaceID, categoryValue, name, targetAmount, monthlyRecharge, monthlyYieldRate, targetDateValue, now, now)
 		}
 		return execOneTx(tx, `
 			UPDATE boxes
 			SET category_id = ?, name = ?, target_amount = ?, monthly_recharge = ?, monthly_yield_rate = ?, target_date = ?, updated_at = ?
 			WHERE id = ? AND workspace_id = ?
-		`, categoryID, name, targetAmount, monthlyRecharge, monthlyYieldRate, targetDateValue, now, boxID, h.WorkspaceID)
+		`, categoryValue, name, targetAmount, monthlyRecharge, monthlyYieldRate, targetDateValue, now, boxID, h.WorkspaceID)
 	}); err != nil {
 		log.Printf("upsert caixinha error: %v", err)
 		respondMetaFormError(w, "caixinha", "erro ao salvar reserva")
@@ -1022,11 +1015,18 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 		var targetDate sql.NullInt64
 		var target, monthly, balance int64
 		var yieldRate float64
+		var categoryID sql.NullString
 		var categoryName string
-		if err := boxRows.Scan(&card.ID, &card.CategoryID, &card.Name, &target, &monthly, &targetDate, &card.Icon, &card.Color, &categoryName, &yieldRate, &balance); err != nil {
+		if err := boxRows.Scan(&card.ID, &categoryID, &card.Name, &target, &monthly, &targetDate, &card.Icon, &card.Color, &categoryName, &yieldRate, &balance); err != nil {
 			continue
 		}
+		if categoryID.Valid {
+			card.CategoryID = categoryID.String
+		}
 		card.CategoryName = categoryName
+		if strings.TrimSpace(card.CategoryName) == "" {
+			card.CategoryName = "Sem categoria"
+		}
 		card.IsNegative = balance < 0
 
 		if balance < 0 {
@@ -1034,7 +1034,11 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 		} else if target > 0 {
 			card.Percent = int(float64(balance) / float64(target) * 100)
 		}
-		projection := services.EstimateBoxProjection(balance, target, monthly)
+		simpleProjection := services.EstimateBoxProjection(balance, target, monthly)
+		projection := simpleProjection
+		if yieldRate > 0 && target > 0 {
+			projection = services.EstimateBoxProjectionWithYield(balance, target, monthly, yieldRate)
+		}
 		switch projection.Status {
 		case services.BoxProjectionStatusCompleted:
 			card.ForecastLabel = "Previsão: meta concluída"
@@ -1046,7 +1050,7 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 				card.ForecastLabel = fmt.Sprintf("Previsão: %d meses", card.MonthsLeft)
 			}
 		default:
-			card.ForecastLabel = "Previsão: sem previsão"
+			card.ForecastLabel = "Sem previsão"
 		}
 		card.PercentColor = "violet"
 		if card.Percent >= 75 {
@@ -1063,13 +1067,13 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 			switch yieldProjection.Status {
 			case services.BoxProjectionStatusForecast:
 				card.YieldMonthsLeft = yieldProjection.MonthsLeft
-				if projection.Status == services.BoxProjectionStatusNoForecast && yieldProjection.MonthsLeft > 0 {
+				if simpleProjection.Status == services.BoxProjectionStatusNoForecast && yieldProjection.MonthsLeft > 0 {
 					if card.YieldMonthsLeft == 1 {
 						card.YieldForecastLabel = "Com rendimento est.: 1 mês"
 					} else {
 						card.YieldForecastLabel = fmt.Sprintf("Com rendimento est.: %d meses", card.YieldMonthsLeft)
 					}
-				} else if projection.MonthsLeft > yieldProjection.MonthsLeft {
+				} else if simpleProjection.MonthsLeft > yieldProjection.MonthsLeft {
 					if card.YieldMonthsLeft == 1 {
 						card.YieldForecastLabel = "Com rendimento est.: 1 mês"
 					} else {
@@ -1079,6 +1083,13 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 			}
 		}
 
+		if targetDate.Valid && targetDate.Int64 > 0 {
+			card.TargetMonth = formatMonthLabelFromUnix(targetDate.Int64)
+			card.DeadlineLabel = card.TargetMonth
+		} else {
+			card.DeadlineLabel = "Sem prazo"
+		}
+
 		if target > 0 {
 			if projection.Status == services.BoxProjectionStatusCompleted {
 				card.RequiredState = requiredStateCompleted
@@ -1086,7 +1097,6 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 				targetUnix := int64(0)
 				if targetDate.Valid {
 					targetUnix = targetDate.Int64
-					card.TargetMonth = formatMonthLabelFromUnix(targetUnix)
 				}
 				required, _, ok := services.EstimateRequiredMonthlyContributionByTargetDate(balance, target, targetUnix, now.UTC())
 				if ok {
@@ -1132,13 +1142,9 @@ func (h *MetasHandler) resolveRechargeInputs(r *http.Request, boxID string, targ
 	monthlyRaw := strings.TrimSpace(r.FormValue("monthly_recharge"))
 	targetMonthRaw := strings.TrimSpace(r.FormValue("target_month"))
 
-	var monthlyRecharge int64
-	var err error
-	if monthlyRaw != "" {
-		monthlyRecharge, err = parseCurrency(monthlyRaw)
-		if err != nil {
-			return 0, 0, fmt.Errorf("recarga mensal inválida")
-		}
+	monthlyRecharge, err := parseOptionalCurrency(monthlyRaw)
+	if err != nil {
+		return 0, 0, fmt.Errorf("recarga mensal inválida")
 	}
 
 	monthsDesired := 0
@@ -1174,7 +1180,8 @@ func (h *MetasHandler) resolveRechargeInputs(r *http.Request, boxID string, targ
 
 func (h *MetasHandler) loadLimitFormData(form *MetaFormData, id string) error {
 	var maxAmount int64
-	var catID, icon, color string
+	var catID sql.NullString
+	var icon, color string
 	err := h.DB.QueryRow(`
 		SELECT cl.id, cl.category_id, cl.max_amount_monthly, COALESCE(c.name, ''), COALESCE(c.icon, 'tag'), COALESCE(c.color, '#6b7280')
 		FROM cost_limits cl
@@ -1184,7 +1191,9 @@ func (h *MetasHandler) loadLimitFormData(form *MetaFormData, id string) error {
 	if err != nil {
 		return err
 	}
-	form.CategoryID = catID
+	if catID.Valid {
+		form.CategoryID = catID.String
+	}
 	form.CategoryIcon = icon
 	form.CategoryColor = normalizeUIThemeColor(color)
 	form.MaxAmountInput = formatCurrencyCentsBase(maxAmount)
@@ -1195,7 +1204,8 @@ func (h *MetasHandler) loadBoxFormData(form *MetaFormData, id string) error {
 	var targetAmount, monthlyRecharge, balance int64
 	var monthlyYieldRate float64
 	var targetDate sql.NullInt64
-	var catID, icon, color string
+	var catID sql.NullString
+	var icon, color string
 
 	err := h.DB.QueryRow(`
 		SELECT b.id, b.category_id, b.name, b.target_amount, b.monthly_recharge, b.target_date,
@@ -1226,7 +1236,9 @@ func (h *MetasHandler) loadBoxFormData(form *MetaFormData, id string) error {
 		return err
 	}
 
-	form.CategoryID = catID
+	if catID.Valid {
+		form.CategoryID = catID.String
+	}
 	form.CategoryIcon = icon
 	form.CategoryColor = normalizeUIThemeColor(color)
 	form.TargetAmountInput = formatCurrencyCentsBase(targetAmount)
@@ -1290,7 +1302,9 @@ func formatMonthLabelFromUnix(targetDateUnix int64) string {
 	if targetDateUnix <= 0 {
 		return ""
 	}
-	return time.Unix(targetDateUnix, 0).UTC().Format("01/2006")
+	t := time.Unix(targetDateUnix, 0).UTC()
+	months := [...]string{"jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"}
+	return fmt.Sprintf("%s/%04d", months[int(t.Month())-1], t.Year())
 }
 
 func (h *MetasHandler) queryBoxesForMetas() (*sql.Rows, error) {
@@ -1351,6 +1365,39 @@ func parseMonthlyYieldRate(raw string) (float64, error) {
 		return 0, fmt.Errorf("taxa maxima de 100%% a.m.")
 	}
 	return rate / 100.0, nil
+}
+
+func parseOptionalCurrency(raw string) (int64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := parseCurrency(raw)
+	if err == nil {
+		return value, nil
+	}
+
+	cleaned := currencyNoiseRe.ReplaceAllString(raw, "")
+	cleaned = strings.ReplaceAll(cleaned, " ", "")
+	if strings.HasPrefix(cleaned, "-") {
+		return 0, err
+	}
+	normalized, normalizeErr := normalizeDecimalString(cleaned)
+	if normalizeErr == nil {
+		parsed, parseErr := strconv.ParseFloat(normalized, 64)
+		if parseErr == nil && parsed == 0 {
+			return 0, nil
+		}
+	}
+	return 0, err
+}
+
+func nullableStringValue(value string) interface{} {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func formatMonthlyYieldRateForInput(rate float64) string {

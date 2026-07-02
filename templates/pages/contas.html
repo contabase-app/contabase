@@ -106,20 +106,50 @@
     {{$items := .Payables}}
     {{if not $isPagar}}{{$items = .Receivables}}{{end}}
 
-    {{if $items}}
+{{if $items}}
     <div class="space-y-2">
         {{range $items}}
-        <article id="tx-{{.ID}}" class="relative mb-1.5 overflow-hidden rounded-xl {{if .IsOverdue}}overdue{{end}}"
+        {{if .IsInvoice}}
+        <article id="invoice-{{.ID}}" class="relative mb-1.5 overflow-hidden rounded-xl {{if .IsOverdue}}overdue{{end}}">
+            <a href="/cartoes/faturas/{{.ID}}"
+               class="cb-row-dense flex items-center gap-3 text-left{{if .IsOverdue}}{{if $isPagar}} overdue-payable{{else}} overdue-receivable{{end}}{{end}}"
+               {{if .IsOverdue}}style="{{if $isPagar}}border-color: color-mix(in srgb, var(--cb-danger) 20%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 6%, var(--cb-surface-1)){{else}}border-color: color-mix(in srgb, var(--cb-warning) 20%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-warning) 6%, var(--cb-surface-1)){{end}}"{{end}}>
+                <span class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                      style="{{if $isPagar}}background: color-mix(in srgb, var(--cb-danger) 12%, transparent); color: var(--cb-danger){{else}}background: color-mix(in srgb, var(--cb-text-subtle) 12%, transparent); color: var(--cb-text-subtle){{end}}"
+                      title="Fatura de cartão">
+                    <i data-lucide="credit-card" class="w-4 h-4"></i>
+                </span>
+                <span class="flex-1 min-w-0">
+                    <span class="text-sm font-semibold text-[var(--cb-text-main)] truncate block">{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</span>
+                    <span class="cb-text-micro text-[var(--cb-text-subtle)] mt-0.5 truncate block">{{.AccountName}} · {{.DueDate}}</span>
+                </span>
+                <span class="flex items-center gap-2 shrink-0">
+                    <span class="text-sm font-bold {{if $isPagar}}text-[var(--cb-danger)]{{else}}text-[var(--cb-success)]{{end}}" data-sensitive>R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}</span>
+                    <span class="hidden md:flex btn-tactile h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-text-subtle)] hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]"
+                          aria-label="Ver fatura">
+                        <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+                    </span>
+                </span>
+            </a>
+        </article>
+        {{else}}
+        <article id="tx-{{.ID}}" class="relative mb-1.5 overflow-hidden rounded-xl {{if .IsScheduled}}scheduled{{else if .IsOverdue}}overdue{{end}}"
+            data-payment-id="{{.ID}}"
+            data-payment-context="contas"
+            data-payment-post-url="/transacoes/{{.ID}}/status-pagamento"
+            data-payment-target="#payment-confirm-modal"
+            data-payment-swap="none"
+            data-payment-description="{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}"
+            data-payment-amount="{{if $isPagar}}- R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}{{else}}+ R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}{{end}}"
+            data-payment-type="{{if $isPagar}}EXPENSE{{else}}INCOME{{end}}"
+            {{- if .ScheduledPaymentAtDisplay}} data-payment-scheduled-at="{{.ScheduledPaymentAtDisplay}}"{{end}}
             data-swipe-row="true"
             data-swipe-left-url="/transacoes/{{.ID}}?escopo=single"
             data-swipe-left-method="DELETE"
             data-swipe-left-target="#tx-{{.ID}}"
             data-swipe-left-swap="delete"
             data-swipe-left-confirm="Remover este lançamento?"
-            data-swipe-right-url="/transacoes/{{.ID}}/status-pagamento"
-            data-swipe-right-method="POST"
-            data-swipe-right-target="#tx-{{.ID}}"
-            data-swipe-right-swap="delete">
+            data-swipe-right-payment-confirm="true">
             <div data-swipe-bg-left class="absolute inset-y-0 left-0 flex w-28 origin-left items-center justify-start rounded-l-xl bg-[var(--cb-danger)] px-6 opacity-0 pointer-events-none">
                 <i data-lucide="trash-2" class="w-5 h-5 text-white"></i>
             </div>
@@ -128,13 +158,10 @@
             </div>
             <div data-swipe-content class="cb-row-dense flex items-center gap-3"{{if .IsOverdue}} style="{{if $isPagar}}border-color: color-mix(in srgb, var(--cb-danger) 20%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 6%, var(--cb-surface-1)){{else}}border-color: color-mix(in srgb, var(--cb-warning) 20%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-warning) 6%, var(--cb-surface-1)){{end}}"{{end}}>
                 <button type="button"
-                    hx-post="/transacoes/{{.ID}}/status-pagamento"
-                    hx-target="closest article"
-                    hx-swap="outerHTML"
-                    hx-confirm="{{if $isPagar}}Marcar como pago?{{else}}Marcar como recebido?{{end}}"
-                    class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all hover:opacity-80" style="{{if .IsOverdue}}{{if $isPagar}}background: color-mix(in srgb, var(--cb-danger) 12%, transparent); color: var(--cb-danger){{else}}background: color-mix(in srgb, var(--cb-warning) 12%, transparent); color: var(--cb-warning){{end}}{{else}}{{if $isPagar}}background: color-mix(in srgb, var(--cb-danger) 12%, transparent); color: var(--cb-danger){{else}}background: color-mix(in srgb, var(--cb-success) 12%, transparent); color: var(--cb-success){{end}}{{end}}"
-                    title="{{if .IsOverdue}}Atrasado — toque para marcar como {{if $isPagar}}pago{{else}}recebido{{end}}{{else}}{{if $isPagar}}Pendente — toque para marcar como pago{{else}}A receber — toque para marcar como recebido{{end}}{{end}}">
-                    <i data-lucide="{{if .IsOverdue}}alert-triangle{{else}}clock{{end}}" class="w-4 h-4"></i>
+                    data-payment-confirm
+                    class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all hover:opacity-80 tx-status-{{.StatusTone}}"
+                    title="{{.StatusTitle}}">
+                    <i data-lucide="{{.StatusIcon}}" class="w-4 h-4"></i>
                 </button>
                 <button type="button"
                     class="flex flex-1 min-w-0 items-center gap-3 text-left"
@@ -145,10 +172,11 @@
                     <span class="flex-1 min-w-0">
                         <span class="text-sm font-semibold text-[var(--cb-text-main)] truncate block">{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</span>
                         <span class="cb-text-micro text-[var(--cb-text-subtle)] mt-0.5 truncate block">{{if .ContactName}}{{.ContactName}} · {{end}}{{.AccountName}} · {{.DueDate}}</span>
+                        {{if .IsScheduled}}<span class="cb-text-micro text-violet-600 dark:text-violet-300 mt-0.5 truncate block">Agendado para {{.ScheduledPaymentAtDisplay}}</span>{{end}}
                     </span>
                 </button>
                 <div class="flex items-center gap-2 shrink-0">
-                    <span class="text-sm font-bold {{if $isPagar}}text-[var(--cb-danger)]{{else}}{{if .IsOverdue}}text-[var(--cb-warning)]{{else}}text-[var(--cb-success)]{{end}}{{end}}" data-sensitive>R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}</span>
+                    <span class="text-sm font-bold {{if $isPagar}}text-[var(--cb-danger)]{{else}}text-[var(--cb-success)]{{end}}" data-sensitive>R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}</span>
                     <button type="button"
                         class="hidden md:flex btn-tactile h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-text-subtle)] hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]"
                         hx-get="/transacoes/{{.ID}}"
@@ -161,6 +189,7 @@
                 </div>
             </div>
         </article>
+        {{end}}
         {{end}}
     </div>
     {{else}}

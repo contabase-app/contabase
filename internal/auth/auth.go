@@ -45,7 +45,8 @@ func NewService(db *sql.DB) *Service {
 
 func (s *Service) Authenticate(email, password string) (string, error) {
 	var userID, passwordHash, status string
-	err := s.DB.QueryRow(`SELECT id, password_hash, COALESCE(status, 'active') FROM users WHERE lower(email) = lower(?)`, email).Scan(&userID, &passwordHash, &status)
+	var deletedAt int64
+	err := s.DB.QueryRow(`SELECT id, password_hash, COALESCE(status, 'active'), COALESCE(deleted_at, 0) FROM users WHERE lower(email) = lower(?)`, email).Scan(&userID, &passwordHash, &status, &deletedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			if len(dummyPasswordHash) > 0 {
@@ -60,6 +61,9 @@ func (s *Service) Authenticate(email, password string) (string, error) {
 	}
 	if strings.ToLower(strings.TrimSpace(status)) != "active" {
 		return "", ErrInactiveAccount
+	}
+	if deletedAt > 0 {
+		return "", ErrInvalidCredentials
 	}
 	return userID, nil
 }
@@ -93,7 +97,7 @@ func (s *Service) ResolveAndRefreshSession(token string) (string, string, int, b
 	var expiresAt int64
 	var isRemember int
 	err := s.DB.QueryRow(
-		`SELECT user_id, workspace_id, expires_at, is_remember FROM sessions WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?`,
+		`SELECT s.user_id, s.workspace_id, s.expires_at, s.is_remember FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.deleted_at = 0`,
 		tokenHash, now,
 	).Scan(&userID, &workspaceID, &expiresAt, &isRemember)
 	if err != nil {

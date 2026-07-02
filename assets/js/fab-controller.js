@@ -10,6 +10,12 @@
             fabDiv.classList.add('hidden');
             return;
         }
+        var mobileBulkSelection = document.body.classList.contains('has-bulk-selection') &&
+            (!window.matchMedia || window.matchMedia('(max-width: 767px)').matches);
+        if (mobileBulkSelection) {
+            fabDiv.classList.add('hidden');
+            return;
+        }
         fabDiv.classList.remove('hidden');
 
         var button = fabDiv.querySelector('button');

@@ -157,6 +157,35 @@ func TestQueryFormCategoriesIncludesBoxReserveMetadata(t *testing.T) {
 	}
 }
 
+func TestQueryFormCategoriesHierarchicalOrder(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedBoxConsumeCreationScenario(t, db)
+
+	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+	categories, err := handler.queryFormCategories()
+	if err != nil {
+		t.Fatalf("queryFormCategories: %v", err)
+	}
+
+	var names []string
+	for _, c := range categories {
+		names = append(names, c.Name)
+	}
+
+	// Expected: INCOME first, then EXPENSE grouped by parent
+	// Moradia (parent) before Aluguel (child of Moradia), grouped together
+	wantOrder := []string{"Salario", "Lazer", "Mercado", "Moradia", "Aluguel", "Saude"}
+	if len(names) != len(wantOrder) {
+		t.Fatalf("category count = %d, want %d. names=%v", len(names), len(wantOrder), names)
+	}
+	for i, want := range wantOrder {
+		if names[i] != want {
+			t.Errorf("position %d: got %q, want %q. full order: %v", i, names[i], want, names)
+		}
+	}
+}
+
 func TestCreateIncomeAndTransferDoNotConsumeReserve(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()

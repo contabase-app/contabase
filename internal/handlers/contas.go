@@ -54,15 +54,21 @@ type ContasData struct {
 }
 
 type PendingItemRow struct {
-	ID          string
-	Description string
-	Amount      int64
-	AmountMoney MoneyDisplay
-	DueDateUnix int64
-	DueDate     string
-	AccountName string
-	ContactName string
-	IsOverdue   bool
+	ID                        string
+	Description               string
+	Amount                    int64
+	AmountMoney               MoneyDisplay
+	DueDateUnix               int64
+	DueDate                   string
+	AccountName               string
+	ContactName               string
+	IsOverdue                 bool
+	IsScheduled               bool
+	StatusIcon                string
+	StatusTone                string
+	StatusTitle               string
+	ScheduledPaymentAtDisplay string
+	IsInvoice                 bool
 }
 
 func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Request) {
@@ -218,63 +224,144 @@ func queryPendingItems(db *sql.DB, workspaceID, itemType string, onlyOverdue boo
 }
 
 func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOverdue bool, mes, ano int, search string) ([]PendingItemRow, error) {
+	const invoicePendingSubquery = `(
+			COALESCE((
+				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END)
+				FROM transactions t
+				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
+			), 0)
+			- COALESCE((
+				SELECT SUM(ip.amount_cents)
+				FROM invoice_payments ip
+				WHERE ip.workspace_id = a.workspace_id AND ip.invoice_id = i.id AND ip.reversed_at IS NULL
+			), 0)
+		)`
+
 	sqlQuery := `
-		SELECT t.id,
-		       COALESCE(t.description, ''),
-		       t.amount,
-		       COALESCE(t.due_date, t.date),
-		       COALESCE(a.name, ''),
-		       COALESCE(c.name, '')
-		FROM transactions t
-		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
-		LEFT JOIN contacts c ON c.id = t.contact_id AND c.workspace_id = t.workspace_id
-		WHERE t.workspace_id = ?
-		  AND t.status = 'pending'
-		  AND t.type = ?
+		SELECT id, description, amount, due_ref, account_name, contact_name, scheduled_payment_at, is_invoice FROM (
+			SELECT
+				t.id AS id,
+				COALESCE(t.description, '') AS description,
+				t.amount AS amount,
+				COALESCE(t.due_date, t.date) AS due_ref,
+				COALESCE(a.name, '') AS account_name,
+				COALESCE(c.name, '') AS contact_name,
+				t.scheduled_payment_at AS scheduled_payment_at,
+				0 AS is_invoice
+			FROM transactions t
+			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+			LEFT JOIN contacts c ON c.id = t.contact_id AND c.workspace_id = t.workspace_id
+			WHERE t.workspace_id = ?
+			  AND t.status = 'pending'
+			  AND t.type = ?
 	`
 	args := []interface{}{workspaceID, itemType}
 	if mes > 0 && ano > 0 {
 		sqlQuery += `
-		  AND CAST(strftime('%m', COALESCE(t.due_date, t.date), 'unixepoch') AS INTEGER) = ?
-		  AND CAST(strftime('%Y', COALESCE(t.due_date, t.date), 'unixepoch') AS INTEGER) = ?
+			  AND CAST(strftime('%m', COALESCE(t.due_date, t.date), 'unixepoch') AS INTEGER) = ?
+			  AND CAST(strftime('%Y', COALESCE(t.due_date, t.date), 'unixepoch') AS INTEGER) = ?
 		`
 		args = append(args, mes, ano)
 	}
 	if search != "" {
 		like := "%" + search + "%"
 		sqlQuery += `
-		  AND (
-			  UNACCENT(COALESCE(t.description, '')) LIKE UNACCENT(?)
-			  OR UNACCENT(COALESCE(c.name, '')) LIKE UNACCENT(?)
-			  OR UNACCENT(COALESCE(a.name, '')) LIKE UNACCENT(?)
-		  )
+			  AND (
+				  UNACCENT(COALESCE(t.description, '')) LIKE UNACCENT(?)
+				  OR UNACCENT(COALESCE(c.name, '')) LIKE UNACCENT(?)
+				  OR UNACCENT(COALESCE(a.name, '')) LIKE UNACCENT(?)
+			  )
 		`
 		args = append(args, like, like, like)
 	}
 	if onlyOverdue {
-		sqlQuery += ` AND t.due_date IS NOT NULL AND t.due_date < ?`
+		sqlQuery += ` AND t.due_date IS NOT NULL AND t.due_date < ? AND t.scheduled_payment_at IS NULL`
 		args = append(args, businessDayStartUnix(time.Now()))
 	}
-	sqlQuery += ` ORDER BY COALESCE(t.due_date, t.date) ASC, t.created_at ASC`
+
+	if itemType == models.TransactionTypeExpense {
+		sqlQuery += `
+			UNION ALL
+			SELECT
+				i.id AS id,
+				'Fatura ' || a.name || ' - ' || i.reference AS description,
+				` + invoicePendingSubquery + ` AS amount,
+				i.due_date AS due_ref,
+				a.name AS account_name,
+				'' AS contact_name,
+				NULL AS scheduled_payment_at,
+				1 AS is_invoice
+			FROM invoices i
+			JOIN accounts a ON a.id = i.account_id
+			WHERE a.workspace_id = ?
+			  AND a.type = ?
+			  AND i.status IN (?, ?)
+			  AND ` + invoicePendingSubquery + ` > 0
+		`
+		args = append(args, workspaceID, models.AccountTypeCreditCard, models.InvoiceStatusOpen, models.InvoiceStatusClosed)
+		if mes > 0 && ano > 0 {
+			sqlQuery += `
+			  AND CAST(strftime('%m', i.due_date, 'unixepoch') AS INTEGER) = ?
+			  AND CAST(strftime('%Y', i.due_date, 'unixepoch') AS INTEGER) = ?
+			`
+			args = append(args, mes, ano)
+		}
+		if search != "" {
+			like := "%" + search + "%"
+			sqlQuery += `
+			  AND (
+				  UNACCENT('Fatura ' || a.name || ' - ' || i.reference) LIKE UNACCENT(?)
+				  OR UNACCENT(a.name) LIKE UNACCENT(?)
+			  )
+			`
+			args = append(args, like, like)
+		}
+		if onlyOverdue {
+			sqlQuery += ` AND i.due_date IS NOT NULL AND i.due_date < ?`
+			args = append(args, businessDayStartUnix(time.Now()))
+		}
+	}
+
+	sqlQuery += `
+		) ORDER BY due_ref ASC, id ASC`
 	rows, err := db.Query(sqlQuery, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	now := time.Now().UTC()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	loc := appTimeLocation()
+	nowTZ := time.Now().In(loc)
+	today := time.Date(nowTZ.Year(), nowTZ.Month(), nowTZ.Day(), 0, 0, 0, 0, time.UTC)
 	var out []PendingItemRow
 	for rows.Next() {
 		var row PendingItemRow
-		if err := rows.Scan(&row.ID, &row.Description, &row.Amount, &row.DueDateUnix, &row.AccountName, &row.ContactName); err != nil {
+		var isInvoice int
+		var scheduledPaymentAt sql.NullInt64
+		if err := rows.Scan(&row.ID, &row.Description, &row.Amount, &row.DueDateUnix, &row.AccountName, &row.ContactName, &scheduledPaymentAt, &isInvoice); err != nil {
 			return nil, err
 		}
+		row.IsInvoice = isInvoice == 1
 		row.AmountMoney = MoneyMinor(row.Amount)
 		row.DueDate = formatDateLabelFromUnix(row.DueDateUnix)
 		due := time.Unix(row.DueDateUnix, 0).UTC()
 		dueDay := time.Date(due.Year(), due.Month(), due.Day(), 0, 0, 0, 0, time.UTC)
-		row.IsOverdue = dueDay.Before(today)
+		row.IsScheduled = scheduledPaymentAt.Valid
+		if scheduledPaymentAt.Valid {
+			row.ScheduledPaymentAtDisplay = formatAppDateLabelFromUnix(scheduledPaymentAt.Int64)
+		}
+		row.IsOverdue = !row.IsScheduled && dueDay.Before(today)
+		visual := transactionVisualStatus(itemType, models.PaymentStatusPending, row.DueDateUnix, nil)
+		if row.IsScheduled {
+			scheduled := scheduledPaymentAt.Int64
+			visual = transactionVisualStatus(itemType, models.PaymentStatusPending, row.DueDateUnix, &scheduled)
+		}
+		if row.IsInvoice {
+			visual = TransactionVisualStatus{Icon: "credit-card", Tone: "warning", Title: "Fatura pendente"}
+		}
+		row.StatusIcon = visual.Icon
+		row.StatusTone = visual.Tone
+		row.StatusTitle = visual.Title
 		out = append(out, row)
 	}
 	return out, rows.Err()

@@ -876,6 +876,158 @@ func TestBuildLancamentosDataExibeFaturaAoFiltrarCartao(t *testing.T) {
 	}
 }
 
+func TestBuildLancamentosDataInvoicePendingPartialAndPaidBadges(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	seedInvoicePaymentScenario(t, db)
+
+	handler := TransactionHandler{
+		DB:          db,
+		WorkspaceID: "ws-test",
+		UserID:      "user-test",
+	}
+
+	data, err := handler.buildLancamentosData("", 8, 2026, LancamentosFilters{})
+	if err != nil {
+		t.Fatalf("buildLancamentosData: %v", err)
+	}
+	if len(data.Invoices) != 1 {
+		t.Fatalf("invoice count = %d, want 1", len(data.Invoices))
+	}
+	inv := data.Invoices[0]
+	if inv.Total != 25000 || inv.Paid != 0 || inv.Pending != 25000 {
+		t.Fatalf("open invoice amounts total/paid/pending = %d/%d/%d, want 25000/0/25000", inv.Total, inv.Paid, inv.Pending)
+	}
+	if inv.BadgeLabel != "Aberta" || inv.HasPartialPayment {
+		t.Fatalf("open invoice badge/partial = %q/%v, want Aberta/false", inv.BadgeLabel, inv.HasPartialPayment)
+	}
+
+	now := time.Now().Unix()
+	execTestSQL(t, db, `
+		UPDATE invoices SET paid_amount = 10000 WHERE id = 'invoice-2026-08'
+	`)
+	execTestSQL(t, db, `
+		INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, amount_cents, paid_at, source, created_by, created_at)
+		VALUES ('ip-lanc-partial', 'ws-test', 'invoice-2026-08', 'checking-test', 10000, ?, 'manual', 'user-test', ?)
+	`, now, now)
+
+	pendingData, err := handler.buildLancamentosData("", 8, 2026, LancamentosFilters{Situacoes: []string{"pendente"}})
+	if err != nil {
+		t.Fatalf("buildLancamentosData pending: %v", err)
+	}
+	if len(pendingData.Invoices) != 1 {
+		t.Fatalf("pending invoice count = %d, want 1", len(pendingData.Invoices))
+	}
+	inv = pendingData.Invoices[0]
+	if inv.Total != 25000 || inv.Paid != 10000 || inv.Pending != 15000 {
+		t.Fatalf("partial invoice amounts total/paid/pending = %d/%d/%d, want 25000/10000/15000", inv.Total, inv.Paid, inv.Pending)
+	}
+	if inv.BadgeLabel != "Parcial" || !inv.HasPartialPayment {
+		t.Fatalf("partial invoice badge/partial = %q/%v, want Parcial/true", inv.BadgeLabel, inv.HasPartialPayment)
+	}
+
+	paidDataBeforeSettle, err := handler.buildLancamentosData("", 8, 2026, LancamentosFilters{Situacoes: []string{"pago"}})
+	if err != nil {
+		t.Fatalf("buildLancamentosData paid before settle: %v", err)
+	}
+	if len(paidDataBeforeSettle.Invoices) != 0 {
+		t.Fatalf("paid invoice count before settle = %d, want 0", len(paidDataBeforeSettle.Invoices))
+	}
+
+	execTestSQL(t, db, `
+		UPDATE invoices SET status = 'PAID', paid_at = ?, paid_amount = 25000 WHERE id = 'invoice-2026-08'
+	`, now)
+	execTestSQL(t, db, `
+		UPDATE invoice_payments SET amount_cents = 25000 WHERE id = 'ip-lanc-partial'
+	`)
+
+	defaultData, err := handler.buildLancamentosData("", 8, 2026, LancamentosFilters{})
+	if err != nil {
+		t.Fatalf("buildLancamentosData default after settle: %v", err)
+	}
+	if len(defaultData.Invoices) != 0 {
+		t.Fatalf("default invoice count after settle = %d, want 0", len(defaultData.Invoices))
+	}
+
+	paidData, err := handler.buildLancamentosData("", 8, 2026, LancamentosFilters{Situacoes: []string{"pago"}})
+	if err != nil {
+		t.Fatalf("buildLancamentosData paid: %v", err)
+	}
+	if len(paidData.Invoices) != 1 {
+		t.Fatalf("paid invoice count = %d, want 1", len(paidData.Invoices))
+	}
+	inv = paidData.Invoices[0]
+	if inv.Pending != 0 || inv.BadgeLabel != "Paga" {
+		t.Fatalf("paid invoice pending/badge = %d/%q, want 0/Paga", inv.Pending, inv.BadgeLabel)
+	}
+
+	allData, err := handler.buildLancamentosData("", 8, 2026, LancamentosFilters{Situacoes: []string{"pendente", "vencido", "agendado", "pago"}})
+	if err != nil {
+		t.Fatalf("buildLancamentosData all statuses: %v", err)
+	}
+	if len(allData.Invoices) != 1 {
+		t.Fatalf("all-status invoice count = %d, want 1", len(allData.Invoices))
+	}
+}
+
+func TestBuildLancamentosDataInvoiceStatusFilters(t *testing.T) {
+	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
+
+	db := openTestDB(t)
+	defer db.Close()
+
+	seedInvoicePaymentScenario(t, db)
+
+	now := time.Now()
+	overdueDue := now.AddDate(0, 0, -2)
+	overdueDue = time.Date(overdueDue.Year(), overdueDue.Month(), overdueDue.Day(), 12, 0, 0, 0, time.UTC)
+	overdueClosing := overdueDue.AddDate(0, -1, 0)
+	execTestSQL(t, db, `
+		UPDATE invoices
+		SET status = 'OPEN', due_date = ?, closing_date = ?, paid_at = NULL, paid_amount = 10000
+		WHERE id = 'invoice-2026-08'
+	`, overdueDue.Unix(), overdueClosing.Unix())
+	execTestSQL(t, db, `
+		INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, amount_cents, paid_at, source, created_by, created_at)
+		VALUES ('ip-lanc-overdue-partial', 'ws-test', 'invoice-2026-08', 'checking-test', 10000, ?, 'manual', 'user-test', ?)
+	`, now.Unix(), now.Unix())
+
+	handler := TransactionHandler{
+		DB:          db,
+		WorkspaceID: "ws-test",
+		UserID:      "user-test",
+	}
+	mes, ano := int(overdueDue.Month()), overdueDue.Year()
+
+	scheduledData, err := handler.buildLancamentosData("", mes, ano, LancamentosFilters{Situacoes: []string{"agendado"}})
+	if err != nil {
+		t.Fatalf("buildLancamentosData scheduled: %v", err)
+	}
+	if len(scheduledData.Invoices) != 0 {
+		t.Fatalf("scheduled invoice count = %d, want 0", len(scheduledData.Invoices))
+	}
+
+	overdueData, err := handler.buildLancamentosData("", mes, ano, LancamentosFilters{Situacoes: []string{"vencido"}})
+	if err != nil {
+		t.Fatalf("buildLancamentosData overdue: %v", err)
+	}
+	if len(overdueData.Invoices) != 1 {
+		t.Fatalf("overdue invoice count = %d, want 1", len(overdueData.Invoices))
+	}
+	if !overdueData.Invoices[0].IsOverdue || overdueData.Invoices[0].Pending != 15000 {
+		t.Fatalf("overdue invoice overdue/pending = %v/%d, want true/15000", overdueData.Invoices[0].IsOverdue, overdueData.Invoices[0].Pending)
+	}
+
+	pendingData, err := handler.buildLancamentosData("", mes, ano, LancamentosFilters{Situacoes: []string{"pendente"}})
+	if err != nil {
+		t.Fatalf("buildLancamentosData pending: %v", err)
+	}
+	if len(pendingData.Invoices) != 1 {
+		t.Fatalf("pending invoice count = %d, want 1", len(pendingData.Invoices))
+	}
+}
+
 func TestBuildFaturaDataIncluiTransacaoPendenteNoTotal(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
@@ -1158,11 +1310,8 @@ func TestBuildLancamentosDataZeroPaidInvoiceDoesNotBecomePendingExpense(t *testi
 	if err != nil {
 		t.Fatalf("buildLancamentosData: %v", err)
 	}
-	if len(data.Invoices) != 1 {
-		t.Fatalf("invoice count = %d, want 1", len(data.Invoices))
-	}
-	if data.Invoices[0].Status != "PAID" || data.Invoices[0].Total != 0 || data.Invoices[0].IsOverdue {
-		t.Fatalf("invoice row = status %q total %d overdue %v, want PAID/0/false", data.Invoices[0].Status, data.Invoices[0].Total, data.Invoices[0].IsOverdue)
+	if len(data.Invoices) != 0 {
+		t.Fatalf("invoice count = %d, want 0", len(data.Invoices))
 	}
 	for _, item := range data.UnifiedItems {
 		if item.IsInvoice && item.Invoice.ID == "invoice-2026-08" {

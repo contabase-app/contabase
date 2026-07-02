@@ -57,6 +57,8 @@ type FormCategory struct {
 	BoxName            string
 	LimitMax           int64
 	LimitSpent         int64
+	ParentID           string
+	ParentName         string
 }
 
 type InvoiceOption struct {
@@ -75,45 +77,65 @@ type InvoiceOption struct {
 }
 
 type FormTransacaoData struct {
-	Accounts              []FormAccount
-	Contacts              []ContatoRow
-	Categories            []FormCategory
-	FaturaOptions         []InvoiceOption
-	IsBusiness            bool
-	IsEdit                bool
-	EditID                string
-	TipoInicial           string
-	ValorPreenchido       string
-	DescricaoPreenchida   string
-	AnotacoesPreenchidas  string
-	AttachmentViewURL     string
-	AttachmentDownloadURL string
-	DataPreenchida        string
-	StatusInicial         string
-	OrigemContaID         string
-	OrigemTipo            string
-	OrigemNome            string
-	OrigemIcon            string
-	OrigemColor           string
-	OrigemProviderMark    string
-	CategoriaID           string
-	CategoriaNome         string
-	CategoriaIcon         string
-	CategoriaColor        string
-	CategoriaType         string
-	DestinoContaID        string
-	DestinoNome           string
-	DestinoIcon           string
-	DestinoColor          string
-	DestinoProviderMark   string
-	IsSeriesEdit          bool
-	FixoInicial           bool
-	RecorrenciaInicial    string
-	DueDatePreenchida     string
-	ContatoIDPreenchido   string
-	ReturnInvoiceID       string
-	AuditCreatedBy        string
-	AuditUpdatedAt        string
+	Accounts                []FormAccount
+	Contacts                []ContatoRow
+	Categories              []FormCategory
+	FaturaOptions           []InvoiceOption
+	IsBusiness              bool
+	CanCreateContact        bool
+	IsEdit                  bool
+	EditID                  string
+	TipoInicial             string
+	ValorPreenchido         string
+	DescricaoPreenchida     string
+	AnotacoesPreenchidas    string
+	AttachmentViewURL       string
+	AttachmentDownloadURL   string
+	DataPreenchida          string
+	StatusInicial           string
+	OrigemContaID           string
+	OrigemTipo              string
+	OrigemNome              string
+	OrigemIcon              string
+	OrigemColor             string
+	OrigemProviderMark      string
+	CategoriaID             string
+	CategoriaNome           string
+	CategoriaIcon           string
+	CategoriaColor          string
+	CategoriaType           string
+	DestinoContaID          string
+	DestinoNome             string
+	DestinoIcon             string
+	DestinoColor            string
+	DestinoProviderMark     string
+	IsSeriesEdit            bool
+	FixoInicial             bool
+	RecorrenciaInicial      string
+	DueDatePreenchida       string
+	ContatoIDPreenchido     string
+	ReturnInvoiceID         string
+	AuditCreatedBy          string
+	AuditUpdatedAt          string
+	PaidAtDisplay           string
+	ScheduledPaymentDisplay string
+	CompetenciaDisplay      string
+	VencimentoDisplay       string
+	StatusHistory           []TransactionStatusEvent
+}
+
+type TransactionStatusEvent struct {
+	ID                  string
+	PreviousStatus      string
+	NewStatus           string
+	PreviousStatusLabel string
+	NewStatusLabel      string
+	PreviousPaidAt      string
+	NewPaidAt           string
+	UserName            string
+	Source              string
+	SourceLabel         string
+	CreatedAtLabel      string
 }
 
 type PredictiveSuggestion struct {
@@ -155,10 +177,11 @@ type TransacaoReciboData struct {
 }
 
 type TransactionHandler struct {
-	DB          *sql.DB
-	Templates   TemplateEngine
-	WorkspaceID string
-	UserID      string
+	DB               *sql.DB
+	Templates        TemplateEngine
+	WorkspaceID      string
+	UserID           string
+	CanCreateContact bool
 }
 
 func (h *TransactionHandler) HandleNovaTransacao(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +211,7 @@ func (h *TransactionHandler) HandleNovaTransacao(w http.ResponseWriter, r *http.
 	data.IsBusiness = workspaceType(h.DB, h.WorkspaceID) == "business"
 	if data.IsBusiness {
 		data.Contacts, _ = h.queryFormContacts()
+		data.CanCreateContact = h.CanCreateContact
 	}
 	perfStep(reqID, "NovaTransacao", "formData+contacts", time.Since(t2))
 
@@ -1322,14 +1346,17 @@ func (h *TransactionHandler) queryFormCategories() ([]FormCategory, error) {
 			COALESCE(cbc.reserved, 0) AS box_reserved_balance,
 			COALESCE(b.name, '') AS box_name,
 			COALESCE(cl.max_amount_monthly, 0) AS limit_max,
-			COALESCE(mls.spent, 0) AS limit_spent
+			COALESCE(mls.spent, 0) AS limit_spent,
+			COALESCE(c.parent_id, '') AS parent_id,
+			COALESCE(p.name, '') AS parent_name
 		FROM categories c
 		LEFT JOIN category_box_candidates cbc ON cbc.category_id = c.id AND cbc.box_count = 1
 		LEFT JOIN boxes b ON b.id = cbc.box_id AND b.workspace_id = c.workspace_id
 		LEFT JOIN cost_limits cl ON cl.category_id = c.id AND cl.workspace_id = c.workspace_id
 		LEFT JOIN monthly_limit_spend mls ON mls.category_id = c.id
+		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
 		WHERE c.workspace_id = ?
-		ORDER BY c.type DESC, c.name ASC
+		ORDER BY c.type DESC, COALESCE(p.name, c.name) COLLATE NOCASE, CASE WHEN COALESCE(c.parent_id, '') = '' THEN 0 ELSE 1 END, c.name COLLATE NOCASE
 	`, h.WorkspaceID, h.WorkspaceID, monthStart, monthEnd, h.WorkspaceID, h.WorkspaceID)
 	if err != nil {
 		return nil, err
@@ -1339,7 +1366,7 @@ func (h *TransactionHandler) queryFormCategories() ([]FormCategory, error) {
 	var categories []FormCategory
 	for rows.Next() {
 		var c FormCategory
-		if err := rows.Scan(&c.ID, &c.Name, &c.Icon, &c.Color, &c.Type, &c.BoxID, &c.BoxReservedBalance, &c.BoxName, &c.LimitMax, &c.LimitSpent); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Icon, &c.Color, &c.Type, &c.BoxID, &c.BoxReservedBalance, &c.BoxName, &c.LimitMax, &c.LimitSpent, &c.ParentID, &c.ParentName); err != nil {
 			return nil, err
 		}
 		c.Color = normalizeUIThemeColor(c.Color)
@@ -2087,6 +2114,8 @@ type CreditCardCard struct {
 	InvoiceID             string
 	Name                  string
 	DueDay                string
+	DueDateCompact        string
+	ClosingDaysLabel      string
 	Reference             string
 	Status                string
 	StatusLabel           string
@@ -2224,7 +2253,7 @@ func BuildDashboardData(db *sql.DB, userID, workspaceID string) DashboardData {
 	if err == nil {
 		type accRaw struct {
 			id, name, accType, providerSlug, color, icon string
-			balance int64
+			balance                                      int64
 		}
 		var rawAccounts []accRaw
 		for rows.Next() {
@@ -2314,7 +2343,7 @@ func BuildDashboardData(db *sql.DB, userID, workspaceID string) DashboardData {
 		cardRows.Close()
 
 		for _, c := range cards {
-			invoiceID, reference, status, _, dueUnix, err := resolveDashboardInvoice(db, workspaceID, c.id, time.Now().Unix())
+			invoiceID, reference, status, closingUnix, dueUnix, err := resolveDashboardInvoice(db, workspaceID, c.id, time.Now().Unix())
 			if err != nil {
 				continue
 			}
@@ -2351,11 +2380,33 @@ func BuildDashboardData(db *sql.DB, userID, workspaceID string) DashboardData {
 				cardIcon = accountVisualByProvider(normalizedProvider, models.AccountTypeCreditCard)
 			}
 
+			var dueDateCompact, closingDaysLabel string
+			if dueUnix > 0 {
+				monthsShort := []string{"jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"}
+				dueTime := time.Unix(dueUnix, 0)
+				dueDateCompact = fmt.Sprintf("%d/%s", dueTime.Day(), monthsShort[dueTime.Month()-1])
+			}
+			if closingUnix > 0 && status != models.InvoiceStatusPaid {
+				now := time.Now().Unix()
+				days := (closingUnix - now) / 86400
+				if days < 0 {
+					closingDaysLabel = "fechada"
+				} else if days == 0 {
+					closingDaysLabel = "fecha hoje"
+				} else if days == 1 {
+					closingDaysLabel = "fecha em 1 dia"
+				} else {
+					closingDaysLabel = fmt.Sprintf("fecha em %d dias", days)
+				}
+			}
+
 			data.Cards = append(data.Cards, CreditCardCard{
 				ID:               c.id,
 				InvoiceID:        invoiceID,
 				Name:             c.name,
 				DueDay:           fmt.Sprintf("%d", c.dueDay),
+				DueDateCompact:   dueDateCompact,
+				ClosingDaysLabel: closingDaysLabel,
 				Reference:        reference,
 				Status:           status,
 				StatusLabel:      statusLabel,
@@ -2530,7 +2581,7 @@ func queryDashboardBoxes(db *sql.DB, workspaceID string) []CaixinhaCard {
 			COALESCE(c.color, '#6b7280'),
 			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS total_balance
 		FROM boxes b
-		JOIN categories c ON c.id = b.category_id
+		LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
 		WHERE b.workspace_id = ?
 		ORDER BY b.name
 	`, workspaceID)
@@ -2542,9 +2593,13 @@ func queryDashboardBoxes(db *sql.DB, workspaceID string) []CaixinhaCard {
 	var boxes []CaixinhaCard
 	for rows.Next() {
 		var card CaixinhaCard
+		var categoryID sql.NullString
 		var target, monthly, balance int64
-		if err := rows.Scan(&card.ID, &card.CategoryID, &card.Name, &target, &monthly, &card.Icon, &card.Color, &balance); err != nil {
+		if err := rows.Scan(&card.ID, &categoryID, &card.Name, &target, &monthly, &card.Icon, &card.Color, &balance); err != nil {
 			continue
+		}
+		if categoryID.Valid {
+			card.CategoryID = categoryID.String
 		}
 		if balance < 0 {
 			balance = 0
@@ -2844,6 +2899,7 @@ func queryDashboardNotificationCount(db *sql.DB, userID, workspaceID string) int
 	items = append(items, h.boxesInOverdraft(isBusiness)...)
 	items = append(items, h.completedBoxGoals(isBusiness)...)
 	items = append(items, h.caixinhaPersistedNotifications()...)
+	items = append(items, h.scheduledPaymentNotifications()...)
 	return len(h.visibleItemsForUser(items))
 }
 
@@ -2902,6 +2958,25 @@ func queryWorkspaceName(db *sql.DB, workspaceID string) string {
 		return "Workspace"
 	}
 	return name
+}
+
+func parsePaymentDate(value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return appDayStartUnix(time.Now()), nil
+	}
+	parsed, err := parseCivilDateStartUnix(value)
+	if err != nil {
+		return 0, fmt.Errorf("data de pagamento inválida: %q", value)
+	}
+	return parsed, nil
+}
+
+func parseRequiredPaymentDate(value string) (int64, error) {
+	if strings.TrimSpace(value) == "" {
+		return 0, fmt.Errorf("data obrigatória")
+	}
+	return parsePaymentDate(value)
 }
 
 func queryBalanceTrend(db *sql.DB, workspaceID string, currentBalance int64, now time.Time) (string, string) {
@@ -3400,22 +3475,28 @@ func normalizeUIThemeColor(color string) string {
 }
 
 type InvoiceRow struct {
-	ID               string
-	AccountID        string
-	AccountName      string
-	CardIcon         string
-	CardColor        string
-	CardProviderMark string
-	Reference        string
-	ReferenceLabel   string
-	Status           string
-	DueDate          int64
-	DateLabel        string
-	Total            int64
-	TotalMoney       MoneyDisplay
-	IsOverdue        bool
-	FaturaURL        string
-	ItemCount        int
+	ID                string
+	AccountID         string
+	AccountName       string
+	CardIcon          string
+	CardColor         string
+	CardProviderMark  string
+	Reference         string
+	ReferenceLabel    string
+	Status            string
+	DueDate           int64
+	DateLabel         string
+	Total             int64
+	Paid              int64
+	Pending           int64
+	TotalMoney        MoneyDisplay
+	PaidMoney         MoneyDisplay
+	PendingMoney      MoneyDisplay
+	BadgeLabel        string
+	HasPartialPayment bool
+	IsOverdue         bool
+	FaturaURL         string
+	ItemCount         int
 }
 
 type FilterLabelItem struct {
@@ -3460,6 +3541,7 @@ type LancamentosData struct {
 	SortOrder                 string
 	StatusPendenteOn          bool
 	StatusVencidoOn           bool
+	StatusAgendadoOn          bool
 	StatusPagoOn              bool
 	Transactions              []TransactionRow
 	Invoices                  []InvoiceRow
@@ -3488,41 +3570,87 @@ type MonthOption struct {
 }
 
 type TransactionRow struct {
-	ID                  string
-	Date                int64
-	CreatedAt           int64
-	ListIndex           int
-	DateLabel           string
-	DisplayDateLabel    string
-	UsesDueDate         bool
-	TimeDisplay         string
-	DateInput           string
-	Description         string
-	Amount              int64
-	AmountDisplay       string
-	AmountInput         string
-	AmountClass         string
-	CategoryIcon        string
-	CategoryColor       string
-	CategoryName        string
-	AccountName         string
-	ContactName         string
-	IsBusiness          bool
-	Author              string
-	PaymentStatus       string
-	IsPending           bool
-	IsOverdue           bool
-	PaymentIcon         string
-	PaymentTitle        string
-	PaymentConfirm      string
-	PaymentConfirmTitle string
-	Type                string
-	InstallmentNumber   int64
-	TotalInstallments   int64
-	HasInstallmentInfo  bool
-	IsSeries            bool
-	IsProjected         bool
-	CanGenerateReceipt  bool
+	ID                        string
+	Date                      int64
+	CreatedAt                 int64
+	ListIndex                 int
+	DateLabel                 string
+	DisplayDateLabel          string
+	UsesDueDate               bool
+	TimeDisplay               string
+	DateInput                 string
+	Description               string
+	Amount                    int64
+	AmountDisplay             string
+	AmountInput               string
+	AmountClass               string
+	CategoryIcon              string
+	CategoryColor             string
+	CategoryName              string
+	AccountName               string
+	ContactName               string
+	IsBusiness                bool
+	Author                    string
+	PaymentStatus             string
+	IsPending                 bool
+	IsOverdue                 bool
+	IsScheduled               bool
+	PaymentIcon               string
+	PaymentTone               string
+	PaymentTitle              string
+	PaymentConfirm            string
+	PaymentConfirmTitle       string
+	Type                      string
+	InstallmentNumber         int64
+	TotalInstallments         int64
+	HasInstallmentInfo        bool
+	IsSeries                  bool
+	IsProjected               bool
+	CanGenerateReceipt        bool
+	PaidAt                    *int64
+	PaidAtDisplay             string
+	ScheduledPaymentAt        *int64
+	ScheduledPaymentAtDisplay string
+}
+
+type TransactionVisualStatus struct {
+	Icon  string
+	Tone  string
+	Title string
+}
+
+func transactionVisualStatus(trType, paymentStatus string, displayDateUnix int64, scheduledAt *int64) TransactionVisualStatus {
+	if paymentStatus == models.PaymentStatusPaid {
+		if trType == models.TransactionTypeIncome {
+			return TransactionVisualStatus{Icon: "check-circle-2", Tone: "success", Title: "Recebido — toque para remover recebimento"}
+		}
+		return TransactionVisualStatus{Icon: "check-circle-2", Tone: "success", Title: "Pago — toque para remover pagamento"}
+	}
+	if scheduledAt != nil {
+		if trType == models.TransactionTypeIncome {
+			return TransactionVisualStatus{Icon: "timer", Tone: "scheduled", Title: "Agendado — toque para confirmar recebimento ou alterar agendamento"}
+		}
+		return TransactionVisualStatus{Icon: "timer", Tone: "scheduled", Title: "Agendado — toque para confirmar pagamento ou alterar agendamento"}
+	}
+	if trType == models.TransactionTypeTransfer {
+		return TransactionVisualStatus{Icon: "arrow-left-right", Tone: "transfer", Title: "Transferência pendente"}
+	}
+
+	loc := appTimeLocation()
+	nowTZ := time.Now().In(loc)
+	todayUTC := time.Date(nowTZ.Year(), nowTZ.Month(), nowTZ.Day(), 0, 0, 0, 0, time.UTC)
+	t := time.Unix(displayDateUnix, 0).UTC()
+	displayDayUTC := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	if displayDayUTC.Before(todayUTC) {
+		if trType == models.TransactionTypeIncome {
+			return TransactionVisualStatus{Icon: "triangle-alert", Tone: "danger", Title: "Atrasado — toque para marcar como recebido"}
+		}
+		return TransactionVisualStatus{Icon: "triangle-alert", Tone: "danger", Title: "Atrasado — toque para marcar como pago"}
+	}
+	if trType == models.TransactionTypeIncome {
+		return TransactionVisualStatus{Icon: "clock", Tone: "warning", Title: "Pendente — toque para marcar como recebido"}
+	}
+	return TransactionVisualStatus{Icon: "clock", Tone: "warning", Title: "Pendente — toque para marcar como pago"}
 }
 
 func (h *TransactionHandler) HandleListarTransacoes(w http.ResponseWriter, r *http.Request) {
@@ -4197,6 +4325,7 @@ func (h *TransactionHandler) HandleDetalheTransacao(w http.ResponseWriter, r *ht
 	data.IsBusiness = workspaceType(h.DB, h.WorkspaceID) == "business"
 	if data.IsBusiness {
 		data.Contacts, _ = h.queryFormContacts()
+		data.CanCreateContact = h.CanCreateContact
 	}
 	data.IsEdit = true
 	data.EditID = id
@@ -4219,13 +4348,16 @@ func (h *TransactionHandler) HandleDetalheTransacao(w http.ResponseWriter, r *ht
 	var contactID sql.NullString
 	var updatedAt int64
 	var authorName string
+	var txDate int64
+	var paidAt sql.NullInt64
+	var scheduledPaymentAt sql.NullInt64
 	if err := h.DB.QueryRow(`
-		SELECT t.account_id, t.destination_account_id, t.category_id, t.total_installments, t.recurring_rule_id, rr.frequency, t.invoice_id, t.notes, t.attachment_path, t.due_date, t.contact_id, t.updated_at, u.name
+		SELECT t.account_id, t.destination_account_id, t.category_id, t.total_installments, t.recurring_rule_id, rr.frequency, t.invoice_id, t.notes, t.attachment_path, t.due_date, t.contact_id, t.updated_at, COALESCE(u.name, 'Usuário removido'), t.date, t.paid_at, t.scheduled_payment_at
 		FROM transactions t
-		JOIN users u ON u.id = t.user_id
+		LEFT JOIN users u ON u.id = t.user_id
 		LEFT JOIN recurring_rules rr ON rr.id = t.recurring_rule_id
 		WHERE t.id = ? AND t.workspace_id = ?
-	`, id, h.WorkspaceID).Scan(&accountID, &destinationAccountID, &categoryID, &totalInstallments, &recurringRuleID, &recurrenceFrequency, &invoiceID, &notes, &attachmentPath, &dueDate, &contactID, &updatedAt, &authorName); err == nil {
+	`, id, h.WorkspaceID).Scan(&accountID, &destinationAccountID, &categoryID, &totalInstallments, &recurringRuleID, &recurrenceFrequency, &invoiceID, &notes, &attachmentPath, &dueDate, &contactID, &updatedAt, &authorName, &txDate, &paidAt, &scheduledPaymentAt); err == nil {
 		data.AnotacoesPreenchidas = notes
 		if attachmentPath != "" {
 			data.AttachmentViewURL = "/transacoes/" + id + "/anexo"
@@ -4271,6 +4403,19 @@ func (h *TransactionHandler) HandleDetalheTransacao(w http.ResponseWriter, r *ht
 			data.ContatoIDPreenchido = contactID.String
 		}
 		data.IsSeriesEdit = totalInstallments > 1 || recurringRuleID.Valid
+
+		data.CompetenciaDisplay = formatDateLabelFromUnix(txDate)
+		if dueDate.Valid {
+			data.VencimentoDisplay = formatDateLabelFromUnix(dueDate.Int64)
+		}
+		if paidAt.Valid {
+			data.PaidAtDisplay = formatAppDateLabelFromUnix(paidAt.Int64)
+		}
+		if scheduledPaymentAt.Valid {
+			data.ScheduledPaymentDisplay = formatAppDateLabelFromUnix(scheduledPaymentAt.Int64)
+		}
+
+		data.StatusHistory = h.loadTransactionStatusHistory(id)
 	}
 
 	var buf bytes.Buffer
@@ -5365,6 +5510,26 @@ func (h *TransactionHandler) respondBroadEditAndCloseSheet(w http.ResponseWriter
 }
 
 func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *http.Request, id string) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "payload inválido", http.StatusBadRequest)
+		return
+	}
+	paymentAction := strings.TrimSpace(r.FormValue("payment_action"))
+	if paymentAction == "" {
+		paymentAction = "paid"
+	}
+	var paymentDateUnix int64
+	var err error
+	if paymentAction == "scheduled" {
+		paymentDateUnix, err = parseRequiredPaymentDate(r.FormValue("scheduled_payment_date"))
+	} else {
+		paymentDateUnix, err = parsePaymentDate(r.FormValue("payment_date"))
+	}
+	if err != nil {
+		http.Error(w, "data inválida", http.StatusBadRequest)
+		return
+	}
+
 	tx, err := h.DB.Begin()
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -5378,13 +5543,15 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 	var destAccountID sql.NullString
 	var txDate int64
 	var accType string
+	var currentPaidAt sql.NullInt64
+	var invoiceID sql.NullString
 
 	err = tx.QueryRow(`
-		SELECT t.type, t.amount, t.account_id, t.destination_account_id, t.status, t.date, a.type
+		SELECT t.type, t.amount, t.account_id, t.destination_account_id, t.status, t.date, a.type, t.paid_at, t.invoice_id
 		FROM transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		WHERE t.id = ? AND t.workspace_id = ?
-	`, id, h.WorkspaceID).Scan(&trType, &amount, &accountID, &destAccountID, &paymentStatus, &txDate, &accType)
+	`, id, h.WorkspaceID).Scan(&trType, &amount, &accountID, &destAccountID, &paymentStatus, &txDate, &accType, &currentPaidAt, &invoiceID)
 	if err != nil {
 		http.Error(w, "transação não encontrada", http.StatusNotFound)
 		return
@@ -5397,12 +5564,41 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+	if paymentAction == "scheduled" || paymentAction == "clear_schedule" {
+		if err := validateSchedulableTransaction(trType, paymentStatus, accType, invoiceID, destAccountID); err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		now := time.Now().Unix()
+		if paymentAction == "scheduled" {
+			err = execOneTx(tx, `
+				UPDATE transactions
+				SET scheduled_payment_at = ?, scheduled_payment_created_by = ?, scheduled_payment_executed_at = NULL, updated_at = ?
+				WHERE id = ? AND workspace_id = ? AND status = 'pending'
+			`, paymentDateUnix, h.UserID, now, id, h.WorkspaceID)
+		} else {
+			err = execOneTx(tx, `
+				UPDATE transactions
+				SET scheduled_payment_at = NULL, scheduled_payment_created_by = NULL, scheduled_payment_executed_at = NULL, updated_at = ?
+				WHERE id = ? AND workspace_id = ? AND status = 'pending'
+			`, now, id, h.WorkspaceID)
+		}
+		if err != nil {
+			http.Error(w, "erro ao atualizar agendamento", http.StatusInternalServerError)
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		h.respondPaymentStatusChange(w, r, id)
+		return
+	}
 
 	newStatus := "paid"
 	if paymentStatus == "paid" {
 		newStatus = "pending"
 	}
-	// Cartão de crédito: nunca permite voltar para "pending".
 	if accType == "CREDIT_CARD" {
 		newStatus = "paid"
 	}
@@ -5420,21 +5616,34 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 		}
 	}
 
-	var invoiceID interface{}
+	var nextInvoiceID interface{}
 	if trType == "EXPENSE" && accType == "CREDIT_CARD" {
 		invID, _, _, _, _, err := ensureOpenInvoiceTx(tx, h.WorkspaceID, accountID, txDate)
 		if err != nil {
 			http.Error(w, "erro na fatura", http.StatusInternalServerError)
 			return
 		}
-		invoiceID = invID
+		nextInvoiceID = invID
+	}
+
+	var paidAt interface{}
+	if newStatus == "paid" {
+		paidAt = paymentDateUnix
 	}
 
 	err = execOneTx(tx, `
-		UPDATE transactions SET status = ?, invoice_id = ?, updated_at = ? WHERE id = ? AND workspace_id = ?
-	`, newStatus, invoiceID, now, id, h.WorkspaceID)
+		UPDATE transactions
+		SET status = ?, invoice_id = ?, updated_at = ?, paid_at = ?,
+			scheduled_payment_at = NULL, scheduled_payment_created_by = NULL, scheduled_payment_executed_at = NULL
+		WHERE id = ? AND workspace_id = ?
+	`, newStatus, nextInvoiceID, now, paidAt, id, h.WorkspaceID)
 	if err != nil {
 		http.Error(w, "erro ao atualizar status", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.insertTransactionStatusHistoryTx(tx, id, paymentStatus, newStatus, currentPaidAt, paidAt, now); err != nil {
+		http.Error(w, "erro ao registrar histórico", http.StatusInternalServerError)
 		return
 	}
 
@@ -5455,6 +5664,17 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 		return
 	}
 
+	h.respondPaymentStatusChange(w, r, id)
+}
+
+func (h *TransactionHandler) respondPaymentStatusChange(w http.ResponseWriter, r *http.Request, id string) {
+	context := r.FormValue("context")
+	if context == "contas" {
+		w.Header().Set("HX-Reswap", "none")
+		w.Header().Set("HX-Trigger", `{"refreshFinancials":null,"closePaymentConfirmModal":null}`)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	row, err := h.fetchTransactionRow(id)
 	if err != nil {
 		log.Printf("fetch row after toggle error: %v", err)
@@ -5473,6 +5693,22 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 	_ = h.renderLancamentosResumoOOB(&buf, r)
 
 	buf.WriteTo(w)
+}
+
+func validateSchedulableTransaction(trType, paymentStatus, accountType string, invoiceID sql.NullString, destAccountID sql.NullString) error {
+	if paymentStatus == models.PaymentStatusPaid {
+		return fmt.Errorf("lançamento já pago não pode ser agendado")
+	}
+	if trType != models.TransactionTypeIncome && trType != models.TransactionTypeExpense {
+		return fmt.Errorf("transferências não podem ser agendadas")
+	}
+	if destAccountID.Valid && strings.TrimSpace(destAccountID.String) != "" {
+		return fmt.Errorf("transferências não podem ser agendadas")
+	}
+	if accountType == models.AccountTypeCreditCard || invoiceID.Valid {
+		return fmt.Errorf("faturas e compras de cartão não podem ser agendadas")
+	}
+	return nil
 }
 
 func (h *TransactionHandler) HandleBulkDelete(w http.ResponseWriter, r *http.Request) {
@@ -5577,6 +5813,12 @@ func (h *TransactionHandler) HandleBulkUpdate(w http.ResponseWriter, r *http.Req
 		newStatus = "paid"
 	}
 
+	paymentDateUnix, err := parsePaymentDate(r.FormValue("payment_date"))
+	if err != nil {
+		http.Error(w, "data inválida", http.StatusBadRequest)
+		return
+	}
+
 	tx, err := h.DB.BeginTx(context.Background(), nil)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -5618,9 +5860,10 @@ func (h *TransactionHandler) HandleBulkUpdate(w http.ResponseWriter, r *http.Req
 		status        string
 		accountType   string
 		dateUnix      int64
+		paidAt        sql.NullInt64
 	}
 	query := `
-		SELECT t.id, t.type, t.amount, t.account_id, t.destination_account_id, t.status, a.type, t.date
+		SELECT t.id, t.type, t.amount, t.account_id, t.destination_account_id, t.status, a.type, t.date, t.paid_at
 		FROM transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		WHERE t.workspace_id = ?
@@ -5637,7 +5880,7 @@ func (h *TransactionHandler) HandleBulkUpdate(w http.ResponseWriter, r *http.Req
 	byID := make(map[string]bulkRow, len(ids))
 	for rows.Next() {
 		var item bulkRow
-		if err := rows.Scan(&item.id, &item.trType, &item.amount, &item.accountID, &item.destinationID, &item.status, &item.accountType, &item.dateUnix); err != nil {
+		if err := rows.Scan(&item.id, &item.trType, &item.amount, &item.accountID, &item.destinationID, &item.status, &item.accountType, &item.dateUnix, &item.paidAt); err != nil {
 			rows.Close()
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
@@ -5683,12 +5926,21 @@ func (h *TransactionHandler) HandleBulkUpdate(w http.ResponseWriter, r *http.Req
 			}
 			invoiceID = invID
 		}
+		var paidAt interface{}
+		if newStatus == "paid" {
+			paidAt = paymentDateUnix
+		}
 		if err := execOneTx(tx, `
 			UPDATE transactions
-			SET status = ?, invoice_id = ?, updated_at = ?
+			SET status = ?, invoice_id = ?, updated_at = ?, paid_at = ?,
+				scheduled_payment_at = NULL, scheduled_payment_created_by = NULL, scheduled_payment_executed_at = NULL
 			WHERE id = ? AND workspace_id = ?
-		`, newStatus, invoiceID, now, item.id, h.WorkspaceID); err != nil {
+		`, newStatus, invoiceID, now, paidAt, item.id, h.WorkspaceID); err != nil {
 			http.Error(w, "erro ao atualizar em lote", http.StatusInternalServerError)
+			return
+		}
+		if err := h.insertTransactionStatusHistoryTx(tx, item.id, item.status, newStatus, item.paidAt, paidAt, now); err != nil {
+			http.Error(w, "erro ao registrar histórico", http.StatusInternalServerError)
 			return
 		}
 		if newStatus == "paid" {
@@ -5829,15 +6081,17 @@ func (h *TransactionHandler) fetchTransactionRow(id string) (TransactionRow, err
 			COALESCE(rr.total_occurrences, t.total_installments, 0),
 			a.name AS account_name,
 			COALESCE(ct.name, '') AS contact_name,
-			u.name AS user_name,
+			COALESCE(u.name, 'Usuário removido') AS user_name,
 			CASE WHEN t.due_date IS NOT NULL THEN 1 ELSE 0 END AS has_due_date,
-			CASE WHEN (t.recurring_rule_id IS NOT NULL OR t.total_installments > 1) THEN 1 ELSE 0 END AS is_series
+			CASE WHEN (t.recurring_rule_id IS NOT NULL OR t.total_installments > 1) THEN 1 ELSE 0 END AS is_series,
+			t.paid_at,
+			t.scheduled_payment_at
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
-		LEFT JOIN contacts ct ON ct.id = t.contact_id AND ct.workspace_id = t.workspace_id
+		LEFT JOIN contacts ct ON ct.id = t.contact_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN recurring_rules rr ON rr.id = t.recurring_rule_id
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
-		JOIN users u ON u.id = t.user_id
+		LEFT JOIN users u ON u.id = t.user_id
 		WHERE t.id = ? AND t.workspace_id = ?
 	`, id, h.WorkspaceID)
 	if err != nil {
@@ -5894,6 +6148,7 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 	statuses := filters.normalizedStatuses()
 	data.StatusPendenteOn = containsString(statuses, "pendente")
 	data.StatusVencidoOn = containsString(statuses, "vencido")
+	data.StatusAgendadoOn = containsString(statuses, "agendado")
 	data.StatusPagoOn = containsString(statuses, "pago")
 	data.HasActiveFilters = filters.hasActiveSelections(accountFilter)
 	data.FilterAccounts, _ = h.queryFilterAccounts()
@@ -5945,7 +6200,7 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 		filterLabels = append(filterLabels, FilterLabelItem{Key: "tipo", Label: label})
 	}
 	statuses = filters.normalizedStatuses()
-	defaultStatus := len(statuses) == 2 && containsString(statuses, "pendente") && containsString(statuses, "vencido")
+	defaultStatus := len(statuses) == 3 && containsString(statuses, "pendente") && containsString(statuses, "vencido") && containsString(statuses, "agendado")
 	if !defaultStatus {
 		for _, s := range statuses {
 			label := s
@@ -5954,6 +6209,8 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 				label = "Pendentes"
 			case "vencido":
 				label = "Vencidos"
+			case "agendado":
+				label = "Agendados"
 			case "pago":
 				label = "Pagos"
 			}
@@ -6033,15 +6290,17 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 			COALESCE(rr.total_occurrences, t.total_installments, 0),
 			a.name AS account_name,
 			COALESCE(ct.name, '') AS contact_name,
-			u.name AS user_name,
+			COALESCE(u.name, 'Usuário removido') AS user_name,
 			CASE WHEN t.due_date IS NOT NULL THEN 1 ELSE 0 END AS has_due_date,
-			CASE WHEN (t.recurring_rule_id IS NOT NULL OR t.total_installments > 1) THEN 1 ELSE 0 END AS is_series
+			CASE WHEN (t.recurring_rule_id IS NOT NULL OR t.total_installments > 1) THEN 1 ELSE 0 END AS is_series,
+			t.paid_at,
+			t.scheduled_payment_at
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN contacts ct ON ct.id = t.contact_id AND ct.workspace_id = t.workspace_id
 		LEFT JOIN recurring_rules rr ON rr.id = t.recurring_rule_id
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
-		JOIN users u ON u.id = t.user_id
+		LEFT JOIN users u ON u.id = t.user_id
 	`
 	where, args := h.lancamentosWhereClause(monthStart, monthEnd, accountFilter, filters)
 	query += where
@@ -6075,6 +6334,14 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 				i.status,
 				i.due_date,
 				COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0) as total,
+				COALESCE((
+					SELECT SUM(ip.amount_cents)
+					FROM invoice_payments ip
+					WHERE ip.workspace_id = a.workspace_id
+					  AND ip.invoice_id = i.id
+					  AND ip.reversed_at IS NULL
+				), 0) as active_paid,
+				COALESCE(i.paid_amount, 0) as recorded_paid,
 				COUNT(t.id) as item_count
 			FROM invoices i
 			JOIN accounts a ON a.id = i.account_id AND a.workspace_id = ?
@@ -6089,21 +6356,22 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 		`, h.WorkspaceID, h.WorkspaceID, h.WorkspaceID, monthStart, monthEnd, accountFilter, accountFilter)
 		if invoiceErr == nil {
 			defer invoiceRows.Close()
-			nowUnix := now.Unix()
+			todayUnix := businessDayStartUnix(time.Now())
+			realInvoiceAccounts := map[string]struct{}{}
 			for invoiceRows.Next() {
 				var inv InvoiceRow
 				var providerSlug, color string
 				var closingUnix int64
-				if err := invoiceRows.Scan(&inv.ID, &inv.AccountID, &inv.AccountName, &providerSlug, &color, &inv.Reference, &closingUnix, &inv.Status, &inv.DueDate, &inv.Total, &inv.ItemCount); err != nil {
+				var activePaid, recordedPaid int64
+				if err := invoiceRows.Scan(&inv.ID, &inv.AccountID, &inv.AccountName, &providerSlug, &color, &inv.Reference, &closingUnix, &inv.Status, &inv.DueDate, &inv.Total, &activePaid, &recordedPaid, &inv.ItemCount); err != nil {
 					continue
 				}
+				realInvoiceAccounts[inv.AccountID] = struct{}{}
 				normalizedSlug := normalizeAccountProviderSlug(providerSlug)
 				inv.CardIcon = accountVisualByProvider(normalizedSlug, models.AccountTypeCreditCard)
 				inv.CardColor = normalizeHexColor(color, "#6B7280")
 				inv.CardProviderMark = accountProviderMark(providerSlug, inv.AccountName)
-				inv.TotalMoney = MoneyMinor(inv.Total)
-				// IsOverdue: fatura não paga cujo due_date já passou (vencimento no passado)
-				inv.IsOverdue = inv.Status != models.InvoiceStatusPaid && inv.DueDate > 0 && inv.DueDate < nowUnix
+				prepareLancamentosInvoiceRow(&inv, activePaid, recordedPaid, todayUnix)
 				inv.DateLabel = formatDateLabel(inv.DueDate)
 				// ReferenceLabel: indica o mês do ciclo de fechamento (reference), não o vencimento
 				if refYear, refMonth, refErr := parseInvoiceReference(inv.Reference); refErr == nil {
@@ -6117,10 +6385,11 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 				} else {
 					inv.FaturaURL = fmt.Sprintf("/cartoes/%s/faturas?mes=%d&ano=%d", inv.AccountID, mes, ano)
 				}
+				if !lancamentosInvoiceMatchesStatus(inv, filters, todayUnix) {
+					continue
+				}
 				data.Invoices = append(data.Invoices, inv)
 			}
-
-			// As faturas são imunes aos filtros de transações comuns
 
 			// Include virtual future invoices if not present
 			cardRows, cardErr := h.DB.Query(`
@@ -6154,11 +6423,8 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 				for _, card := range cardSeeds {
 					// Skip if we already have an invoice for this card
 					found := false
-					for _, inv := range data.Invoices {
-						if inv.AccountID == card.accountID {
-							found = true
-							break
-						}
+					if _, ok := realInvoiceAccounts[card.accountID]; ok {
+						found = true
 					}
 					if found {
 						continue
@@ -6187,14 +6453,16 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 						inv.DueDate = targetDue.Unix()
 						inv.Total = total
 						inv.ItemCount = count
-						inv.TotalMoney = MoneyMinor(inv.Total)
-						inv.IsOverdue = false
 						inv.Status = models.InvoiceStatusOpen
+						prepareLancamentosInvoiceRow(&inv, 0, 0, todayUnix)
 						inv.DateLabel = formatDateLabel(inv.DueDate)
 
 						months := []string{"Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"}
 						inv.ReferenceLabel = fmt.Sprintf("%s/%d", months[refMonth-1], refYear)
 						inv.FaturaURL = fmt.Sprintf("/cartoes/%s/faturas?mes=%d&ano=%d", inv.AccountID, refMonth, refYear)
+						if !lancamentosInvoiceMatchesStatus(inv, filters, todayUnix) {
+							continue
+						}
 						data.Invoices = append(data.Invoices, inv)
 					}
 				}
@@ -6203,8 +6471,8 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 
 			// Include non-paid invoices in expense summary
 			for _, inv := range data.Invoices {
-				if inv.Status != models.InvoiceStatusPaid {
-					expenseTotal += inv.Total
+				if inv.Pending > 0 {
+					expenseTotal += inv.Pending
 				}
 			}
 			data.ResumoSaidas = formatCurrencyLabel(expenseTotal)
@@ -6240,9 +6508,82 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 	return data, nil
 }
 
+func prepareLancamentosInvoiceRow(inv *InvoiceRow, activePaid, recordedPaid, todayUnix int64) {
+	if inv == nil {
+		return
+	}
+	inv.Paid = activePaid
+	if inv.Paid <= 0 && recordedPaid > 0 {
+		inv.Paid = recordedPaid
+	}
+	if inv.Paid < 0 {
+		inv.Paid = 0
+	}
+	if inv.Status == models.InvoiceStatusPaid {
+		if inv.Paid <= 0 && inv.Total > 0 {
+			inv.Paid = inv.Total
+		}
+		inv.Pending = 0
+	} else {
+		inv.Pending = CalculateInvoicePendingAmount(inv.Total, inv.Paid)
+	}
+	if inv.Pending < 0 {
+		inv.Pending = 0
+	}
+	inv.TotalMoney = MoneyMinor(inv.Total)
+	inv.PaidMoney = MoneyMinor(inv.Paid)
+	inv.PendingMoney = MoneyMinor(inv.Pending)
+	inv.HasPartialPayment = inv.Paid > 0 && inv.Pending > 0
+	inv.IsOverdue = inv.Pending > 0 && inv.DueDate > 0 && inv.DueDate < todayUnix
+	switch {
+	case inv.Pending <= 0:
+		inv.BadgeLabel = "Paga"
+	case inv.HasPartialPayment:
+		inv.BadgeLabel = "Parcial"
+	case inv.Status == models.InvoiceStatusClosed:
+		inv.BadgeLabel = "Fechada"
+	default:
+		inv.BadgeLabel = "Aberta"
+	}
+}
+
+func lancamentosInvoiceMatchesStatus(inv InvoiceRow, filters LancamentosFilters, todayUnix int64) bool {
+	statuses := filters.normalizedStatuses()
+	if hasAllLancamentosStatuses(statuses) {
+		return true
+	}
+	for _, status := range statuses {
+		switch status {
+		case "pendente":
+			if inv.Pending > 0 {
+				return true
+			}
+		case "vencido":
+			if inv.Pending > 0 && inv.DueDate > 0 && inv.DueDate < todayUnix {
+				return true
+			}
+		case "pago":
+			if inv.Pending <= 0 {
+				return true
+			}
+		case "agendado":
+			// Faturas nao possuem agendamento na beta.4.
+		}
+	}
+	return false
+}
+
+func hasAllLancamentosStatuses(statuses []string) bool {
+	return containsString(statuses, "pendente") &&
+		containsString(statuses, "vencido") &&
+		containsString(statuses, "agendado") &&
+		containsString(statuses, "pago")
+}
+
 func (h *TransactionHandler) lancamentosWhereClause(monthStart, monthEnd int64, accountFilter string, filters LancamentosFilters) (string, []interface{}) {
-	now := time.Now().UTC()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Unix()
+	loc := appTimeLocation()
+	nowTZ := time.Now().In(loc)
+	today := time.Date(nowTZ.Year(), nowTZ.Month(), nowTZ.Day(), 0, 0, 0, 0, time.UTC).Unix()
 	clauses := []string{`WHERE t.workspace_id = ?`, `COALESCE(t.due_date, t.date) >= ?`, `COALESCE(t.due_date, t.date) <= ?`}
 	args := []interface{}{h.WorkspaceID, monthStart, monthEnd}
 	if accountFilter != "" {
@@ -6275,11 +6616,13 @@ func (h *TransactionHandler) lancamentosWhereClause(monthStart, monthEnd int64, 
 		for _, status := range statuses {
 			switch status {
 			case "pendente":
-				statusClauses = append(statusClauses, `(t.status = 'pending' AND COALESCE(t.due_date, t.date) >= ?)`)
+				statusClauses = append(statusClauses, `(t.status = 'pending' AND t.scheduled_payment_at IS NULL AND COALESCE(t.due_date, t.date) >= ?)`)
 				args = append(args, today)
 			case "vencido":
-				statusClauses = append(statusClauses, `(t.status = 'pending' AND COALESCE(t.due_date, t.date) < ?)`)
+				statusClauses = append(statusClauses, `(t.status = 'pending' AND t.scheduled_payment_at IS NULL AND COALESCE(t.due_date, t.date) < ?)`)
 				args = append(args, today)
+			case "agendado":
+				statusClauses = append(statusClauses, `(t.status = 'pending' AND t.scheduled_payment_at IS NOT NULL AND t.scheduled_payment_executed_at IS NULL)`)
 			case "pago":
 				statusClauses = append(statusClauses, `(t.status = 'paid')`)
 			}
@@ -6377,7 +6720,7 @@ func (f LancamentosFilters) normalizedTypes() []string {
 
 func (f LancamentosFilters) normalizedStatuses() []string {
 	if len(f.Situacoes) == 0 {
-		return []string{"pendente", "vencido"}
+		return []string{"pendente", "vencido", "agendado"}
 	}
 	seen := make(map[string]struct{}, len(f.Situacoes))
 	var statuses []string
@@ -6386,7 +6729,7 @@ func (f LancamentosFilters) normalizedStatuses() []string {
 		case "aberto":
 			raw = "pendente"
 		}
-		if raw != "pendente" && raw != "vencido" && raw != "pago" {
+		if raw != "pendente" && raw != "vencido" && raw != "agendado" && raw != "pago" {
 			continue
 		}
 		if _, ok := seen[raw]; ok {
@@ -6400,7 +6743,7 @@ func (f LancamentosFilters) normalizedStatuses() []string {
 
 func (f LancamentosFilters) hasActiveSelections(accountFilter string) bool {
 	statuses := f.normalizedStatuses()
-	defaultStatus := len(statuses) == 2 && containsString(statuses, "pendente") && containsString(statuses, "vencido")
+	defaultStatus := len(statuses) == 3 && containsString(statuses, "pendente") && containsString(statuses, "vencido") && containsString(statuses, "agendado")
 	return accountFilter != "" || len(f.normalizedTypes()) > 0 || len(f.OrigemIDs) > 0 || len(f.DestinoIDs) > 0 || len(f.Categorias) > 0 || f.Busca != "" || !defaultStatus
 }
 
@@ -6750,11 +7093,13 @@ func scanLancamentosRowsWithWorkspace(rows *sql.Rows, isBusiness bool) []Transac
 		var catName, catIcon, catColor sql.NullString
 		var hasDueDate int64
 		var isSeries int64
+		var paidAt sql.NullInt64
+		var scheduledPaymentAt sql.NullInt64
 
 		if err := rows.Scan(&row.ID, &trType, &amount, &dateUnix, &row.CreatedAt, &row.Description, &row.PaymentStatus,
 			&catName, &catIcon, &catColor,
 			&row.InstallmentNumber, &row.TotalInstallments,
-			&row.AccountName, &row.ContactName, &row.Author, &hasDueDate, &isSeries); err != nil {
+			&row.AccountName, &row.ContactName, &row.Author, &hasDueDate, &isSeries, &paidAt, &scheduledPaymentAt); err != nil {
 			continue
 		}
 
@@ -6781,46 +7126,41 @@ func scanLancamentosRowsWithWorkspace(rows *sql.Rows, isBusiness bool) []Transac
 			row.DisplayDateLabel = formatDateLabelFromUnix(dateUnix)
 		}
 
+		if paidAt.Valid {
+			row.PaidAt = &paidAt.Int64
+			row.PaidAtDisplay = formatAppDateLabelFromUnix(paidAt.Int64)
+		}
+		if scheduledPaymentAt.Valid {
+			row.ScheduledPaymentAt = &scheduledPaymentAt.Int64
+			row.ScheduledPaymentAtDisplay = formatAppDateLabelFromUnix(scheduledPaymentAt.Int64)
+		}
+
 		t := time.Unix(dateUnix, 0).UTC()
 		localTime := time.Unix(dateUnix, 0)
 		row.TimeDisplay = localTime.Format("15:04")
 		row.DateInput = localTime.Format("2006-01-02")
 		dateOnly := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 
-		row.IsOverdue = row.PaymentStatus != "paid" && dateOnly.Before(today)
-		if row.IsOverdue {
-			row.PaymentIcon = "alert-triangle"
-			if row.Type == "INCOME" {
-				row.PaymentTitle = "Atrasado — toque para marcar como recebido"
-				row.PaymentConfirm = "Marcar este lançamento como recebido?"
-				row.PaymentConfirmTitle = "Confirmar recebimento"
-			} else {
-				row.PaymentTitle = "Atrasado — toque para marcar como pago"
-				row.PaymentConfirm = "Marcar este lançamento como pago?"
-				row.PaymentConfirmTitle = "Confirmar pagamento"
-			}
-		} else if row.IsPending {
-			row.PaymentIcon = "clock"
-			if row.Type == "INCOME" {
-				row.PaymentTitle = "Pendente — toque para marcar como recebido"
-				row.PaymentConfirm = "Marcar este lançamento como recebido?"
-				row.PaymentConfirmTitle = "Confirmar recebimento"
-			} else {
-				row.PaymentTitle = "Pendente — toque para marcar como pago"
-				row.PaymentConfirm = "Marcar este lançamento como pago?"
-				row.PaymentConfirmTitle = "Confirmar pagamento"
-			}
-		} else {
-			row.PaymentIcon = "check-circle-2"
-			if row.Type == "INCOME" {
-				row.PaymentTitle = "Recebido — toque para remover recebimento"
+		row.IsScheduled = row.IsPending && row.ScheduledPaymentAt != nil
+		row.IsOverdue = row.PaymentStatus != "paid" && !row.IsScheduled && dateOnly.Before(today)
+		visual := transactionVisualStatus(row.Type, row.PaymentStatus, dateUnix, row.ScheduledPaymentAt)
+		row.PaymentIcon = visual.Icon
+		row.PaymentTone = visual.Tone
+		row.PaymentTitle = visual.Title
+		if row.Type == "INCOME" {
+			if row.PaymentStatus == "paid" {
 				row.PaymentConfirm = "Remover o recebimento deste lançamento e voltar para pendente?"
 				row.PaymentConfirmTitle = "Confirmar alteração de status"
 			} else {
-				row.PaymentTitle = "Pago — toque para remover pagamento"
-				row.PaymentConfirm = "Remover o pagamento deste lançamento e voltar para pendente?"
-				row.PaymentConfirmTitle = "Confirmar alteração de status"
+				row.PaymentConfirm = "Marcar este lançamento como recebido?"
+				row.PaymentConfirmTitle = "Confirmar recebimento"
 			}
+		} else if row.PaymentStatus == "paid" {
+			row.PaymentConfirm = "Remover o pagamento deste lançamento e voltar para pendente?"
+			row.PaymentConfirmTitle = "Confirmar alteração de status"
+		} else {
+			row.PaymentConfirm = "Marcar este lançamento como pago?"
+			row.PaymentConfirmTitle = "Confirmar pagamento"
 		}
 
 		switch {
@@ -7041,6 +7381,8 @@ type ModalPickerItem struct {
 	BoxName            string
 	LimitMax           int64
 	LimitSpent         int64
+	ParentID           string
+	ParentName         string
 }
 
 type ModalPickerData struct {
@@ -7095,6 +7437,8 @@ func (h *TransactionHandler) HandleCategorySelector(w http.ResponseWriter, r *ht
 			BoxName:            c.BoxName,
 			LimitMax:           c.LimitMax,
 			LimitSpent:         c.LimitSpent,
+			ParentID:           c.ParentID,
+			ParentName:         c.ParentName,
 		})
 	}
 
@@ -7376,4 +7720,103 @@ func (h *TransactionHandler) renderLancamentosResumoOOB(w io.Writer, r *http.Req
 		resumoName = "lancamentos-resumo"
 	}
 	return h.Templates.ExecuteTemplate(w, resumoName, data)
+}
+
+func (h *TransactionHandler) insertTransactionStatusHistoryTx(tx *sql.Tx, transactionID, previousStatus, newStatus string, previousPaidAt sql.NullInt64, newPaidAtVal interface{}, now int64) error {
+	return h.insertTransactionStatusHistorySourceTx(tx, transactionID, previousStatus, newStatus, previousPaidAt, newPaidAtVal, now, "manual")
+}
+
+func (h *TransactionHandler) insertTransactionStatusHistorySourceTx(tx *sql.Tx, transactionID, previousStatus, newStatus string, previousPaidAt sql.NullInt64, newPaidAtVal interface{}, now int64, source string) error {
+	statusChanged := previousStatus != newStatus
+	paidAtChanged := false
+	var newPaidAtPtr *int64
+	if newPaidAtVal != nil {
+		v := newPaidAtVal.(int64)
+		newPaidAtPtr = &v
+	}
+	if previousPaidAt.Valid != (newPaidAtPtr != nil) {
+		paidAtChanged = true
+	} else if previousPaidAt.Valid && newPaidAtPtr != nil && previousPaidAt.Int64 != *newPaidAtPtr {
+		paidAtChanged = true
+	}
+	if !statusChanged && !paidAtChanged {
+		return nil
+	}
+
+	var prevPaidAt, newPaidAt interface{}
+	if previousPaidAt.Valid {
+		prevPaidAt = previousPaidAt.Int64
+	}
+	if newPaidAtPtr != nil {
+		newPaidAt = *newPaidAtPtr
+	}
+	source = strings.TrimSpace(source)
+	if source == "" {
+		source = "manual"
+	}
+
+	_, err := tx.Exec(`
+		INSERT INTO transaction_status_history (id, transaction_id, workspace_id, user_id, previous_status, new_status, previous_paid_at, new_paid_at, source, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, uuid.NewString(), transactionID, h.WorkspaceID, h.UserID, previousStatus, newStatus, prevPaidAt, newPaidAt, source, now)
+	return err
+}
+
+func (h *TransactionHandler) loadTransactionStatusHistory(transactionID string) []TransactionStatusEvent {
+	rows, err := h.DB.Query(`
+		SELECT h.id, h.previous_status, h.new_status, h.previous_paid_at, h.new_paid_at, COALESCE(u.name, 'Usuario removido'), COALESCE(h.source, 'manual'), h.created_at
+		FROM transaction_status_history h
+		LEFT JOIN users u ON u.id = h.user_id
+		WHERE h.transaction_id = ? AND h.workspace_id = ?
+		ORDER BY h.created_at ASC
+	`, transactionID, h.WorkspaceID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var events []TransactionStatusEvent
+	for rows.Next() {
+		var e TransactionStatusEvent
+		var prevPaidAt, newPaidAt sql.NullInt64
+		var createdAt int64
+		if err := rows.Scan(&e.ID, &e.PreviousStatus, &e.NewStatus, &prevPaidAt, &newPaidAt, &e.UserName, &e.Source, &createdAt); err != nil {
+			continue
+		}
+		e.PreviousPaidAt = formatNullableDateDisplay(prevPaidAt)
+		e.NewPaidAt = formatNullableDateDisplay(newPaidAt)
+		e.PreviousStatusLabel = statusLabel(e.PreviousStatus)
+		e.NewStatusLabel = statusLabel(e.NewStatus)
+		e.SourceLabel = statusHistorySourceLabel(e.Source)
+		e.CreatedAtLabel = formatDateTimeLabel(createdAt)
+		events = append(events, e)
+	}
+	return events
+}
+
+func statusHistorySourceLabel(source string) string {
+	switch strings.TrimSpace(source) {
+	case "automatic":
+		return "automático"
+	default:
+		return "manual"
+	}
+}
+
+func formatNullableDateDisplay(v sql.NullInt64) string {
+	if !v.Valid {
+		return "-"
+	}
+	return formatAppDateLabelFromUnix(v.Int64)
+}
+
+func statusLabel(s string) string {
+	switch s {
+	case "paid":
+		return "Pago"
+	case "pending":
+		return "Pendente"
+	default:
+		return s
+	}
 }

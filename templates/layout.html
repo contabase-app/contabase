@@ -389,6 +389,57 @@
     <div id="bottom-sheet-container" data-contabase-overlay data-overlay-priority="10" data-overlay-close="closeBottomSheet" data-overlay-close-method="innerHTML"></div>
     <div id="picker-modal-container"></div>
 
+    <!-- Transaction Payment Confirmation Modal -->
+    <div id="payment-confirm-modal" data-contabase-overlay data-overlay-priority="120" data-overlay-close="closePaymentConfirmModal" data-overlay-close-method="hidden" class="fixed inset-0 z-[120] hidden items-end justify-center bg-black/60 p-4 md:items-center" role="dialog" aria-modal="true" aria-labelledby="payment-confirm-title" data-onclick-self="closePaymentConfirmModal">
+        <div class="w-full max-w-md rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-5 shadow-2xl">
+            <div class="mb-4 flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                    <h3 class="text-sm font-bold text-[var(--cb-text-main)]" id="payment-confirm-title">Confirmar pagamento</h3>
+                    <p class="mt-1 text-xs text-[var(--cb-text-muted)]" id="payment-confirm-description"></p>
+                </div>
+                <button type="button" class="btn-tactile flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-2)]"
+                    data-onclick="closePaymentConfirmModal" aria-label="Fechar">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <form id="payment-confirm-form" hx-post="" hx-target="" hx-swap="" class="space-y-3.5">
+                <input type="hidden" name="context" id="payment-confirm-context" value="">
+                <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Modo de confirmação">
+                    <label class="payment-mode-option flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 py-2 text-xs font-semibold text-[var(--cb-text-main)]">
+                        <input type="radio" name="payment_action" value="paid" checked class="h-4 w-4 accent-emerald-600" data-payment-mode>
+                        <span>Pagar agora</span>
+                    </label>
+                    <label class="payment-mode-option flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 py-2 text-xs font-semibold text-[var(--cb-text-main)]">
+                        <input type="radio" name="payment_action" value="scheduled" class="h-4 w-4 accent-violet-600" data-payment-mode>
+                        <span>Agendar</span>
+                    </label>
+                </div>
+                <label class="hidden payment-mode-option cursor-pointer items-center gap-2 rounded-xl border border-violet-500/20 bg-violet-500/10 px-3 py-2 text-xs font-semibold text-violet-700 dark:text-violet-200" id="payment-clear-schedule-option">
+                    <input type="radio" name="payment_action" value="clear_schedule" class="h-4 w-4 accent-violet-600" data-payment-mode>
+                    <span>Remover agendamento ativo</span>
+                </label>
+                <label class="block" id="payment-paid-date-row">
+                    <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Data de pagamento</span>
+                    <input type="date" name="payment_date" id="payment-confirm-date" required data-payment-confirm-date
+                        class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]">
+                </label>
+                <label class="hidden" id="payment-scheduled-date-row">
+                    <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Data agendada</span>
+                    <input type="date" name="scheduled_payment_date" id="payment-scheduled-date"
+                        class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]">
+                </label>
+                <div class="rounded-xl px-3 py-2 text-xs font-semibold" style="background: color-mix(in srgb, var(--cb-accent) 10%, transparent); color: color-mix(in srgb, var(--cb-accent) 75%, var(--cb-text-main));">
+                    <span id="payment-confirm-summary">Será marcado como pago em --/--/----</span>
+                </div>
+                <button type="submit"
+                    class="cb-button cb-button-primary btn-tactile flex h-10 w-full items-center justify-center gap-2 rounded-xl text-xs font-bold"
+                    id="payment-confirm-submit">
+                    <i data-lucide="check" class="h-4 w-4"></i>Pagar agora
+                </button>
+            </form>
+        </div>
+    </div>
+
     <!-- Global Confirmation Modal -->
     <div id="global-confirm-modal" data-contabase-overlay data-overlay-priority="220" data-overlay-close="cancelGlobalConfirm" data-overlay-close-method="display" class="fixed inset-0 z-[220] hidden flex-col items-center justify-center bg-black/50 backdrop-blur-sm p-4 dark:bg-black/70" role="dialog" aria-modal="true" aria-labelledby="global-confirm-title" data-onclick-self="cancelGlobalConfirm">
         <div class="cb-modal w-full max-w-sm rounded-2xl p-5 shadow-xl">
@@ -459,6 +510,7 @@
     <script src="/assets/js/predictive-description.js"></script>
 
     <script src="/assets/js/modals-global.js"></script>
+    <script src="{{assetPath "/assets/js/payment-confirm.js"}}"></script>
     <!-- Overlay Stack — Back button closes overlays (Phase D) -->
     <script src="/assets/js/overlay-stack.js"></script>
     <script src="/assets/js/htmx-lifecycle.js"></script>
@@ -501,6 +553,8 @@
     <script src="/assets/js/config-selects.js"></script>
     <!-- Admin User Card Toggle (F2.6-E2c) -->
     <script src="/assets/js/admin-user-card.js"></script>
+    <!-- Admin User Workspace Role Controls -->
+    <script src="/assets/js/admin-user-workspace-roles.js"></script>
     <!-- Admin Recovery Actions (F2.6-E4b) -->
     <script src="/assets/js/admin-recovery.js"></script>
     <!-- Admin Workspace Forms (F2.6-E2c) -->

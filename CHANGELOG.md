@@ -11,6 +11,76 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
+## [v0.1.0-beta.4]
+
+### Adicionado
+- **Cartões — Conta padrão para pagamento:** permite selecionar uma conta CHECKING/SAVINGS do mesmo workspace como conta padrão para pagamento da fatura. Ao quitar ou pagar parcialmente, o modal pré-seleciona essa conta, mantendo escolha manual. Conta inválida, removida ou de outro workspace é rejeitada/ignorada com fallback atual.
+- **Cartões — Formulários:** dropdown de conta padrão no form de criação e edição inline.
+
+### Corrigido
+- **Hotfix do `cb-update`:** o update release/LXC não exige mais `CONTABASE_SETUP_TOKEN` em instalações existentes. O token é tratado como one-time/bootstrap e pode ficar ausente, comentado ou com placeholder depois do setup inicial.
+- **Hotfix do update Docker:** a validação de `.env.docker` também deixou de tratar `CONTABASE_SETUP_TOKEN` como secret persistente obrigatório em updates.
+- **Mensagens de update:** erros de secrets em update agora orientam corrigir apenas `AUTH_ENCRYPTION_KEY` e `SECURITY_MASTER_KEY`, sem pedir recriação do token de setup.
+- **Lançamentos:** em `/lancamentos`, as faturas agora respeitam os filtros da tela; a fatura parcial mostra saldo pendente como valor principal, badge `Parcial` e resumo `Total ... · Pago ...`.
+- **Lançamentos:** faturas não aparecem no filtro `Agendado`, e o controle `Selecionar` foi reposicionado abaixo dos cartões/faturas.
+- **Lançamentos:** o modal de pagamento passou a usar os textos `Pagar agora` e `Agendar`/`Agendar pagamento`, deixando o fluxo mais claro sem mudar a regra de pagamento.
+- **Lançamentos:** faturas pagas ficam ocultas por padrão na carga inicial; o filtro `Pago` explícito as revela.
+- **Contas a pagar:** `/contas`, aba A Pagar, agora inclui faturas de cartão OPEN/CLOSED com saldo pendente.
+- **Contas a pagar:** faturas pagas ou com saldo zero não aparecem como pendência.
+- **Contas a pagar:** compras vinculadas à fatura e pagamentos de fatura não duplicam em A Pagar.
+- **Contas a pagar:** A Receber permanece sem faturas de cartão.
+- **Reservas:** agora exigem apenas Nome. Categoria, alvo, aporte mensal, prazo e rendimento são opcionais e podem ser limpos em edição.
+- **Reservas:** `boxes.category_id` agora aceita NULL via migration v41 `boxes_nullable_category`.
+- **Reservas:** cards mostram "Sem categoria" e "Sem prazo" quando aplicável. Prazo definido aparece como mês/ano (ex: jun/2033).
+- **Reservas:** badge genérico "No prazo" removido.
+- **Reservas — projeção:** agora considera saldo atual + aporte mensal + rendimento composto. Exemplo: R$ 265.000 + R$ 15.000/mês + 0,8% a.m. + alvo R$ 5M retorna 147 meses.
+- **Reservas:** corrigida edição de reserva sem categoria quando `category_id` é NULL.
+- **Dashboard — Reservas:** corrigido bug onde reservas sem categoria sumiam do card "Metas & Reservas". `queryDashboardBoxes` agora usa LEFT JOIN em `categories`, permitindo `category_id` NULL.
+- **Admin Usuários:** exclusão de usuário em `/admin/usuarios` agora mostra erro amigável via HTMX quando registros financeiros impedem a exclusão por FK.
+- **Admin Usuários:** requisições não-HTMX continuam retornando 422 quando registros financeiros impedem a exclusão do usuário.
+- **Admin Usuários:** exclusão permitida continua removendo dependências esperadas, preservando auditoria.
+- **Admin Usuários — exclusão com histórico:** exclusão de usuário com histórico financeiro agora preserva os dados do workspace usando anonimização/soft delete. Usuários removidos perdem acesso, sessões são revogadas e memberships removidos.
+- **Admin Usuários — acesso bloqueado:** login e sessões existentes de usuários removidos são bloqueados. Ações administrativas de recuperação (reset de senha, revogar sessões, desativar 2FA) não podem mirar usuários removidos.
+- **Admin Usuários — exibição:** histórico financeiro continua acessível após remoção e exibe "Usuário removido" como autor em lançamentos e faturas.
+- **Admin Usuários — proteções:** exclusão protege contra autoexclusão e remoção do último administrador de qualquer workspace vinculado.
+
+### Alterado
+- **Política de secrets no update:** `AUTH_ENCRYPTION_KEY` e `SECURITY_MASTER_KEY` continuam obrigatórios; `CONTABASE_SETUP_TOKEN` não é gerado, reintroduzido nem impresso pelo updater.
+- **Documentação:** guias de atualização/configuração e README reforçam que `CONTABASE_SETUP_TOKEN` é usado apenas no setup inicial e não deve ser recriado para update comum.
+- **Documentação:** README agora direciona a instalação pública para https://get-contabase.pages.dev/.
+- **Documentação:** removidas referências públicas ao domínio ainda não ativo get.contabase.net.
+- **Documentação:** README não expõe comandos diretos de instalação até stable.
+- **Interface — Fatura:** separador de datas recebeu visual mais discreto em linha.
+- **Interface — Dashboard:** cards de cartão exibem vencimento com mês abreviado (ex: Dia 8/jun).
+- **Interface — Dashboard:** cards de cartão exibem fechamento de forma discreta quando disponível.
+- **Interface — Dashboard:** cards de conta agora exibem evolução 30d como texto discreto, sem badge com fundo.
+- **Interface — Lançamento:** seletor de categorias do lançamento agora mostra hierarquia Pai/Filho e ordena categorias agrupando filhos abaixo do pai.
+- **Interface — Lançamento:** seletor de contas/cartões do FAB agora usa o mesmo padrão visual de emblems do Dashboard, padronizando contas seed e manuais.
+- **Interface — Fatura:** botões dos modais de quitação e pagamento parcial agora usam apenas "Confirmar" como texto, evitando quebra de linha em mobile.
+- **Admin Usuários:** checkboxes de vínculo com Workspaces em `/admin/usuarios` receberam visual mais moderno e clicável.
+- **Admin Usuários:** botão "Gerar senha temporária" recebeu melhor contraste no dark mode.
+- **Banco — Migração 42:** adiciona colunas `deleted_at` (INTEGER, default 0) e `deleted_reason` (TEXT) em `users` para suportar exclusão via anonimização.
+
+### Adicionado
+- **Workspace Business — Lançamento:** Form Lançamento agora permite criar contato inline sem sair da tela.
+- **Criação inline de contato:** inclui Tipo, ID do Cliente, Nome, CPF/CNPJ, E-mail e Telefone.
+- **Busca de contato:** considera acentos e documento com/sem máscara.
+- **Parser de nome/documento:** termos no formato "Nome · Documento" são separados automaticamente em Nome e CPF/CNPJ.
+- **Seleção automática:** após criar, o contato fica selecionado no lançamento.
+- **Data efetiva de pagamento (`paid_at`):** lançamentos registram data real do pagamento sem alterar competência (`date`) ou vencimento (`due_date`). Toggle individual e bulk gravam `paid_at` com a data escolhida pelo usuário.
+- **Modal de confirmação com data:** pagamento individual e em lote agora permitem escolher a data exata do pagamento antes de confirmar.
+- **Histórico de pagamento:** tabela `transaction_status_history` registra eventos de mudança de status e data de pagamento com usuário, data/hora e valores anterior/novo. Exibido no detalhe do lançamento.
+- **Exibição de "Pago em":** cards de lançamentos pagos mostram data real de pagamento de forma discreta abaixo dos metadados, sem badge colorido que competia com o título no mobile.
+- **Pagamento/recebimento agendado:** lançamentos comuns INCOME/EXPENSE pendentes podem ser agendados com data futura via modal de confirmação, permanecendo pendentes até a data escolhida. Transferências, faturas e compras de cartão não entram.
+- **Executor automático:** worker inicia com o servidor e executa periodicamente; transações cujo `scheduled_payment_at` venceu são pagas automaticamente com UPDATE atômico. `paid_at` recebe a data agendada, histórico registra `source=automatic` e notificação é criada com deduplicação (INSERT OR IGNORE).
+- **Filtro "Agendado":** nova opção de situação em Lançamentos separa lançamentos agendados de pendentes comuns e vencidos. Incluído nos filtros padrão. Agendados não entram em vencidos, atrasados ou inadimplência.
+- **Status visual global:** ícones e cores unificados para todas as situações — pendente no prazo (relógio amarelo), atrasado (alerta vermelho), transferência pendente (azul), agendado (timer roxo) e pago (check verde). Valores preservam cor por tipo: receita verde, despesa vermelha, transferência azul.
+- **Timezone financeiro:** `CONTABASE_TIMEZONE` (padrão `America/Sao_Paulo`) define fuso para datas civis de pagamento/agendamento. Prioridade: `CONTABASE_TIMEZONE` > `TZ` > `America/Sao_Paulo`. Datas YYYY-MM-DD interpretadas como data civil local; `time/tzdata` embutido no binário.
+- **Backfill de timezone nos scripts:** install/update Docker e release/systemd preenchem `CONTABASE_TIMEZONE` quando a chave falta, preservando valor já configurado. Instalações fora do Brasil podem exigir ajuste manual.
+
+### Limitações conhecidas
+- `go test ./...` segue com falhas preexistentes em `internal/handlers` relacionadas a histórico de limites e métricas financeiras do Dashboard/Metas. A falha foi reproduzida na base limpa `9ce54d0` e não faz parte deste hotfix.
+
 ## [v0.1.0-beta.3]
 
 ### Adicionado

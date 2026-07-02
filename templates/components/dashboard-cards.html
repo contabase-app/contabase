@@ -46,8 +46,11 @@
                 <div class="flex-1 min-w-0 pl-2 sm:pl-3.5 flex flex-col justify-center">
                     <span class="cb-text-micro text-[var(--cb-text-muted)] block mb-0.5 uppercase tracking-wider font-semibold">Vencimento</span>
                     <span class="text-xs font-bold text-[var(--cb-text-main)] block truncate leading-tight">
-                        Dia {{$card.DueDay}} &bull; <span class="{{if eq $card.StatusLabel "Fechada"}}text-[var(--cb-danger)]{{else if eq $card.StatusLabel "Aberto"}}text-[var(--cb-success)]{{else}}text-[var(--cb-text-muted)]{{end}} font-black">{{$card.StatusLabel}}</span>
+                        Dia {{$card.DueDateCompact}}
                     </span>
+                    {{if $card.ClosingDaysLabel}}
+                    <span class="text-[10px] font-medium text-[var(--cb-text-muted)] truncate mt-0.5">{{$card.ClosingDaysLabel}}</span>
+                    {{end}}
                 </div>
             </div>
 

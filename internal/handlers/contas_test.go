@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/contabase-app/contabase/internal/models"
 )
 
 func TestContasListPartialRendersWithMinimalData(t *testing.T) {
@@ -44,10 +46,11 @@ func TestContasListPartialRendersWithMinimalData(t *testing.T) {
 				`R$ 1.500`,
 				`Aluguel`,
 				`cb-tab-active`,
-				`Marcar como pago?`,
-				`hx-post="/transacoes/pay-1/status-pagamento"`,
+				`data-payment-confirm`,
+				`data-payment-id="pay-1"`,
+				`data-swipe-right-payment-confirm="true"`,
 			},
-			notWant: []string{`id="tx-rec-1"`, `Marcar como recebido?`, `hx-push-url="/contas?aba=`},
+			notWant: []string{`id="tx-rec-1"`, `hx-push-url="/contas?aba=`, `data-swipe-right-url="/transacoes/pay-1/status-pagamento"`},
 		},
 		{
 			name: "aba=receber shows only receivables",
@@ -58,10 +61,11 @@ func TestContasListPartialRendersWithMinimalData(t *testing.T) {
 				`id="tx-rec-1"`,
 				`R$ 3.000`,
 				`Fatura cliente`,
-				`Marcar como recebido?`,
-				`hx-post="/transacoes/rec-1/status-pagamento"`,
+				`data-payment-confirm`,
+				`data-payment-id="rec-1"`,
+				`data-swipe-right-payment-confirm="true"`,
 			},
-			notWant: []string{`id="tx-pay-1"`, `Marcar como pago?`, `hx-push-url="/contas?aba=`},
+			notWant: []string{`id="tx-pay-1"`, `hx-push-url="/contas?aba=`, `data-swipe-right-url="/transacoes/rec-1/status-pagamento"`},
 		},
 		{
 			name: "aba=pagar empty list shows empty state",
@@ -100,6 +104,24 @@ func TestContasListPartialRendersWithMinimalData(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPaymentConfirmModalIsAvailableFromLayout(t *testing.T) {
+	layoutBytes, err := os.ReadFile(filepath.Join(projectRoot(), "templates/layout.html"))
+	if err != nil {
+		t.Fatalf("read layout template: %v", err)
+	}
+	layout := string(layoutBytes)
+	for _, want := range []string{
+		`id="payment-confirm-modal"`,
+		`Confirmar pagamento`,
+		`id="payment-confirm-date"`,
+		`/assets/js/payment-confirm.js`,
+	} {
+		if !strings.Contains(layout, want) {
+			t.Fatalf("layout missing payment modal contract %q", want)
+		}
 	}
 }
 
@@ -196,6 +218,37 @@ func TestContasPartialContentHXReplaceUrl(t *testing.T) {
 	}
 	if strings.Contains(body, `data-template="page"`) {
 		t.Error("should not render page wrapper in partial=content")
+	}
+}
+
+func TestContasOverdueTotalsIgnoreScheduledRows(t *testing.T) {
+	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
+
+	db := openTestDB(t)
+	defer db.Close()
+	seedInvoicePaymentScenario(t, db)
+	insertScheduledPaymentTestTransaction(t, db, "tx-contas-scheduled-income", models.TransactionTypeIncome, "checking-test", "", "pending", nil)
+	execTestSQL(t, db, `UPDATE transactions
+		SET scheduled_payment_at = ?, scheduled_payment_created_by = 'user-test'
+		WHERE id = 'tx-contas-scheduled-income'`, testAppCivilDate("2026-07-10"))
+
+	overdue, err := queryPendingItemsFiltered(db, "ws-test", models.TransactionTypeIncome, true, 7, 2026, "")
+	if err != nil {
+		t.Fatalf("query overdue receivables: %v", err)
+	}
+	if len(overdue) != 0 {
+		t.Fatalf("overdue receivables = %#v, want none for scheduled row", overdue)
+	}
+
+	items, err := queryPendingItemsFiltered(db, "ws-test", models.TransactionTypeIncome, false, 7, 2026, "")
+	if err != nil {
+		t.Fatalf("query receivables: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("receivables = %#v, want one scheduled row", items)
+	}
+	if !items[0].IsScheduled || items[0].IsOverdue {
+		t.Fatalf("scheduled row flags = scheduled:%v overdue:%v", items[0].IsScheduled, items[0].IsOverdue)
 	}
 }
 

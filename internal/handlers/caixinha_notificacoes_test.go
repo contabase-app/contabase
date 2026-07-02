@@ -14,6 +14,7 @@ func TestBoxesInOverdraftReturnsBoxesWithNegativeBalance(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	seedCaixinhaNotificacoesScenario(t, db)
+	execTestSQL(t, db, `UPDATE boxes SET category_id = NULL WHERE id = 'a-box-overdraft'`)
 
 	h := NotificacoesHandler{
 		DB:          db,
@@ -66,6 +67,7 @@ func TestCompletedBoxGoalsReturnsCompletedBoxes(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	seedCaixinhaNotificacoesScenario(t, db)
+	execTestSQL(t, db, `UPDATE boxes SET category_id = NULL WHERE id = 'a-box-done'`)
 
 	h := NotificacoesHandler{
 		DB:          db,

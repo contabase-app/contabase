@@ -104,6 +104,19 @@ func TestEstimateBoxProjectionWithYieldReducesMonths(t *testing.T) {
 	}
 }
 
+func TestEstimateBoxProjectionWithYieldUsesEndOfMonthContribution(t *testing.T) {
+	got := EstimateBoxProjectionWithYield(26500000, 500000000, 1500000, 0.008)
+	if got.Status != BoxProjectionStatusForecast {
+		t.Fatalf("projection status = %q, want forecast", got.Status)
+	}
+	if got.MonthsLeft < 145 || got.MonthsLeft > 149 {
+		t.Fatalf("yield months = %d, want around 147", got.MonthsLeft)
+	}
+	if got.MonthsLeft == 316 {
+		t.Fatalf("yield months = 316, want formula to include current balance and monthly yield")
+	}
+}
+
 func TestEstimateBoxProjectionWithYieldCompletedWhenAlreadyDone(t *testing.T) {
 	got := EstimateBoxProjectionWithYield(12000, 10000, 500, 0.01)
 	if got.Status != BoxProjectionStatusCompleted || got.MonthsLeft != 0 {

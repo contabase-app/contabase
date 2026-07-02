@@ -132,7 +132,7 @@ O updater preserva:
 
 - `/etc/contabase/contabase.env`;
 - secrets;
-- token existente;
+- `CONTABASE_SETUP_TOKEN`, se ainda existir;
 - banco SQLite;
 - uploads;
 - backups;
@@ -141,6 +141,8 @@ O updater preserva:
 Ele troca o binário e os arquivos da aplicação.
 
 Ele não restaura banco automaticamente.
+
+`CONTABASE_SETUP_TOKEN` é usado somente para bootstrap/setup inicial. Se você já criou o primeiro administrador e removeu ou comentou esse token, o update deve continuar normalmente. Não recrie esse token para update comum; reset ou novo setup devem seguir um procedimento próprio.
 
 ## 4. Atualizar Docker
 
@@ -266,6 +268,7 @@ A atualização não deve:
 - apagar backups;
 - sobrescrever secrets;
 - trocar chaves de segurança;
+- exigir ou recriar `CONTABASE_SETUP_TOKEN` quando a instalação já existe;
 - restaurar banco automaticamente.
 
 Se precisar restaurar backup, faça isso manualmente e com cuidado.

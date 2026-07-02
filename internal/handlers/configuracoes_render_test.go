@@ -98,6 +98,53 @@ func TestConfiguracoesAdminSectionsRenderForAdmin(t *testing.T) {
 	}
 }
 
+func TestConfiguracoesAdminUsersRenderWorkspaceRoleControls(t *testing.T) {
+	handler := newConfiguracoesRenderTestHandler(t)
+	now := time.Now().Unix()
+	execTestSQL(t, handler.DB, `
+		INSERT INTO users (id, name, email, password_hash, status, created_at, updated_at)
+		VALUES ('config-target', 'Config Target', 'target@example.com', 'hash', 'active', ?, ?)
+	`, now, now)
+	execTestSQL(t, handler.DB, `
+		INSERT INTO workspaces (id, name, description, type, created_at, updated_at)
+		VALUES ('config-third', 'Config Third', '', 'personal', ?, ?)
+	`, now, now)
+	execTestSQL(t, handler.DB, `
+		INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+		VALUES
+			('config-workspace', 'config-target', 'ADMIN', ?),
+			('config-secondary', 'config-target', 'USER', ?)
+	`, now, now)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/usuarios", nil)
+	req.Header.Set("HX-Request", "true")
+	rr := httptest.NewRecorder()
+
+	handler.HandleConfiguracoesSection(rr, req, "admin-users")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for _, want := range []string{
+		`name="workspace_roles[config-workspace]"`,
+		`name="workspace_roles[config-secondary]"`,
+		`name="workspace_roles[config-third]"`,
+		`value="config-workspace" class="sr-only peer" data-admin-user-workspace-toggle checked`,
+		`value="config-secondary" class="sr-only peer" data-admin-user-workspace-toggle checked`,
+		`id="workspace-role-config-target-config-third"`,
+		`data-admin-user-workspace-role class="cb-input h-9 text-xs transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed" disabled`,
+	} {
+		assertContains(t, body, want)
+	}
+	if strings.Contains(body, `<span class="cb-label">Permissão</span><select name="role" class="cb-input"><option value="USER" selected`) {
+		t.Fatalf("edit form must not keep the old global permission field")
+	}
+	assertContains(t, selectMarkupByID(t, body, "workspace-role-config-target-config-workspace"), `value="ADMIN" selected`)
+	assertContains(t, selectMarkupByID(t, body, "workspace-role-config-target-config-secondary"), `value="USER" selected`)
+	assertContains(t, selectMarkupByID(t, body, "workspace-role-config-target-config-third"), `value="USER" selected`)
+}
+
 func TestConfiguracoesLeanSectionDataKeepsRequiredFields(t *testing.T) {
 	handler := newConfiguracoesRenderTestHandler(t)
 
@@ -256,6 +303,17 @@ func testConfiguracoesRenderTemplates(t *testing.T) *template.Template {
 			}
 			return filtered
 		},
+		"hasString": func(items []string, target string) bool {
+			for _, item := range items {
+				if item == target {
+					return true
+				}
+			}
+			return false
+		},
+		"mapGet": func(m map[string]string, key string) string {
+			return m[key]
+		},
 	}).Parse(stubs))
 	files := []string{
 		"templates/components/financial-emblem.html",
@@ -282,4 +340,17 @@ func testConfiguracoesRenderTemplates(t *testing.T) *template.Template {
 		}
 	}
 	return tpl
+}
+
+func selectMarkupByID(t *testing.T, body, id string) string {
+	t.Helper()
+	start := strings.Index(body, `id="`+id+`"`)
+	if start < 0 {
+		t.Fatalf("select %s not found", id)
+	}
+	end := strings.Index(body[start:], `</select>`)
+	if end < 0 {
+		t.Fatalf("select %s has no closing tag", id)
+	}
+	return body[start : start+end]
 }

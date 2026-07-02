@@ -67,6 +67,28 @@
         });
     }
 
+    function clearMetaCategory(suffix) {
+        var catIdEl = document.getElementById('categoriaId' + suffix);
+        if (catIdEl) catIdEl.value = '';
+
+        var nomeEl = document.getElementById('categoriaNome' + suffix);
+        if (nomeEl) nomeEl.innerText = suffix === '_caixinha' ? 'Sem categoria' : 'Buscar categoria...';
+
+        var iconEl = document.getElementById('categoriaIcon' + suffix);
+        if (iconEl) {
+            iconEl.setAttribute('data-lucide', suffix === '_caixinha' ? 'piggy-bank' : 'tag');
+            iconEl.style.color = '#6b7280';
+        }
+
+        var wrap = document.getElementById('categoriaIconWrap' + suffix);
+        if (wrap) {
+            wrap.style.borderColor = '#6b7280';
+            wrap.style.backgroundColor = 'rgba(107, 114, 128, 0.13)';
+        }
+
+        if (typeof window.refreshIcons === 'function') window.refreshIcons();
+    }
+
     function isMetaFormInDOM() {
         return !!document.querySelector('[data-meta-form-root]');
     }
@@ -81,6 +103,12 @@
         var openTab = article ? article.getAttribute('data-open-tab') : null;
         window.toggleMetaTab(openTab || 'limite');
     }
+
+    document.body.addEventListener('click', function(e) {
+        var clearButton = e.target.closest('[data-clear-meta-category]');
+        if (!clearButton) return;
+        clearMetaCategory(clearButton.getAttribute('data-clear-meta-category'));
+    });
 
     // Initialize when meta form is swapped into bottom sheet
     document.body.addEventListener('htmx:afterSwap', function(e) {

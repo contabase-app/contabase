@@ -23,9 +23,11 @@
 .tx-content{position:relative;z-index:10;display:flex;align-items:center;gap:.625rem;border-radius:.75rem;border:1px solid var(--cb-border-subtle);background:var(--cb-surface-1);padding:.625rem .75rem;cursor:pointer}
 .tx-content:hover{background:var(--cb-surface-2)}
 .tx-status{width:2rem;height:2rem;border-radius:.625rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.tx-row.overdue .tx-status{background:color-mix(in srgb, var(--cb-danger) 12%, transparent);color:color-mix(in srgb, var(--cb-danger) 80%, var(--cb-text-main))}
-.tx-row.pending .tx-status{background:color-mix(in srgb, var(--cb-warning) 12%, transparent);color:color-mix(in srgb, var(--cb-warning) 80%, var(--cb-text-main))}
-.tx-row:not(.overdue):not(.pending) .tx-status{background:color-mix(in srgb, var(--cb-success) 12%, transparent);color:color-mix(in srgb, var(--cb-success) 80%, var(--cb-text-main))}
+.tx-status-warning,.tx-row.pending .tx-status{background:color-mix(in srgb, var(--cb-warning) 12%, transparent);color:color-mix(in srgb, var(--cb-warning) 80%, var(--cb-text-main))}
+.tx-status-danger,.tx-row.overdue .tx-status{background:color-mix(in srgb, var(--cb-danger) 12%, transparent);color:color-mix(in srgb, var(--cb-danger) 80%, var(--cb-text-main))}
+.tx-status-transfer{background:color-mix(in srgb, #0ea5e9 12%, transparent);color:#0284c7}
+.tx-status-scheduled,.tx-row.scheduled .tx-status{background:color-mix(in srgb, var(--cb-accent) 14%, transparent);color:color-mix(in srgb, var(--cb-accent) 80%, var(--cb-text-main))}
+.tx-status-success,.tx-row:not(.overdue):not(.pending):not(.scheduled) .tx-status{background:color-mix(in srgb, var(--cb-success) 12%, transparent);color:color-mix(in srgb, var(--cb-success) 80%, var(--cb-text-main))}
 .tx-desktop-actions{display:none}
 @media(min-width:768px){.tx-desktop-actions{display:flex;align-items:center;gap:.25rem}}
 .tx-action-btn{display:flex;height:1.75rem;width:1.75rem;align-items:center;justify-content:center;border-radius:.5rem;color:var(--cb-text-muted);transition:all .15s}

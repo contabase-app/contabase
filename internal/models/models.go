@@ -7,13 +7,15 @@ import (
 )
 
 type User struct {
-	ID                 string `json:"id"`
-	Name               string `json:"name"`
-	Email              string `json:"email"`
-	PasswordHash       string `json:"-"`
-	DefaultWorkspaceID string `json:"default_workspace_id"`
-	CreatedAt          int64  `json:"created_at"`
-	UpdatedAt          int64  `json:"updated_at"`
+	ID                 string  `json:"id"`
+	Name               string  `json:"name"`
+	Email              string  `json:"email"`
+	PasswordHash       string  `json:"-"`
+	DefaultWorkspaceID string  `json:"default_workspace_id"`
+	DeletedAt          int64   `json:"deleted_at"`
+	DeletedReason      *string `json:"deleted_reason"`
+	CreatedAt          int64   `json:"created_at"`
+	UpdatedAt          int64   `json:"updated_at"`
 }
 
 type Workspace struct {
@@ -239,11 +241,12 @@ func AccountTypeLabel(typ string) string {
 }
 
 type CreditCard struct {
-	ID          string `json:"id"`
-	AccountID   string `json:"account_id"`
-	ClosingDay  int64  `json:"closing_day"`
-	DueDay      int64  `json:"due_day"`
-	CreditLimit int64  `json:"credit_limit"`
+	ID                      string  `json:"id"`
+	AccountID               string  `json:"account_id"`
+	ClosingDay              int64   `json:"closing_day"`
+	DueDay                  int64   `json:"due_day"`
+	CreditLimit             int64   `json:"credit_limit"`
+	DefaultPaymentAccountID *string `json:"default_payment_account_id,omitempty"`
 }
 
 type Category struct {
@@ -317,6 +320,10 @@ type Transaction struct {
 	RecurrenceSequence   *int64  `json:"recurrence_sequence"`
 	Status               string  `json:"status"`
 	DueDate              *int64  `json:"due_date"`
+	PaidAt               *int64  `json:"paid_at"`
+	ScheduledPaymentAt   *int64  `json:"scheduled_payment_at"`
+	ScheduledPaymentBy   *string `json:"scheduled_payment_created_by"`
+	ScheduledExecutedAt  *int64  `json:"scheduled_payment_executed_at"`
 	ContactID            *string `json:"contact_id"`
 	CreatedAt            int64   `json:"created_at"`
 	UpdatedAt            int64   `json:"updated_at"`

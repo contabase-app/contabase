@@ -55,6 +55,7 @@ func (h *NotificacoesHandler) HandleExibirNotificacoes(w http.ResponseWriter, r 
 	data.Items = append(data.Items, h.boxesInOverdraft(isBusiness)...)
 	data.Items = append(data.Items, h.completedBoxGoals(isBusiness)...)
 	data.Items = append(data.Items, h.caixinhaPersistedNotifications()...)
+	data.Items = append(data.Items, h.scheduledPaymentNotifications()...)
 	data.Items = h.visibleItemsForUser(data.Items)
 
 	var buf bytes.Buffer
@@ -145,8 +146,9 @@ func (h *NotificacoesHandler) dismissedKeys() map[string]bool {
 }
 
 func (h *NotificacoesHandler) pendingOverdueExpenses() []NotificationItem {
-	now := time.Now().UTC()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Unix()
+	loc := appTimeLocation()
+	nowTZ := time.Now().In(loc)
+	today := time.Date(nowTZ.Year(), nowTZ.Month(), nowTZ.Day(), 0, 0, 0, 0, time.UTC).Unix()
 	rows, err := h.DB.Query(`
 		SELECT id, description, amount, date, updated_at
 		FROM transactions
@@ -155,6 +157,7 @@ func (h *NotificacoesHandler) pendingOverdueExpenses() []NotificationItem {
 		  AND status = 'pending'
 		  AND date < ?
 		  AND invoice_id IS NULL
+		  AND scheduled_payment_at IS NULL
 		ORDER BY date ASC, created_at ASC
 		LIMIT 8
 	`, h.WorkspaceID, models.TransactionTypeExpense, today)
@@ -276,7 +279,7 @@ func (h *NotificacoesHandler) exceededCostLimits(isBusiness bool) []Notification
 func (h *NotificacoesHandler) boxesInOverdraft(isBusiness bool) []NotificationItem {
 	_ = isBusiness
 	rows, err := h.DB.Query(`
-		SELECT b.id, b.name, b.category_id, b.target_amount,
+		SELECT b.id, b.name, b.target_amount,
 			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS balance,
 			COALESCE(MAX(l.created_at), unixepoch()) AS latest_ledger
 		FROM boxes b
@@ -294,9 +297,9 @@ func (h *NotificacoesHandler) boxesInOverdraft(isBusiness bool) []NotificationIt
 
 	var items []NotificationItem
 	for rows.Next() {
-		var boxID, name, categoryID string
+		var boxID, name string
 		var target, balance, latestLedger int64
-		if err := rows.Scan(&boxID, &name, &categoryID, &target, &balance, &latestLedger); err != nil {
+		if err := rows.Scan(&boxID, &name, &target, &balance, &latestLedger); err != nil {
 			continue
 		}
 		title := "Reserva em excedente"
@@ -317,7 +320,7 @@ func (h *NotificacoesHandler) boxesInOverdraft(isBusiness bool) []NotificationIt
 func (h *NotificacoesHandler) completedBoxGoals(isBusiness bool) []NotificationItem {
 	_ = isBusiness
 	rows, err := h.DB.Query(`
-		SELECT b.id, b.name, b.category_id, b.target_amount,
+		SELECT b.id, b.name, b.target_amount,
 			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS balance,
 			COALESCE(MAX(l.created_at), unixepoch()) AS latest_ledger
 		FROM boxes b
@@ -336,9 +339,9 @@ func (h *NotificacoesHandler) completedBoxGoals(isBusiness bool) []NotificationI
 
 	var items []NotificationItem
 	for rows.Next() {
-		var boxID, name, categoryID string
+		var boxID, name string
 		var target, balance, latestLedger int64
-		if err := rows.Scan(&boxID, &name, &categoryID, &target, &balance, &latestLedger); err != nil {
+		if err := rows.Scan(&boxID, &name, &target, &balance, &latestLedger); err != nil {
 			continue
 		}
 		title := "Meta de reserva atingida"
@@ -385,6 +388,45 @@ func (h *NotificacoesHandler) caixinhaPersistedNotifications() []NotificationIte
 		}
 		items = append(items, NotificationItem{
 			Key:         "caixinha_notif:" + id,
+			Title:       title,
+			Description: message,
+			Icon:        icon,
+			Color:       color,
+			CreatedAt:   createdAt,
+		})
+	}
+	return items
+}
+
+func (h *NotificacoesHandler) scheduledPaymentNotifications() []NotificationItem {
+	rows, err := h.DB.Query(`
+		SELECT id, title, message, type, created_at
+		FROM user_notifications
+		WHERE user_id = ?
+		  AND workspace_id = ?
+		  AND type = ?
+		ORDER BY created_at DESC
+		LIMIT 20
+	`, h.UserID, h.WorkspaceID, scheduledPaymentNotificationType)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var items []NotificationItem
+	for rows.Next() {
+		var id, title, message, notifType string
+		var createdAt int64
+		if err := rows.Scan(&id, &title, &message, &notifType, &createdAt); err != nil {
+			continue
+		}
+		icon := "badge-check"
+		color := "emerald"
+		if strings.Contains(strings.ToLower(title), "recebimento") {
+			icon = "circle-dollar-sign"
+		}
+		items = append(items, NotificationItem{
+			Key:         "scheduled_payment_notif:" + id,
 			Title:       title,
 			Description: message,
 			Icon:        icon,

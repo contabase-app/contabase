@@ -50,11 +50,12 @@ docker compose up -d --build
 | `TRUSTED_PROXIES` | Proxy reverso confiável | `TRUSTED_PROXIES=127.0.0.1,::1` |
 | `CONTABASE_ACCESS_MODE` | Modo explícito de acesso HTTP/HTTPS | `CONTABASE_ACCESS_MODE=proxy` |
 | `DATABASE_URL` | Caminho do banco SQLite | `DATABASE_URL=file:/app/data/contabase.db` |
+| `CONTABASE_TIMEZONE` | Fuso financeiro para datas civis | `CONTABASE_TIMEZONE=America/Sao_Paulo` |
 | `DATA_DIR` | Pasta principal de dados | `DATA_DIR=/app/data` |
 | `UPLOADS_DIR` | Pasta de uploads | `UPLOADS_DIR=/app/data/uploads` |
 | `AUTH_ENCRYPTION_KEY` | Chave secreta de autenticação | gerada pelo instalador |
 | `SECURITY_MASTER_KEY` | Chave mestra de segurança | gerada pelo instalador |
-| `CONTABASE_SETUP_TOKEN` | Token para criar o primeiro admin | gerado pelo instalador |
+| `CONTABASE_SETUP_TOKEN` | Token one-time para criar o primeiro admin | gerado pelo instalador |
 
 ## APP_BASE_URL
 
@@ -166,9 +167,20 @@ PORT=8080
 
 Em instalação LXC/VPS, se `CONTABASE_PORT` existir, ele tem prioridade sobre `PORT`.
 
+## CONTABASE_TIMEZONE
+
+Define o fuso financeiro usado para datas civis do app, como pagamento e agendamento automático. A prioridade é `CONTABASE_TIMEZONE`, depois `TZ`, depois `America/Sao_Paulo`.
+Se você opera no Brasil, normalmente pode manter o padrão. Altere apenas se o seu fuso financeiro for diferente.
+
+Use um identificador IANA válido:
+
+```env
+CONTABASE_TIMEZONE=America/Sao_Paulo
+```
+
 ## CONTABASE_SETUP_TOKEN
 
-Esse token serve para criar o primeiro administrador.
+Esse token serve apenas para criar o primeiro administrador no setup inicial.
 
 Depois de criar o primeiro administrador, remova ou comente esta linha:
 
@@ -177,6 +189,8 @@ CONTABASE_SETUP_TOKEN=...
 ```
 
 Depois reinicie o ContaBase.
+
+Updates normais não exigem `CONTABASE_SETUP_TOKEN`. Se a instalação já existe, o token pode ficar ausente, comentado ou removido; o updater não deve recriá-lo. Recriar setup ou restaurar bootstrap é um procedimento separado do update comum.
 
 ### LXC/VPS
 
@@ -206,7 +220,8 @@ Regras:
 - não cole esses valores em chats públicos;
 - não envie esses valores para Git;
 - não troque `AUTH_ENCRYPTION_KEY` sem entender o impacto;
-- não troque `SECURITY_MASTER_KEY` sem entender o impacto.
+- não troque `SECURITY_MASTER_KEY` sem entender o impacto;
+- remova ou comente `CONTABASE_SETUP_TOKEN` depois do setup inicial.
 
 O instalador gera esses valores automaticamente em instalações novas.
 
@@ -234,6 +249,7 @@ Uso sugerido:
 APP_ENV=production
 APP_DEBUG=false
 PORT=8080
+CONTABASE_TIMEZONE=America/Sao_Paulo
 APP_BASE_URL=https://financeiro.seudominio.com
 ALLOWED_HOSTS=financeiro.seudominio.com
 TRUSTED_PROXIES=127.0.0.1,::1
@@ -246,6 +262,7 @@ CONTABASE_ACCESS_MODE=proxy
 APP_ENV=production
 APP_DEBUG=false
 PORT=8080
+CONTABASE_TIMEZONE=America/Sao_Paulo
 APP_BASE_URL=http://192.168.1.50:8080
 ALLOWED_HOSTS=192.168.1.50
 TRUSTED_PROXIES=

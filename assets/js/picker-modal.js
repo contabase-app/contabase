@@ -95,4 +95,29 @@
     if (picker) picker.remove();
     if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
   });
+
+  // contactCreated: fired by HandleContatoInlineCreate after creating a contact
+  // from within the transaction form (Business workspace). Applies the new
+  // contact to the lançamento combobox and closes the picker modal.
+  document.body.addEventListener('contactCreated', function(e) {
+    var data = e.detail;
+    if (!data || !data.id || !data.name) return;
+
+    var ns = window.ContaBaseFormLancamento;
+    if (ns && ns.applyContactSelection) {
+      ns.applyContactSelection({
+        id: data.id,
+        name: data.name,
+        document: data.document || '',
+        type: data.type || '',
+        typeLabel: data.typeLabel || '',
+        customClientId: data.customClientId || ''
+      });
+    }
+
+    var picker = document.getElementById('modalPickerBackdrop');
+    if (picker) picker.remove();
+    if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
+    if (typeof window.refreshIcons === 'function') window.refreshIcons();
+  });
 })();

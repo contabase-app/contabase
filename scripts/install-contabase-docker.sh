@@ -10,6 +10,7 @@ CHECK_ONLY=false
 ACCESS_URL="http://localhost:8080"
 STATE_FILE="/etc/contabase/install-state.env"
 INSTALL_CHANNEL="${CONTABASE_CHANNEL:-}"
+CONTABASE_TIMEZONE_VALUE="${CONTABASE_TIMEZONE:-America/Sao_Paulo}"
 
 say() {
   printf '%s\n' "$*"
@@ -529,6 +530,8 @@ fi
 if ! ensure_secret "SECURITY_MASTER_KEY" "master-key" ".env.docker" "$env_is_new"; then
   [ "$INTERACTIVE" = false ] && exit 1
 fi
+
+set_env_var_safe "CONTABASE_TIMEZONE" "$CONTABASE_TIMEZONE_VALUE" ".env.docker"
 
 section "[4/5] Configurando volume de persistencia local..."
 

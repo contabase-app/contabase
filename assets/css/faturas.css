@@ -14,3 +14,8 @@
 
 /* Fat card items — visual match with /lancamentos, no icons */
 [data-swipe-content] { -webkit-user-select: none; user-select: none; }
+
+/* Date separator line between transaction date groups */
+.cb-date-separator-line {
+    background: linear-gradient(90deg, var(--cb-border-subtle) 0%, transparent 100%);
+}

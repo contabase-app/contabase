@@ -97,6 +97,7 @@ func TestDestructiveMigrationsRequireExplicitReview(t *testing.T) {
 		30: "box_virtual_ledger rebuild — destructive migration reviewed and allowed",
 		31: "box_virtual_ledger rebuild — destructive migration reviewed and allowed",
 		35: "accounts rebuild to add WALLET type and icon column — destructive migration reviewed and allowed",
+		41: "boxes rebuild to make category optional — destructive migration reviewed and allowed",
 	}
 	findings := destructiveMigrationFindings(t, string(sourceBytes))
 
@@ -743,6 +744,74 @@ func TestMigration32AddsMonthlyYieldRateToBoxes(t *testing.T) {
 	}
 }
 
+func TestMigration41AllowsBoxesWithoutCategory(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "boxes-category-nullable.db")
+	rawDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open raw boxes-category-nullable database: %v", err)
+	}
+	seedBoxesTable(t, rawDB, true)
+	if _, err := rawDB.Exec(`ALTER TABLE boxes ADD COLUMN monthly_yield_rate REAL NOT NULL DEFAULT 0.0`); err != nil {
+		t.Fatalf("add monthly_yield_rate fixture: %v", err)
+	}
+	if _, err := rawDB.Exec(`INSERT INTO boxes (id, workspace_id, name, category_id, target_amount, monthly_recharge, target_date, monthly_yield_rate, created_at, updated_at)
+		VALUES ('box-1', 'workspace-1', 'Test Box', 'category-1', 10000, 500, NULL, 0.008, unixepoch(), unixepoch())`); err != nil {
+		t.Fatalf("seed box fixture: %v", err)
+	}
+	if _, err := rawDB.Exec(`CREATE INDEX boxes_custom_name_idx ON boxes(name)`); err != nil {
+		t.Fatalf("create custom boxes index fixture: %v", err)
+	}
+	if _, err := rawDB.Exec(`CREATE TABLE box_audit (box_id TEXT NOT NULL, category_id TEXT)`); err != nil {
+		t.Fatalf("create box audit fixture: %v", err)
+	}
+	if _, err := rawDB.Exec(`
+		CREATE TRIGGER boxes_custom_category_audit
+		AFTER UPDATE OF category_id ON boxes
+		BEGIN
+			INSERT INTO box_audit (box_id, category_id) VALUES (NEW.id, NEW.category_id);
+		END
+	`); err != nil {
+		t.Fatalf("create custom boxes trigger fixture: %v", err)
+	}
+	seedAppliedMigrationsBefore(t, rawDB, 41)
+	if err := rawDB.Close(); err != nil {
+		t.Fatalf("close raw boxes-category-nullable database: %v", err)
+	}
+
+	db := openMigratedRawDB(t, dbPath)
+	defer db.Close()
+
+	assertMigrationApplied(t, db, 41)
+	assertColumnNullable(t, db, "boxes", "category_id")
+	assertSchemaObjectExists(t, db, "index", "boxes_custom_name_idx")
+	assertSchemaObjectExists(t, db, "trigger", "boxes_custom_category_audit")
+
+	if _, err := db.Exec(`UPDATE boxes SET category_id = NULL WHERE id = 'box-1'`); err != nil {
+		t.Fatalf("clear box category_id after migration: %v", err)
+	}
+	var categoryID sql.NullString
+	var targetAmount, monthlyRecharge int64
+	var targetDate sql.NullInt64
+	var monthlyYieldRate float64
+	if err := db.QueryRow(`SELECT category_id, target_amount, monthly_recharge, target_date, monthly_yield_rate FROM boxes WHERE id = 'box-1'`).
+		Scan(&categoryID, &targetAmount, &monthlyRecharge, &targetDate, &monthlyYieldRate); err != nil {
+		t.Fatalf("query migrated box: %v", err)
+	}
+	if categoryID.Valid {
+		t.Fatalf("category_id valid = true, want NULL")
+	}
+	if targetAmount != 10000 || monthlyRecharge != 500 || targetDate.Valid || monthlyYieldRate != 0.008 {
+		t.Fatalf("migrated fields = target=%d recharge=%d dateValid=%v yield=%f", targetAmount, monthlyRecharge, targetDate.Valid, monthlyYieldRate)
+	}
+	var auditCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM box_audit WHERE box_id = 'box-1' AND category_id IS NULL`).Scan(&auditCount); err != nil {
+		t.Fatalf("query box audit trigger result: %v", err)
+	}
+	if auditCount != 1 {
+		t.Fatalf("box audit rows = %d, want 1", auditCount)
+	}
+}
+
 func TestMigration35BackfillsLegacyAccountsRepairsWorkspaceFKAndReopenIsIdempotent(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "accounts-pre-migration-35.db")
 	rawDB, err := sql.Open("sqlite", dbPath)
@@ -1063,6 +1132,35 @@ func seedWorkspaceMembersTable(t *testing.T, db *sql.DB, withCustomPermissions b
 func seedBoxesTable(t *testing.T, db *sql.DB, withTargetDate bool) {
 	t.Helper()
 
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS workspaces (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL DEFAULT '',
+		description TEXT NOT NULL DEFAULT '',
+		type TEXT NOT NULL DEFAULT 'personal',
+		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+		updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+	)`); err != nil {
+		t.Fatalf("create boxes fixture workspaces table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT OR IGNORE INTO workspaces (id, name, description, type, created_at, updated_at)
+		VALUES ('workspace-1', 'Workspace 1', '', 'personal', unixepoch(), unixepoch())`); err != nil {
+		t.Fatalf("seed boxes fixture workspace: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS categories (
+		id TEXT PRIMARY KEY,
+		workspace_id TEXT NOT NULL,
+		name TEXT NOT NULL DEFAULT '',
+		type TEXT NOT NULL DEFAULT 'EXPENSE',
+		created_at INTEGER NOT NULL DEFAULT (unixepoch())
+	)`); err != nil {
+		t.Fatalf("create boxes fixture categories table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT OR IGNORE INTO categories (id, workspace_id, name, type, created_at)
+		VALUES ('category-1', 'workspace-1', 'Category 1', 'EXPENSE', unixepoch()),
+			('cat-1', 'workspace-1', 'Cat 1', 'EXPENSE', unixepoch())`); err != nil {
+		t.Fatalf("seed boxes fixture categories: %v", err)
+	}
+
 	stmt := `CREATE TABLE boxes (
 		id TEXT PRIMARY KEY,
 		workspace_id TEXT NOT NULL,
@@ -1296,6 +1394,127 @@ func assertColumnExists(t *testing.T, db *sql.DB, table, column string) {
 		t.Fatalf("rows error table_info %s: %v", table, err)
 	}
 	t.Fatalf("column %s.%s not found", table, column)
+}
+
+func assertColumnNullable(t *testing.T, db *sql.DB, table, column string) {
+	t.Helper()
+
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		t.Fatalf("pragma table_info(%s): %v", table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatalf("scan table_info(%s): %v", table, err)
+		}
+		if name == column {
+			if notNull != 0 {
+				t.Fatalf("%s.%s notnull = %d, want 0", table, column, notNull)
+			}
+			return
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("table_info(%s) rows: %v", table, err)
+	}
+	t.Fatalf("column %s.%s not found", table, column)
+}
+
+func assertSchemaObjectExists(t *testing.T, db *sql.DB, objectType, name string) {
+	t.Helper()
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type = ? AND name = ?`, objectType, name).Scan(&count); err != nil {
+		t.Fatalf("query sqlite_master for %s %s: %v", objectType, name, err)
+	}
+	if count != 1 {
+		t.Fatalf("schema object %s %s count = %d, want 1", objectType, name, count)
+	}
+}
+
+func TestMigration42AddsUsersDeletedColumns(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "users-deleted-columns.db")
+	rawDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open raw database: %v", err)
+	}
+	seedAppliedMigrationsBefore(t, rawDB, 42)
+
+	now := time.Now().Unix()
+	_, err = rawDB.Exec(`
+		CREATE TABLE users (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			email TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			profile_photo_path TEXT NOT NULL DEFAULT '',
+			default_workspace_id TEXT,
+			status TEXT NOT NULL DEFAULT 'active',
+			activation_token_hash TEXT,
+			activation_expires_at INTEGER,
+			must_change_password INTEGER NOT NULL DEFAULT 0,
+			temporary_password_expires_at INTEGER,
+			totp_enabled INTEGER NOT NULL DEFAULT 0,
+			totp_secret_enc TEXT,
+			totp_backup_codes TEXT NOT NULL DEFAULT '[]',
+			totp_enabled_at INTEGER,
+			last_notifications_clear_at INTEGER NOT NULL DEFAULT 0,
+			created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+			updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+		)
+	`)
+	if err != nil {
+		t.Fatalf("create legacy users table: %v", err)
+	}
+	_, err = rawDB.Exec(`INSERT INTO users (id, name, email, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"legacy-user", "Legacy User", "legacy@example.com", "hash", now, now)
+	if err != nil {
+		t.Fatalf("insert legacy user: %v", err)
+	}
+	if err := rawDB.Close(); err != nil {
+		t.Fatalf("close raw database: %v", err)
+	}
+
+	db := openMigratedRawDB(t, dbPath)
+	defer db.Close()
+
+	assertMigrationApplied(t, db, 42)
+	assertColumnExists(t, db, "users", "deleted_at")
+	assertColumnExists(t, db, "users", "deleted_reason")
+
+	var deletedAt int64
+	var deletedReason sql.NullString
+	if err := db.QueryRow(`SELECT deleted_at, deleted_reason FROM users WHERE id = ?`, "legacy-user").Scan(&deletedAt, &deletedReason); err != nil {
+		t.Fatalf("query legacy user deleted columns: %v", err)
+	}
+	if deletedAt != 0 {
+		t.Fatalf("legacy user deleted_at = %d, want 0", deletedAt)
+	}
+	if deletedReason.Valid {
+		t.Fatalf("legacy user deleted_reason = %q, want NULL", deletedReason.String)
+	}
+}
+
+func TestOpenCreatesScheduledPaymentSchema(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open memory database: %v", err)
+	}
+	defer db.Close()
+
+	assertColumnExists(t, db, "transactions", "scheduled_payment_at")
+	assertColumnExists(t, db, "transactions", "scheduled_payment_created_by")
+	assertColumnExists(t, db, "transactions", "scheduled_payment_executed_at")
+	assertColumnExists(t, db, "user_notifications", "dedupe_key")
+	assertColumnExists(t, db, "transaction_status_history", "source")
+	assertSchemaObjectExists(t, db, "index", "idx_transactions_scheduled_due")
+	assertSchemaObjectExists(t, db, "index", "idx_user_notifications_dedupe")
 }
 
 func migrationByVersion(t *testing.T, version int) migration {

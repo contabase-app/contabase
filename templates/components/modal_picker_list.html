@@ -1,7 +1,7 @@
 {{define "modal-picker-list"}}
     {{- if len .Items}}
         {{- range .Items}}
-        <button type="button" data-picker-select data-picker-id="{{.ID}}" data-picker-name="{{.Name}}" data-picker-icon="{{.Icon}}" data-picker-color="{{.Color}}"{{if .BoxID}} data-picker-box-id="{{.BoxID}}" data-picker-box-reserved="{{.BoxReservedBalance}}" data-picker-box-name="{{.BoxName}}"{{end}}{{if .LimitMax}} data-picker-limit-max="{{.LimitMax}}" data-picker-limit-spent="{{.LimitSpent}}"{{end}} class="pk-item"><span class="pk-dot"></span><span class="pk-name">{{.Name}}</span></button>
+        <button type="button" data-picker-select data-picker-id="{{.ID}}" data-picker-name="{{.Name}}" data-picker-icon="{{.Icon}}" data-picker-color="{{.Color}}"{{if .BoxID}} data-picker-box-id="{{.BoxID}}" data-picker-box-reserved="{{.BoxReservedBalance}}" data-picker-box-name="{{.BoxName}}"{{end}}{{if .LimitMax}} data-picker-limit-max="{{.LimitMax}}" data-picker-limit-spent="{{.LimitSpent}}"{{end}} class="pk-item{{if .ParentID}} pk-item-child{{end}}"><span class="pk-dot {{if .ParentID}}pk-dot-child{{else}}pk-dot-parent{{end}}"></span><span class="flex min-w-0 flex-1 flex-col"><span class="pk-name">{{.Name}}</span><span class="pk-hint">{{if .ParentID}}Filho de {{.ParentName}}{{else}}Pai{{end}}</span></span></button>
         {{- end}}
     {{- else}}
     <div class="flex flex-col items-center justify-center py-8 text-center">

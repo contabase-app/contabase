@@ -139,6 +139,29 @@ env_key_is_set() {
   return 0
 }
 
+env_set_if_missing() {
+  local key="$1"
+  local value="$2"
+  local file="${3:-.env.docker}"
+
+  if env_key_is_set "$key" "$file"; then
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+  if grep -q "^${key}=" "$file" 2>/dev/null; then
+    awk -F= -v k="$key" -v v="$value" '
+      $1 == k { print k "=" v; next }
+      { print }
+    ' "$file" > "$tmp"
+  else
+    cp "$file" "$tmp"
+    printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  fi
+  mv "$tmp" "$file"
+}
+
 env_backup() {
   local file="${1:-.env.docker}"
   [ -f "$file" ] || return 0
@@ -156,7 +179,9 @@ validate_env_secrets() {
   local missing=()
   local key
 
-  for key in AUTH_ENCRYPTION_KEY SECURITY_MASTER_KEY CONTABASE_SETUP_TOKEN; do
+  # Update requires only persistent runtime secrets. CONTABASE_SETUP_TOKEN is a
+  # one-time bootstrap token and may be removed/commented after initial setup.
+  for key in AUTH_ENCRYPTION_KEY SECURITY_MASTER_KEY; do
     env_key_is_set "$key" "$file" || missing+=("$key")
   done
 
@@ -164,14 +189,15 @@ validate_env_secrets() {
 
   echo ""
   echo "====================================================================="
-  echo "ERRO: Secret(s) obrigatorio(s) ausente(s) ou com placeholder em ${file}:"
+  echo "ERRO: Secret(s) persistente(s) obrigatorio(s) ausente(s) ou com placeholder em ${file}:"
   for key in "${missing[@]}"; do
     echo "  - ${key}"
   done
   echo ""
   echo "Para resolver:"
   echo "  - Edite ${file} manualmente."
-  echo "  - Gere valores fortes para cada secret (ex.: openssl rand -base64 32)."
+  echo "  - Gere valores fortes para AUTH_ENCRYPTION_KEY e SECURITY_MASTER_KEY."
+  echo "  - Nao gere CONTABASE_SETUP_TOKEN para update normal; ele e usado apenas no setup inicial."
   echo "  - Execute o update novamente."
   echo "====================================================================="
   return 1
@@ -396,7 +422,7 @@ else
   echo "Instalação Docker exige .env.docker."
   echo "Para instalação release/LXC use update-contabase-release.sh."
   echo "Crie com: cp .env.docker.example .env.docker"
-  echo "Depois edite com suas configuracoes antes de prosseguir."
+  echo "Depois edite com suas configuracoes, incluindo CONTABASE_TIMEZONE se precisar mudar o fuso financeiro."
   exit 1
 fi
 
@@ -435,6 +461,7 @@ fi
 # Backup .env.docker before any changes
 echo "--- Backup de ${ENV_FILE_DOCKER} ---"
 env_backup "$ENV_FILE_DOCKER"
+env_set_if_missing "CONTABASE_TIMEZONE" "America/Sao_Paulo" "$ENV_FILE_DOCKER"
 
 # --- Fetch ---
 if [ "$SKIP_PULL" = false ]; then

@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -183,6 +184,76 @@ func TestLancamentosMonthSelectorDoesNotInheritListPartial(t *testing.T) {
 	assertContains(t, body, `id="lancamentos-filter-period"`)
 }
 
+func TestLancamentosBulkPaidUsesPaymentDateModalContract(t *testing.T) {
+	lancamentosBytes, err := os.ReadFile(resolveTemplatePath(t, "templates/pages/lancamentos.html"))
+	if err != nil {
+		t.Fatalf("read lancamentos template: %v", err)
+	}
+	lancamentos := string(lancamentosBytes)
+	assertContains(t, lancamentos, `data-bulk-paid-form`)
+	assertContains(t, lancamentos, `data-bulk-mark-paid`)
+	assertContains(t, lancamentos, `type="button" data-bulk-mark-paid`)
+	if strings.Contains(lancamentos, `hx-confirm="Marcar como pagos?"`) || strings.Contains(lancamentos, `type="submit" data-bulk-mark-paid`) {
+		t.Fatal("bulk paid action must open payment-date modal, not submit directly")
+	}
+
+	layoutBytes, err := os.ReadFile(resolveTemplatePath(t, "templates/layout.html"))
+	if err != nil {
+		t.Fatalf("read layout template: %v", err)
+	}
+	layout := string(layoutBytes)
+	assertContains(t, layout, `name="payment_date"`)
+	assertContains(t, layout, `Pagar agora`)
+	assertContains(t, layout, `Agendar`)
+	if strings.Contains(layout, `Confirmar como pago`) || strings.Contains(layout, `Registrar agendamento`) {
+		t.Fatal("payment modal must use concise paid/scheduled labels")
+	}
+
+	paymentJS, err := os.ReadFile(resolveTemplatePath(t, "assets/js/payment-confirm.js"))
+	if err != nil {
+		t.Fatalf("read payment-confirm.js: %v", err)
+	}
+	payment := string(paymentJS)
+	assertContains(t, payment, `openBulkPaymentConfirmModal`)
+	assertContains(t, payment, `Confirmar pagamentos`)
+	assertContains(t, payment, `Agendar pagamento`)
+	assertContains(t, payment, `Pagar agora`)
+	assertContains(t, payment, `status_pagamento`)
+
+	bulkJS, err := os.ReadFile(resolveTemplatePath(t, "assets/js/bulk-select.js"))
+	if err != nil {
+		t.Fatalf("read bulk-select.js: %v", err)
+	}
+	bulk := string(bulkJS)
+	assertContains(t, bulk, `openBulkPaymentConfirmModal`)
+	assertContains(t, bulk, `data-bulk-active`)
+	assertContains(t, bulk, `has-bulk-selection`)
+
+	fabJS, err := os.ReadFile(resolveTemplatePath(t, "assets/js/fab-controller.js"))
+	if err != nil {
+		t.Fatalf("read fab-controller.js: %v", err)
+	}
+	fab := string(fabJS)
+	assertContains(t, fab, `has-bulk-selection`)
+	assertContains(t, fab, `(max-width: 767px)`)
+}
+
+func TestLancamentosTemplatePlacesInvoicesBeforeBulkSelection(t *testing.T) {
+	lancamentosBytes, err := os.ReadFile(resolveTemplatePath(t, "templates/pages/lancamentos.html"))
+	if err != nil {
+		t.Fatalf("read lancamentos template: %v", err)
+	}
+	lancamentos := string(lancamentosBytes)
+	invoicesIndex := strings.Index(lancamentos, `{{template "lancamentos-invoices" .}}`)
+	bulkIndex := strings.Index(lancamentos, `data-bulk-toggle-mode>Selecionar`)
+	if invoicesIndex < 0 || bulkIndex < 0 {
+		t.Fatalf("template markers not found: invoices=%d bulk=%d", invoicesIndex, bulkIndex)
+	}
+	if invoicesIndex > bulkIndex {
+		t.Fatalf("invoice cards must render before bulk selection control")
+	}
+}
+
 func testLancamentosBranchTemplates(t *testing.T) *template.Template {
 	t.Helper()
 
@@ -264,6 +335,7 @@ func TestVisualRegressionInvoiceAndFormEmblems(t *testing.T) {
 		},
 	}).ParseFiles(
 		resolveTemplatePath(t, "templates/components/form_lancamento.html"),
+		resolveTemplatePath(t, "templates/components/financial-emblem.html"),
 	))
 
 	t.Run("form-lancamento initial with OrigemProviderMark NU", func(t *testing.T) {
@@ -385,6 +457,71 @@ func TestVisualRegressionInvoiceAndFormEmblems(t *testing.T) {
 		assertContains(t, html, "emblem-len-5")
 		assertContains(t, html, `id="destinoIcon" class="hidden`)
 	})
+
+	t.Run("form-lancamento business renders contact section and inline create action", func(t *testing.T) {
+		var buf bytes.Buffer
+		data := FormTransacaoData{
+			IsBusiness:       true,
+			CanCreateContact: true,
+			Contacts: []ContatoRow{
+				{ID: "ct-1", Name: "Cliente A", Type: "client", TypeLabel: "Cliente"},
+			},
+		}
+		if err := tplForm.ExecuteTemplate(&buf, "form-lancamento", data); err != nil {
+			t.Fatalf("failed to execute form-lancamento business: %v", err)
+		}
+		html := buf.String()
+		assertContains(t, html, `id="contatoCombobox"`)
+		assertContains(t, html, `id="contatoCreateOption"`)
+		assertContains(t, html, `hx-get="/api/contatos/novo"`)
+		assertContains(t, html, `name="contact_id"`)
+	})
+
+	t.Run("form-lancamento personal omits contact section", func(t *testing.T) {
+		var buf bytes.Buffer
+		data := FormTransacaoData{
+			IsBusiness: false,
+			Contacts: []ContatoRow{
+				{ID: "ct-1", Name: "Cliente A", Type: "client", TypeLabel: "Cliente"},
+			},
+		}
+		if err := tplForm.ExecuteTemplate(&buf, "form-lancamento", data); err != nil {
+			t.Fatalf("failed to execute form-lancamento personal: %v", err)
+		}
+		html := buf.String()
+		if strings.Contains(html, `id="contatoCombobox"`) {
+			t.Fatalf("form personal nao deve renderizar seletor de contato")
+		}
+		if strings.Contains(html, `id="contatoCreateOption"`) {
+			t.Fatalf("form personal nao deve renderizar botao de criar contato")
+		}
+	})
+
+	t.Run("form-lancamento renders hidden category options with parent hierarchy", func(t *testing.T) {
+		var buf bytes.Buffer
+		data := FormTransacaoData{
+			Categories: []FormCategory{
+				{ID: "cat-parent", Name: "Alimentacao", Icon: "utensils", Color: "#EF4444", Type: "EXPENSE"},
+				{ID: "cat-child", Name: "Supermercado", Icon: "shopping-cart", Color: "#F97316", Type: "EXPENSE", ParentID: "cat-parent", ParentName: "Alimentacao"},
+				{ID: "cat-std", Name: "Salario", Icon: "briefcase", Color: "#22C55E", Type: "INCOME"},
+			},
+		}
+		if err := tplForm.ExecuteTemplate(&buf, "form-lancamento", data); err != nil {
+			t.Fatalf("failed to execute form-lancamento with categories: %v", err)
+		}
+		html := buf.String()
+		assertContains(t, html, `data-category-id="cat-parent"`)
+		assertContains(t, html, `data-category-name="Alimentacao"`)
+		assertContains(t, html, `data-category-id="cat-child"`)
+		assertContains(t, html, `data-category-parent-id="cat-parent"`)
+		assertContains(t, html, `data-category-parent-name="Alimentacao"`)
+		assertContains(t, html, `data-category-id="cat-std"`)
+		// cat-parent and cat-std are root categories; they must NOT have parent data attributes
+		parentAttrCount := strings.Count(html, `data-category-parent-id`)
+		if parentAttrCount != 1 {
+			t.Errorf("expected exactly 1 data-category-parent-id occurrence, got %d", parentAttrCount)
+		}
+	})
 }
 
 func TestTransactionRowConfirmTexts(t *testing.T) {
@@ -410,14 +547,19 @@ func TestTransactionRowConfirmTexts(t *testing.T) {
 			PaymentConfirmTitle: "Confirmar pagamento",
 			PaymentIcon:         "clock",
 			PaymentTitle:        "Pendente — toque para marcar como pago",
+			PaymentStatus:       "pending",
 			IsPending:           true,
 		}
 		if err := tplRow.ExecuteTemplate(&buf, "lancamento-row", data); err != nil {
 			t.Fatalf("failed to execute lancamento-row: %v", err)
 		}
 		html := buf.String()
-		assertContains(t, html, `hx-confirm="Marcar este lançamento como pago?"`)
-		assertContains(t, html, `hx-post="/transacoes/tx-123/status-pagamento"`)
+		assertContains(t, html, `data-payment-confirm`)
+		assertContains(t, html, `data-swipe-right-payment-confirm="true"`)
+		assertContains(t, html, `data-payment-post-url="/transacoes/tx-123/status-pagamento"`)
+		if strings.Contains(html, `data-swipe-right-url="/transacoes/tx-123/status-pagamento"`) {
+			t.Fatal("pending transaction row must not post payment status directly from swipe")
+		}
 		assertContains(t, html, `data-lucide="clock"`)
 	})
 }

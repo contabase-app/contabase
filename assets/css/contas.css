@@ -6,6 +6,12 @@
 .btn-tactile { transition: all 0.15s ease; }
 .btn-tactile:active { transform: scale(0.97); }
 
+.tx-status-warning{background:color-mix(in srgb, var(--cb-warning) 12%, transparent);color:color-mix(in srgb, var(--cb-warning) 80%, var(--cb-text-main))}
+.tx-status-danger{background:color-mix(in srgb, var(--cb-danger) 12%, transparent);color:color-mix(in srgb, var(--cb-danger) 80%, var(--cb-text-main))}
+.tx-status-scheduled{background:color-mix(in srgb, var(--cb-accent) 14%, transparent);color:color-mix(in srgb, var(--cb-accent) 80%, var(--cb-text-main))}
+.tx-status-success{background:color-mix(in srgb, var(--cb-success) 12%, transparent);color:color-mix(in srgb, var(--cb-success) 80%, var(--cb-text-main))}
+.tx-status-transfer{background:color-mix(in srgb, #0ea5e9 12%, transparent);color:#0284c7}
+
 /* Swipe row mechanics */
 [data-swipe-row="true"] { position: relative; overflow: hidden; }
 [data-swipe-content] { position: relative; z-index: 10; -webkit-user-select: none; user-select: none; }

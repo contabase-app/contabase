@@ -219,6 +219,7 @@ APP_ENV=production
 APP_DEBUG=false
 PORT=8080
 DATABASE_URL=file:/app/data/contabase.db
+CONTABASE_TIMEZONE=America/Sao_Paulo
 
 APP_BASE_URL=http://localhost:8080
 ALLOWED_HOSTS=localhost,127.0.0.1,::1
@@ -233,6 +234,8 @@ DATA_DIR=/app/data
 DB_FILE=/app/data/contabase.db
 UPLOADS_DIR=/app/data/uploads
 ```
+
+Se você opera no Brasil, pode manter `CONTABASE_TIMEZONE=America/Sao_Paulo`. Só altere se o seu fuso financeiro for diferente.
 
 Não use esses valores de exemplo em produção.
 

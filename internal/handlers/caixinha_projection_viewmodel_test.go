@@ -44,16 +44,16 @@ func TestMetasCaixinhaSimpleProjectionLabels(t *testing.T) {
 	}
 
 	withoutRecharge := mustFindCaixinha(t, data.Caixinhas, "a-box-no-recharge")
-	if withoutRecharge.ForecastLabel != "Previsão: sem previsão" || withoutRecharge.MonthsLeft != 0 {
-		t.Fatalf("no recharge projection = %q/%d, want Previsão: sem previsão/0", withoutRecharge.ForecastLabel, withoutRecharge.MonthsLeft)
+	if withoutRecharge.ForecastLabel != "Sem previsão" || withoutRecharge.MonthsLeft != 0 {
+		t.Fatalf("no recharge projection = %q/%d, want Sem previsão/0", withoutRecharge.ForecastLabel, withoutRecharge.MonthsLeft)
 	}
 	if withoutRecharge.RequiredState != requiredStateNoDeadline {
 		t.Fatalf("no recharge required state = %q, want %q", withoutRecharge.RequiredState, requiredStateNoDeadline)
 	}
 
 	withoutTarget := mustFindCaixinha(t, data.Caixinhas, "a-box-no-target")
-	if withoutTarget.ForecastLabel != "Previsão: sem previsão" || withoutTarget.MonthsLeft != 0 {
-		t.Fatalf("no target projection = %q/%d, want Previsão: sem previsão/0", withoutTarget.ForecastLabel, withoutTarget.MonthsLeft)
+	if withoutTarget.ForecastLabel != "Sem previsão" || withoutTarget.MonthsLeft != 0 {
+		t.Fatalf("no target projection = %q/%d, want Sem previsão/0", withoutTarget.ForecastLabel, withoutTarget.MonthsLeft)
 	}
 	if withoutTarget.RequiredState != requiredStateNone {
 		t.Fatalf("no target required state = %q, want empty", withoutTarget.RequiredState)

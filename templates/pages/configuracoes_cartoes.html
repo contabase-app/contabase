@@ -77,6 +77,17 @@
                         <span class="{{template "field-label" .}}">Dia de vencimento</span>
                         <input type="number" min="1" max="31" name="due_day" placeholder="1-31" class="{{template "field-class" .}}">
                     </div>
+                    {{if .ConfigPaymentAccounts}}
+                    <div>
+                        <span class="{{template "field-label" .}}">Conta padrão para pagamento (opcional)</span>
+                        <select name="default_payment_account_id" class="{{template "field-class" .}}">
+                            <option value="">Nenhuma (escolher ao pagar)</option>
+                            {{range .ConfigPaymentAccounts}}
+                            <option value="{{.ID}}">{{.Name}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+                    {{end}}
                 </div>
                 <div data-provider-custom class="hidden mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                     <div>

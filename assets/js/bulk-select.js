@@ -45,6 +45,14 @@
 
         function syncDOM() {
             container.classList.toggle('bulk-mode', state.mode);
+            var activeBulkSelection = state.mode && state.ids.length > 0;
+            if (activeBulkSelection) {
+                container.setAttribute('data-bulk-active', 'true');
+            } else {
+                container.removeAttribute('data-bulk-active');
+            }
+            document.body.classList.toggle('has-bulk-selection', !!document.querySelector('[data-bulk-select][data-bulk-active="true"]'));
+            if (typeof window.updateFAB === 'function') window.updateFAB();
             if (dom.toggleBtn) {
                 dom.toggleBtn.textContent = state.mode ? 'Cancelar' : 'Selecionar';
             }
@@ -55,7 +63,7 @@
                 dom.countNum.textContent = state.ids.length;
             }
             if (dom.actionBar) {
-                dom.actionBar.classList.toggle('hidden', !(state.mode && state.ids.length > 0));
+                dom.actionBar.classList.toggle('hidden', !activeBulkSelection);
             }
             var checkboxes = container.querySelectorAll('[data-tx-checkbox]');
             checkboxes.forEach(function (cb) {
@@ -169,7 +177,18 @@
 
             // Bulk action buttons (these have their own form/HTMX handlers, just update IDs first)
             if (target.closest('[data-bulk-mark-paid]')) {
+                event.preventDefault();
+                event.stopPropagation();
                 updateForms();
+                if (typeof window.openBulkPaymentConfirmModal === 'function') {
+                    var paidForm = target.closest('form');
+                    window.openBulkPaymentConfirmModal({
+                        ids: state.ids.slice(),
+                        postURL: paidForm ? paidForm.getAttribute('hx-post') : '/transacoes/bulk/update',
+                        target: paidForm ? paidForm.getAttribute('hx-target') : '#lancamentos-table-body',
+                        swap: paidForm ? paidForm.getAttribute('hx-swap') : 'outerHTML'
+                    });
+                }
                 return;
             }
             if (target.closest('[data-bulk-mark-pending]')) {

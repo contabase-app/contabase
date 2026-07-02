@@ -39,15 +39,16 @@ type ConfigAccount struct {
 }
 
 type ConfigCard struct {
-	AccountID    string
-	Name         string
-	Color        string
-	Icon         string
-	ProviderSlug string
-	ClosingDay   int64
-	DueDay       int64
-	CreditLimit  int64
-	SortOrder    int64
+	AccountID               string
+	Name                    string
+	Color                   string
+	Icon                    string
+	ProviderSlug            string
+	ClosingDay              int64
+	DueDay                  int64
+	CreditLimit             int64
+	DefaultPaymentAccountID string
+	SortOrder               int64
 }
 
 type Workspace struct {
@@ -160,7 +161,7 @@ func (r *ConfigRepository) ArchivedAccountsByWorkspace(workspaceID string) ([]Co
 
 func (r *ConfigRepository) CardsByWorkspace(workspaceID string) ([]ConfigCard, error) {
 	rows, err := r.db.Query(`
-		SELECT a.id, a.name, COALESCE(NULLIF(a.color, ''), '#6B7280'), COALESCE(NULLIF(a.icon, ''), ''), COALESCE(NULLIF(a.provider_slug, ''), 'custom'), cc.closing_day, cc.due_day, cc.credit_limit, a.sort_order
+		SELECT a.id, a.name, COALESCE(NULLIF(a.color, ''), '#6B7280'), COALESCE(NULLIF(a.icon, ''), ''), COALESCE(NULLIF(a.provider_slug, ''), 'custom'), cc.closing_day, cc.due_day, cc.credit_limit, COALESCE(cc.default_payment_account_id, ''), a.sort_order
 		FROM accounts a
 		JOIN credit_cards cc ON cc.account_id = a.id
 		WHERE a.workspace_id = ? AND a.type = 'CREDIT_CARD' AND a.archived_at IS NULL
@@ -174,7 +175,7 @@ func (r *ConfigRepository) CardsByWorkspace(workspaceID string) ([]ConfigCard, e
 	var out []ConfigCard
 	for rows.Next() {
 		var item ConfigCard
-		if err := rows.Scan(&item.AccountID, &item.Name, &item.Color, &item.Icon, &item.ProviderSlug, &item.ClosingDay, &item.DueDay, &item.CreditLimit, &item.SortOrder); err != nil {
+		if err := rows.Scan(&item.AccountID, &item.Name, &item.Color, &item.Icon, &item.ProviderSlug, &item.ClosingDay, &item.DueDay, &item.CreditLimit, &item.DefaultPaymentAccountID, &item.SortOrder); err != nil {
 			return nil, err
 		}
 		out = append(out, item)
@@ -184,7 +185,7 @@ func (r *ConfigRepository) CardsByWorkspace(workspaceID string) ([]ConfigCard, e
 
 func (r *ConfigRepository) ArchivedCardsByWorkspace(workspaceID string) ([]ConfigCard, error) {
 	rows, err := r.db.Query(`
-		SELECT a.id, a.name, COALESCE(NULLIF(a.color, ''), '#6B7280'), COALESCE(NULLIF(a.icon, ''), ''), COALESCE(NULLIF(a.provider_slug, ''), 'custom'), cc.closing_day, cc.due_day, cc.credit_limit, a.sort_order
+		SELECT a.id, a.name, COALESCE(NULLIF(a.color, ''), '#6B7280'), COALESCE(NULLIF(a.icon, ''), ''), COALESCE(NULLIF(a.provider_slug, ''), 'custom'), cc.closing_day, cc.due_day, cc.credit_limit, COALESCE(cc.default_payment_account_id, ''), a.sort_order
 		FROM accounts a
 		JOIN credit_cards cc ON cc.account_id = a.id
 		WHERE a.workspace_id = ? AND a.type = 'CREDIT_CARD' AND a.archived_at IS NOT NULL
@@ -198,7 +199,7 @@ func (r *ConfigRepository) ArchivedCardsByWorkspace(workspaceID string) ([]Confi
 	var out []ConfigCard
 	for rows.Next() {
 		var item ConfigCard
-		if err := rows.Scan(&item.AccountID, &item.Name, &item.Color, &item.Icon, &item.ProviderSlug, &item.ClosingDay, &item.DueDay, &item.CreditLimit, &item.SortOrder); err != nil {
+		if err := rows.Scan(&item.AccountID, &item.Name, &item.Color, &item.Icon, &item.ProviderSlug, &item.ClosingDay, &item.DueDay, &item.CreditLimit, &item.DefaultPaymentAccountID, &item.SortOrder); err != nil {
 			return nil, err
 		}
 		out = append(out, item)

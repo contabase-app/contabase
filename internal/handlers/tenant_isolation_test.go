@@ -31,7 +31,7 @@ func TestTenantIsolationReadModelsDoNotMixWorkspaces(t *testing.T) {
 	}
 
 	txHandler := TransactionHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
-	lancamentos, err := txHandler.buildLancamentosData("", int(now.Month()), now.Year(), LancamentosFilters{Situacoes: []string{"pago"}})
+	lancamentos, err := txHandler.buildLancamentosData("", int(now.Month()), now.Year(), LancamentosFilters{Situacoes: []string{"pendente", "vencido", "agendado", "pago"}})
 	if err != nil {
 		t.Fatalf("buildLancamentosData: %v", err)
 	}

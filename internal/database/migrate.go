@@ -1234,6 +1234,280 @@ var migrations = []migration{
 			return err
 		},
 	},
+	{
+		version: 41,
+		name:    "boxes_nullable_category",
+		up: func(tx *sql.Tx) error {
+			exists, err := tableExists(tx, "boxes")
+			if err != nil {
+				return err
+			}
+			if !exists {
+				return nil
+			}
+
+			rows, err := tx.Query(`PRAGMA table_info(boxes)`)
+			if err != nil {
+				return err
+			}
+			categoryNotNull := false
+			columns := make(map[string]bool)
+			for rows.Next() {
+				var cid int
+				var name, columnType string
+				var notNull int
+				var defaultValue interface{}
+				var pk int
+				if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+					rows.Close()
+					return err
+				}
+				columns[name] = true
+				if name == "category_id" {
+					categoryNotNull = notNull == 1
+				}
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return err
+			}
+			if err := rows.Close(); err != nil {
+				return err
+			}
+			if !categoryNotNull {
+				return nil
+			}
+
+			preservedSchemaSQL, err := tableSchemaSQL(tx, "boxes")
+			if err != nil {
+				return fmt.Errorf("migration 41 read boxes schema objects: %w", err)
+			}
+
+			hasWorkspaces, err := tableExists(tx, "workspaces")
+			if err != nil {
+				return err
+			}
+			hasCategories, err := tableExists(tx, "categories")
+			if err != nil {
+				return err
+			}
+			foreignKeys := ""
+			if hasWorkspaces && hasCategories {
+				foreignKeys = `,
+						FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+						FOREIGN KEY (category_id)  REFERENCES categories(id) ON DELETE SET NULL`
+			}
+
+			if _, err := tx.Exec(`DROP TABLE IF EXISTS boxes_mig41`); err != nil {
+				return fmt.Errorf("migration 41 clear stale rebuilt boxes table: %w", err)
+			}
+			if _, err := tx.Exec(fmt.Sprintf(`
+						CREATE TABLE IF NOT EXISTS boxes_mig41 (
+						id               TEXT PRIMARY KEY,
+						workspace_id     TEXT    NOT NULL,
+						name             TEXT    NOT NULL,
+						description      TEXT    NOT NULL DEFAULT '',
+						category_id      TEXT,
+						target_amount    INTEGER NOT NULL DEFAULT 0,
+						monthly_recharge INTEGER NOT NULL DEFAULT 0,
+						target_date      INTEGER,
+						monthly_yield_rate REAL  NOT NULL DEFAULT 0.0,
+						created_at       INTEGER NOT NULL DEFAULT (unixepoch()),
+						updated_at       INTEGER NOT NULL DEFAULT (unixepoch())%s
+					)
+				`, foreignKeys)); err != nil {
+				return fmt.Errorf("migration 41 create rebuilt boxes table: %w", err)
+			}
+			descriptionExpr := "''"
+			if columns["description"] {
+				descriptionExpr = "description"
+			}
+			targetDateExpr := "NULL"
+			if columns["target_date"] {
+				targetDateExpr = "target_date"
+			}
+			monthlyYieldRateExpr := "0.0"
+			if columns["monthly_yield_rate"] {
+				monthlyYieldRateExpr = "monthly_yield_rate"
+			}
+
+			if _, err := tx.Exec(fmt.Sprintf(`
+						INSERT INTO boxes_mig41 (
+							id, workspace_id, name, description, category_id, target_amount,
+							monthly_recharge, target_date, monthly_yield_rate, created_at, updated_at
+						)
+						SELECT id, workspace_id, name, %s, category_id, target_amount,
+							monthly_recharge, %s, %s, created_at, updated_at
+						FROM boxes
+					`, descriptionExpr, targetDateExpr, monthlyYieldRateExpr)); err != nil {
+				return fmt.Errorf("migration 41 copy boxes into rebuilt table: %w", err)
+			}
+			if _, err := tx.Exec(`DROP TABLE boxes`); err != nil {
+				return fmt.Errorf("migration 41 drop old boxes table after safe copy: %w", err)
+			}
+			if _, err := tx.Exec(`ALTER TABLE boxes_mig41 RENAME TO boxes`); err != nil {
+				return fmt.Errorf("migration 41 rename rebuilt boxes table: %w", err)
+			}
+
+			for _, stmt := range preservedSchemaSQL {
+				if _, err := tx.Exec(stmt); err != nil {
+					return fmt.Errorf("migration 41 recreate boxes schema object: %w", err)
+				}
+			}
+			stmts := []string{
+				`CREATE INDEX IF NOT EXISTS idx_boxes_workspace ON boxes(workspace_id)`,
+				`CREATE INDEX IF NOT EXISTS idx_boxes_workspace_category ON boxes(workspace_id, category_id)`,
+			}
+			for _, stmt := range stmts {
+				if _, err := tx.Exec(stmt); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		version: 42,
+		name:    "add_users_deleted_columns",
+		up: func(tx *sql.Tx) error {
+			exists, err := tableExists(tx, "users")
+			if err != nil {
+				return err
+			}
+			if !exists {
+				return nil
+			}
+			if err := addColumnIfMissing(tx, "users", "deleted_at", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+				return fmt.Errorf("migration 42 add users.deleted_at: %w", err)
+			}
+			if err := addColumnIfMissing(tx, "users", "deleted_reason", "TEXT"); err != nil {
+				return fmt.Errorf("migration 42 add users.deleted_reason: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 43,
+		name:    "add_transactions_paid_at",
+		up: func(tx *sql.Tx) error {
+			exists, err := tableExists(tx, "transactions")
+			if err != nil {
+				return err
+			}
+			if !exists {
+				return nil
+			}
+			if err := addColumnIfMissing(tx, "transactions", "paid_at", "INTEGER"); err != nil {
+				return fmt.Errorf("migration 43 add transactions.paid_at: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 44,
+		name:    "add_transaction_status_history",
+		up: func(tx *sql.Tx) error {
+			if _, err := tx.Exec(`
+				CREATE TABLE IF NOT EXISTS transaction_status_history (
+					id              TEXT PRIMARY KEY,
+					transaction_id  TEXT NOT NULL,
+					workspace_id    TEXT NOT NULL,
+					user_id         TEXT NOT NULL,
+					previous_status TEXT,
+					new_status      TEXT,
+					previous_paid_at INTEGER,
+					new_paid_at     INTEGER,
+					created_at      INTEGER NOT NULL
+				)
+			`); err != nil {
+				return fmt.Errorf("migration 44 create transaction_status_history: %w", err)
+			}
+			if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_tsh_transaction ON transaction_status_history(transaction_id)`); err != nil {
+				return fmt.Errorf("migration 44 create idx_tsh_transaction: %w", err)
+			}
+			if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_tsh_workspace_created ON transaction_status_history(workspace_id, created_at)`); err != nil {
+				return fmt.Errorf("migration 44 create idx_tsh_workspace_created: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 45,
+		name:    "credit_cards_default_payment_account",
+		up: func(tx *sql.Tx) error {
+			exists, err := tableExists(tx, "credit_cards")
+			if err != nil {
+				return err
+			}
+			if !exists {
+				return nil
+			}
+			return addColumnIfMissing(tx, "credit_cards", "default_payment_account_id", "TEXT")
+		},
+	},
+	{
+		version: 46,
+		name:    "scheduled_transaction_payments",
+		up: func(tx *sql.Tx) error {
+			exists, err := tableExists(tx, "transactions")
+			if err != nil {
+				return err
+			}
+			if !exists {
+				return nil
+			}
+			if err := addColumnIfMissing(tx, "transactions", "scheduled_payment_at", "INTEGER"); err != nil {
+				return fmt.Errorf("migration 46 add transactions.scheduled_payment_at: %w", err)
+			}
+			if err := addColumnIfMissing(tx, "transactions", "scheduled_payment_created_by", "TEXT"); err != nil {
+				return fmt.Errorf("migration 46 add transactions.scheduled_payment_created_by: %w", err)
+			}
+			if err := addColumnIfMissing(tx, "transactions", "scheduled_payment_executed_at", "INTEGER"); err != nil {
+				return fmt.Errorf("migration 46 add transactions.scheduled_payment_executed_at: %w", err)
+			}
+			if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_transactions_scheduled_due ON transactions(workspace_id, scheduled_payment_at, scheduled_payment_executed_at) WHERE scheduled_payment_at IS NOT NULL`); err != nil {
+				return fmt.Errorf("migration 46 create idx_transactions_scheduled_due: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 47,
+		name:    "notification_dedupe_key",
+		up: func(tx *sql.Tx) error {
+			exists, err := tableExists(tx, "user_notifications")
+			if err != nil {
+				return err
+			}
+			if !exists {
+				return nil
+			}
+			if err := addColumnIfMissing(tx, "user_notifications", "dedupe_key", "TEXT"); err != nil {
+				return fmt.Errorf("migration 47 add user_notifications.dedupe_key: %w", err)
+			}
+			if _, err := tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_notifications_dedupe ON user_notifications(user_id, workspace_id, dedupe_key) WHERE dedupe_key IS NOT NULL AND dedupe_key <> ''`); err != nil {
+				return fmt.Errorf("migration 47 create idx_user_notifications_dedupe: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 48,
+		name:    "transaction_status_history_source",
+		up: func(tx *sql.Tx) error {
+			exists, err := tableExists(tx, "transaction_status_history")
+			if err != nil {
+				return err
+			}
+			if !exists {
+				return nil
+			}
+			if err := addColumnIfMissing(tx, "transaction_status_history", "source", "TEXT NOT NULL DEFAULT 'manual'"); err != nil {
+				return fmt.Errorf("migration 48 add transaction_status_history.source: %w", err)
+			}
+			return nil
+		},
+	},
 }
 
 func runMigrations(db *sql.DB) error {
@@ -1254,39 +1528,39 @@ func runMigrations(db *sql.DB) error {
 			continue
 		}
 
-		if m.version == 35 {
+		if m.version == 35 || m.version == 41 {
 			if err := setForeignKeys(db, false); err != nil {
 				return fmt.Errorf("disable foreign keys for migration %d (%s) table rebuild: %w", m.version, m.name, err)
 			}
 		}
 		tx, err := db.Begin()
 		if err != nil {
-			if m.version == 35 {
+			if m.version == 35 || m.version == 41 {
 				_ = restoreForeignKeys(db, m)
 			}
 			return err
 		}
 		if err := m.up(tx); err != nil {
 			_ = tx.Rollback()
-			if m.version == 35 {
+			if m.version == 35 || m.version == 41 {
 				_ = restoreForeignKeys(db, m)
 			}
 			return fmt.Errorf("apply migration %d (%s): %w", m.version, m.name, err)
 		}
 		if _, err := tx.Exec(`INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, unixepoch())`, m.version, m.name); err != nil {
 			_ = tx.Rollback()
-			if m.version == 35 {
+			if m.version == 35 || m.version == 41 {
 				_ = restoreForeignKeys(db, m)
 			}
 			return fmt.Errorf("register migration %d (%s): %w", m.version, m.name, err)
 		}
 		if err := tx.Commit(); err != nil {
-			if m.version == 35 {
+			if m.version == 35 || m.version == 41 {
 				_ = restoreForeignKeys(db, m)
 			}
 			return err
 		}
-		if m.version == 35 {
+		if m.version == 35 || m.version == 41 {
 			if err := restoreForeignKeys(db, m); err != nil {
 				return err
 			}
@@ -1380,6 +1654,34 @@ func tableExists(tx *sql.Tx, table string) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+func tableSchemaSQL(tx *sql.Tx, table string) ([]string, error) {
+	rows, err := tx.Query(`
+		SELECT sql
+		FROM sqlite_master
+		WHERE tbl_name = ?
+			AND type IN ('index', 'trigger')
+			AND sql IS NOT NULL
+		ORDER BY type, name
+	`, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stmts []string
+	for rows.Next() {
+		var sqlText string
+		if err := rows.Scan(&sqlText); err != nil {
+			return nil, err
+		}
+		stmts = append(stmts, sqlText)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return stmts, nil
 }
 
 func prepareAccountsMigration35Compatibility(tx *sql.Tx) error {

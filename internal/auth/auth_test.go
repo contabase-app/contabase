@@ -284,3 +284,78 @@ func TestCleanupExpiredSessions(t *testing.T) {
 		}
 	})
 }
+
+func TestAuthenticateRejectsDeletedUser(t *testing.T) {
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	userID := uuid.NewString()
+	hash, err := bcrypt.GenerateFromPassword([]byte("secret123"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	now := time.Now().Unix()
+	_, err = db.Exec(`INSERT INTO users (id, name, email, password_hash, status, deleted_at, created_at, updated_at) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
+		userID, "Deleted User", "deleted-auth@test.local", string(hash), now, now, now)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+
+	svc := NewService(db)
+	if _, err := svc.Authenticate("deleted-auth@test.local", "secret123"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("expected ErrInvalidCredentials for deleted user, got %v", err)
+	}
+}
+
+func TestResolveAndRefreshSessionRejectsDeletedUser(t *testing.T) {
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	userID := uuid.NewString()
+	workspaceID := uuid.NewString()
+	hash, err := bcrypt.GenerateFromPassword([]byte("secret123"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	now := time.Now().Unix()
+	_, err = db.Exec(`INSERT INTO users (id, name, email, password_hash, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'active', ?, ?)`,
+		userID, "User Test", "session-deleted@test.local", string(hash), now, now)
+	if err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	_, err = db.Exec(`INSERT INTO workspaces (id, name, description, created_at, updated_at) VALUES (?, ?, '', ?, ?)`,
+		workspaceID, "WS", now, now)
+	if err != nil {
+		t.Fatalf("insert workspace: %v", err)
+	}
+	_, err = db.Exec(`INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES (?, ?, 'ADMIN', ?)`,
+		workspaceID, userID, now)
+	if err != nil {
+		t.Fatalf("insert membership: %v", err)
+	}
+
+	svc := NewService(db)
+	token, _, err := svc.CreateSession(userID, workspaceID, time.Hour, false)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	if _, _, _, _, err := svc.ResolveAndRefreshSession(token); err != nil {
+		t.Fatalf("resolve session before delete: %v", err)
+	}
+
+	_, err = db.Exec(`UPDATE users SET deleted_at = ?, name = 'Usuário removido' WHERE id = ?`, now, userID)
+	if err != nil {
+		t.Fatalf("mark user deleted: %v", err)
+	}
+
+	if _, _, _, _, err := svc.ResolveAndRefreshSession(token); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected sql.ErrNoRows after user deleted, got %v", err)
+	}
+}

@@ -55,6 +55,47 @@ func TestHandleCriarCaixinhaPersistsTargetDate(t *testing.T) {
 	}
 }
 
+func TestHandleCriarCaixinhaAllowsOnlyName(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedCaixinhaTargetDateScenario(t, db)
+
+	handler := MetasHandler{
+		DB:          db,
+		Templates:   testMetasMutationTemplates(t),
+		WorkspaceID: "ws-a",
+		UserID:      "user-a",
+	}
+
+	req := newCaixinhaRequest(t, url.Values{
+		"name": {"Reserva livre"},
+	})
+	rr := httptest.NewRecorder()
+	handler.HandleCriarCaixinha(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var categoryID sql.NullString
+	var targetAmount, monthlyRecharge int64
+	var targetDate sql.NullInt64
+	var monthlyYieldRate float64
+	if err := db.QueryRow(`
+		SELECT category_id, target_amount, monthly_recharge, target_date, monthly_yield_rate
+		FROM boxes
+		WHERE workspace_id = ? AND name = ?
+	`, "ws-a", "Reserva livre").Scan(&categoryID, &targetAmount, &monthlyRecharge, &targetDate, &monthlyYieldRate); err != nil {
+		t.Fatalf("query created box: %v", err)
+	}
+	if categoryID.Valid {
+		t.Fatalf("category_id valid = true, want NULL")
+	}
+	if targetAmount != 0 || monthlyRecharge != 0 || targetDate.Valid || monthlyYieldRate != 0 {
+		t.Fatalf("optionals = target=%d recharge=%d dateValid=%v yield=%f, want zero/null", targetAmount, monthlyRecharge, targetDate.Valid, monthlyYieldRate)
+	}
+}
+
 func TestHandleCriarCaixinhaClearsTargetDate(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
@@ -96,6 +137,59 @@ func TestHandleCriarCaixinhaClearsTargetDate(t *testing.T) {
 	}
 	if targetDate.Valid {
 		t.Fatalf("target_date should be NULL after clear, got %d", targetDate.Int64)
+	}
+}
+
+func TestHandleCriarCaixinhaClearsOptionalFields(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedCaixinhaTargetDateScenario(t, db)
+
+	now := time.Now().UTC().Unix()
+	execTestSQL(t, db, `
+		INSERT INTO boxes (id, workspace_id, name, category_id, target_amount, monthly_recharge, target_date, monthly_yield_rate, created_at, updated_at)
+		VALUES ('a-box-clear', 'ws-a', 'Meta Limpar', 'a-cat', 100000, 5000, ?, 0.008, ?, ?)
+	`, time.Now().UTC().AddDate(0, 4, 0).Unix(), now, now)
+
+	handler := MetasHandler{
+		DB:          db,
+		Templates:   testMetasMutationTemplates(t),
+		WorkspaceID: "ws-a",
+		UserID:      "user-a",
+	}
+
+	req := newCaixinhaRequest(t, url.Values{
+		"box_id":             {"a-box-clear"},
+		"name":               {"Meta Limpar"},
+		"category_id":        {""},
+		"target_amount":      {""},
+		"monthly_recharge":   {""},
+		"target_month":       {""},
+		"monthly_yield_rate": {""},
+	})
+	rr := httptest.NewRecorder()
+	handler.HandleCriarCaixinha(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rr.Code, http.StatusOK, rr.Body.String())
+	}
+
+	var categoryID sql.NullString
+	var targetAmount, monthlyRecharge int64
+	var targetDate sql.NullInt64
+	var monthlyYieldRate float64
+	if err := db.QueryRow(`
+		SELECT category_id, target_amount, monthly_recharge, target_date, monthly_yield_rate
+		FROM boxes
+		WHERE id = 'a-box-clear'
+	`).Scan(&categoryID, &targetAmount, &monthlyRecharge, &targetDate, &monthlyYieldRate); err != nil {
+		t.Fatalf("query updated box: %v", err)
+	}
+	if categoryID.Valid {
+		t.Fatalf("category_id valid = true, want NULL")
+	}
+	if targetAmount != 0 || monthlyRecharge != 0 || targetDate.Valid || monthlyYieldRate != 0 {
+		t.Fatalf("cleared optionals = target=%d recharge=%d dateValid=%v yield=%f, want zero/null", targetAmount, monthlyRecharge, targetDate.Valid, monthlyYieldRate)
 	}
 }
 
