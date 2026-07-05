@@ -56,7 +56,7 @@ func TestTenantIsolationReadModelsDoNotMixWorkspaces(t *testing.T) {
 	assertIDs(t, "metas boxes", caixinhaCardIDs(metas.Caixinhas), []string{"a-box"})
 
 	relHandler := RelatoriosHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
-	relatorios, err := relHandler.buildRelatoriosData("", int(now.Month()), now.Year())
+	relatorios, err := relHandler.buildRelatoriosData("", "caixa", "movimentos", int(now.Month()), now.Year())
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}

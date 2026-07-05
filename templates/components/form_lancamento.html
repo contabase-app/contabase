@@ -563,11 +563,14 @@
                     <p class="px-1 text-[0.65rem] font-semibold uppercase tracking-wide text-[var(--cb-text-muted)]">Contas</p>
                     {{range .Accounts}}{{if eq .Tipo "conta"}}
                     <button type="button" data-origin-kind="conta" data-origin-id="{{.ID}}" data-origin-name="{{.Name}}" data-origin-icon="{{.Icon}}" data-origin-color="{{.Color}}" data-origin-provider="{{.ProviderSlug}}" data-origin-provider-mark="{{.ProviderMark}}"
-                        class="origin-option flex w-full items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 text-left text-sm font-medium text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]">
+                        class="origin-option flex w-full items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 text-left hover:bg-[var(--cb-surface-3)]">
                         <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg emblem-wrap-solid select-none" style="--ic: {{.Color}}">
                             {{template "financial-emblem" .}}
                         </span>
-                        {{.Name}}
+                        <span class="min-w-0">
+                            <span class="block truncate text-sm font-medium text-[var(--cb-text-main)]">{{.Name}}</span>
+                            {{if .BalanceLabel}}<span class="mt-0.5 block truncate text-xs text-[var(--cb-text-muted)]">{{.BalanceLabel}}</span>{{end}}
+                        </span>
                     </button>
                     {{end}}{{end}}
                 </div>

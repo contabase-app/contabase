@@ -37,13 +37,20 @@ func TestAjudaPageRenderContracts(t *testing.T) {
 		`id="main-content"`,
 		`id="help-search"`,
 		`id="perfis-permissoes"`,
-		`id="custo-de-vida"`,
-		`id="tendencia-saldo"`,
+		`id="como-funcionam-relatorios"`,
+		`id="cartoes-relatorios"`,
+		`id="exportacoes-relatorios"`,
 		`id="categorias-hierarquia"`,
 		`id="caixinhas-metas"`,
 		`id="motor-temporal"`,
 		`id="limite-gastos"`,
 		`id="seguranca-backups"`,
+		`Como funcionam os Relatórios`,
+		`Fluxo de Caixa`,
+		`Saldo Projetado`,
+		`Competência / DRE`,
+		`Cartão de crédito e faturas`,
+		`Exemplos e exportações`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("ajuda-page missing %q\nbody:\n%s", want, html)

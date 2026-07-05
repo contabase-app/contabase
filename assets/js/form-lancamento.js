@@ -1532,7 +1532,7 @@
             categoryId.dataset.boxId = '';
             categoryId.dataset.boxReserved = '0';
             if (categoryName) {
-                categoryName.textContent = 'Categoria';
+                categoryName.textContent = 'Selecione uma categoria';
             }
             if (categoryIconWrap && categoryIcon && ns.updateIcon) {
                 ns.updateIcon(categoryIconWrap, categoryIcon, 'tag', 'rose');

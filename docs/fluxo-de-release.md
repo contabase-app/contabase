@@ -19,14 +19,53 @@ O ContaBase usa SemVer. A tag pública, o arquivo `VERSION`, o changelog e a not
 
 1. desenvolvimento e validação na branch de desenvolvimento (ambiente privado);
 2. atualização de `VERSION`, `CHANGELOG.md` e `RELEASE_NOTES.md`;
-3. validações Go, diff check e export público limpo;
-4. export e sync para a branch `beta` do repositório público (`contabase`);
-5. criação da tag beta pública (ex: `v0.1.0-beta.3`);
-6. push da branch `beta` e da tag para o repositório público;
-7. execução do workflow de artifacts e GHCR;
-8. criação da GitHub Release beta (`prerelease=true`);
-9. smoke da imagem GHCR e dos artifacts em ambiente descartável;
-10. atualização do canal `contabase-canal` para apontar para a nova tag, somente depois de release, assets e checksums validados.
+3. criação de `docs/releases/vX.Y.Z-beta.N.md` com nota da release;
+4. validações Go, diff check e export público limpo;
+5. export e sync para a branch `beta` do repositório público (`contabase`);
+6. criação da tag beta pública (ex: `v0.1.0-beta.3`);
+7. push da branch `beta` e da tag para o repositório público;
+8. execução do workflow de artifacts e GHCR;
+9. criação da GitHub Release beta (`prerelease=true`);
+10. smoke da imagem GHCR e dos artifacts em ambiente descartável;
+11. atualização do canal `contabase-canal` para apontar para a nova tag, somente depois de release, assets e checksums validados.
+
+### Comandos de referência (Beta pública)
+
+```bash
+# 1. Sync do export limpo para repo público local
+.docs/scripts/publish-public.sh sync vX.Y.Z-beta.N
+
+# 2. Commit no repo público (branch beta)
+.docs/scripts/publish-public.sh commit vX.Y.Z-beta.N
+
+# 3. Tag local
+.docs/scripts/publish-public.sh tag vX.Y.Z-beta.N
+
+# 4. Push branch beta pública
+.docs/scripts/publish-public.sh push-beta vX.Y.Z-beta.N
+
+# 5. Push tag (aciona workflow + GHCR + artifacts)
+.docs/scripts/publish-public.sh push-tag vX.Y.Z-beta.N
+```
+
+Os comandos exigem terminal interativo com as variáveis de ambiente:
+- `CONTABASE_PUBLIC_REPO_DIR` — caminho do checkout do repositório público
+- `CONTABASE_CHANNEL_REPO_DIR` — caminho do checkout do canal de instalação
+
+O runbook canônico privado com detalhes completos está em `.docs/runbooks/release-publica.md`.
+
+### Verificação pós-publicação
+
+```bash
+# Validar tag e release
+gh release view vX.Y.Z-beta.N --repo contabase-app/contabase
+
+# Validar GHCR
+docker pull ghcr.io/contabase-app/contabase:vX.Y.Z-beta.N
+
+# Validar canal
+curl -fsS https://get-contabase.pages.dev/channels/beta.json
+```
 
 ### Stable pública
 

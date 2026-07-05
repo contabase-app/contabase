@@ -13,7 +13,7 @@ func TestRelatoriosSaldoAcumuladoPopulated(t *testing.T) {
 	seedSaldoAcumuladoScenario(t, db, "2026-08-10", "2026-08-15", "2026-09-05")
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-acum", UserID: "user-acum"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestRelatoriosSaldoAcumuladoMatchesLancamentos(t *testing.T) {
 	seedSaldoAcumuladoScenario(t, db, "2026-08-10", "2026-08-15", "2026-09-05")
 
 	relHandler := RelatoriosHandler{DB: db, WorkspaceID: "ws-acum", UserID: "user-acum"}
-	relData, err := relHandler.buildRelatoriosData("", 8, 2026)
+	relData, err := relHandler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -41,9 +41,11 @@ func TestRelatoriosSaldoAcumuladoMatchesLancamentos(t *testing.T) {
 		t.Fatalf("buildLancamentosData: %v", err)
 	}
 
-	if relData.SaldoAcumulado.Reais != MoneyMinor(calcProjectedAccumulatedBalance(db, "ws-acum", totalBalance(t, db, "ws-acum"), time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))).Reais {
-		t.Fatalf("relatorios SaldoAcumulado = %s%s, want consistent with projected balance",
-			relData.SaldoAcumulado.Reais, relData.SaldoAcumulado.Cents)
+	expectedBalance := totalBalance(t, db, "ws-acum")
+	if relData.SaldoAcumulado.Reais != MoneyMinor(expectedBalance).Reais || relData.SaldoAcumulado.Cents != MoneyMinor(expectedBalance).Cents {
+		t.Fatalf("relatorios SaldoAcumulado (caixa realizado) = %s%s, want current balance %s%s",
+			relData.SaldoAcumulado.Reais, relData.SaldoAcumulado.Cents,
+			MoneyMinor(expectedBalance).Reais, MoneyMinor(expectedBalance).Cents)
 	}
 	_ = lancData
 }
@@ -59,7 +61,7 @@ func TestRelatoriosSaldoAcumuladoNegative(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-neg', 'ws-neg', 'Conta Negativa', 'CHECKING', -500000, -500000, ?, ?)`, now, now)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-neg", UserID: "user-neg"}
-	data, err := handler.buildRelatoriosData("", int(time.Now().UTC().Month()), time.Now().UTC().Year())
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", int(time.Now().UTC().Month()), time.Now().UTC().Year())
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -85,13 +87,13 @@ func TestRelatoriosSaldoAcumuladoDifferentWorkspace(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('a2', 'ws2', 'Conta WS2', 'CHECKING', 500000, 500000, ?, ?)`, now, now)
 
 	h1 := RelatoriosHandler{DB: db, WorkspaceID: "ws1", UserID: "u1"}
-	d1, err := h1.buildRelatoriosData("", int(time.Now().UTC().Month()), time.Now().UTC().Year())
+	d1, err := h1.buildRelatoriosData("", "caixa", "movimentos", int(time.Now().UTC().Month()), time.Now().UTC().Year())
 	if err != nil {
 		t.Fatalf("ws1 buildRelatoriosData: %v", err)
 	}
 
 	h2 := RelatoriosHandler{DB: db, WorkspaceID: "ws2", UserID: "u2"}
-	d2, err := h2.buildRelatoriosData("", int(time.Now().UTC().Month()), time.Now().UTC().Year())
+	d2, err := h2.buildRelatoriosData("", "caixa", "movimentos", int(time.Now().UTC().Month()), time.Now().UTC().Year())
 	if err != nil {
 		t.Fatalf("ws2 buildRelatoriosData: %v", err)
 	}
@@ -108,7 +110,7 @@ func TestRelatoriosKPIExistentsPreserved(t *testing.T) {
 	seedSaldoAcumuladoScenario(t, db, "2026-08-10", "2026-08-15", "2026-09-05")
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-acum", UserID: "user-acum"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -139,7 +141,7 @@ func TestRelatoriosSaldoAcumuladoCurrentMonth(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-curr', 'ws-curr', 'Conta', 'CHECKING', 100000, 100000, ?, ?)`, ts, ts)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-curr", UserID: "u-curr"}
-	data, err := handler.buildRelatoriosData("", currentMonth, currentYear)
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", currentMonth, currentYear)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}

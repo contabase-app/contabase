@@ -7,7 +7,7 @@
 {{define "dashboard-content"}}
 <link rel="stylesheet" href="/assets/css/dashboard.css">
 
-<main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[10rem] md:pb-10 font-sans relative" data-tab-group="dashboard" data-tab-default="pagar" data-page-title="Dashboard">
+<main class="cb-dashboard w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[10rem] md:pb-10 font-sans relative" data-tab-group="dashboard" data-tab-default="pagar" data-page-title="Dashboard">
     <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
 
     <!-- Header/Cockpit Context -->
@@ -50,145 +50,72 @@
     </div>
 
     <!-- Layout: flex-col mobile, two independent stacks desktop -->
-    <div class="flex flex-col gap-4 lg:grid lg:grid-cols-12 w-full">
+    <div class="cb-dashboard-layout flex flex-col gap-4 lg:grid lg:grid-cols-12 w-full">
 
-        <!-- LEFT COLUMN: financial + cards -->
-        <div class="order-1 lg:col-span-4 flex flex-col gap-4 min-w-0">
+        <!-- LEFT COLUMN: financial only -->
+        <div class="cb-dashboard-stack order-1 lg:col-span-4 flex flex-col gap-4 min-w-0">
             <div class="flex">
                 {{template "dashboard-financial" .}}
             </div>
-            <div>
-                {{template "dashboard-cards" .}}
-            </div>
         </div>
 
-        <!-- RIGHT COLUMN: summary + limits/goals + pay/receive -->
-        <div class="order-2 lg:col-span-8 flex flex-col gap-4 min-w-0">
+        <!-- RIGHT COLUMN: summary + cards + limits/goals + pay/receive -->
+        <div class="cb-dashboard-stack order-2 lg:col-span-8 flex flex-col gap-4 min-w-0">
 
-        <!-- ROW1: summary cards (Caixa, Previsão, Próx 7d) -->
+        <!-- ROW1: Resumo do mês (single panel, 4-cell grid) -->
         <div id="dashboard-metrics-row1"
             hx-trigger="refreshFinancials from:body"
             hx-get="/"
             hx-select="#dashboard-metrics-row1"
             hx-swap="outerHTML">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch w-full">
-
-                <!-- Card Resumo do Mês -->
-                <div class="cb-card-dense flex flex-col gap-3">
-                    <div class="flex items-center justify-between">
-                        <span class="cb-text-micro font-bold text-[var(--cb-text-muted)] uppercase tracking-wider truncate" title="Caixa do mês — {{.ResumoMesLabel}}">Caixa — {{.ResumoMesLabel}}</span>
-                        <span class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--cb-accent)] shrink-0" style="background: color-mix(in srgb, var(--cb-accent) 12%, transparent)">
-                            <i data-lucide="calendar-days" class="w-3.5 h-3.5"></i>
-                        </span>
-                    </div>
-                    <span class="cb-text-micro text-[var(--cb-text-subtle)] leading-tight">Valores pagos e recebidos no mês. Faturas entram quando pagas.</span>
-
-                    <div class="space-y-2 flex-1">
-                        <div class="cb-metric-row py-2 min-h-[38px] gap-1.5">
-                            <span class="flex items-center gap-1.5 cb-text-micro font-medium text-[var(--cb-text-muted)] min-w-0 shrink">
-                                <i data-lucide="arrow-down-left" class="w-3.5 h-3.5 text-emerald-500 shrink-0"></i>
-                                <span class="truncate">Entrada</span>
-                            </span>
-                            <span class="text-xs sm:text-sm font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap shrink-0" data-sensitive>R$ {{.ResumoEntradas.Reais}}{{.ResumoEntradas.Cents}}</span>
-                        </div>
-                        <div class="cb-metric-row py-2 min-h-[38px] gap-1.5">
-                            <span class="flex items-center gap-1.5 cb-text-micro font-medium text-[var(--cb-text-muted)] min-w-0 shrink">
-                                <i data-lucide="arrow-up-right" class="w-3.5 h-3.5 text-red-500 shrink-0"></i>
-                                <span class="truncate">Saída</span>
-                            </span>
-                            <span class="text-xs sm:text-sm font-bold text-red-600 dark:text-red-400 whitespace-nowrap shrink-0" data-sensitive>R$ {{.ResumoSaidas.Reais}}{{.ResumoSaidas.Cents}}</span>
-                        </div>
-                        <div class="cb-metric-row py-2 min-h-[38px] gap-1.5">
-                            <span class="flex items-center gap-1.5 cb-text-micro font-medium text-[var(--cb-text-muted)] min-w-0 shrink">
-                                <i data-lucide="minus" class="w-3.5 h-3.5 {{if .ResumoNegativo}}text-red-500{{else}}text-emerald-500{{end}} shrink-0"></i>
-                                <span class="truncate">Saldo</span>
-                            </span>
-                            <span class="text-xs sm:text-sm font-bold {{if .ResumoNegativo}}text-red-600 dark:text-red-400{{else}}text-emerald-600 dark:text-emerald-400{{end}} whitespace-nowrap shrink-0" data-sensitive>R$ {{.ResumoSaldo.Reais}}{{.ResumoSaldo.Cents}}</span>
-                        </div>
-                    </div>
+            <div class="cb-card-dense cb-summary-panel flex flex-col">
+                <div class="cb-summary-head flex items-center justify-between">
+                    <span class="cb-text-micro font-bold text-[var(--cb-text-muted)] uppercase tracking-wider truncate">Resumo do mês</span>
+                    <span class="cb-text-micro font-bold text-[var(--cb-text-muted)] tabular-nums">{{.ResumoMesLabel}}</span>
                 </div>
-
-                <!-- Card Previsão do Mês -->
-                <div class="cb-card-dense flex flex-col gap-3">
-                    <div class="flex items-center justify-between">
-                        <span class="cb-text-micro font-bold text-[var(--cb-text-muted)] uppercase tracking-wider truncate" title="Previsão do mês — {{.PrevisaoMesLabel}}">Previsão — {{.PrevisaoMesLabel}}</span>
-                        <span class="flex h-6 w-6 items-center justify-center rounded-md text-sky-600 dark:text-sky-400 shrink-0" style="background: color-mix(in srgb, var(--cb-info) 12%, transparent)">
-                            <i data-lucide="calendar-clock" class="w-3.5 h-3.5"></i>
-                        </span>
+                <div class="cb-summary-grid">
+                    <div class="cb-summary-cell">
+                        <i data-lucide="arrow-down-left" class="w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
+                        <span class="cb-summary-label">Recebido</span>
+                        <span class="cb-summary-value text-[var(--cb-success)]" data-sensitive>R$ {{.ResumoEntradas.Reais}}{{.ResumoEntradas.Cents}}</span>
+                        <span class="cb-summary-meta">Caixa realizado</span>
                     </div>
-                    <span class="cb-text-micro text-[var(--cb-text-subtle)] leading-tight">Pendentes do mês + faturas em aberto/fechadas.</span>
-
-                    <div class="space-y-2 flex-1">
-                        <div class="cb-metric-row py-2 min-h-[38px] gap-1.5">
-                            <span class="flex items-center gap-1.5 cb-text-micro font-medium text-[var(--cb-text-muted)] min-w-0 shrink">
-                                <i data-lucide="arrow-down-left" class="w-3.5 h-3.5 text-emerald-500 shrink-0"></i>
-                                <span class="truncate" title="A receber previsto">A receber previsto</span>
-                            </span>
-                            <span class="text-xs sm:text-sm font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap shrink-0" data-sensitive>R$ {{.PrevisaoReceber.Reais}}{{.PrevisaoReceber.Cents}}</span>
-                        </div>
-                        <div class="cb-metric-row py-2 min-h-[38px] gap-1.5">
-                            <span class="flex items-center gap-1.5 cb-text-micro font-medium text-[var(--cb-text-muted)] min-w-0 shrink">
-                                <i data-lucide="arrow-up-right" class="w-3.5 h-3.5 text-red-500 shrink-0"></i>
-                                <span class="truncate" title="A pagar previsto">A pagar previsto</span>
-                            </span>
-                            <span class="text-xs sm:text-sm font-bold text-red-600 dark:text-red-400 whitespace-nowrap shrink-0" data-sensitive>R$ {{.PrevisaoPagar.Reais}}{{.PrevisaoPagar.Cents}}</span>
-                        </div>
-                        <div class="cb-metric-row py-2 min-h-[38px] gap-1.5">
-                            <span class="flex items-center gap-1.5 cb-text-micro font-medium text-[var(--cb-text-muted)] min-w-0 shrink">
-                                <i data-lucide="minus" class="w-3.5 h-3.5 {{if .PrevisaoNegativo}}text-red-500{{else}}text-sky-500{{end}} shrink-0"></i>
-                                <span class="truncate" title="Saldo previsto">Saldo previsto</span>
-                            </span>
-                            <span class="text-xs sm:text-sm font-bold {{if .PrevisaoNegativo}}text-red-600 dark:text-red-400{{else}}text-sky-600 dark:text-sky-400{{end}} whitespace-nowrap shrink-0" data-sensitive>R$ {{.PrevisaoSaldo.Reais}}{{.PrevisaoSaldo.Cents}}</span>
-                        </div>
+                    <div class="cb-summary-cell">
+                        <i data-lucide="arrow-up-right" class="w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
+                        <span class="cb-summary-label">Gasto</span>
+                        <span class="cb-summary-value text-[var(--cb-danger)]" data-sensitive>R$ {{.ResumoSaidas.Reais}}{{.ResumoSaidas.Cents}}</span>
+                        <span class="cb-summary-meta">Caixa realizado</span>
                     </div>
-                </div>
-
-                <!-- Card Fluxo 7 Dias -->
-                <div class="cb-card-dense flex flex-col gap-3">
-                    <div class="flex items-center justify-between">
-                        <span class="cb-text-micro font-bold text-[var(--cb-text-muted)] uppercase tracking-wider truncate" title="Próx. 7 dias">Próx. 7 dias</span>
-                        <span class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--cb-accent)] shrink-0" style="background: color-mix(in srgb, var(--cb-accent) 12%, transparent)">
-                            <i data-lucide="calendar-range" class="w-3.5 h-3.5"></i>
-                        </span>
+                    <div class="cb-summary-cell">
+                        <i data-lucide="minus-circle" class="w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
+                        <span class="cb-summary-label">Saldo do mês</span>
+                        <span class="cb-summary-value {{if .ResumoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-info)]{{end}}" data-sensitive>R$ {{.ResumoSaldo.Reais}}{{.ResumoSaldo.Cents}}</span>
+                        <span class="cb-summary-meta">Realizado</span>
                     </div>
-                    <span class="cb-text-micro text-[var(--cb-text-subtle)] leading-tight">Lançamentos vencidos somados aos previstos para os proximos 7 dias.</span>
-
-                    <div class="space-y-2 flex-1">
-                        <div class="cb-metric-row py-2 min-h-[38px] gap-1.5">
-                            <span class="flex items-center gap-1.5 cb-text-micro font-medium text-[var(--cb-text-muted)] min-w-0 shrink">
-                                <i data-lucide="arrow-up-right" class="w-3.5 h-3.5 text-red-500 shrink-0"></i>
-                                <span class="truncate">A Pagar</span>
-                            </span>
-                            <span class="text-xs sm:text-sm font-bold text-red-600 dark:text-red-400 whitespace-nowrap shrink-0" data-sensitive>R$ {{.Payable7dTotal.Reais}}{{.Payable7dTotal.Cents}}</span>
-                        </div>
-                        <div class="cb-metric-row py-2 min-h-[38px] gap-1.5">
-                            <span class="flex items-center gap-1.5 cb-text-micro font-medium text-[var(--cb-text-muted)] min-w-0 shrink">
-                                <i data-lucide="arrow-down-left" class="w-3.5 h-3.5 text-emerald-500 shrink-0"></i>
-                                <span class="truncate">A Receber</span>
-                            </span>
-                            <span class="text-xs sm:text-sm font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap shrink-0" data-sensitive>R$ {{.Receivable7dTotal.Reais}}{{.Receivable7dTotal.Cents}}</span>
-                        </div>
-                        <div class="cb-metric-row py-2 min-h-[38px] gap-1.5">
-                            <span class="flex items-center gap-1.5 cb-text-micro font-medium text-[var(--cb-text-muted)] min-w-0 shrink">
-                                <i data-lucide="minus" class="w-3.5 h-3.5 {{if .Saldo7dNegativo}}text-red-500{{else}}text-violet-500{{end}} shrink-0"></i>
-                                <span class="truncate">Saldo 7d</span>
-                            </span>
-                            <span class="text-xs sm:text-sm font-bold {{if .Saldo7dNegativo}}text-red-600 dark:text-red-400{{else}}text-violet-600 dark:text-violet-400{{end}} whitespace-nowrap shrink-0" data-sensitive>R$ {{.Saldo7d.Reais}}{{.Saldo7d.Cents}}</span>
-                        </div>
+                    <div class="cb-summary-cell">
+                        <i data-lucide="sun" class="w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
+                        <span class="cb-summary-label">Previsão final</span>
+                        <span class="cb-summary-value {{if .PrevisaoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-info)]{{end}}" data-sensitive>R$ {{.PrevisaoSaldo.Reais}}{{.PrevisaoSaldo.Cents}}</span>
+                        <span class="cb-summary-meta">Aberto</span>
                     </div>
-                </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Cards (moved to right column, grid layout) -->
+        <div>
+            {{template "dashboard-cards" .}}
+        </div>
 
         <!-- ROW2+ROW3: limits + goals + pay/receive -->
-        <div id="dashboard-metrics" class="flex flex-col gap-4"
+        <div id="dashboard-metrics" class="cb-dashboard-stack flex flex-col gap-4"
             hx-trigger="refreshFinancials from:body"
             hx-get="/"
             hx-select="#dashboard-metrics"
             hx-swap="outerHTML">
 
             <!-- LINHA 2: Limites de Gastos + Metas/Caixinhas -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch w-full">
+            <div class="cb-dashboard-pair-grid grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch w-full">
 
                 <!-- Card Limites de Gastos -->
                 <section class="cb-card-dense flex flex-col">
@@ -275,88 +202,77 @@
                 </section>
             </div>
 
-            <!-- LINHA 3: Contas a Pagar/Receber -->
+            <!-- LINHA 3: Próximas Ações -->
             <div class="w-full" id="contas-pagar-receber">
-                <section class="cb-card-dense w-full">
-                    <div class="flex flex-col gap-3 mb-3">
+                <section class="cb-card-dense w-full cb-actions-section">
 
-                        <!-- Toggle Pill -->
-                        <div class="cb-segmented w-full" role="tablist" aria-label="Contas">
-                            <button type="button" data-onclick-ev="switchTab" data-tab="pagar" data-tab-group="dashboard"
-                                id="tab-pagar" role="tab" aria-selected="true" aria-controls="panel-pagar"
-                                class="flex-1 bg-white shadow-sm dark:bg-zinc-900 font-semibold min-h-[44px] text-xs transition-all btn-tactile uppercase tracking-wider">
-                                A Pagar
-                            </button>
-                            <button type="button" data-onclick-ev="switchTab" data-tab="receber" data-tab-group="dashboard"
-                                id="tab-receber" role="tab" aria-selected="false" aria-controls="panel-receber"
-                                class="flex-1 font-medium min-h-[44px] text-xs transition-all btn-tactile uppercase tracking-wider">
-                                A Receber
-                            </button>
-                        </div>
+                    <!-- Header -->
+                    <div class="cb-actions-head">
+                        <span class="cb-text-micro font-bold text-[var(--cb-text-muted)] uppercase tracking-wider">Próximas ações</span>
+                        <a href="/contas" hx-get="/contas" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="text-xs font-semibold text-[var(--cb-accent)] hover:text-[var(--cb-accent-hover)]">Ver todas</a>
+                    </div>
 
-                        <div class="flex items-center justify-between">
-                            <span class="cb-status-chip cb-status-chip-neutral">atrasados + 7 dias</span>
-                            <a href="/contas" hx-get="/contas" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="text-xs font-semibold text-[var(--cb-accent)] hover:text-[var(--cb-accent-hover)] py-1.5 px-2 -mr-2 -my-1 inline-flex items-center justify-center rounded-lg hover:bg-[var(--cb-surface-3)] transition-all min-h-[36px]">
-                                Ver histórico
-                            </a>
-                        </div>
+                    <!-- Toggle Pill -->
+                    <div class="cb-segmented cb-actions-tabs" role="tablist" aria-label="Contas">
+                        <button type="button" data-onclick-ev="switchTab" data-tab="pagar" data-tab-group="dashboard"
+                            id="tab-pagar" role="tab" aria-selected="true" aria-controls="panel-pagar"
+                            class="flex-1 font-semibold min-h-[30px] text-xs transition-all btn-tactile cb-actions-tab-active">
+                            A Pagar
+                        </button>
+                        <button type="button" data-onclick-ev="switchTab" data-tab="receber" data-tab-group="dashboard"
+                            id="tab-receber" role="tab" aria-selected="false" aria-controls="panel-receber"
+                            class="flex-1 font-medium min-h-[30px] text-xs transition-all btn-tactile">
+                            A Receber
+                        </button>
                     </div>
 
                     <!-- Painel A Pagar -->
-                    <div data-tab-panel="pagar" data-tab-group="dashboard" id="panel-pagar" role="tabpanel" aria-labelledby="tab-pagar" class="space-y-2">
+                    <div data-tab-panel="pagar" data-tab-group="dashboard" id="panel-pagar" role="tabpanel" aria-labelledby="tab-pagar">
                         {{if .PendingPayables}}
-                        <div class="flex items-center justify-between text-xs text-[var(--cb-text-muted)] px-1 mb-2">
-                            <span>Total: <strong class="text-red-600 dark:text-red-400" data-sensitive>R$ {{.Payable7dTotal.Reais}}{{.Payable7dTotal.Cents}}</strong> · {{.Payable7dCount}} itens</span>
+                        <div class="cb-actions-total">
+                            <span class="text-xs text-[var(--cb-text-muted)]">Total: <strong class="text-[var(--cb-danger)]" data-sensitive>R$ {{.Payable7dTotal.Reais}}{{.Payable7dTotal.Cents}}</strong> · {{.Payable7dCount}} itens</span>
                         </div>
-                        <div class="space-y-2">
+                        <div class="cb-actions-table">
                             {{range .PendingPayables}}
-                            <article class="flex items-center justify-between gap-3 rounded-xl px-3 py-2 border {{if .IsOverdue}}border-red-200/60 bg-red-50/50 dark:border-red-500/20 dark:bg-red-500/5{{else}}border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)]{{end}} transition-all duration-200">
-                                <div class="flex items-center gap-3 min-w-0">
-                                    <span class="w-2 h-2 rounded-full flex-shrink-0 {{if .IsOverdue}}bg-red-500{{else}}bg-amber-500{{end}}"></span>
-                                    <div class="min-w-0 flex-1">
-                                        <span class="text-xs font-semibold text-[var(--cb-text-main)] truncate block">{{if .Description}}{{.Description}}{{else}}Sem descricao{{end}}</span>
-                                        <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">{{.DueDateLabel}}</p>
-                                    </div>
-                                </div>
-                                <p class="text-sm font-bold text-red-600 dark:text-red-400 flex-shrink-0" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</p>
-                            </article>
+                            <div class="cb-actions-row">
+                                <span class="cb-actions-dot cb-actions-dot-pay" aria-hidden="true"></span>
+                                <span class="cb-actions-copy">
+                                    <span class="cb-actions-desc">{{if .Description}}{{.Description}}{{else}}Sem descricao{{end}}</span>
+                                    <span class="cb-actions-date">{{.DueDateLabel}}{{if .IsOverdue}} <span class="cb-actions-status cb-actions-status-pay">Vencido</span>{{end}}</span>
+                                </span>
+                                <span class="cb-actions-amount text-[var(--cb-danger)]" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            </div>
                             {{end}}
                         </div>
                         {{else}}
-                        <div class="cb-empty-state py-6">
-                            <div class="metas-empty-icon mb-2">
-                                <i data-lucide="check-circle" class="w-4 h-4"></i>
-                            </div>
+                        <div class="cb-empty-state py-5">
+                            <i data-lucide="check-circle" class="w-4 h-4 text-[var(--cb-text-muted)] mb-1.5"></i>
                             <p class="text-xs text-[var(--cb-text-muted)] font-medium">Nenhuma conta a pagar nos proximos 7 dias</p>
                         </div>
                         {{end}}
                     </div>
 
                     <!-- Painel A Receber -->
-                    <div data-tab-panel="receber" data-tab-group="dashboard" id="panel-receber" role="tabpanel" aria-labelledby="tab-receber" class="hidden space-y-2">
+                    <div data-tab-panel="receber" data-tab-group="dashboard" id="panel-receber" role="tabpanel" aria-labelledby="tab-receber" class="hidden">
                         {{if .PendingReceivables}}
-                        <div class="flex items-center justify-between text-xs text-[var(--cb-text-muted)] px-1 mb-2">
-                            <span>Total: <strong class="text-emerald-600 dark:text-emerald-400" data-sensitive>R$ {{.Receivable7dTotal.Reais}}{{.Receivable7dTotal.Cents}}</strong> · {{.Receivable7dCount}} itens</span>
+                        <div class="cb-actions-total">
+                            <span class="text-xs text-[var(--cb-text-muted)]">Total: <strong class="text-[var(--cb-success)]" data-sensitive>R$ {{.Receivable7dTotal.Reais}}{{.Receivable7dTotal.Cents}}</strong> · {{.Receivable7dCount}} itens</span>
                         </div>
-                        <div class="space-y-2">
+                        <div class="cb-actions-table">
                             {{range .PendingReceivables}}
-                            <article class="flex items-center justify-between gap-3 rounded-xl px-3 py-2 border {{if .IsOverdue}}border-amber-200/60 bg-amber-50/50 dark:border-amber-500/20 dark:bg-amber-500/5{{else}}border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)]{{end}} transition-all duration-200">
-                                <div class="flex items-center gap-3 min-w-0">
-                                    <span class="w-2 h-2 rounded-full flex-shrink-0 {{if .IsOverdue}}bg-amber-500{{else}}bg-emerald-500{{end}}"></span>
-                                    <div class="min-w-0 flex-1">
-                                        <span class="text-xs font-semibold text-[var(--cb-text-main)] truncate block">{{if .Description}}{{.Description}}{{else}}Sem descricao{{end}}</span>
-                                        <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">{{.DueDateLabel}}</p>
-                                    </div>
-                                </div>
-                                <p class="text-sm font-bold {{if .IsOverdue}}text-amber-600 dark:text-amber-400{{else}}text-emerald-600 dark:text-emerald-400{{end}} flex-shrink-0" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</p>
-                            </article>
+                            <div class="cb-actions-row">
+                                <span class="cb-actions-dot cb-actions-dot-recv" aria-hidden="true"></span>
+                                <span class="cb-actions-copy">
+                                    <span class="cb-actions-desc">{{if .Description}}{{.Description}}{{else}}Sem descricao{{end}}</span>
+                                    <span class="cb-actions-date">{{.DueDateLabel}}{{if .IsOverdue}} <span class="cb-actions-status cb-actions-status-recv">Vencido</span>{{end}}</span>
+                                </span>
+                                <span class="cb-actions-amount {{if .IsOverdue}}text-[var(--cb-warning)]{{else}}text-[var(--cb-success)]{{end}}" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            </div>
                             {{end}}
                         </div>
                         {{else}}
-                        <div class="cb-empty-state py-6">
-                            <div class="metas-empty-icon mb-2">
-                                <i data-lucide="check-circle" class="w-4 h-4"></i>
-                            </div>
+                        <div class="cb-empty-state py-5">
+                            <i data-lucide="check-circle" class="w-4 h-4 text-[var(--cb-text-muted)] mb-1.5"></i>
                             <p class="text-xs text-[var(--cb-text-muted)] font-medium">Nenhum recebimento nos proximos 7 dias</p>
                         </div>
                         {{end}}

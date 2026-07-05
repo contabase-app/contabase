@@ -13,7 +13,7 @@ func TestRelatoriosCompetenciaExcluiPagamentoFaturaMesmoMes(t *testing.T) {
 	seedInvoicePaymentCompetenceScenario(t, db, "2026-08-05", "2026-08-10")
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "competencia", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestRelatoriosCompetenciaExcluiPagamentoFaturaCategorizado(t *testing.T) {
 	execTestSQL(t, db, `UPDATE transactions SET category_id = 'cat-card-purchase' WHERE id = 'payment-test'`)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "competencia", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestRelatoriosCompetenciaExcluiPagamentoFaturaDescricaoAlterada(t *testing.
 	`)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "competencia", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -85,11 +85,11 @@ func TestRelatoriosCompetenciaExcluiPagamentoFaturaMesDiferente(t *testing.T) {
 	seedInvoicePaymentCompetenceScenario(t, db, "2026-07-05", "2026-08-10")
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
-	july, err := handler.buildRelatoriosData("", 7, 2026)
+	july, err := handler.buildRelatoriosData("", "competencia", "movimentos", 7, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData july: %v", err)
 	}
-	august, err := handler.buildRelatoriosData("", 8, 2026)
+	august, err := handler.buildRelatoriosData("", "competencia", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData august: %v", err)
 	}
@@ -140,8 +140,12 @@ func TestLancamentosPreservaPagamentoFaturaComoMovimentoDeCaixa(t *testing.T) {
 	if len(data.Invoices) != 1 || data.Invoices[0].Reference != "2026-08" {
 		t.Fatalf("invoices = %#v, want consolidated 2026-08 invoice", data.Invoices)
 	}
-	if data.ResumoSaidas != "R$ 250,00" {
-		t.Fatalf("ResumoSaidas = %q, want R$ 250,00", data.ResumoSaidas)
+	paid, ok := lancamentosSummaryByKey(data, "pago")
+	if !ok {
+		t.Fatalf("paid summary not found: %#v", data.ResumoStatus)
+	}
+	if paid.Amount != "R$ 250,00" {
+		t.Fatalf("paid summary amount = %q, want R$ 250,00", paid.Amount)
 	}
 }
 
@@ -152,7 +156,7 @@ func TestRelatoriosNaoIncluiTransacoesDeletadas(t *testing.T) {
 	seedRelatoriosDeletedTransactionsScenario(t, db)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-del", UserID: "user-del"}
-	data, err := handler.buildRelatoriosData("", 6, 2026)
+	data, err := handler.buildRelatoriosData("", "competencia", "movimentos", 6, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -194,7 +198,7 @@ func seedInvoicePaymentCompetenceScenario(t *testing.T, db *sql.DB, purchaseDate
 	`, now, now)
 	execTestSQL(t, db, `
 		INSERT INTO workspaces (id, name, description, type, created_at, updated_at)
-		VALUES ('ws-test', 'Workspace Test', '', 'personal', ?, ?)
+		VALUES ('ws-test', 'Workspace Test', '', 'business', ?, ?)
 	`, now, now)
 	execTestSQL(t, db, `
 		INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)

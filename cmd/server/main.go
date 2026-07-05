@@ -1423,6 +1423,48 @@ func main() {
 		h.UserID = ctx.UserID
 		h.HandleExportarCSV(w, r)
 	}))
+	mux.HandleFunc("/relatorios/dre.pdf", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !models.HasPermission(&ctx.Member, models.PermissionReportsView) {
+			respondForbidden(w, r)
+			return
+		}
+		h := relBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleExportarDREPDF(w, r)
+	}))
+	mux.HandleFunc("/relatorios/caixa.pdf", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !models.HasPermission(&ctx.Member, models.PermissionReportsView) {
+			respondForbidden(w, r)
+			return
+		}
+		h := relBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleExportarCaixaPDF(w, r)
+	}))
+	mux.HandleFunc("/relatorios/export.pdf", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !models.HasPermission(&ctx.Member, models.PermissionReportsView) {
+			respondForbidden(w, r)
+			return
+		}
+		h := relBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleExportarExtratoPDF(w, r)
+	}))
 
 	mux.HandleFunc("/contas", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if r.Method != http.MethodGet {
@@ -3334,6 +3376,47 @@ func validateSQLiteIntegrity(db *sql.DB) error {
 	return nil
 }
 
+func safeColorStyle(property, value string) template.CSS {
+	property = strings.TrimSpace(strings.ToLower(property))
+	switch property {
+	case "color", "background-color":
+	default:
+		return template.CSS("")
+	}
+
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return template.CSS("")
+	}
+
+	if strings.HasPrefix(value, "#") {
+		hex := strings.TrimPrefix(value, "#")
+		if len(hex) != 3 && len(hex) != 6 {
+			return template.CSS("")
+		}
+		for _, ch := range hex {
+			if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') && (ch < 'A' || ch > 'F') {
+				return template.CSS("")
+			}
+		}
+		return template.CSS(property + ":" + value)
+	}
+
+	if strings.HasPrefix(value, "rgb(") && strings.HasSuffix(value, ")") {
+		for _, ch := range value {
+			switch {
+			case ch >= '0' && ch <= '9':
+			case ch == 'r' || ch == 'g' || ch == 'b' || ch == '(' || ch == ')' || ch == ' ' || ch == ',':
+			default:
+				return template.CSS("")
+			}
+		}
+		return template.CSS(property + ":" + value)
+	}
+
+	return template.CSS("")
+}
+
 func buildFuncMap() template.FuncMap {
 	fieldValue := func(data any, name string) (reflect.Value, bool) {
 		v := reflect.ValueOf(data)
@@ -3424,12 +3507,34 @@ func buildFuncMap() template.FuncMap {
 			for _, item := range groups {
 				if item.MacroGroup == macroGroup {
 					if item.RawAmount < 0 {
-						return "text-rose-600 dark:text-rose-300"
+						return "text-[var(--cb-danger)]"
 					}
 					return "text-emerald-600 dark:text-emerald-300"
 				}
 			}
 			return "text-emerald-600 dark:text-emerald-300"
+		},
+		"caixaMacroValue": func(groups []handlers.CaixaMacroGroupAmount, macroGroup string) handlers.MoneyDisplay {
+			for _, item := range groups {
+				if item.MacroGroup == macroGroup {
+					return item.Amount
+				}
+			}
+			return handlers.MoneyMinor(0)
+		},
+		"caixaMacroClass": func(groups []handlers.CaixaMacroGroupAmount, macroGroup string) string {
+			for _, item := range groups {
+				if item.MacroGroup == macroGroup {
+					if item.RawAmount < 0 {
+						return "text-[var(--cb-danger)]"
+					}
+					return "text-emerald-600 dark:text-emerald-300"
+				}
+			}
+			return "text-emerald-600 dark:text-emerald-300"
+		},
+		"colorStyle": func(property, value string) template.CSS {
+			return safeColorStyle(property, value)
 		},
 		"fieldString": func(data any, name string) string {
 			f, ok := fieldValue(data, name)

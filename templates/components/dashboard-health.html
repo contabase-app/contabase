@@ -12,7 +12,7 @@
 {{define "dashboard-health-cards"}}
 <section id="dashboard-health-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} class="grid grid-cols-2 gap-3 md:contents">
     {{if .IsBusiness}}
-    <article class="cb-card-dense flex flex-col gap-2 relative">
+    <article class="cb-panel flex flex-col gap-2 relative">
         <div class="flex items-center justify-between gap-2">
             <span class="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-success)]" style="background: color-mix(in srgb, var(--cb-success) 12%, transparent)">
                 <i data-lucide="coins" class="h-3.5 w-3.5"></i>
@@ -23,7 +23,7 @@
         <p class="text-xl font-extrabold {{.Health.GrossProfitClass}}" data-sensitive>R$ {{.Health.GrossProfit.Reais}}{{.Health.GrossProfit.Cents}}</p>
         <p data-tooltip class="pointer-events-none absolute left-2 right-2 top-full z-50 mt-2 hidden rounded-lg border border-[var(--cb-border-strong)] bg-[var(--cb-surface-1)] px-2 py-1.5 text-[0.68rem] leading-snug text-[var(--cb-text-subtle)] shadow-xl">Mede resultado operacional bruto antes de despesas indiretas.</p>
     </article>
-    <article class="cb-card-dense flex flex-col gap-2 relative">
+    <article class="cb-panel flex flex-col gap-2 relative">
         <div class="flex items-center justify-between gap-2">
             <span class="flex h-7 w-7 items-center justify-center rounded-lg text-sky-600 dark:text-sky-400" style="background: color-mix(in srgb, var(--cb-info) 12%, transparent)">
                 <i data-lucide="gauge" class="h-3.5 w-3.5"></i>
@@ -35,7 +35,7 @@
         <p data-tooltip class="pointer-events-none absolute left-2 right-2 top-full z-50 mt-2 hidden rounded-lg border border-[var(--cb-border-strong)] bg-[var(--cb-surface-1)] px-2 py-1.5 text-[0.68rem] leading-snug text-[var(--cb-text-subtle)] shadow-xl">Mostra o multiplicador de retorno sobre os custos operacionais diretos.</p>
     </article>
     {{else}}
-    <article class="cb-card-dense flex flex-col gap-2 relative">
+    <article class="cb-panel flex flex-col gap-2 relative">
         <div class="flex items-center justify-between gap-2">
             <span class="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-success)]" style="background: color-mix(in srgb, var(--cb-success) 12%, transparent)">
                 <i data-lucide="piggy-bank" class="h-3.5 w-3.5"></i>
@@ -46,7 +46,7 @@
         <p class="text-xl font-extrabold {{.Health.SavingsRateClass}}" data-sensitive>{{.Health.SavingsRateLabel}}</p>
         <p data-tooltip class="pointer-events-none absolute left-2 right-2 top-full z-50 mt-2 hidden rounded-lg border border-[var(--cb-border-strong)] bg-[var(--cb-surface-1)] px-2 py-1.5 text-[0.68rem] leading-snug text-[var(--cb-text-subtle)] shadow-xl">Receita paga menos despesas pagas do mês, sem duplicar pagamento de fatura.</p>
     </article>
-    <article class="cb-card-dense flex flex-col gap-2 relative">
+    <article class="cb-panel flex flex-col gap-2 relative">
         <div class="flex items-center justify-between gap-2">
             <span class="flex h-7 w-7 items-center justify-center rounded-lg text-sky-600 dark:text-sky-400" style="background: color-mix(in srgb, var(--cb-info) 12%, transparent)">
                 <i data-lucide="calendar-clock" class="h-3.5 w-3.5"></i>

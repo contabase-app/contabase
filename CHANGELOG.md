@@ -11,6 +11,32 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
+## [v0.1.0-beta.5]
+
+### Adicionado
+- **Relatórios — Fluxo de Caixa:** adicionada nova estrutura com submodos Realizado e Previsão. O Realizado considera apenas dinheiro já liquidado por data efetiva, com fallback legado para a data original, incluindo pagamentos de fatura como saída e excluindo pendentes, compras individuais de cartão e transferências internas do resultado consolidado. A Previsão combina realizado e pendente por vencimento, inclui faturas abertas/fechadas pelo saldo pendente, evita duplicidade entre compra de cartão e fatura, exibe janela móvel de mês selecionado + 12 meses e apresenta Saldo Projetado.
+- **Relatórios — Extrato:** adicionada visão de movimentos confirmados e resumo diário, com receitas, despesas, transferências e pagamentos de fatura já realizados. Transferências aparecem como entrada/saída por conta no extrato, mas não distorcem o resultado consolidado.
+- **Relatórios — Exportações:** adicionados/ajustados CSV e PDF para Competência/DRE, Fluxo de Caixa Realizado/Previsão e Extrato de movimentos/resumo diário. PDFs usam identidade visual do workspace, fonte TrueType embutida e layout revisado para acentuação, paginação e largura de tabelas.
+
+### Alterado
+- **Interface — Lançamento:** novo lançamento não pré-seleciona mais a primeira categoria de despesa ao abrir. O placeholder inicial é "Selecione uma categoria".
+- **Interface — Lançamento:** seletor de contas exibe saldo atual de cada conta abaixo do nome (ex: "Saldo R$ 1.234,56").
+- **Interface — Lançamento:** seletor de cartões exibe texto curto com limite disponível e próximo vencimento (ex: "Disponível R$ 1.234,56 • vence 08/Jun").
+- **Relatórios — estrutura por workspace:** workspaces Personal exibem Fluxo de Caixa e Extrato, sem Competência/Por lançamento. Workspaces Business exibem Fluxo de Caixa, Competência/DRE e Extrato.
+- **Relatórios — Competência/DRE:** mantida no Business para análise gerencial/contábil por data de origem econômica do lançamento, incluindo pagos e pendentes. Compras de cartão entram por competência; pagamentos de fatura são excluídos para evitar duplicidade com as compras.
+- **Relatórios — composição analítica de cartão:** itens de fatura são abertos por categoria/macro na análise, evitando agrupar tudo apenas como "Fatura de cartão" quando o objetivo é explicar a composição do gasto.
+
+### Corrigido
+- **Interface — Lançamento:** vencimento exibido no seletor de cartões agora usa `due_date` da próxima fatura `OPEN`, em vez de `closing_date` ou fatura `CLOSED`.
+- **Relatórios — conciliação de caixa, faturas e competência:** corrigidas separação entre caixa realizado, previsão e competência; duplicidade de faturas; pagamento parcial de fatura; saldo pendente de fatura; percentuais pequenos em categorias; e preservação de tab/modo ao trocar mês.
+- **Relatórios — Saldo Projetado:** cálculo passa a partir do saldo atual das contas reais, somando pendências futuras a receber e subtraindo pendências futuras a pagar e faturas pendentes, sem usar contas de cartão como saldo real e sem reconstruir histórico de saldo passado.
+
+### Testes
+- **Relatórios:** adicionada cobertura para contratos financeiros de Fluxo de Caixa Realizado/Previsão, Competência/DRE, Extrato, cartão/fatura, saldo projetado, exportações CSV/PDF, isolamento por workspace, renderização Personal/Business e preservação de tab/modo.
+
+### Documentação
+- **Documentação pública:** atualizada a página de regras financeiras com explicação prática de quando usar Fluxo de Caixa, Competência/DRE e Extrato, incluindo exemplos de compra no cartão, receita pendente, pagamento parcial de fatura e previsão de saldo futuro.
+
 ## [v0.1.0-beta.4]
 
 ### Adicionado

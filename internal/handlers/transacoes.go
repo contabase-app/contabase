@@ -44,6 +44,7 @@ type FormAccount struct {
 	ClosingDay       string
 	DueDay           string
 	CreditLimitLabel string
+	BalanceLabel     string
 }
 
 type FormCategory struct {
@@ -218,23 +219,6 @@ func (h *TransactionHandler) HandleNovaTransacao(w http.ResponseWriter, r *http.
 	tipoParam := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("tipo")))
 	if tipoParam == "receita" || tipoParam == "transferencia" || tipoParam == "despesa" {
 		data.TipoInicial = tipoParam
-		if tipoParam == "receita" {
-			if cat, ok := preferredFormCategory(categories, "", "INCOME"); ok {
-				applyFormCategory(&data, cat)
-			}
-		} else if tipoParam == "transferencia" {
-			data.CategoriaID = ""
-			data.CategoriaNome = ""
-			data.CategoriaIcon = ""
-			data.CategoriaColor = ""
-			data.CategoriaType = ""
-		} else if tipoParam == "despesa" {
-			if cat, ok := preferredFormCategory(categories, "Alimentação", "EXPENSE"); ok {
-				applyFormCategory(&data, cat)
-			} else if cat, ok := preferredFormCategory(categories, "", "EXPENSE"); ok {
-				applyFormCategory(&data, cat)
-			}
-		}
 	}
 
 	t3 := time.Now()
@@ -1186,6 +1170,7 @@ func (h *TransactionHandler) queryFormAccounts() ([]FormAccount, error) {
 			COALESCE(NULLIF(a.provider_slug, ''), 'custom'),
 			COALESCE(NULLIF(a.color, ''), '#6B7280'),
 			COALESCE(NULLIF(a.icon, ''), ''),
+			a.current_balance,
 			COALESCE(cc.closing_day, 0), COALESCE(cc.due_day, 0),
 			COALESCE(cc.credit_limit, 0)
 		FROM accounts a
@@ -1200,10 +1185,11 @@ func (h *TransactionHandler) queryFormAccounts() ([]FormAccount, error) {
 	defer rows.Close()
 
 	var accounts []FormAccount
+	cardLimits := make(map[string]int64)
 	for rows.Next() {
 		var id, name, accType, providerSlug, color, icon string
-		var closingDay, dueDay, creditLimit int64
-		if err := rows.Scan(&id, &name, &accType, &providerSlug, &color, &icon, &closingDay, &dueDay, &creditLimit); err != nil {
+		var currentBalance, closingDay, dueDay, creditLimit int64
+		if err := rows.Scan(&id, &name, &accType, &providerSlug, &color, &icon, &currentBalance, &closingDay, &dueDay, &creditLimit); err != nil {
 			return nil, err
 		}
 
@@ -1226,14 +1212,26 @@ func (h *TransactionHandler) queryFormAccounts() ([]FormAccount, error) {
 			fa.ClosingDay = fmt.Sprintf("%d", closingDay)
 			fa.DueDay = fmt.Sprintf("%d", dueDay)
 			fa.ProviderName = accountProviderName(providerSlug)
-			fa.CreditLimitLabel = buildCreditCardSubtitle(fa.ProviderName, creditLimit)
+			cardLimits[id] = creditLimit
 		} else {
 			fa.Tipo = "conta"
+			fa.BalanceLabel = "Saldo " + formatCurrencyLabel(currentBalance)
 		}
 
 		accounts = append(accounts, fa)
 	}
-	return accounts, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+
+	for i := range accounts {
+		if accounts[i].Tipo == "cartao" {
+			accounts[i].CreditLimitLabel = buildCreditCardAvailableLimitSubtitle(h.DB, h.WorkspaceID, accounts[i].ID, cardLimits[accounts[i].ID])
+		}
+	}
+
+	return accounts, nil
 }
 
 func (h *TransactionHandler) queryFilterAccounts() ([]FormAccount, error) {
@@ -1465,9 +1463,6 @@ func newFormTransacaoData(accounts []FormAccount, categories []FormCategory) For
 		OrigemIcon:          "wallet",
 		OrigemColor:         "#6366F1",
 		OrigemProviderMark:  "",
-		CategoriaNome:       "Categoria",
-		CategoriaIcon:       "tag",
-		CategoriaColor:      "rose",
 		DestinoNome:         "Conta de destino",
 		DestinoIcon:         "wallet",
 		DestinoColor:        "#6366F1",
@@ -1486,12 +1481,6 @@ func newFormTransacaoData(accounts []FormAccount, categories []FormCategory) For
 		applyFormDestination(&data, acc)
 	} else if acc, ok := preferredFormAccount(accounts, "", "conta"); ok {
 		applyFormDestination(&data, acc)
-	}
-
-	if cat, ok := preferredFormCategory(categories, "Alimentação", "EXPENSE"); ok {
-		applyFormCategory(&data, cat)
-	} else if cat, ok := preferredFormCategory(categories, "", "EXPENSE"); ok {
-		applyFormCategory(&data, cat)
 	}
 
 	return data
@@ -2018,10 +2007,108 @@ type UnifiedItem struct {
 	Invoice     InvoiceRow
 }
 
+type LancamentosStatusSummary struct {
+	Key         string
+	Label       string
+	Icon        string
+	Amount      string
+	Count       int
+	CountLabel  string
+	ToneClasses string
+	DotClasses  string
+}
+
 func sortUnifiedItems(items []UnifiedItem) {
 	sort.SliceStable(items, func(i, j int) bool {
 		return items[i].DateUnix < items[j].DateUnix
 	})
+}
+
+type lancamentosStatusBucket struct {
+	amount int64
+	count  int
+}
+
+func buildLancamentosStatusSummary(transactions []TransactionRow, invoices []InvoiceRow) []LancamentosStatusSummary {
+	buckets := map[string]*lancamentosStatusBucket{
+		"pago":     {},
+		"pendente": {},
+		"vencido":  {},
+		"agendado": {},
+	}
+	add := func(key string, amount int64) {
+		if key == "" {
+			return
+		}
+		b := buckets[key]
+		if b == nil {
+			return
+		}
+		b.amount += amount
+		b.count++
+	}
+	for _, row := range transactions {
+		add(lancamentosTransactionStatusKey(row), row.Amount)
+	}
+	for _, inv := range invoices {
+		add(lancamentosInvoiceStatusKey(inv), inv.Pending)
+	}
+
+	return []LancamentosStatusSummary{
+		lancamentosStatusSummaryItem("pago", "Pago", "check-circle-2", "text-emerald-700 bg-emerald-500/10 border-emerald-500/20 dark:text-emerald-200 dark:bg-emerald-500/15 dark:border-emerald-400/20", "bg-emerald-500", buckets["pago"]),
+		lancamentosStatusSummaryItem("pendente", "Pendente", "clock", "text-amber-700 bg-amber-500/10 border-amber-500/20 dark:text-amber-200 dark:bg-amber-500/15 dark:border-amber-400/20", "bg-amber-500", buckets["pendente"]),
+		lancamentosStatusSummaryItem("vencido", "Vencido", "triangle-alert", "text-red-700 bg-red-500/10 border-red-500/20 dark:text-red-200 dark:bg-red-500/15 dark:border-red-400/20", "bg-red-500", buckets["vencido"]),
+		lancamentosStatusSummaryItem("agendado", "Agendado", "timer", "text-violet-700 bg-violet-500/10 border-violet-500/20 dark:text-violet-200 dark:bg-violet-500/15 dark:border-violet-400/20", "bg-violet-500", buckets["agendado"]),
+	}
+}
+
+func lancamentosStatusSummaryItem(key, label, icon, toneClasses, dotClasses string, b *lancamentosStatusBucket) LancamentosStatusSummary {
+	count := 0
+	var amount int64
+	if b != nil {
+		count = b.count
+		amount = b.amount
+	}
+	countLabel := fmt.Sprintf("%d itens", count)
+	if count == 1 {
+		countLabel = "1 item"
+	}
+	return LancamentosStatusSummary{
+		Key:         key,
+		Label:       label,
+		Icon:        icon,
+		Amount:      formatCurrencyLabel(amount),
+		Count:       count,
+		CountLabel:  countLabel,
+		ToneClasses: toneClasses,
+		DotClasses:  dotClasses,
+	}
+}
+
+func lancamentosTransactionStatusKey(row TransactionRow) string {
+	switch {
+	case row.PaymentStatus == models.PaymentStatusPaid:
+		return "pago"
+	case row.IsScheduled:
+		return "agendado"
+	case row.IsOverdue:
+		return "vencido"
+	case row.IsPending:
+		return "pendente"
+	default:
+		return ""
+	}
+}
+
+func lancamentosInvoiceStatusKey(inv InvoiceRow) string {
+	switch {
+	case inv.Pending <= 0:
+		return "pago"
+	case inv.IsOverdue:
+		return "vencido"
+	default:
+		return "pendente"
+	}
 }
 
 type DashboardData struct {
@@ -3537,6 +3624,7 @@ type LancamentosData struct {
 	ResumoNegativo            bool
 	ResumoAcumulado           string
 	AcumuladoNegativo         bool
+	ResumoStatus              []LancamentosStatusSummary
 	UnifiedItems              []UnifiedItem
 	SortOrder                 string
 	StatusPendenteOn          bool
@@ -6227,55 +6315,6 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 	nextMonth := time.Date(ano, time.Month(mes)+1, 1, 0, 0, 0, 0, loc)
 	monthEnd := nextMonth.Add(-1 * time.Second).Unix()
 
-	var incomeTotal, expenseTotal int64
-	summaryRows, err := h.DB.Query(`
-		SELECT t.type, COALESCE(SUM(t.amount), 0)
-		FROM transactions t
-		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
-		WHERE t.workspace_id = ?
-		  AND t.date >= ?
-		  AND t.date <= ?
-		  AND t.type IN ('INCOME', 'EXPENSE')
-		  AND a.type != 'CREDIT_CARD'
-		GROUP BY t.type
-	`, h.WorkspaceID, monthStart, monthEnd)
-	if err != nil {
-		return data, fmt.Errorf("query monthly summary: %w", err)
-	}
-	defer summaryRows.Close()
-	for summaryRows.Next() {
-		var txType string
-		var total int64
-		if err := summaryRows.Scan(&txType, &total); err != nil {
-			return data, fmt.Errorf("scan monthly summary: %w", err)
-		}
-		switch txType {
-		case "INCOME":
-			incomeTotal += total
-		case "EXPENSE":
-			expenseTotal += total
-		}
-	}
-	if err := summaryRows.Err(); err != nil {
-		return data, fmt.Errorf("monthly summary rows: %w", err)
-	}
-
-	data.ResumoEntradas = formatCurrencyLabel(incomeTotal)
-	data.ResumoSaidas = formatCurrencyLabel(expenseTotal)
-	saldo := incomeTotal - expenseTotal
-	data.ResumoSaldo = formatCurrencyLabel(saldo)
-	if saldo < 0 {
-		data.ResumoNegativo = true
-	}
-
-	var totalBalance int64
-	h.DB.QueryRow(`SELECT COALESCE(SUM(current_balance), 0) FROM accounts WHERE workspace_id = ? AND type != 'CREDIT_CARD' AND archived_at IS NULL`, h.WorkspaceID).Scan(&totalBalance)
-	acumulado := h.projectedAccumulatedBalance(totalBalance, selectedMonth)
-	data.ResumoAcumulado = formatCurrencyLabel(acumulado)
-	if acumulado < 0 {
-		data.AcumuladoNegativo = true
-	}
-
 	filterAccountType := ""
 	if accountFilter != "" {
 		_ = h.DB.QueryRow(`SELECT type FROM accounts WHERE id = ? AND workspace_id = ?`, accountFilter, h.WorkspaceID).Scan(&filterAccountType)
@@ -6353,11 +6392,11 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 				AND (? = '' OR a.id = ?)
 		GROUP BY i.id
 					ORDER BY i.due_date ASC, a.name ASC
-		`, h.WorkspaceID, h.WorkspaceID, h.WorkspaceID, monthStart, monthEnd, accountFilter, accountFilter)
+			`, h.WorkspaceID, h.WorkspaceID, h.WorkspaceID, monthStart, monthEnd, accountFilter, accountFilter)
 		if invoiceErr == nil {
-			defer invoiceRows.Close()
 			todayUnix := businessDayStartUnix(time.Now())
 			realInvoiceAccounts := map[string]struct{}{}
+			var invoiceCandidates []InvoiceRow
 			for invoiceRows.Next() {
 				var inv InvoiceRow
 				var providerSlug, color string
@@ -6384,6 +6423,14 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 					inv.FaturaURL = fmt.Sprintf("/cartoes/%s/faturas?mes=%d&ano=%d", inv.AccountID, refMonth, refYear)
 				} else {
 					inv.FaturaURL = fmt.Sprintf("/cartoes/%s/faturas?mes=%d&ano=%d", inv.AccountID, mes, ano)
+				}
+				invoiceCandidates = append(invoiceCandidates, inv)
+			}
+			invoiceRows.Close()
+
+			for _, inv := range invoiceCandidates {
+				if !h.lancamentosInvoiceMatchesNonStatusFilters(inv, filters) {
+					continue
 				}
 				if !lancamentosInvoiceMatchesStatus(inv, filters, todayUnix) {
 					continue
@@ -6460,6 +6507,9 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 						months := []string{"Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"}
 						inv.ReferenceLabel = fmt.Sprintf("%s/%d", months[refMonth-1], refYear)
 						inv.FaturaURL = fmt.Sprintf("/cartoes/%s/faturas?mes=%d&ano=%d", inv.AccountID, refMonth, refYear)
+						if !h.lancamentosInvoiceMatchesNonStatusFilters(inv, filters) {
+							continue
+						}
 						if !lancamentosInvoiceMatchesStatus(inv, filters, todayUnix) {
 							continue
 						}
@@ -6469,18 +6519,9 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 				cardRows.Close()
 			}
 
-			// Include non-paid invoices in expense summary
-			for _, inv := range data.Invoices {
-				if inv.Pending > 0 {
-					expenseTotal += inv.Pending
-				}
-			}
-			data.ResumoSaidas = formatCurrencyLabel(expenseTotal)
-			saldo := incomeTotal - expenseTotal
-			data.ResumoSaldo = formatCurrencyLabel(saldo)
-			data.ResumoNegativo = saldo < 0
 		}
 	}
+	data.ResumoStatus = buildLancamentosStatusSummary(data.Transactions, data.Invoices)
 
 	// CONTRACT: docs/contracts/INVOICE_RENDER_CONTRACT.md
 	// Build UnifiedItems: merge transactions and invoices sorted by date desc
@@ -6571,6 +6612,134 @@ func lancamentosInvoiceMatchesStatus(inv InvoiceRow, filters LancamentosFilters,
 		}
 	}
 	return false
+}
+
+func (h *TransactionHandler) lancamentosInvoiceMatchesNonStatusFilters(inv InvoiceRow, filters LancamentosFilters) bool {
+	if len(filters.OrigemIDs) > 0 && !containsString(filters.OrigemIDs, inv.AccountID) {
+		return false
+	}
+	if len(filters.DestinoIDs) > 0 {
+		return false
+	}
+	if !lancamentosInvoiceMatchesTypeSelection(filters.normalizedTypes()) {
+		return false
+	}
+	if !lancamentosInvoiceNeedsItemFilter(filters) {
+		return true
+	}
+	if strings.HasPrefix(inv.ID, "virtual-") {
+		return h.lancamentosVirtualInvoiceHasMatchingItems(inv, filters)
+	}
+	return h.lancamentosInvoiceHasMatchingItems(inv.ID, filters)
+}
+
+func lancamentosInvoiceMatchesTypeSelection(types []string) bool {
+	if len(types) == 0 {
+		return true
+	}
+	for _, txType := range types {
+		if txType == "despesa" || txType == "fixo" || txType == "parcelado" {
+			return true
+		}
+	}
+	return false
+}
+
+func lancamentosInvoiceNeedsItemFilter(filters LancamentosFilters) bool {
+	if len(filters.Categorias) > 0 || filters.Busca != "" {
+		return true
+	}
+	for _, txType := range filters.normalizedTypes() {
+		if txType == "fixo" || txType == "parcelado" {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *TransactionHandler) lancamentosInvoiceHasMatchingItems(invoiceID string, filters LancamentosFilters) bool {
+	clauses := []string{`t.workspace_id = ?`, `t.invoice_id = ?`, `t.type = 'EXPENSE'`}
+	args := []interface{}{h.WorkspaceID, invoiceID}
+	return h.lancamentosInvoiceItemMatchExists(clauses, args, filters)
+}
+
+func (h *TransactionHandler) lancamentosVirtualInvoiceHasMatchingItems(inv InvoiceRow, filters LancamentosFilters) bool {
+	refYear, refMonth, err := parseInvoiceReference(inv.Reference)
+	if err != nil {
+		return false
+	}
+	var closingDay, dueDay int64
+	if err := h.DB.QueryRow(`SELECT closing_day, due_day FROM credit_cards WHERE account_id = ?`, inv.AccountID).Scan(&closingDay, &dueDay); err != nil {
+		return false
+	}
+	cycleStart, cycleEnd := invoiceCycleBoundsForReference(refYear, refMonth, closingDay, dueDay)
+	clauses := []string{
+		`t.workspace_id = ?`,
+		`t.account_id = ?`,
+		`t.invoice_id IS NULL`,
+		`t.type = 'EXPENSE'`,
+		`t.date >= ?`,
+		`t.date < ?`,
+	}
+	args := []interface{}{h.WorkspaceID, inv.AccountID, cycleStart, cycleEnd}
+	return h.lancamentosInvoiceItemMatchExists(clauses, args, filters)
+}
+
+func (h *TransactionHandler) lancamentosInvoiceItemMatchExists(clauses []string, args []interface{}, filters LancamentosFilters) bool {
+	typeClauses := lancamentosInvoiceItemTypeClauses(filters.normalizedTypes())
+	if len(typeClauses) > 0 {
+		clauses = append(clauses, "("+strings.Join(typeClauses, " OR ")+")")
+	}
+	if len(filters.Categorias) > 0 {
+		clauses = append(clauses, `t.category_id IN (`+sqlPlaceholders(len(filters.Categorias))+`)`)
+		args = appendStrings(args, filters.Categorias)
+	}
+	if filters.Busca != "" {
+		like := "%" + filters.Busca + "%"
+		searchClauses := []string{
+			`UNACCENT(COALESCE(t.description, '')) LIKE UNACCENT(?)`,
+			`UNACCENT(COALESCE(t.notes, '')) LIKE UNACCENT(?)`,
+			`UNACCENT(COALESCE(c.name, '')) LIKE UNACCENT(?)`,
+			`UNACCENT(COALESCE(a.name, '')) LIKE UNACCENT(?)`,
+		}
+		args = append(args, like, like, like, like)
+		clauses = append(clauses, "("+strings.Join(searchClauses, " OR ")+")")
+	}
+
+	query := `
+		SELECT COUNT(1)
+		FROM transactions t
+		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
+		WHERE ` + strings.Join(clauses, " AND ")
+	var count int
+	if err := h.DB.QueryRow(query, args...).Scan(&count); err != nil {
+		return false
+	}
+	return count > 0
+}
+
+func lancamentosInvoiceItemTypeClauses(types []string) []string {
+	var clauses []string
+	hasExpense := false
+	for _, txType := range types {
+		if txType == "despesa" {
+			hasExpense = true
+			break
+		}
+	}
+	if len(types) == 0 || hasExpense {
+		return clauses
+	}
+	for _, txType := range types {
+		switch txType {
+		case "fixo":
+			clauses = append(clauses, `t.recurring_rule_id IS NOT NULL`)
+		case "parcelado":
+			clauses = append(clauses, `t.total_installments > 1`)
+		}
+	}
+	return clauses
 }
 
 func hasAllLancamentosStatuses(statuses []string) bool {
@@ -7368,6 +7537,60 @@ func buildCreditCardSubtitle(providerName string, creditLimit int64) string {
 		return "Cartão"
 	}
 	return "Cartão \u2022 " + strings.Join(parts, " \u2022 ")
+}
+
+func buildCreditCardAvailableLimitSubtitle(db *sql.DB, workspaceID, accountID string, creditLimit int64) string {
+	available := creditLimit
+	if creditLimit > 0 {
+		if outstanding, err := sumCardOutstandingLimit(db, workspaceID, accountID); err == nil {
+			available = creditLimit - outstanding
+			if available < 0 {
+				available = 0
+			}
+		}
+	}
+
+	var dueLabel string
+	if dueUnix, err := nextOpenInvoiceDueDateForFormAccount(db, workspaceID, accountID); err == nil && dueUnix > 0 {
+		dueLabel = formatDueDateCompact(dueUnix)
+	}
+
+	if dueLabel != "" {
+		return "Limite " + formatCurrencyLabel(available) + " \u2022 vence " + dueLabel
+	}
+	return "Limite " + formatCurrencyLabel(available)
+}
+
+func nextOpenInvoiceDueDateForFormAccount(db *sql.DB, workspaceID, accountID string) (int64, error) {
+	var dueUnix int64
+	err := db.QueryRow(`
+		SELECT i.due_date
+		FROM invoices i
+		JOIN accounts a ON a.id = i.account_id
+		WHERE i.account_id = ?
+		  AND a.workspace_id = ?
+		  AND a.type = ?
+		  AND i.status = ?
+		  AND i.due_date > 0
+		ORDER BY i.reference ASC, i.due_date ASC
+		LIMIT 1
+	`, accountID, workspaceID, models.AccountTypeCreditCard, models.InvoiceStatusOpen).Scan(&dueUnix)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return dueUnix, nil
+}
+
+func formatDueDateCompact(dueUnix int64) string {
+	if dueUnix <= 0 {
+		return ""
+	}
+	monthsShort := []string{"Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"}
+	t := time.Unix(dueUnix, 0)
+	return fmt.Sprintf("%02d/%s", t.Day(), monthsShort[t.Month()-1])
 }
 
 type ModalPickerItem struct {

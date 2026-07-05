@@ -130,3 +130,629 @@
     flex-shrink: 0;
     line-height: 1;
 }
+
+/* === Financial panel — mockup-aligned compact header + balance + pair === */
+
+.cb-dashboard {
+    --cb-dashboard-gap: 1.25rem;
+}
+
+.cb-dashboard-layout,
+.cb-dashboard-stack,
+.cb-dashboard-pair-grid {
+    gap: var(--cb-dashboard-gap);
+}
+
+.cb-fin-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 1.125rem;
+}
+
+.cb-fin-kicker {
+    color: var(--cb-text-muted);
+    font-size: 0.75rem;
+    font-weight: 760;
+    letter-spacing: 0;
+}
+
+.cb-fin-balance {
+    display: grid;
+    gap: 0.1875rem;
+    margin-top: 0.8125rem;
+    padding-bottom: 0.9375rem;
+}
+
+.cb-fin-hero {
+    margin: 0;
+    font-size: 2.5rem;
+    line-height: 1;
+    font-weight: 880;
+    letter-spacing: -0.025em;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
+.cb-fin-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: hidden;
+    border: 1px solid var(--cb-border-subtle);
+    border-radius: 0.875rem;
+    background: var(--cb-surface-2);
+}
+
+.cb-fin-pair-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 0.75rem;
+    min-width: 0;
+}
+
+.cb-fin-pair-cell + .cb-fin-pair-cell {
+    border-left: 1px solid var(--cb-border-subtle);
+}
+
+.cb-fin-pair-icon {
+    display: inline-flex;
+    flex: 0 0 1.5rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.625rem;
+    color: var(--cb-text-muted);
+    background: color-mix(in srgb, var(--cb-text-muted) 9%, transparent);
+}
+
+.cb-fin-pair-copy {
+    display: grid;
+    gap: 0.0625rem;
+    min-width: 0;
+}
+
+.cb-fin-metric-label {
+    display: flex;
+    align-items: center;
+    color: var(--cb-text-muted);
+    font-size: 0.6875rem;
+    font-weight: 700;
+}
+
+.cb-fin-pair-val {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 720;
+    letter-spacing: -0.006em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cb-fin-trend {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 2.25rem;
+    color: var(--cb-text-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding-block: 0.375rem;
+}
+
+.cb-fin-trend-val {
+    font-size: 0.75rem;
+    font-weight: 760;
+    color: var(--cb-text-muted);
+}
+
+.cb-fin-accounts-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+}
+
+.cb-fin-accounts-list {
+    margin-top: 0.125rem;
+    border-top: 1px solid color-mix(in srgb, var(--cb-border-subtle) 55%, transparent);
+}
+
+.cb-fin-account-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 4rem;
+    padding: 0.75rem 0.25rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--cb-border-subtle) 55%, transparent);
+    border-radius: 0;
+    transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.cb-fin-account-row:hover {
+    background: color-mix(in srgb, var(--cb-surface-2) 80%, transparent);
+    border-radius: 0.75rem;
+}
+
+.cb-fin-account-main {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.cb-fin-account-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.cb-fin-account-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--cb-text-main);
+    font-size: 0.8125rem;
+    font-weight: 720;
+    line-height: 1.2;
+}
+
+.cb-fin-account-type {
+    margin-top: 0.1875rem;
+    color: var(--cb-text-subtle);
+    font-size: 0.625rem;
+    font-weight: 700;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.cb-fin-account-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.125rem;
+    flex-shrink: 0;
+}
+
+.cb-fin-account-value {
+    color: var(--cb-text-main);
+    font-size: 0.875rem;
+    font-weight: 780;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cb-fin-account-trend {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+}
+
+@media (max-width: 620px) {
+    .cb-dashboard {
+        --cb-dashboard-gap: 1.125rem;
+    }
+
+    .cb-fin-hero {
+        font-size: 2rem;
+    }
+
+    .cb-fin-pair {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .cb-fin-pair-val {
+        font-size: 0.75rem;
+    }
+
+    .cb-fin-pair-cell {
+        gap: 0.5rem;
+        padding: 0.5625rem 0.625rem;
+    }
+
+    .cb-fin-account-row {
+        padding-inline: 0.125rem;
+    }
+
+    .cb-fin-account-value {
+        font-size: 0.8125rem;
+    }
+}
+
+/* === Resumo do mês panel — 4-cell grid, mockup-aligned === */
+
+.cb-summary-panel {
+    padding-bottom: 0.125rem;
+}
+
+.cb-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    min-height: 6.75rem;
+    margin-top: 0.375rem;
+}
+
+.cb-summary-cell {
+    display: grid;
+    align-content: start;
+    gap: 0.25rem;
+    padding: 0.625rem 1rem 0.5rem;
+    min-width: 0;
+    border-left: 1px solid var(--cb-border-subtle);
+}
+
+.cb-summary-cell:first-child {
+    border-left: 0;
+}
+
+.cb-summary-label {
+    color: var(--cb-text-muted);
+    font-size: 0.75rem;
+    font-weight: 720;
+    letter-spacing: 0;
+}
+
+.cb-summary-value {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 850;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cb-summary-meta {
+    color: var(--cb-text-subtle);
+    font-size: 0.6875rem;
+    font-weight: 650;
+}
+
+@media (max-width: 860px) {
+    .cb-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cb-summary-cell:nth-child(3) {
+        border-left: 0;
+        border-top: 1px solid var(--cb-border-subtle);
+    }
+
+    .cb-summary-cell:nth-child(4) {
+        border-top: 1px solid var(--cb-border-subtle);
+    }
+}
+
+@media (max-width: 620px) {
+    .cb-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cb-summary-cell:nth-child(3) {
+        border-left: 0;
+        border-top: 1px solid var(--cb-border-subtle);
+    }
+
+    .cb-summary-cell:nth-child(4) {
+        border-top: 1px solid var(--cb-border-subtle);
+    }
+
+    .cb-summary-head {
+        display: none;
+    }
+
+    .cb-summary-grid {
+        margin-top: 0;
+    }
+
+    .cb-summary-cell {
+        padding: 0.5rem 0.75rem 0.5rem;
+    }
+}
+
+/* === Próximas ações — clean list, close to the old A Pagar/A Receber rhythm === */
+
+.cb-actions-section {
+    padding-bottom: 0;
+}
+
+.cb-actions-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0 0.25rem 0.5rem;
+}
+
+.cb-actions-tabs {
+    margin-bottom: 0.5rem;
+    min-height: 2rem;
+}
+
+.cb-actions-tabs button {
+    min-height: 2rem !important;
+}
+
+.cb-actions-tab-active {
+    background-color: var(--cb-surface-2) !important;
+    color: var(--cb-accent) !important;
+    border: 1px solid var(--cb-border-subtle) !important;
+    font-weight: 700;
+}
+
+.dark .cb-actions-tab-active {
+    background-color: var(--cb-surface-2) !important;
+    color: var(--cb-accent) !important;
+    border-color: var(--cb-border-strong) !important;
+}
+
+.cb-actions-total {
+    padding: 0.375rem 0.125rem 0.5rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--cb-border-subtle) 50%, transparent);
+}
+
+.cb-actions-table {
+    min-width: 0;
+}
+
+.cb-actions-row {
+    display: grid;
+    grid-template-columns: 0.5rem minmax(0, 1fr) max-content;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 3rem;
+    padding: 0.625rem 0.25rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--cb-border-subtle) 60%, transparent);
+    border-radius: 0;
+    color: var(--cb-text-main);
+    font-size: 0.75rem;
+    transition: background-color 0.18s ease;
+}
+
+.cb-actions-row:last-child {
+    border-bottom: 0;
+}
+
+.cb-actions-row:hover {
+    background: color-mix(in srgb, var(--cb-surface-2) 82%, transparent);
+    border-radius: 0.75rem;
+}
+
+.cb-actions-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    background: currentColor;
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.cb-actions-dot-pay {
+    color: var(--cb-danger);
+}
+
+.cb-actions-dot-recv {
+    color: var(--cb-success);
+}
+
+.cb-actions-copy {
+    display: grid;
+    gap: 0.125rem;
+    min-width: 0;
+}
+
+.cb-actions-desc {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 780;
+    color: var(--cb-text-main);
+}
+
+.cb-actions-date {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-width: 0;
+    color: var(--cb-text-muted);
+    font-size: 0.6875rem;
+    font-weight: 680;
+    line-height: 1.25;
+}
+
+.cb-actions-status {
+    display: inline-flex;
+    align-items: center;
+    color: currentColor;
+    font-size: 0.625rem;
+    font-weight: 780;
+    white-space: nowrap;
+}
+
+.cb-actions-status::before {
+    content: none;
+}
+
+.cb-actions-status-pay {
+    color: var(--cb-danger);
+}
+
+.cb-actions-status-recv {
+    color: var(--cb-success);
+}
+
+.cb-actions-amount {
+    color: var(--cb-text-main);
+    font-size: 0.8125rem;
+    font-weight: 820;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+    .cb-actions-row {
+        grid-template-columns: 0.5rem minmax(0, 1fr) max-content;
+        gap: 0.625rem;
+        padding: 0.625rem 0.125rem;
+        min-height: 3rem;
+    }
+
+    .cb-actions-date {
+        font-size: 0.6875rem;
+    }
+
+    .cb-actions-amount {
+        align-self: start;
+    }
+}
+
+/* === Cards carousel — horizontal desktop rail, vertical mobile list === */
+
+.cb-dashboard-cards-section {
+    min-width: 0;
+}
+
+.cb-cards-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.cb-cards-controls {
+    display: none;
+    align-items: center;
+    gap: 0.375rem;
+}
+
+.cb-dashboard-cards-section.is-scrollable .cb-cards-controls {
+    display: inline-flex;
+}
+
+.cb-cards-control {
+    display: inline-flex;
+    width: 2rem;
+    height: 2rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--cb-border-subtle);
+    border-radius: 0.625rem;
+    color: var(--cb-text-muted);
+    background: var(--cb-surface-1);
+    transition: color 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, opacity 0.18s ease;
+}
+
+.cb-cards-control:hover:not(:disabled) {
+    color: var(--cb-text-main);
+    border-color: var(--cb-border-strong);
+    background: var(--cb-surface-2);
+}
+
+.cb-cards-control:focus-visible {
+    outline: 2px solid var(--cb-border-focus);
+    outline-offset: 2px;
+}
+
+.cb-cards-control:disabled {
+    opacity: 0.38;
+    cursor: default;
+}
+
+.cb-cards-carousel {
+    min-width: 0;
+}
+
+.cb-cards-viewport {
+    position: relative;
+    min-width: 0;
+}
+
+.cb-cards-viewport::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 2.25rem;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, var(--cb-bg));
+}
+
+.cb-cards-viewport:not(:has(.card-cc:nth-child(3)))::after {
+    content: none;
+}
+
+.cb-cards-rail {
+    display: flex;
+    gap: 1rem;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 0;
+    padding: 0.125rem 0.125rem 0.75rem;
+    cursor: grab;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+    user-select: none;
+}
+
+.cb-cards-rail.is-dragging {
+    cursor: grabbing;
+    scroll-snap-type: none;
+}
+
+.cb-cards-rail > .card-cc {
+    flex: 0 0 min(24rem, 84vw);
+    max-width: 24rem;
+    scroll-snap-align: start;
+}
+
+.cb-cards-rail:has(> .card-cc:nth-child(2)):not(:has(> .card-cc:nth-child(3))) > .card-cc {
+    flex-basis: min(24rem, calc((100% - 1rem) / 2));
+    max-width: 24rem;
+}
+
+.cb-cards-rail:has(> .card-cc:nth-child(3)) > .card-cc {
+    flex-basis: clamp(20rem, calc((100% - 2.5rem) / 2.25), 24rem);
+    max-width: 24rem;
+}
+
+@supports not selector(:has(*)) {
+    .cb-cards-rail > .card-cc {
+        flex-basis: clamp(20rem, calc((100% - 2.5rem) / 2.25), 24rem);
+        max-width: 24rem;
+    }
+}
+
+@media (max-width: 620px) {
+    .cb-cards-controls {
+        display: none !important;
+    }
+
+    .cb-cards-viewport::after {
+        content: none;
+    }
+
+    .cb-cards-rail {
+        display: grid;
+        grid-template-columns: 1fr;
+        overflow: visible;
+        padding: 0;
+        cursor: default;
+        user-select: auto;
+    }
+
+    .cb-cards-rail > .card-cc {
+        max-width: none;
+        width: 100%;
+    }
+}

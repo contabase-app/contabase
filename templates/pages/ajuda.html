@@ -56,45 +56,68 @@
             <p class="mt-4 text-xs leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-info)]">Importante:</span> ações globais sensíveis como backup, importação/restauração de banco e administração global de usuários/workspaces são restritas ao perfil <span class="font-semibold">ADMIN</span>.</p>
         </section>
 
-        <!-- Relatórios: Custo de Vida / Custos Operacionais -->
-        <section id="custo-de-vida"
+        <!-- Como funcionam os relatórios -->
+        <section id="como-funcionam-relatorios"
 
-            class="cb-card-dense flex flex-col">
+            class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-6 flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--cb-border-strong)] md:col-span-2 lg:col-span-3">
             <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl" style="background: color-mix(in srgb, var(--cb-success) 12%, transparent); border: 1px solid color-mix(in srgb, var(--cb-success) 20%, transparent)">
-                <i data-lucide="pie-chart" class="h-5 w-5 text-[var(--cb-success)]"></i>
+                <i data-lucide="bar-chart-3" class="h-5 w-5 text-[var(--cb-success)]"></i>
             </div>
-            {{if .IsBusiness}}
-            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Relatórios: Custos Operacionais</h2>
-            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">Acesse esta visão em <span class="font-semibold">Relatórios</span> para entender a divisão de custos fixos (aluguel, folha, infraestrutura) e variáveis (marketing, fornecedores, manutenção) da sua empresa.</p>
-            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
-                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-success)]">Custos Fixos:</span> Despesas recorrentes e indispensáveis (aluguel, folha, honorários, software, infraestrutura).</p>
-                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-accent)]">Custos Variáveis:</span> Gastos flexíveis ou passíveis de corte sob pressão (marketing pontual, manutenção não planejada, fornecedores eventuais).</p>
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Como funcionam os Relatórios</h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">A área de <span class="font-semibold">Relatórios</span> separa três perguntas diferentes: quanto dinheiro já entrou ou saiu, qual foi o resultado do período e quais movimentos já foram confirmados. No Personal, você vê Fluxo de Caixa e Extrato. No Business, também aparece a visão de Competência / DRE.</p>
+            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs md:grid md:grid-cols-2 xl:grid-cols-4 md:gap-4 space-y-3 md:space-y-0">
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-success)]">Fluxo de Caixa</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Use para entender dinheiro que entrou, saiu ou está previsto. O modo <span class="font-semibold">Realizado</span> mostra apenas valores já pagos ou recebidos. O modo <span class="font-semibold">Previsão</span> soma o que já aconteceu com o que ainda está pendente.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-info)]">Saldo Projetado</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Mostra quanto deve sobrar até o fim do mês selecionado. Ele parte do saldo atual das contas reais, soma entradas pendentes e subtrai despesas e faturas pendentes.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-accent)]">Competência / DRE</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">{{if .IsBusiness}}Disponível no Business para análise gerencial e contábil. Ela mostra receitas e despesas pela origem econômica do lançamento, então pode ser diferente do caixa quando compra e pagamento acontecem em meses distintos.{{else}}Disponível em workspaces Business. Ela mostra receitas e despesas pela origem econômica do lançamento, por isso pode ser diferente do caixa.{{end}}</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-warning)]">Extrato</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Mostra movimentos confirmados. Transferências aparecem como entrada e saída por conta para facilitar a conferência, mas transferências internas não alteram o resultado consolidado.</p>
+                </article>
             </div>
-            {{else}}
-            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Relatórios: Custo de Vida</h2>
-            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">Acesse esta visão em <span class="font-semibold">Relatórios</span> para entender seus gastos por tipo, separando despesas essenciais e de estilo de vida.</p>
-            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
-                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-success)]">Essenciais:</span> Despesas indispensáveis para subsistência (moradia, alimentação base, energia, transporte necessário).</p>
-                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-accent)]">Estilo de Vida:</span> Gastos flexíveis ou passíveis de corte imediato sob pressão (lazer, conforto opcional, assinaturas secundárias).</p>
-            </div>
-            {{end}}
         </section>
 
         {{/* Saúde Financeira — oculto até os indicadores (Taxa de Poupança, Sobrevivência, Lucro Bruto, Eficiência) existirem no produto. */}}
         {{/* <section id="saude-financeira" ... </section> */}}
 
-        <!-- Relatórios: Tendência de Saldo -->
-        <section id="tendencia-saldo"
+        <!-- Cartão e faturas nos relatórios -->
+        <section id="cartoes-relatorios"
 
             class="cb-card-dense flex flex-col">
             <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl" style="background: color-mix(in srgb, var(--cb-info) 12%, transparent); border: 1px solid color-mix(in srgb, var(--cb-info) 20%, transparent)">
-                <i data-lucide="trending-up" class="h-5 w-5 text-[var(--cb-info)]"></i>
+                <i data-lucide="credit-card" class="h-5 w-5 text-[var(--cb-info)]"></i>
             </div>
-            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Relatórios: Tendência de Saldo</h2>
-            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">Acesse esta visão em <span class="font-semibold">Relatórios</span> para ver a projeção do saldo ao longo do tempo. A linha contínua mostra o histórico realizado e a linha tracejada indica projeções futuras baseadas nas recorrências cadastradas.</p>
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Cartão de crédito e faturas</h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">O cartão aparece de formas diferentes conforme a pergunta do relatório.</p>
             <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
-                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-info)]">Linha contínua:</span> Patrimônio líquido real calculado nos últimos 4 meses.</p>
-                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-text-muted)]">Linha tracejada:</span> Previsão de caixa para os próximos 2 meses baseada nas despesas e receitas recorrentes cadastradas.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Compra no cartão <span class="font-semibold">não sai do caixa imediatamente</span>. O caixa muda quando a fatura é paga.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Na composição por categoria, os itens da fatura são analisados individualmente. Isso evita somar compra e fatura duas vezes.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Se a fatura estiver parcialmente paga, a parte já quitada entra no realizado e o saldo restante continua na previsão.</p>
+            </div>
+        </section>
+
+        <!-- Exemplos e exportações -->
+        <section id="exportacoes-relatorios"
+
+            class="cb-card-dense flex flex-col">
+            <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl" style="background: color-mix(in srgb, var(--cb-accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--cb-accent) 20%, transparent)">
+                <i data-lucide="file-output" class="h-5 w-5 text-[var(--cb-accent)]"></i>
+            </div>
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Exemplos e exportações</h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">Use estes exemplos como referência rápida e exporte os relatórios em CSV ou PDF quando precisar compartilhar ou revisar os dados.</p>
+            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Se você compra no cartão em julho e paga a fatura em agosto, a compra aparece na análise por categoria, mas a saída de caixa acontece no pagamento da fatura.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Uma receita pendente entra na previsão, mas só entra no realizado quando for recebida.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Uma transferência entre suas próprias contas aparece no extrato, mas não aumenta nem reduz seu resultado.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Os PDFs usam a identidade do workspace quando disponível. CSV e PDF existem para Fluxo de Caixa, Extrato e, no Business, também para Competência / DRE.</p>
             </div>
         </section>
 

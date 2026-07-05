@@ -48,6 +48,8 @@ func TestFixedWorkspaceRBACMatrixIgnoresCustomPermissions(t *testing.T) {
 		{"user opens predictive transaction by fixed role", http.MethodGet, "/transacoes/preditiva", models.RoleUser, http.StatusNoContent},
 		{"user custom reports view is ignored", http.MethodGet, "/relatorios", models.RoleUser, http.StatusForbidden},
 		{"manager reads reports by fixed role", http.MethodGet, "/relatorios", models.RoleManager, http.StatusNoContent},
+		{"user custom reports pdf is ignored", http.MethodGet, "/relatorios/dre.pdf", models.RoleUser, http.StatusForbidden},
+		{"manager exports reports pdf by fixed role", http.MethodGet, "/relatorios/dre.pdf", models.RoleManager, http.StatusNoContent},
 		{"user custom contacts delete is ignored", http.MethodDelete, "/contatos/contact-id", models.RoleUser, http.StatusForbidden},
 		{"manager deletes contacts by fixed role", http.MethodDelete, "/contatos/contact-id", models.RoleManager, http.StatusNoContent},
 		{"user custom config read is ignored", http.MethodGet, "/configuracoes/categorias", models.RoleUser, http.StatusForbidden},
@@ -127,6 +129,9 @@ func newFixedWorkspaceRBACRouteTestHandler(authService *auth.Service, signer *cs
 		return hasPermission(ctx.Role, permTransactionsCreate)
 	}))
 	mux.HandleFunc("/relatorios", fixedWorkspaceRBACHandler(authService, signer, http.MethodGet, func(ctx authContext) bool {
+		return models.HasPermission(&ctx.Member, models.PermissionReportsView)
+	}))
+	mux.HandleFunc("/relatorios/dre.pdf", fixedWorkspaceRBACHandler(authService, signer, http.MethodGet, func(ctx authContext) bool {
 		return models.HasPermission(&ctx.Member, models.PermissionReportsView)
 	}))
 	mux.HandleFunc("/contatos/contact-id", fixedWorkspaceRBACHandler(authService, signer, http.MethodDelete, func(ctx authContext) bool {

@@ -1,5 +1,5 @@
 {{define "dashboard-cards"}}
-<section id="dashboard-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} hx-trigger="refreshFinancials from:body" hx-get="/" hx-select="#dashboard-cards" hx-swap="outerHTML" class="cb-card-dense w-full">
+<section id="dashboard-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} hx-trigger="refreshFinancials from:body" hx-get="/" hx-select="#dashboard-cards" hx-swap="outerHTML" class="cb-dashboard-cards-section w-full">
     <style>
     /* Force high-contrast black text on bright yellow credit card badges (like XP) */
     .emblem-wrap-solid[style*="#FFE600"] .emblem-text,
@@ -7,11 +7,23 @@
         color: #000000 !important;
     }
     </style>
-    <div class="flex items-center justify-between mb-3">
+    <div class="cb-cards-header">
         <h2 class="text-sm font-semibold text-[var(--cb-text-muted)] uppercase tracking-wider">Meus Cartões</h2>
+        {{if .Cards}}
+        <div class="cb-cards-controls" aria-label="Navegar cartões">
+            <button type="button" class="cb-cards-control" data-cards-scroll="prev" aria-label="Cartões anteriores" disabled>
+                <i data-lucide="chevron-left" class="h-4 w-4"></i>
+            </button>
+            <button type="button" class="cb-cards-control" data-cards-scroll="next" aria-label="Próximos cartões" disabled>
+                <i data-lucide="chevron-right" class="h-4 w-4"></i>
+            </button>
+        </div>
+        {{end}}
     </div>
     {{if .Cards}}
-    <div class="x-data-card space-y-3" data-show-more-group="cards" data-show-more-initial="5">
+    <div class="cb-cards-carousel" data-show-more-group="cards" data-show-more-initial="6">
+        <div class="cb-cards-viewport">
+            <div class="cb-cards-rail" aria-label="Cartões de crédito">
         {{range $idx, $card := .Cards}}
         <a data-show-more-item="{{$idx}}"
            href="/cartoes/faturas/{{$card.InvoiceID}}"
@@ -76,11 +88,13 @@
             </div>
         </a>
         {{end}}
+            </div>
+        </div>
 
-        {{if gt (len .Cards) 5}}
-        <div class="mt-3 text-center">
+        {{if gt (len .Cards) 6}}
+        <div class="mt-3 text-center" data-show-more-toggle-container>
             <button data-onclick-ev="toggleShowMore" data-show-more-toggle type="button" class="btn-tactile text-xs font-bold text-[var(--cb-accent)] hover:text-[var(--cb-accent-hover)] focus:outline-none">
-                <span data-show-more-label-expand>Mostrar mais (mais {{sub (len .Cards) 5}})</span>
+                <span data-show-more-label-expand>Mostrar mais (mais {{sub (len .Cards) 6}})</span>
                 <span data-show-more-label-collapse class="hidden">Mostrar menos</span>
             </button>
         </div>

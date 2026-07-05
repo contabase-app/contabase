@@ -15,7 +15,7 @@ func TestRelatoriosGastosPorCategoriaIncluiSubcategoriaSemLancamentoNoPai(t *tes
 	seedRelatoriosChildOnlyCategoryScenario(t, db)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-cat", UserID: "user-cat"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestRelatoriosGastosPorCategoriaOrdemHierarquiaPaisEFilhos(t *testing.T) {
 	seedRelatoriosMultiParentCategoryScenario(t, db)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hierarchy", UserID: "user-hierarchy"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestRelatoriosGastosPorCategoriaFilhoSemLancamentoNoPaiGanhaGrupo(t *testin
 	seedRelatoriosOrphanChildScenario(t, db)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-orphan", UserID: "user-orphan"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestRelatoriosGastosPorCategoriaPaiDiretoDoisFilhosRaizSemFilhosEOutroWorks
 	seedRelatoriosParentDirectChildrenStandaloneScenario(t, db)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-parent-direct", UserID: "user-parent-direct"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestRelatoriosGastosPorCategoriaTemplatePreservaDataSensitiveERole(t *testi
 	if !strings.Contains(html, `<span class="text-xs font-bold text-[var(--cb-text-main)]" data-sensitive>R$ {{.Valor.Reais}}{{.Valor.Cents}}</span>`) {
 		t.Fatalf("template should keep category amount data-sensitive")
 	}
-	if !strings.Contains(html, `<span class="text-xs font-semibold text-[var(--cb-text-subtle)] w-9 text-right" data-sensitive>{{.Percent}}%</span>`) {
+	if !strings.Contains(html, `data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}}</span>`) {
 		t.Fatalf("template should keep category percent data-sensitive")
 	}
 }

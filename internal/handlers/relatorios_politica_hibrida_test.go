@@ -37,21 +37,21 @@ func seedPoliticaHibridaScenario(t *testing.T, db *sql.DB) {
 	`, augExpPaid, now, now, augExpPending, now, now, augExpPaid, now, now, augIncPaid, now, now, augIncPending, now, now, augTransfer, now, now)
 }
 
-func TestRelatoriosPoliticaHibridaKPIsIncludesPending(t *testing.T) {
+func TestRelatoriosPoliticaHibridaKPIsCaixaExcluiPending(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
 	seedPoliticaHibridaScenario(t, db)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
 
-	assertMoneyDisplay(t, "total receitas (inclui pending)", data.TotalReceitas, "3.000", ",00")
-	assertMoneyDisplay(t, "total despesas (inclui pending)", data.TotalDespesas, "1.000", ",00")
-	assertMoneyDisplay(t, "saldo liquido (inclui pending)", data.SaldoLiquido, "2.000", ",00")
+	assertMoneyDisplay(t, "total receitas (caixa realizado)", data.TotalReceitas, "2.000", ",00")
+	assertMoneyDisplay(t, "total despesas (caixa realizado)", data.TotalDespesas, "700", ",00")
+	assertMoneyDisplay(t, "saldo liquido (caixa realizado)", data.SaldoLiquido, "1.300", ",00")
 }
 
 func TestRelatoriosPoliticaHibridaCategoriesIncludesPending(t *testing.T) {
@@ -61,7 +61,7 @@ func TestRelatoriosPoliticaHibridaCategoriesIncludesPending(t *testing.T) {
 	seedPoliticaHibridaScenario(t, db)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
@@ -83,26 +83,26 @@ func TestRelatoriosPoliticaHibridaCategoriesIncludesPending(t *testing.T) {
 	}
 }
 
-func TestRelatoriosPoliticaHibridaDonutIncludesPending(t *testing.T) {
+func TestRelatoriosPoliticaHibridaDonutCaixaExcluiPending(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
 	seedPoliticaHibridaScenario(t, db)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
 
-	assertMoneyDisplay(t, "DonutEssentialTotal (paid + pending)", data.DonutEssentialTotal, "800", ",00")
-	assertMoneyDisplay(t, "DonutLifestyleTotal (paid only)", data.DonutLifestyleTotal, "200", ",00")
+	assertMoneyDisplay(t, "DonutEssentialTotal (caixa realizado)", data.DonutCaixaEssentialTotal, "500", ",00")
+	assertMoneyDisplay(t, "DonutLifestyleTotal (caixa realizado)", data.DonutCaixaLifestyleTotal, "200", ",00")
 
-	if data.DonutEssentialPercent != 80 {
-		t.Fatalf("DonutEssentialPercent = %d, want 80", data.DonutEssentialPercent)
+	if data.DonutCaixaEssentialPercent != 71 {
+		t.Fatalf("DonutCaixaEssentialPercent = %d, want 71", data.DonutCaixaEssentialPercent)
 	}
-	if data.DonutLifestylePercent != 20 {
-		t.Fatalf("DonutLifestylePercent = %d, want 20", data.DonutLifestylePercent)
+	if data.DonutCaixaLifestylePercent != 28 {
+		t.Fatalf("DonutCaixaLifestylePercent = %d, want 28", data.DonutCaixaLifestylePercent)
 	}
 }
 
@@ -216,13 +216,13 @@ func TestRelatoriosPoliticaHibridaTransfersExcludedFromKPIs(t *testing.T) {
 	seedPoliticaHibridaScenario(t, db)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}
 
-	assertMoneyDisplay(t, "TotalReceitas (transfer not income)", data.TotalReceitas, "3.000", ",00")
-	assertMoneyDisplay(t, "TotalDespesas (transfer not expense)", data.TotalDespesas, "1.000", ",00")
+	assertMoneyDisplay(t, "TotalReceitas (transfer not income)", data.TotalReceitas, "2.000", ",00")
+	assertMoneyDisplay(t, "TotalDespesas (transfer not expense)", data.TotalDespesas, "700", ",00")
 }
 
 func TestRelatoriosPoliticaHibridaInvoicePaymentExcludedFromCompetence(t *testing.T) {
@@ -250,7 +250,7 @@ func TestRelatoriosPoliticaHibridaInvoicePaymentExcludedFromCompetence(t *testin
 	execTestSQL(t, db, `INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, transaction_id, amount_cents, paid_at, source, created_by, created_at) VALUES ('pay-card-row', 'ws-card', 'inv-card', 'chk-card', 'pay-card', 30000, ?, 'manual', 'u-card', ?)`, paymentDate, now)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-card", UserID: "u-card"}
-	data, err := handler.buildRelatoriosData("", 8, 2026)
+	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
 	}

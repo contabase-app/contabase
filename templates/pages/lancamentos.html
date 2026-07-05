@@ -232,34 +232,25 @@
 
 {{define "lancamentos-resumo"}}
 <section id="lancamentosResumo" class="mb-4" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}>
-    <div class="cb-card-dense flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div class="flex items-center gap-2 text-[var(--cb-text-main)]">
+    <div class="cb-card-dense flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex items-center gap-2 text-[var(--cb-text-main)] shrink-0">
             <span class="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-accent)] shrink-0" style="background: color-mix(in srgb, var(--cb-accent) 12%, transparent)">
-                <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+                <i data-lucide="list-checks" class="w-3.5 h-3.5"></i>
             </span>
-            <span class="text-sm font-bold tracking-tight">{{.MonthLabel}}</span>
+            <div class="min-w-0">
+                <span class="block text-sm font-bold tracking-tight">{{.MonthLabel}}</span>
+                <span class="cb-text-micro text-[var(--cb-text-muted)]">Resumo dos itens visíveis</span>
+            </div>
         </div>
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
-            <div class="flex items-center gap-1.5">
-                <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                <span class="cb-text-micro text-[var(--cb-text-muted)]">Entradas</span>
-                <span class="font-bold text-emerald-600 dark:text-emerald-400" data-sensitive>{{.ResumoEntradas}}</span>
-            </div>
-            <div class="flex items-center gap-1.5">
-                <span class="inline-block w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                <span class="cb-text-micro text-[var(--cb-text-muted)]">Saídas</span>
-                <span class="font-bold text-red-600 dark:text-red-400" data-sensitive>{{.ResumoSaidas}}</span>
-            </div>
-            <div class="flex items-center gap-1.5">
-                <span class="inline-block w-1.5 h-1.5 rounded-full {{if .ResumoNegativo}}bg-red-500{{else}}bg-[var(--cb-accent)]{{end}}"></span>
-                <span class="cb-text-micro text-[var(--cb-text-muted)]">Saldo</span>
-                <span class="font-extrabold {{if .ResumoNegativo}}text-red-600 dark:text-red-400{{else}}text-[var(--cb-accent-solid)]{{end}}" data-sensitive>{{.ResumoSaldo}}</span>
-            </div>
-            {{if .ResumoAcumulado}}
-            <div class="flex items-center gap-1.5">
-                <span class="inline-block w-1.5 h-1.5 rounded-full {{if .AcumuladoNegativo}}bg-red-500{{else}}bg-sky-500{{end}}"></span>
-                <span class="cb-text-micro text-[var(--cb-text-muted)]">Acumulado</span>
-                <span class="font-bold {{if .AcumuladoNegativo}}text-red-600 dark:text-red-400{{else}}text-sky-600 dark:text-sky-400{{end}}" data-sensitive>{{.ResumoAcumulado}}</span>
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs sm:justify-end sm:text-sm">
+            {{range .ResumoStatus}}
+            <div class="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <span class="inline-block h-1.5 w-1.5 rounded-full {{.DotClasses}}"></span>
+                <span class="font-semibold text-[var(--cb-text-main)]">{{.Label}}</span>
+                <span class="font-bold {{if eq .Key "pago"}}text-emerald-600 dark:text-emerald-400{{else if eq .Key "pendente"}}text-amber-600 dark:text-amber-400{{else if eq .Key "vencido"}}text-red-600 dark:text-red-400{{else}}text-violet-600 dark:text-violet-400{{end}}" data-sensitive>{{.Amount}}</span>
+                {{if .Count}}
+                <span class="cb-text-micro text-[var(--cb-text-muted)]">({{.CountLabel}})</span>
+                {{end}}
             </div>
             {{end}}
         </div>

@@ -134,10 +134,9 @@ func TestDashboardEmblemsRenderProviderMark(t *testing.T) {
 
 		assertContains(t, html, "Posição financeira")
 		assertContains(t, html, "Saldo total")
-		assertContains(t, html, "Minhas Contas")
 		assertContains(t, html, "nos últimos 30 dias")
-		assertContains(t, html, "30d")
-		assertContains(t, html, `/lancamentos?conta=acc-inter`)
+		assertContains(t, html, "Reservado")
+		assertContains(t, html, "Disponível")
 	})
 
 	// 4. Test rendering dashboard-cards template
@@ -178,10 +177,8 @@ func TestDashboardEmblemsRenderProviderMark(t *testing.T) {
 		assertContains(t, html, "Saldo total")
 		assertContains(t, html, "Minhas Contas")
 		assertContains(t, html, "Previsão")
-		assertContains(t, html, "Pendentes do mês + faturas em aberto/fechadas.")
-		assertContains(t, html, "A receber previsto")
-		assertContains(t, html, "A pagar previsto")
-		assertContains(t, html, "Saldo previsto")
+		assertContains(t, html, "Recebido")
+		assertContains(t, html, "Gasto")
 
 		// Verify emblem-text CSS class is outputted
 		assertContains(t, html, "emblem-text")
@@ -203,7 +200,6 @@ func TestDashboardEmblemsRenderProviderMark(t *testing.T) {
 
 		html := buf.String()
 		assertContains(t, html, "Saldo total")
-		assertContains(t, html, "Comece criando sua primeira conta.")
 		assertContains(t, html, `data-onboarding-empty="true"`)
 	})
 
@@ -231,9 +227,6 @@ func TestDashboardEmblemsRenderProviderMark(t *testing.T) {
 		}
 		if strings.Contains(html, "Contas representam onde seu dinheiro está") {
 			t.Fatalf("empty dashboard should not render the legacy microcopy about accounts representation")
-		}
-		if strings.Contains(html, "border-dashed") {
-			t.Fatalf("empty dashboard onboarding should not rely on dashed borders anymore")
 		}
 		if strings.Contains(html, "Criar cartão de crédito") {
 			t.Fatalf("empty 'Minhas Contas' card should not duplicate the cartão CTA; that lives only in 'Meus Cartões'")

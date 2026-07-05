@@ -373,6 +373,50 @@ func TestVisualRegressionInvoiceAndFormEmblems(t *testing.T) {
 		assertContains(t, html, "wallet")
 	})
 
+	t.Run("form-lancamento new form starts with empty category placeholder", func(t *testing.T) {
+		db := openTestDB(t)
+		defer db.Close()
+
+		seedInvoicePaymentScenario(t, db)
+		now := time.Now().Unix()
+		execTestSQL(t, db, `
+			INSERT INTO categories (id, workspace_id, name, icon, color, type, created_at)
+			VALUES
+				('cat-form-expense', 'ws-test', 'Alimentação', 'utensils', '#f97316', 'EXPENSE', ?),
+				('cat-form-income', 'ws-test', 'Salário', 'briefcase', '#22c55e', 'INCOME', ?)
+		`, now, now)
+
+		handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+		accounts, err := handler.queryFormAccounts()
+		if err != nil {
+			t.Fatalf("queryFormAccounts: %v", err)
+		}
+		categories, err := handler.queryFormCategories()
+		if err != nil {
+			t.Fatalf("queryFormCategories: %v", err)
+		}
+
+		data := newFormTransacaoData(accounts, categories)
+		if data.CategoriaID != "" {
+			t.Fatalf("new form categoria_id = %q, want empty", data.CategoriaID)
+		}
+		if data.CategoriaNome != "" {
+			t.Fatalf("new form categoria nome = %q, want empty", data.CategoriaNome)
+		}
+		if data.CategoriaType != "" {
+			t.Fatalf("new form categoria type = %q, want empty", data.CategoriaType)
+		}
+
+		var buf bytes.Buffer
+		if err := tplForm.ExecuteTemplate(&buf, "form-lancamento", data); err != nil {
+			t.Fatalf("failed to execute form-lancamento new form: %v", err)
+		}
+		html := buf.String()
+		assertContains(t, html, `name="categoria_id" value=""`)
+		assertContains(t, html, `id="categoriaNome"`)
+		assertContains(t, html, `Selecione uma categoria`)
+	})
+
 	t.Run("form-lancamento initial with DestinoProviderMark INTER", func(t *testing.T) {
 		var buf bytes.Buffer
 		data := FormTransacaoData{
