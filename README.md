@@ -40,7 +40,7 @@ Acesse o canal público de instalação em https://get-contabase.pages.dev/ e si
 - [Segurança](SECURITY.md)
 - [Privacidade](PRIVACY.md)
 - [Termos de uso](TERMS.md)
-- [Release notes da beta atual](docs/releases/v0.1.0-beta.3.md)
+- [Release notes da beta atual](docs/releases/v0.1.0-beta.6.md)
 - [Histórico da primeira beta](docs/releases/v0.1.0-beta.1.md)
 
 ## Avisos da Beta

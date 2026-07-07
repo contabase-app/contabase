@@ -133,6 +133,17 @@
 
 .reports-export-menu {
     min-width: 11rem;
+    max-width: min(16rem, calc(100vw - 2rem));
+}
+
+/* Keep export dropdowns inside the viewport on small screens.
+   Toolbars sit on the left edge on mobile, so anchor the panel to the
+   left of its trigger (open rightwards) to avoid horizontal overflow. */
+@media (max-width: 639px) {
+    .reports-export-menu {
+        left: 0;
+        right: auto;
+    }
 }
 
 .reports-export-note {

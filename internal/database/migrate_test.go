@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/contabase-app/contabase/internal/categorycontract"
 )
 
 func TestOpenRegistersSchemaMigrationsOnFreshMemory(t *testing.T) {
@@ -67,14 +69,19 @@ func TestCategoriesSchemaAcceptsCanonicalMacroGroups(t *testing.T) {
 		"Essencial",
 		"Estilo de Vida",
 		"Receitas",
-		"Receitas Operacionais",
-		"Deduções/Impostos",
-		"Custos Operacionais",
-		"Despesas Administrativas",
-		"Despesas Comerciais",
-		"Equipe e Prestadores",
-		"Financeiro",
-		"Investimentos/Outros",
+		categorycontract.MacroReceitasOperacionais,
+		categorycontract.MacroReceitasFinanceiras,
+		categorycontract.MacroOutrasEntradas,
+		categorycontract.MacroDeducoesImpostos,
+		categorycontract.MacroCustosOperacionais,
+		categorycontract.MacroDespesasAdministrativas,
+		categorycontract.MacroDespesasComerciais,
+		categorycontract.MacroEquipePrestadores,
+		categorycontract.MacroFinanceiro,
+		categorycontract.MacroRetiradasDistribuicao,
+		categorycontract.MacroInvestimentosPatrimonial,
+		categorycontract.MacroOutrasSaidas,
+		categorycontract.MacroInvestimentosOutros,
 	}
 	for i, macroGroup := range macroGroups {
 		if _, err := db.Exec(`
@@ -84,6 +91,57 @@ func TestCategoriesSchemaAcceptsCanonicalMacroGroups(t *testing.T) {
 			t.Fatalf("insert category with macro_group %q: %v", macroGroup, err)
 		}
 	}
+}
+
+func TestMigration49RepairsBusinessCanonicalCategories(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration49.db")
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("open raw database: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+
+	if _, err := db.Exec(ddl); err != nil {
+		t.Fatalf("execute ddl fixture: %v", err)
+	}
+	seedAppliedMigrationsBefore(t, db, 49)
+
+	seedReseedWorkspace(t, db, "ws-mig49-business", "business")
+	seedReseedWorkspace(t, db, "ws-mig49-personal", "personal")
+	seedReseedLedgerBase(t, db, "ws-mig49-business")
+	insertReseedCategory(t, db, "mig49-custom", "ws-mig49-business", "Categoria Customizada", "EXPENSE", "Custom", "")
+	insertReseedCategory(t, db, "mig49-invest-old", "ws-mig49-business", "Investimentos/Outros", "EXPENSE", categorycontract.MacroInvestimentosOutros, "")
+	insertReseedTransaction(t, db, "tx-mig49-invest-old", "ws-mig49-business", "mig49-invest-old")
+	insertReseedCategory(t, db, "mig49-personal-custom", "ws-mig49-personal", "Categoria Personal", "EXPENSE", "Estilo de Vida", "")
+
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	assertMigrationApplied(t, db, 49)
+
+	categories := querySeededCategoriesFromDB(t, db, "ws-mig49-business")
+	assertSeedParent(t, categories, "Rendimentos financeiros", "INCOME", categorycontract.MacroReceitasFinanceiras)
+	assertSeedParent(t, categories, "Retiradas e Distribuição", "EXPENSE", categorycontract.MacroRetiradasDistribuicao)
+	assertSeedParent(t, categories, "Investimentos", "EXPENSE", categorycontract.MacroInvestimentosPatrimonial)
+	assertSeedParent(t, categories, "Outras Entradas", "INCOME", categorycontract.MacroOutrasEntradas)
+	assertSeedParent(t, categories, "Outras Saídas", "EXPENSE", categorycontract.MacroOutrasSaidas)
+	assertReseedCategoryExists(t, db, "mig49-custom")
+	assertReseedCategoryExists(t, db, "mig49-invest-old")
+	assertReseedTransactionCategory(t, db, "tx-mig49-invest-old", "mig49-invest-old")
+	if count := countReseedCategoriesByName(t, db, "ws-mig49-personal", "Rendimentos financeiros"); count != 0 {
+		t.Fatalf("personal workspace received business financial category: count=%d", count)
+	}
+
+	countAfterFirstRun := countReseedCategories(t, db, "ws-mig49-business")
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("rerun migrations: %v", err)
+	}
+	countAfterSecondRun := countReseedCategories(t, db, "ws-mig49-business")
+	if countAfterSecondRun != countAfterFirstRun {
+		t.Fatalf("migration rerun changed business categories: first=%d second=%d", countAfterFirstRun, countAfterSecondRun)
+	}
+	assertNoDuplicateReseedCategories(t, db, "ws-mig49-business")
 }
 
 func TestDestructiveMigrationsRequireExplicitReview(t *testing.T) {

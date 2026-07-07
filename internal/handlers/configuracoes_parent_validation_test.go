@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,7 +13,24 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/contabase-app/contabase/internal/categorycontract"
 )
+
+type captureCategoryCreateTemplate struct {
+	data CategoryCreateData
+}
+
+func (t *captureCategoryCreateTemplate) ExecuteTemplate(_ io.Writer, _ string, data any) error {
+	if captured, ok := data.(CategoryCreateData); ok {
+		t.data = captured
+	}
+	return nil
+}
+
+func (t *captureCategoryCreateTemplate) Lookup(string) *template.Template {
+	return nil
+}
 
 func testCategoriasTemplates(t *testing.T) *template.Template {
 	t.Helper()
@@ -452,11 +470,17 @@ func TestConfiguracoesCategoriasTemplateUsesCanonicalBusinessDefaultMacro(t *tes
 
 	var buf bytes.Buffer
 	data := struct {
-		IsBusiness   bool
-		Categorias   []ConfigCategoryRow
-		FlashError   string
-		FlashSuccess string
-	}{IsBusiness: true}
+		IsBusiness            bool
+		Categorias            []ConfigCategoryRow
+		FlashError            string
+		FlashSuccess          string
+		CategoryIncomeMacros  []categorycontract.MacroGroup
+		CategoryExpenseMacros []categorycontract.MacroGroup
+	}{
+		IsBusiness:            true,
+		CategoryIncomeMacros:  categoryMacroGroupsForTemplate(true, "INCOME"),
+		CategoryExpenseMacros: categoryMacroGroupsForTemplate(true, "EXPENSE"),
+	}
 	if err := tpl.ExecuteTemplate(&buf, "configuracoes-categorias-content", data); err != nil {
 		t.Fatalf("execute categorias content: %v", err)
 	}
@@ -685,16 +709,39 @@ func TestValidMacroGroupsForType_Personal(t *testing.T) {
 	}
 }
 
+func assertStringSliceEqual(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("len = %d, want %d: got=%v want=%v", len(got), len(want), got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("item %d = %q, want %q: got=%v want=%v", i, got[i], want[i], got, want)
+		}
+	}
+}
+
 func TestValidMacroGroupsForType_Business(t *testing.T) {
 	incomeMacros := validMacroGroupsForType(true, "INCOME")
-	if len(incomeMacros) != 1 || incomeMacros[0] != "Receitas Operacionais" {
-		t.Fatalf("business income macros = %v, want [Receitas Operacionais]", incomeMacros)
-	}
+	assertStringSliceEqual(t, incomeMacros, []string{
+		categorycontract.MacroReceitasOperacionais,
+		categorycontract.MacroReceitasFinanceiras,
+		categorycontract.MacroOutrasEntradas,
+	})
 
 	expenseMacros := validMacroGroupsForType(true, "EXPENSE")
-	if len(expenseMacros) != 7 {
-		t.Fatalf("business expense macros count = %d, want 7: %v", len(expenseMacros), expenseMacros)
-	}
+	assertStringSliceEqual(t, expenseMacros, []string{
+		categorycontract.MacroDeducoesImpostos,
+		categorycontract.MacroCustosOperacionais,
+		categorycontract.MacroDespesasAdministrativas,
+		categorycontract.MacroDespesasComerciais,
+		categorycontract.MacroEquipePrestadores,
+		categorycontract.MacroFinanceiro,
+		categorycontract.MacroRetiradasDistribuicao,
+		categorycontract.MacroInvestimentosPatrimonial,
+		categorycontract.MacroOutrasSaidas,
+		categorycontract.MacroInvestimentosOutros,
+	})
 }
 
 func TestIsMacroGroupValidForType(t *testing.T) {
@@ -722,9 +769,86 @@ func TestIsMacroGroupValidForType(t *testing.T) {
 	if !isMacroGroupValidForType(true, "Receitas Operacionais", "INCOME") {
 		t.Fatal("Receitas Operacionais should be valid for INCOME business")
 	}
+	if !isMacroGroupValidForType(true, "Receitas Financeiras", "INCOME") {
+		t.Fatal("Receitas Financeiras should be valid for INCOME business")
+	}
+	if !isMacroGroupValidForType(true, "Outras Entradas", "INCOME") {
+		t.Fatal("Outras Entradas should be valid for INCOME business")
+	}
 	if isMacroGroupValidForType(true, "Custos Operacionais", "INCOME") {
 		t.Fatal("Custos Operacionais should NOT be valid for INCOME business")
 	}
+	if isMacroGroupValidForType(true, "Receitas", "INCOME") {
+		t.Fatal("Receitas personal should NOT be valid for INCOME business")
+	}
+	if !isMacroGroupValidForType(true, "Retiradas/Distribuição", "EXPENSE") {
+		t.Fatal("Retiradas/Distribuição should be valid for EXPENSE business")
+	}
+	if !isMacroGroupValidForType(true, "Investimentos/Patrimonial", "EXPENSE") {
+		t.Fatal("Investimentos/Patrimonial should be valid for EXPENSE business")
+	}
+	if !isMacroGroupValidForType(true, "Investimentos/Outros", "EXPENSE") {
+		t.Fatal("Investimentos/Outros legacy should remain valid for EXPENSE business")
+	}
+	if isMacroGroupValidForType(false, "Financeiro", "EXPENSE") {
+		t.Fatal("Financeiro business should NOT be valid for personal expense")
+	}
+}
+
+func TestHandleCategoryCreateForm_BusinessIncomeReceivesEconomicNatureOptions(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedBusinessCategoryParentTestScenario(t, db)
+
+	tpl := &captureCategoryCreateTemplate{}
+	h := TransactionHandler{DB: db, WorkspaceID: "ws-biz", UserID: "user-biz", Templates: tpl}
+	req := httptest.NewRequest(http.MethodGet, "/api/categorias/nova?tipo=receita", nil)
+	rr := httptest.NewRecorder()
+
+	h.HandleCategoryCreateForm(rr, req)
+
+	assertMacroOptionNames(t, tpl.data.MacroGroups, []string{
+		categorycontract.MacroReceitasOperacionais,
+		categorycontract.MacroReceitasFinanceiras,
+		categorycontract.MacroOutrasEntradas,
+	})
+	if tpl.data.DefaultMacro != categorycontract.MacroReceitasOperacionais {
+		t.Fatalf("default macro = %q, want %q", tpl.data.DefaultMacro, categorycontract.MacroReceitasOperacionais)
+	}
+}
+
+func TestHandleCategoryCreateForm_BusinessExpenseOmitsLegacyFromPreferredOptions(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedBusinessCategoryParentTestScenario(t, db)
+
+	tpl := &captureCategoryCreateTemplate{}
+	h := TransactionHandler{DB: db, WorkspaceID: "ws-biz", UserID: "user-biz", Templates: tpl}
+	req := httptest.NewRequest(http.MethodGet, "/api/categorias/nova?tipo=despesa", nil)
+	rr := httptest.NewRecorder()
+
+	h.HandleCategoryCreateForm(rr, req)
+
+	assertMacroOptionNames(t, tpl.data.MacroGroups, []string{
+		categorycontract.MacroDeducoesImpostos,
+		categorycontract.MacroCustosOperacionais,
+		categorycontract.MacroDespesasAdministrativas,
+		categorycontract.MacroDespesasComerciais,
+		categorycontract.MacroEquipePrestadores,
+		categorycontract.MacroFinanceiro,
+		categorycontract.MacroRetiradasDistribuicao,
+		categorycontract.MacroInvestimentosPatrimonial,
+		categorycontract.MacroOutrasSaidas,
+	})
+}
+
+func assertMacroOptionNames(t *testing.T, got []categorycontract.MacroGroup, want []string) {
+	t.Helper()
+	names := make([]string, 0, len(got))
+	for _, item := range got {
+		names = append(names, item.Name)
+	}
+	assertStringSliceEqual(t, names, want)
 }
 
 func TestQueryCategoryParentOptions_FiltersByMacroGroup(t *testing.T) {
@@ -947,21 +1071,55 @@ func TestBusinessTemplateUsesDeduzoesImpostosWithAccent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read categorias template: %v", err)
 	}
-	if strings.Contains(string(source), "Deducoes/Impostos") {
-		t.Fatal("categorias template contains Deducoes/Impostos instead of Deduções/Impostos")
-	}
-	if !strings.Contains(string(source), "Deduções/Impostos") {
-		t.Fatal("categorias template missing Deduções/Impostos with accent")
-	}
-
 	compSource, err := os.ReadFile("../../templates/pages/configuracoes_components.html")
 	if err != nil {
 		t.Fatalf("read components template: %v", err)
 	}
-	if strings.Contains(string(compSource), "Deducoes/Impostos") {
-		t.Fatal("components template contains Deducoes/Impostos instead of Deduções/Impostos")
+	tpl := template.Must(template.New("categorias-accent").Funcs(template.FuncMap{
+		"filterCategories": func(categories []ConfigCategoryRow, typ string) []ConfigCategoryRow {
+			var filtered []ConfigCategoryRow
+			for _, c := range categories {
+				if c.Type == typ {
+					filtered = append(filtered, c)
+				}
+			}
+			return filtered
+		},
+	}).Parse(string(compSource)))
+	tpl = template.Must(tpl.Parse(string(source)))
+
+	data := ConfiguracoesData{
+		IsBusiness:            true,
+		CategoryIncomeMacros:  categoryMacroGroupsForTemplate(true, "INCOME"),
+		CategoryExpenseMacros: categoryMacroGroupsForTemplate(true, "EXPENSE"),
 	}
-	if !strings.Contains(string(compSource), "Deduções/Impostos") {
+	var page bytes.Buffer
+	if err := tpl.ExecuteTemplate(&page, "configuracoes-categorias-content", data); err != nil {
+		t.Fatalf("execute categorias content: %v", err)
+	}
+	if strings.Contains(page.String(), "Deducoes/Impostos") {
+		t.Fatal("categorias template rendered Deducoes/Impostos instead of Deduções/Impostos")
+	}
+	if !strings.Contains(page.String(), "Deduções/Impostos") {
+		t.Fatal("categorias template missing Deduções/Impostos with accent")
+	}
+
+	row := ConfigCategoryRow{
+		ID:                "cat-tax",
+		Name:              "Tax",
+		Type:              "EXPENSE",
+		MacroGroup:        categorycontract.MacroDeducoesImpostos,
+		IsBusiness:        true,
+		MacroGroupOptions: categorycontract.MacroGroupsForType(categorycontract.WorkspaceTypeBusiness, categorycontract.CategoryTypeExpense, true),
+	}
+	var comp bytes.Buffer
+	if err := tpl.ExecuteTemplate(&comp, "config-categorias-row-edit", row); err != nil {
+		t.Fatalf("execute categorias row edit: %v", err)
+	}
+	if strings.Contains(comp.String(), "Deducoes/Impostos") {
+		t.Fatal("components template rendered Deducoes/Impostos instead of Deduções/Impostos")
+	}
+	if !strings.Contains(comp.String(), "Deduções/Impostos") {
 		t.Fatal("components template missing Deduções/Impostos with accent")
 	}
 }

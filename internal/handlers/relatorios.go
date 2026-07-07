@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/contabase-app/contabase/internal/categorycontract"
 	"github.com/contabase-app/contabase/internal/models"
 )
 
@@ -24,89 +25,148 @@ type RelatoriosHandler struct {
 }
 
 type RelatoriosData struct {
-	OOB                             bool
-	Title                           string
-	UserInitials                    string
-	ProfilePhotoURL                 string
-	IsBusiness                      bool
-	ActiveWorkspaceName             string
-	ActiveTab                       string
-	ExtratoView                     string
-	CaixaModo                       string
-	IsCaixaRealizado                bool
-	IsCaixaPrevisao                 bool
-	MesAtual                        int
-	AnoAtual                        int
-	MonthLabel                      string
-	MonthOptions                    []MonthOption
-	MonthSelectorHXGet              string
-	MonthSelectorHXSelect           string
-	MonthSelectorHXTarget           string
-	MonthSelectorHXSwap             string
-	MonthSelectorPartial            string
-	MonthSelectorPrevQuery          string
-	MonthSelectorNextQuery          string
-	MonthSelectorCurrentQuery       string
-	MesAnteriorURL                  string
-	MesSeguinteURL                  string
-	CurrentMonthURL                 string
-	TotalReceitas                   MoneyDisplay
-	TotalDespesas                   MoneyDisplay
-	SaldoLiquido                    MoneyDisplay
-	SaldoAcumulado                  MoneyDisplay
-	SaldoAcumuladoNegativo          bool
-	SaldoClass                      string
-	SaldoNegativo                   bool
-	Categorias                      []CategoriaBar
-	Membros                         []MembroBar
-	DonutEssentialPercent           int
-	DonutEssentialPercentLabel      string
-	DonutLifestylePercent           int
-	DonutLifestylePercentLabel      string
-	DonutEssentialTotal             MoneyDisplay
-	DonutLifestyleTotal             MoneyDisplay
-	HasUncategorizedAlert           bool
-	UncategorizedPercent            int
-	UncategorizedAmount             MoneyDisplay
-	PendingPayableTotal             MoneyDisplay
-	PendingReceivableTotal          MoneyDisplay
-	OverdueReceivableTotal          MoneyDisplay
-	DREMacroGroups                  []string
-	DRE                             []DRERow
-	CaixaMacroGroups                []string
-	Caixa                           []CaixaRow
-	RevenueByCategory               []RevenueCategorySlice
-	RevenueByCategoryCaixa          []RevenueCategorySlice
-	TopClientsByRevenue             []TopClientRevenue
-	RealizedCashTotal               MoneyDisplay
-	ProjectedCashTotal              MoneyDisplay
-	RealizedIncomeTotal             MoneyDisplay
-	RealizedExpenseTotal            MoneyDisplay
-	ProjectedIncomeTotal            MoneyDisplay
-	ProjectedExpenseTotal           MoneyDisplay
-	CashMonthIncomeTotal            MoneyDisplay
-	CashMonthExpenseTotal           MoneyDisplay
-	CashMonthResultTotal            MoneyDisplay
-	ProjectedEndingBalance          MoneyDisplay
-	RealizedCashNegative            bool
-	ProjectedCashNegative           bool
-	CashMonthResultNegative         bool
-	ProjectedEndingBalanceNegative  bool
-	ShowProjectedEndingBalance      bool
-	RealizedCashCount               int
-	UpcomingCashItems               []UpcomingCashItemDisplay
-	BusinessCosts                   []BusinessCostMacroRow
-	BusinessCostsCaixa              []BusinessCostMacroRow
-	CategoriasCaixa                 []CategoriaBar
-	DonutCaixaEssentialTotal        MoneyDisplay
-	DonutCaixaLifestyleTotal        MoneyDisplay
-	DonutCaixaEssentialPercent      int
-	DonutCaixaEssentialPercentLabel string
-	DonutCaixaLifestylePercent      int
-	DonutCaixaLifestylePercentLabel string
-	ExtratoRows                     []StatementExtratoRow
-	DailySummary                    []DailySummaryRow
-	ExtratoMovementCount            int
+	OOB                                   bool
+	Title                                 string
+	UserInitials                          string
+	ProfilePhotoURL                       string
+	IsBusiness                            bool
+	ActiveWorkspaceName                   string
+	ActiveTab                             string
+	ExtratoView                           string
+	CaixaModo                             string
+	IsCaixaRealizado                      bool
+	IsCaixaPrevisao                       bool
+	MesAtual                              int
+	AnoAtual                              int
+	MonthLabel                            string
+	MonthOptions                          []MonthOption
+	MonthSelectorHXGet                    string
+	MonthSelectorHXSelect                 string
+	MonthSelectorHXTarget                 string
+	MonthSelectorHXSwap                   string
+	MonthSelectorPartial                  string
+	MonthSelectorPrevQuery                string
+	MonthSelectorNextQuery                string
+	MonthSelectorCurrentQuery             string
+	MesAnteriorURL                        string
+	MesSeguinteURL                        string
+	CurrentMonthURL                       string
+	TotalReceitas                         MoneyDisplay
+	TotalDespesas                         MoneyDisplay
+	SaldoLiquido                          MoneyDisplay
+	SaldoAcumulado                        MoneyDisplay
+	SaldoAcumuladoNegativo                bool
+	SaldoClass                            string
+	SaldoNegativo                         bool
+	Categorias                            []CategoriaBar
+	Membros                               []MembroBar
+	DonutEssentialPercent                 int
+	DonutEssentialPercentLabel            string
+	DonutLifestylePercent                 int
+	DonutLifestylePercentLabel            string
+	DonutEssentialTotal                   MoneyDisplay
+	DonutLifestyleTotal                   MoneyDisplay
+	HasUncategorizedAlert                 bool
+	UncategorizedPercent                  int
+	UncategorizedAmount                   MoneyDisplay
+	PendingPayableTotal                   MoneyDisplay
+	PendingReceivableTotal                MoneyDisplay
+	OverdueReceivableTotal                MoneyDisplay
+	DREMacroGroups                        []string
+	DRE                                   []DRERow
+	CaixaMacroGroups                      []string
+	Caixa                                 []CaixaRow
+	RevenueByCategory                     []RevenueCategorySlice
+	RevenueByCategoryCaixa                []RevenueCategorySlice
+	TopClientsByRevenue                   []TopClientRevenue
+	RealizedCashTotal                     MoneyDisplay
+	ProjectedCashTotal                    MoneyDisplay
+	RealizedIncomeTotal                   MoneyDisplay
+	RealizedExpenseTotal                  MoneyDisplay
+	ProjectedIncomeTotal                  MoneyDisplay
+	ProjectedExpenseTotal                 MoneyDisplay
+	CashMonthIncomeTotal                  MoneyDisplay
+	CashMonthExpenseTotal                 MoneyDisplay
+	CashMonthResultTotal                  MoneyDisplay
+	ProjectedEndingBalance                MoneyDisplay
+	RealizedCashNegative                  bool
+	ProjectedCashNegative                 bool
+	CashMonthResultNegative               bool
+	ProjectedEndingBalanceNegative        bool
+	ShowProjectedEndingBalance            bool
+	RealizedCashCount                     int
+	UpcomingCashItems                     []UpcomingCashItemDisplay
+	BusinessCosts                         []BusinessCostMacroRow
+	BusinessCostsCaixa                    []BusinessCostMacroRow
+	CategoriasCaixa                       []CategoriaBar
+	DonutCaixaEssentialTotal              MoneyDisplay
+	DonutCaixaLifestyleTotal              MoneyDisplay
+	DonutCaixaEssentialPercent            int
+	DonutCaixaEssentialPercentLabel       string
+	DonutCaixaLifestylePercent            int
+	DonutCaixaLifestylePercentLabel       string
+	ExtratoRows                           []StatementExtratoRow
+	DailySummary                          []DailySummaryRow
+	ExtratoMovementCount                  int
+	ContabilDRE                           []DRERow
+	ContabilDREMacroGroups                []string
+	ContabilDREAtual                      DRERow
+	HasContabilDREAtual                   bool
+	ContabilDREOperacional                DRERow
+	HasContabilDREOperacional             bool
+	ContabilCaixaRows                     []CaixaRow
+	ContabilCaixaMacroGroups              []string
+	ContabilCaixaAtual                    CaixaRow
+	HasContabilCaixaAtual                 bool
+	ContabilReceitasMacro                 []BusinessCostMacroRow
+	ContabilDespesasMacro                 []BusinessCostMacroRow
+	ContabilImpostos                      []ContabilImposto
+	ContabilProLabore                     MoneyDisplay
+	ContabilRendimentos                   []ContabilRendimentoFinanceiro
+	ContabilSaldosContas                  []AccountBalance
+	ContabilSaldoReferencia               string
+	ContabilSaldoTotal                    MoneyDisplay
+	ContabilSaldoTotalRaw                 int64
+	ContabilSaldoTotalNegativo            bool
+	HasContabilInvestimentosPatrimonial   bool
+	ContabilInvestimentosPatrimonial      MoneyDisplay
+	ContabilInvestimentosPatrimonialRaw   int64
+	HasContabilInvestimentosOutrosLegacy  bool
+	HasRendimentosFinanceiros             bool
+	HasRetiradasDistribuicao              bool
+	HasContabilMissingReceitasFinanceiras bool
+	HasContabilOutrasEntradasMovimento    bool
+	HasContabilOutrasSaidasMovimento      bool
+	ContabilExtratoRows                   []StatementExtratoRow
+	ContabilExtratoMovementCount          int
+	ContabilDailySummary                  []DailySummaryRow
+}
+
+type ContabilProLabore struct {
+	Amount    MoneyDisplay
+	RawAmount int64
+}
+
+type ContabilImposto struct {
+	MacroGroup string
+	Amount     MoneyDisplay
+	RawAmount  int64
+}
+
+type ContabilRendimentoFinanceiro struct {
+	CategoryName string
+	Amount       MoneyDisplay
+	RawAmount    int64
+}
+
+type AccountBalance struct {
+	Name       string
+	Type       string
+	Balance    MoneyDisplay
+	RawBalance int64
+	Color      string
+	Icon       string
+	IsArchived bool
 }
 
 type CategoriaBar struct {
@@ -218,10 +278,10 @@ func (h *RelatoriosHandler) HandleExibirRelatorios(w http.ResponseWriter, r *htt
 	mesStr := r.URL.Query().Get("mes")
 	anoStr := r.URL.Query().Get("ano")
 	tab := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("tab")))
-	if tab != "caixa" && tab != "competencia" && tab != "extrato" {
+	if tab != "caixa" && tab != "competencia" && tab != "extrato" && tab != "contabil" {
 		tab = "caixa"
 	}
-	if tab == "competencia" && workspaceType(h.DB, h.WorkspaceID) != "business" {
+	if (tab == "competencia" || tab == "contabil") && workspaceType(h.DB, h.WorkspaceID) != "business" {
 		tab = "caixa"
 	}
 	modo := normalizeCaixaModo(r.URL.Query().Get("modo"))
@@ -268,10 +328,10 @@ func (h *RelatoriosHandler) HandleRelatoriosConceito(w http.ResponseWriter, r *h
 	mesStr := r.URL.Query().Get("mes")
 	anoStr := r.URL.Query().Get("ano")
 	tab := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("tab")))
-	if tab != "caixa" && tab != "competencia" && tab != "extrato" {
+	if tab != "caixa" && tab != "competencia" && tab != "extrato" && tab != "contabil" {
 		tab = "caixa"
 	}
-	if tab == "competencia" && workspaceType(h.DB, h.WorkspaceID) != "business" {
+	if (tab == "competencia" || tab == "contabil") && workspaceType(h.DB, h.WorkspaceID) != "business" {
 		tab = "caixa"
 	}
 	modo := normalizeCaixaModo(r.URL.Query().Get("modo"))
@@ -746,10 +806,10 @@ func (h *RelatoriosHandler) buildRelatoriosData(reqID, tab, view string, mes, an
 
 func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo string, mes, ano int) (RelatoriosData, error) {
 	isBusiness := workspaceType(h.DB, h.WorkspaceID) == "business"
-	if tab != "caixa" && tab != "competencia" && tab != "extrato" {
+	if tab != "caixa" && tab != "competencia" && tab != "extrato" && tab != "contabil" {
 		tab = "caixa"
 	}
-	if tab == "competencia" && !isBusiness {
+	if (tab == "competencia" || tab == "contabil") && !isBusiness {
 		tab = "caixa"
 	}
 	if view != "movimentos" && view != "diario" {
@@ -1108,6 +1168,117 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 	perfStep(reqID, "Relatorios", "queryDRE+Caixa", time.Since(tS))
 	tS = time.Now()
 
+	if tab == "contabil" && isBusiness {
+		data.ContabilDRE = dreRows
+		data.ContabilDREMacroGroups = extractDREMacroGroups(dreRows)
+		if row, ok := findDREMonthRow(dreRows, ano, mes); ok {
+			data.ContabilDREAtual = row
+			data.HasContabilDREAtual = true
+			operRow := filterDREOperational(row)
+			data.ContabilDREOperacional = operRow
+			data.HasContabilDREOperacional = true
+		}
+
+		caixaRealizadoRows, err := h.queryCaixaRows(ano, mes, "realizado")
+		if err != nil {
+			return data, fmt.Errorf("query contabil caixa: %w", err)
+		}
+		data.ContabilCaixaRows = caixaRealizadoRows
+		data.ContabilCaixaMacroGroups = extractCaixaMacroGroups(caixaRealizadoRows)
+		if row, ok := findCaixaMonthRow(caixaRealizadoRows, ano, mes); ok {
+			data.ContabilCaixaAtual = row
+			data.HasContabilCaixaAtual = true
+		}
+
+		receitasMacro, err := h.queryContabilReceitasByMacro(ctx, monthStart, monthEnd)
+		if err != nil {
+			return data, fmt.Errorf("query contabil receitas: %w", err)
+		}
+		data.ContabilReceitasMacro = receitasMacro
+
+		despesasMacro, err := h.queryBusinessCostsByMacro(ctx, mes, ano)
+		if err != nil {
+			return data, fmt.Errorf("query contabil despesas: %w", err)
+		}
+		data.ContabilDespesasMacro = despesasMacro
+
+		impostos, err := h.queryImpostosAmounts(ctx, monthStart, monthEnd)
+		if err != nil {
+			return data, fmt.Errorf("query contabil impostos: %w", err)
+		}
+		data.ContabilImpostos = impostos
+
+		proLaboreAmount, err := h.queryProLaboreAmount(ctx, monthStart, monthEnd)
+		if err != nil {
+			return data, fmt.Errorf("query contabil pro-labore: %w", err)
+		}
+		data.ContabilProLabore = MoneyMinor(proLaboreAmount)
+		data.HasRetiradasDistribuicao = proLaboreAmount > 0
+
+		rendimentos, err := h.queryRendimentosFinanceiros(ctx, monthStart, monthEnd)
+		if err != nil {
+			return data, fmt.Errorf("query contabil rendimentos: %w", err)
+		}
+		data.ContabilRendimentos = rendimentos
+		data.HasRendimentosFinanceiros = len(rendimentos) > 0
+
+		investPatrimonial, err := h.queryInvestimentosPatrimonialAmount(ctx, monthStart, monthEnd)
+		if err != nil {
+			return data, fmt.Errorf("query contabil investimentos patrimonial: %w", err)
+		}
+		data.ContabilInvestimentosPatrimonial = MoneyMinor(investPatrimonial)
+		data.ContabilInvestimentosPatrimonialRaw = investPatrimonial
+		data.HasContabilInvestimentosPatrimonial = investPatrimonial > 0
+
+		hasInvestOutros, err := h.queryInvestimentosOutrosLegacyExists(ctx, monthStart, monthEnd)
+		if err != nil {
+			return data, fmt.Errorf("query contabil investimentos outros legacy: %w", err)
+		}
+		data.HasContabilInvestimentosOutrosLegacy = hasInvestOutros
+
+		closingBalances, err := BuildAccountClosingBalances(h.DB, h.WorkspaceID, monthEnd)
+		if err != nil {
+			return data, fmt.Errorf("build account closing balances: %w", err)
+		}
+		var saldos []AccountBalance
+		var saldoTotal int64
+		for _, cb := range closingBalances {
+			saldos = append(saldos, AccountBalance{
+				Name:       cb.Name,
+				Type:       cb.Type,
+				Balance:    MoneyMinor(cb.Balance),
+				RawBalance: cb.Balance,
+				Color:      cb.Color,
+				Icon:       cb.Icon,
+				IsArchived: cb.IsArchived,
+			})
+			saldoTotal += cb.Balance
+		}
+		data.ContabilSaldosContas = saldos
+		data.ContabilSaldoReferencia = time.Unix(monthEnd, 0).Format("02/01/2006")
+		data.ContabilSaldoTotal = MoneyMinor(saldoTotal)
+		data.ContabilSaldoTotalRaw = saldoTotal
+		data.ContabilSaldoTotalNegativo = saldoTotal < 0
+
+		missingRF, err := h.queryMissingReceitasFinanceirasCategory(ctx)
+		if err != nil {
+			return data, fmt.Errorf("query missing receitas financeiras: %w", err)
+		}
+		data.HasContabilMissingReceitasFinanceiras = missingRF
+
+		hasOutrasEntradas, err := h.queryOutrasEntradasExists(ctx, monthStart, monthEnd)
+		if err != nil {
+			return data, fmt.Errorf("query outras entradas: %w", err)
+		}
+		data.HasContabilOutrasEntradasMovimento = hasOutrasEntradas
+
+		hasOutrasSaidas, err := h.queryOutrasSaidasExists(ctx, monthStart, monthEnd)
+		if err != nil {
+			return data, fmt.Errorf("query outras saidas: %w", err)
+		}
+		data.HasContabilOutrasSaidasMovimento = hasOutrasSaidas
+	}
+
 	extratoRows, err := BuildExtratoData(h.DB, h.WorkspaceID, period)
 	if err != nil {
 		return data, fmt.Errorf("build extrato data: %w", err)
@@ -1163,6 +1334,12 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 	}
 	data.ExtratoMovementCount = len(extratoRows)
 	perfStep(reqID, "Relatorios", "extratoData", time.Since(tS))
+
+	if tab == "contabil" && isBusiness {
+		data.ContabilExtratoRows = extratoRows
+		data.ContabilExtratoMovementCount = len(extratoRows)
+		data.ContabilDailySummary = data.DailySummary
+	}
 
 	return data, nil
 }
@@ -1227,6 +1404,40 @@ func extractDREMacroGroups(rows []DRERow) []string {
 	return out
 }
 
+func findDREMonthRow(rows []DRERow, ano, mes int) (DRERow, bool) {
+	target := fmt.Sprintf("%04d-%02d", ano, mes)
+	for _, row := range rows {
+		if row.Competencia == target {
+			return row, true
+		}
+	}
+	return DRERow{}, false
+}
+
+func filterDREOperational(in DRERow) DRERow {
+	nonOperational := map[string]bool{
+		categorycontract.MacroRetiradasDistribuicao:    true,
+		categorycontract.MacroInvestimentosPatrimonial: true,
+		categorycontract.MacroInvestimentosOutros:      true,
+	}
+	var filtered []DREMacroGroupAmount
+	var operationalResult int64
+	for _, mg := range in.MacroGroups {
+		if nonOperational[mg.MacroGroup] {
+			continue
+		}
+		filtered = append(filtered, mg)
+		operationalResult += mg.RawAmount
+	}
+	return DRERow{
+		Competencia:       in.Competencia,
+		MacroGroups:       filtered,
+		RawResultado:      operationalResult,
+		Resultado:         MoneyMinor(operationalResult),
+		ResultadoNegativo: operationalResult < 0,
+	}
+}
+
 func dreMacroValue(groups []DREMacroGroupAmount, macroGroup string) MoneyDisplay {
 	for _, item := range groups {
 		if item.MacroGroup == macroGroup {
@@ -1276,7 +1487,67 @@ func (h *RelatoriosHandler) queryDRERaw(ano int) ([]dreRawRow, error) {
 			Amount:      amount,
 		})
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (h *RelatoriosHandler) queryContabilReceitasByMacro(ctx context.Context, monthStart, monthEnd int64) ([]BusinessCostMacroRow, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT
+			COALESCE(NULLIF(c.macro_group, ''), NULLIF(p.macro_group, ''), 'Sem grupo macro') AS macro_group,
+			COALESCE(SUM(t.amount), 0) AS total
+		FROM transactions t
+		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
+		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
+		WHERE t.workspace_id = ?
+			AND t.type = 'INCOME'
+			AND t.date >= ? AND t.date <= ?
+		GROUP BY COALESCE(NULLIF(c.macro_group, ''), NULLIF(p.macro_group, ''), 'Sem grupo macro')
+		ORDER BY total DESC
+	`, h.WorkspaceID, monthStart, monthEnd)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rawRows []BusinessCostMacroRow
+	var totalRevenue int64
+	for rows.Next() {
+		var macroGroup string
+		var total int64
+		if err := rows.Scan(&macroGroup, &total); err != nil {
+			return nil, fmt.Errorf("scan contabil receitas: %w", err)
+		}
+		rawRows = append(rawRows, BusinessCostMacroRow{
+			MacroGroup: macroGroup,
+			Amount:     MoneyMinor(total),
+			RawAmount:  total,
+		})
+		totalRevenue += total
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	strokeColors := []string{"#10B981", "#6366F1", "#F59E0B", "#EC4899", "#14B8A6", "#8B5CF6", "#F97316", "#06B6D4"}
+	nextOffset := 25
+	for i := range rawRows {
+		rawRows[i].Stroke = strokeColors[i%len(strokeColors)]
+		rawRows[i].DashOffset = nextOffset
+		if totalRevenue > 0 {
+			pct := int((rawRows[i].RawAmount * 100) / totalRevenue)
+			rawRows[i].Percent = pct
+			if pct < 1 {
+				rawRows[i].PercentLabel = "<1%"
+			} else {
+				rawRows[i].PercentLabel = fmt.Sprintf("%d%%", pct)
+			}
+		}
+		nextOffset += 100 - rawRows[i].Percent
+	}
+	return rawRows, nil
 }
 
 func (h *RelatoriosHandler) queryMacroGroupTotals(ctx context.Context, monthStart, monthEnd int64) (int64, int64, error) {
@@ -1718,6 +1989,16 @@ func extractCaixaMacroGroups(rows []CaixaRow) []string {
 		out = append(out, item.MacroGroup)
 	}
 	return out
+}
+
+func findCaixaMonthRow(rows []CaixaRow, ano, mes int) (CaixaRow, bool) {
+	target := fmt.Sprintf("%04d-%02d", ano, mes)
+	for _, row := range rows {
+		if row.Vencimento == target {
+			return row, true
+		}
+	}
+	return CaixaRow{}, false
 }
 
 func caixaMacroValue(groups []CaixaMacroGroupAmount, macroGroup string) MoneyDisplay {
@@ -2566,4 +2847,222 @@ func buildRelatoriosMonthOptions(ano, mesAtual int, tab, view, modo string) []Mo
 		})
 	}
 	return options
+}
+
+func (h *RelatoriosHandler) queryProLaboreAmount(ctx context.Context, monthStart, monthEnd int64) (int64, error) {
+	var amount int64
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(t.amount), 0)
+		FROM transactions t
+		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
+		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
+		WHERE t.workspace_id = ?
+			AND t.type = 'EXPENSE'
+			AND t.status = 'paid'
+			AND t.date >= ? AND t.date <= ?
+			AND (c.macro_group = ? OR p.macro_group = ?)
+	`, h.WorkspaceID, monthStart, monthEnd,
+		categorycontract.MacroRetiradasDistribuicao,
+		categorycontract.MacroRetiradasDistribuicao).Scan(&amount)
+	return amount, err
+}
+
+func (h *RelatoriosHandler) queryImpostosAmounts(ctx context.Context, monthStart, monthEnd int64) ([]ContabilImposto, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT
+			COALESCE(NULLIF(c.macro_group, ''), NULLIF(p.macro_group, ''), ?) AS macro_group,
+			COALESCE(SUM(t.amount), 0) AS total
+		FROM transactions t
+		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
+		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
+		WHERE t.workspace_id = ?
+			AND t.type = 'EXPENSE'
+			AND t.date >= ? AND t.date <= ?
+			AND `+excludeInvoicePaymentCompetenceClause("t")+`
+			AND (c.macro_group = ? OR p.macro_group = ?)
+		GROUP BY COALESCE(NULLIF(c.macro_group, ''), NULLIF(p.macro_group, ''), ?)
+		ORDER BY total DESC
+	`, categorycontract.MacroDeducoesImpostos,
+		h.WorkspaceID, monthStart, monthEnd,
+		categorycontract.MacroDeducoesImpostos,
+		categorycontract.MacroDeducoesImpostos,
+		categorycontract.MacroDeducoesImpostos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ContabilImposto
+	for rows.Next() {
+		var macroGroup string
+		var total int64
+		if err := rows.Scan(&macroGroup, &total); err != nil {
+			return nil, fmt.Errorf("scan impostos: %w", err)
+		}
+		out = append(out, ContabilImposto{
+			MacroGroup: macroGroup,
+			Amount:     MoneyMinor(total),
+			RawAmount:  total,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		out = append(out, ContabilImposto{MacroGroup: categorycontract.MacroDeducoesImpostos, Amount: MoneyMinor(0), RawAmount: 0})
+	}
+	return out, nil
+}
+
+func (h *RelatoriosHandler) queryRendimentosFinanceiros(ctx context.Context, monthStart, monthEnd int64) ([]ContabilRendimentoFinanceiro, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT
+			COALESCE(c.name, p.name, 'Receitas Financeiras') AS category_name,
+			COALESCE(SUM(t.amount), 0) AS total
+		FROM transactions t
+		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
+		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
+		WHERE t.workspace_id = ?
+			AND t.type = 'INCOME'
+			AND t.date >= ? AND t.date <= ?
+			AND (c.macro_group = ? OR p.macro_group = ?)
+		GROUP BY COALESCE(c.name, p.name, 'Receitas Financeiras')
+		ORDER BY total DESC
+	`, h.WorkspaceID, monthStart, monthEnd,
+		categorycontract.MacroReceitasFinanceiras,
+		categorycontract.MacroReceitasFinanceiras)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ContabilRendimentoFinanceiro
+	for rows.Next() {
+		var catName string
+		var total int64
+		if err := rows.Scan(&catName, &total); err != nil {
+			return nil, fmt.Errorf("scan rendimentos: %w", err)
+		}
+		out = append(out, ContabilRendimentoFinanceiro{
+			CategoryName: catName,
+			Amount:       MoneyMinor(total),
+			RawAmount:    total,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (h *RelatoriosHandler) queryInvestimentosPatrimonialAmount(ctx context.Context, monthStart, monthEnd int64) (int64, error) {
+	var amount int64
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(t.amount), 0)
+		FROM transactions t
+		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
+		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
+		WHERE t.workspace_id = ?
+			AND t.type = 'EXPENSE'
+			AND t.date >= ? AND t.date <= ?
+			AND `+excludeInvoicePaymentCompetenceClause("t")+`
+			AND (c.macro_group = ? OR p.macro_group = ?)
+	`, h.WorkspaceID, monthStart, monthEnd,
+		categorycontract.MacroInvestimentosPatrimonial,
+		categorycontract.MacroInvestimentosPatrimonial).Scan(&amount)
+	return amount, err
+}
+
+func (h *RelatoriosHandler) queryInvestimentosOutrosLegacyExists(ctx context.Context, monthStart, monthEnd int64) (bool, error) {
+	var count int64
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM transactions t
+		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
+		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
+		WHERE t.workspace_id = ?
+			AND t.type = 'EXPENSE'
+			AND t.date >= ? AND t.date <= ?
+			AND `+excludeInvoicePaymentCompetenceClause("t")+`
+			AND (c.macro_group = ? OR p.macro_group = ?)
+	`, h.WorkspaceID, monthStart, monthEnd,
+		categorycontract.MacroInvestimentosOutros,
+		categorycontract.MacroInvestimentosOutros).Scan(&count)
+	return count > 0, err
+}
+
+func (h *RelatoriosHandler) queryMissingReceitasFinanceirasCategory(ctx context.Context) (bool, error) {
+	var count int64
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM categories
+		WHERE workspace_id = ? AND type = 'INCOME' AND macro_group = ?
+	`, h.WorkspaceID, categorycontract.MacroReceitasFinanceiras).Scan(&count)
+	return count == 0, err
+}
+
+func (h *RelatoriosHandler) queryOutrasEntradasExists(ctx context.Context, monthStart, monthEnd int64) (bool, error) {
+	var count int64
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM transactions t
+		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
+		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
+		WHERE t.workspace_id = ? AND t.type = 'INCOME'
+		  AND t.date >= ? AND t.date <= ?
+		  AND (c.macro_group = ? OR p.macro_group = ?)
+	`, h.WorkspaceID, monthStart, monthEnd,
+		categorycontract.MacroOutrasEntradas,
+		categorycontract.MacroOutrasEntradas).Scan(&count)
+	return count > 0, err
+}
+
+func (h *RelatoriosHandler) queryOutrasSaidasExists(ctx context.Context, monthStart, monthEnd int64) (bool, error) {
+	var count int64
+	err := h.DB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM transactions t
+		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
+		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
+		WHERE t.workspace_id = ? AND t.type = 'EXPENSE'
+		  AND t.date >= ? AND t.date <= ?
+		  AND `+excludeInvoicePaymentCompetenceClause("t")+`
+		  AND (c.macro_group = ? OR p.macro_group = ?)
+	`, h.WorkspaceID, monthStart, monthEnd,
+		categorycontract.MacroOutrasSaidas,
+		categorycontract.MacroOutrasSaidas).Scan(&count)
+	return count > 0, err
+}
+
+func (h *RelatoriosHandler) queryAccountBalances(ctx context.Context) ([]AccountBalance, error) {
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT
+			COALESCE(name, ''),
+			COALESCE(type, ''),
+			COALESCE(current_balance, 0),
+			COALESCE(color, ''),
+			COALESCE(icon, '')
+		FROM accounts
+		WHERE workspace_id = ? AND archived_at IS NULL
+		ORDER BY type, name
+	`, h.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AccountBalance
+	for rows.Next() {
+		var name, accType, color, icon string
+		var balance int64
+		if err := rows.Scan(&name, &accType, &balance, &color, &icon); err != nil {
+			return nil, fmt.Errorf("scan account balances: %w", err)
+		}
+		out = append(out, AccountBalance{
+			Name:       name,
+			Type:       accType,
+			Balance:    MoneyMinor(balance),
+			RawBalance: balance,
+			Color:      color,
+			Icon:       icon,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

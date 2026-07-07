@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/contabase-app/contabase/internal/categorycontract"
 	"github.com/contabase-app/contabase/internal/models"
 	"github.com/contabase-app/contabase/internal/paths"
 	"github.com/contabase-app/contabase/internal/services"
@@ -7713,7 +7714,7 @@ type CategoryCreateData struct {
 	Name             string
 	Error            string
 	ParentOptions    []CategoryParentOption
-	MacroGroups      []string
+	MacroGroups      []categorycontract.MacroGroup
 	DefaultMacro     string
 	SelectedParentID string
 	SelectedMacro    string
@@ -7790,7 +7791,7 @@ func (h *TransactionHandler) HandleCategoryCreateForm(w http.ResponseWriter, r *
 		parentOptions = nil
 	}
 	isBusiness := workspaceType(h.DB, h.WorkspaceID) == "business"
-	macroGroups := validMacroGroupsForType(isBusiness, typ)
+	macroGroups := categoryMacroGroupsForTemplate(isBusiness, typ)
 	defaultMacro := defaultMacroGroupForWorkspace(isBusiness, typ)
 
 	data := CategoryCreateData{
@@ -7861,7 +7862,7 @@ func (h *TransactionHandler) renderCategoryCreateError(w http.ResponseWriter, r 
 		parentOptions = nil
 	}
 	isBusiness := workspaceType(h.DB, h.WorkspaceID) == "business"
-	macroGroups := validMacroGroupsForType(isBusiness, typ)
+	macroGroups := categoryMacroGroupsForTemplate(isBusiness, typ)
 	defaultMacro := defaultMacroGroupForWorkspace(isBusiness, typ)
 
 	if selectedParentID != "" && selectedMacro == "" {

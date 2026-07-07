@@ -19,27 +19,38 @@
     {{template "seletor_meses" .}}
 
     <!-- Tab Navigation -->
-    <nav class="flex gap-1 mb-5 border-b border-[var(--cb-border-subtle)] pb-0">
+    <nav class="mt-6 sm:mt-5 flex gap-1 mb-5 border-b border-[var(--cb-border-subtle)] pb-0">
+        {{if .IsBusiness}}<a href="?tab=contabil&mes={{.MesAtual}}&ano={{.AnoAtual}}"
+            hx-get="/relatorios?tab=contabil&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
+            hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
+            class="px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-colors whitespace-nowrap
+            {{if eq .ActiveTab "contabil"}}bg-[var(--cb-accent)] border-[var(--cb-accent)] text-white shadow-sm{{else}}border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
+            <span class="sm:hidden">Contábil</span>
+            <span class="hidden sm:inline">Relatório Contábil</span>
+        </a>{{end}}
         <a href="?tab=caixa{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&mes={{.MesAtual}}&ano={{.AnoAtual}}"
             hx-get="/relatorios?tab=caixa{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
             hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
-            class="px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-colors
+            class="px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-colors whitespace-nowrap
             {{if eq .ActiveTab "caixa"}}bg-[var(--cb-accent)] border-[var(--cb-accent)] text-white shadow-sm{{else}}border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
-            Fluxo de Caixa
+            <span class="sm:hidden">Fluxo</span>
+            <span class="hidden sm:inline">Fluxo de Caixa</span>
         </a>
         {{if .IsBusiness}}<a href="?tab=competencia{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&mes={{.MesAtual}}&ano={{.AnoAtual}}"
             hx-get="/relatorios?tab=competencia{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
             hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
-            class="px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-colors
+            class="px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-colors whitespace-nowrap
             {{if eq .ActiveTab "competencia"}}bg-[var(--cb-accent)] border-[var(--cb-accent)] text-white shadow-sm{{else}}border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
-            Competência
+            <span class="sm:hidden">Compet.</span>
+            <span class="hidden sm:inline">Competência</span>
         </a>{{end}}
         <a href="?tab=extrato{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&mes={{.MesAtual}}&ano={{.AnoAtual}}"
             hx-get="/relatorios?tab=extrato{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
             hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
-            class="px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-colors
+            class="px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-colors whitespace-nowrap
             {{if eq .ActiveTab "extrato"}}bg-[var(--cb-accent)] border-[var(--cb-accent)] text-white shadow-sm{{else}}border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
-            Extrato
+            <span class="sm:hidden">Extrato</span>
+            <span class="hidden sm:inline">Extrato</span>
         </a>
     </nav>
 
@@ -547,6 +558,364 @@
                 </div>
                 {{end}}
             </div>
+        </section>
+    </div>
+    {{end}}
+
+    {{if .IsBusiness}}
+    <!-- TAB: Relatório Contábil -->
+    <div class="{{if eq .ActiveTab "contabil"}}block{{else}}hidden{{end}}">
+        <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+                <h2 class="text-sm font-bold text-[var(--cb-text-main)]">Relatório Contábil — {{.MonthLabel}}</h2>
+                <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">Central de fechamento mensal por Natureza Econômica (Grupo Macro). Resumo por competência, caixa realizado, tributos, retiradas e conferências.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <a href="/relatorios/contabil.pdf?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-button cb-button-secondary h-8 px-3 text-[10px]">
+                    <i data-lucide="file-text" class="w-3 h-3"></i>PDF
+                </a>
+                <div class="cb-meta-menu relative z-20 pointer-events-auto" data-dropdown aria-expanded="false">
+                    <button type="button" data-dropdown-toggle class="cb-button cb-button-secondary h-8 px-3 text-[10px]" aria-label="Exportar relatório contábil em CSV">
+                        <i data-lucide="download" class="w-3 h-3"></i>
+                        <span>CSV</span>
+                        <i data-lucide="chevron-down" data-dropdown-chevron class="w-3 h-3 text-[var(--cb-text-subtle)] transition-transform duration-200"></i>
+                    </button>
+                    <div data-dropdown-panel class="cb-meta-menu-panel reports-export-menu hidden right-0">
+                        <a href="/relatorios/contabil-resumo.csv?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item" title="Baixa um CSV com resultado operacional, caixa realizado e totais do período.">
+                            <i data-lucide="clipboard-list" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
+                            <span>Resumo do mês</span>
+                        </a>
+                        <a href="/relatorios/contabil-macros.csv?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item" title="Baixa um CSV com valores por Grupo Macro/Natureza Econômica.">
+                            <i data-lucide="layers" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
+                            <span>Naturezas</span>
+                        </a>
+                        <a href="/relatorios/contabil-saldos.csv?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item" title="Baixa um CSV com saldos reconstruídos por conta na data de referência.">
+                            <i data-lucide="wallet" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
+                            <span>Saldos por conta</span>
+                        </a>
+                        <a href="/relatorios/contabil.zip?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item" title="Baixa um pacote ZIP com o PDF e os 3 CSVs do relatório contábil.">
+                            <i data-lucide="package" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
+                            <span>Pacote ZIP</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPIs -->
+        <section class="mb-5 grid grid-cols-1 min-[390px]:grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
+                <div class="flex items-center justify-between gap-1.5">
+                    <span class="cb-section-title">Competência</span>
+                    <i data-lucide="scale" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+                </div>
+                {{if .HasContabilDREOperacional}}
+                <span class="text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap {{if .ContabilDREOperacional.ResultadoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-accent)]{{end}}" data-sensitive>R$ {{.ContabilDREOperacional.Resultado.Reais}}{{.ContabilDREOperacional.Resultado.Cents}}</span>
+                {{else}}
+                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-text-subtle)] whitespace-nowrap">-</span>
+                {{end}}
+                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Resultado operacional</span>
+            </div>
+            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
+                <div class="flex items-center justify-between gap-1.5">
+                    <span class="cb-section-title">Caixa realizado</span>
+                    <i data-lucide="wallet" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+                </div>
+                {{if .HasContabilCaixaAtual}}
+                <span class="text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap {{if .ContabilCaixaAtual.ResultadoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-accent)]{{end}}" data-sensitive>R$ {{.ContabilCaixaAtual.Resultado.Reais}}{{.ContabilCaixaAtual.Resultado.Cents}}</span>
+                {{else}}
+                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-text-subtle)] whitespace-nowrap">-</span>
+                {{end}}
+                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Movimentos confirmados</span>
+            </div>
+            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
+                <div class="flex items-center justify-between gap-1.5">
+                    <span class="cb-section-title">Movimentos</span>
+                    <i data-lucide="list-checks" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+                </div>
+                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-text-main)] whitespace-nowrap">{{.ContabilExtratoMovementCount}}</span>
+                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Confirmados no mês</span>
+            </div>
+            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
+                <div class="flex items-center justify-between gap-1.5">
+                    <span class="cb-section-title">Retiradas</span>
+                    <i data-lucide="user" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+                </div>
+                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-warning)] whitespace-nowrap" data-sensitive>R$ {{.ContabilProLabore.Reais}}{{.ContabilProLabore.Cents}}</span>
+                <span class="cb-text-micro text-[var(--cb-text-subtle)]">{{if .HasRetiradasDistribuicao}}Macro Retiradas/Distribuição{{else}}Sem retiradas no período{{end}}</span>
+            </div>
+        </section>
+
+        <!-- Resultado e Caixa do mês -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+            <section class="cb-card-dense p-4 md:p-5">
+                <div class="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                        <p class="cb-section-title">Demonstrativo de Resultados</p>
+                        <h2 class="text-xs font-bold text-[var(--cb-text-main)] mt-0.5">Resultado operacional por competência</h2>
+                        <p class="cb-text-micro text-[var(--cb-text-muted)]">Resultado do mês, excluindo itens patrimoniais e retiradas.</p>
+                    </div>
+                    <a href="?tab=competencia&mes={{.MesAtual}}&ano={{.AnoAtual}}" hx-get="/relatorios?tab=competencia&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content" hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true" class="text-[11px] font-semibold text-[var(--cb-accent)] hover:underline whitespace-nowrap">Ver DRE completa</a>
+                </div>
+                {{if .HasContabilDREOperacional}}
+                <div class="flex items-baseline justify-between gap-3 pb-3 border-b border-[var(--cb-border-subtle)]">
+                    <span class="text-xs font-medium text-[var(--cb-text-muted)]">{{.ContabilDREOperacional.Competencia}}</span>
+                    <span class="text-lg font-black whitespace-nowrap {{if .ContabilDREOperacional.ResultadoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.ContabilDREOperacional.Resultado.Reais}}{{.ContabilDREOperacional.Resultado.Cents}}</span>
+                </div>
+                <div class="mt-3 space-y-2">
+                    {{range .ContabilDREOperacional.MacroGroups}}
+                    <div class="flex items-center justify-between gap-3 text-xs">
+                        <span class="text-[var(--cb-text-muted)] truncate">{{.MacroGroup}}</span>
+                        <span class="font-semibold whitespace-nowrap {{if lt .RawAmount 0}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                    </div>
+                    {{end}}
+                </div>
+                {{else}}
+                <div class="cb-empty-state py-8">
+                    <i data-lucide="bar-chart-2" class="w-6 h-6 text-[var(--cb-text-subtle)] mb-2"></i>
+                    <p class="text-xs text-[var(--cb-text-subtle)]">Sem resultado de competência para este mês.</p>
+                </div>
+                {{end}}
+            </section>
+
+            <section class="cb-card-dense p-4 md:p-5">
+                <div class="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                        <p class="cb-section-title">Fluxo de Caixa</p>
+                        <h2 class="text-xs font-bold text-[var(--cb-text-main)] mt-0.5">Caixa Realizado</h2>
+                        <p class="cb-text-micro text-[var(--cb-text-muted)]">Recebimentos e pagamentos confirmados no mês.</p>
+                    </div>
+                    <a href="?tab=caixa&modo=realizado&mes={{.MesAtual}}&ano={{.AnoAtual}}" hx-get="/relatorios?tab=caixa&modo=realizado&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content" hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true" class="text-[11px] font-semibold text-[var(--cb-accent)] hover:underline whitespace-nowrap">Ver caixa</a>
+                </div>
+                {{if .HasContabilCaixaAtual}}
+                <div class="flex items-baseline justify-between gap-3 pb-3 border-b border-[var(--cb-border-subtle)]">
+                    <span class="text-xs font-medium text-[var(--cb-text-muted)]">{{.ContabilCaixaAtual.Vencimento}}</span>
+                    <span class="text-lg font-black whitespace-nowrap {{if .ContabilCaixaAtual.ResultadoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.ContabilCaixaAtual.Resultado.Reais}}{{.ContabilCaixaAtual.Resultado.Cents}}</span>
+                </div>
+                <div class="mt-3 space-y-2">
+                    {{range .ContabilCaixaAtual.MacroGroups}}
+                    <div class="flex items-center justify-between gap-3 text-xs">
+                        <span class="text-[var(--cb-text-muted)] truncate">{{.MacroGroup}}</span>
+                        <span class="font-semibold whitespace-nowrap {{if lt .RawAmount 0}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                    </div>
+                    {{end}}
+                </div>
+                {{else}}
+                <div class="cb-empty-state py-8">
+                    <i data-lucide="wallet" class="w-6 h-6 text-[var(--cb-text-subtle)] mb-2"></i>
+                    <p class="text-xs text-[var(--cb-text-subtle)]">Sem caixa realizado para este mês.</p>
+                </div>
+                {{end}}
+            </section>
+        </div>
+
+        <!-- Entradas e Saídas por Macro -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+            <section class="cb-card-dense p-4 md:p-5">
+                <p class="cb-section-title mb-1">Receitas</p>
+                <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">Entradas por Macro/Categoria</h2>
+                <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">Receitas por competência no mês.</p>
+                {{if .ContabilReceitasMacro}}
+                <div class="flex flex-col sm:flex-row items-center gap-6">
+                    <svg viewBox="0 0 42 42" class="h-36 w-36 -rotate-90 shrink-0">
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(228 228 231)" stroke-width="4.5" class="dark:stroke-zinc-700/80"></circle>
+                        {{range .ContabilReceitasMacro}}
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="{{.Stroke}}" stroke-width="4.5"
+                            stroke-dasharray="{{.Percent}} {{sub 100 .Percent}}" stroke-dashoffset="{{.DashOffset}}"
+                            class="donut-segment" stroke-linecap="round"></circle>
+                        {{end}}
+                    </svg>
+                    <div class="space-y-2.5 text-xs flex-1 w-full">
+                        {{range .ContabilReceitasMacro}}
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10" style="{{colorStyle "background-color" .Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
+                            <span class="whitespace-nowrap" style="{{colorStyle "color" .Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+                {{else}}
+                <div class="cb-empty-state py-8">
+                    <i data-lucide="pie-chart" class="w-6 h-6 text-[var(--cb-text-subtle)] mb-2"></i>
+                    <p class="text-xs text-[var(--cb-text-subtle)]">Sem receitas no período.</p>
+                </div>
+                {{end}}
+            </section>
+
+            <section class="cb-card-dense p-4 md:p-5">
+                <p class="cb-section-title mb-1">Despesas</p>
+                <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">Saídas por Macro/Categoria</h2>
+                <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">Despesas por competência no mês.</p>
+                {{if .ContabilDespesasMacro}}
+                <div class="flex flex-col sm:flex-row items-center gap-6">
+                    <svg viewBox="0 0 42 42" class="h-36 w-36 -rotate-90 shrink-0">
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(228 228 231)" stroke-width="4.5" class="dark:stroke-zinc-700/80"></circle>
+                        {{range .ContabilDespesasMacro}}
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="{{.Stroke}}" stroke-width="4.5"
+                            stroke-dasharray="{{.Percent}} {{sub 100 .Percent}}" stroke-dashoffset="{{.DashOffset}}"
+                            class="donut-segment" stroke-linecap="round"></circle>
+                        {{end}}
+                    </svg>
+                    <div class="space-y-2.5 text-xs flex-1 w-full">
+                        {{range .ContabilDespesasMacro}}
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10" style="{{colorStyle "background-color" .Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
+                            <span class="whitespace-nowrap" style="{{colorStyle "color" .Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+                {{else}}
+                <div class="cb-empty-state py-8">
+                    <i data-lucide="pie-chart" class="w-6 h-6 text-[var(--cb-text-subtle)] mb-2"></i>
+                    <p class="text-xs text-[var(--cb-text-subtle)]">Sem despesas no período.</p>
+                </div>
+                {{end}}
+            </section>
+        </div>
+
+        <!-- Impostos/Taxas -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
+            <section class="cb-card-dense p-4 md:p-5">
+                <div class="mb-4">
+                    <p class="cb-section-title">Tributos</p>
+                    <h2 class="text-xs font-bold text-[var(--cb-text-main)] mt-0.5">Impostos/Taxas</h2>
+                    <p class="cb-text-micro text-[var(--cb-text-muted)]">Classificados no período.</p>
+                </div>
+                <div class="space-y-2">
+                    {{range .ContabilImpostos}}
+                    <div class="flex items-center justify-between gap-3 py-2 border-b border-[var(--cb-border-subtle)] last:border-0">
+                        <span class="text-xs font-medium text-[var(--cb-text-muted)]">{{.MacroGroup}}</span>
+                        <span class="text-xs font-bold text-[var(--cb-danger)]" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                    </div>
+                    {{end}}
+                </div>
+            </section>
+
+            <section class="cb-card-dense p-4 md:p-5">
+                <div class="mb-4">
+                    <p class="cb-section-title">Retiradas/Distribuição</p>
+                    <h2 class="text-xs font-bold text-[var(--cb-text-main)] mt-0.5">Pró-labore, retiradas e distribuição</h2>
+                    <p class="cb-text-micro text-[var(--cb-text-muted)]">Macro Retiradas/Distribuição. Separado do resultado operacional.</p>
+                </div>
+                <div class="flex items-center justify-between gap-3 py-2">
+                    <span class="text-xs font-medium text-[var(--cb-text-muted)]">Total do período</span>
+                    <span class="text-xs font-bold text-[var(--cb-warning)]" data-sensitive>R$ {{.ContabilProLabore.Reais}}{{.ContabilProLabore.Cents}}</span>
+                </div>
+            </section>
+
+            <section class="cb-card-dense p-4 md:p-5">
+                <div class="mb-4">
+                    <p class="cb-section-title">Movimentos</p>
+                    <h2 class="text-xs font-bold text-[var(--cb-text-main)] mt-0.5">Movimentos confirmados</h2>
+                    <p class="cb-text-micro text-[var(--cb-text-muted)]">Resumo do extrato no mês.</p>
+                </div>
+                <div class="flex items-center justify-between gap-3 py-2 border-b border-[var(--cb-border-subtle)]">
+                    <span class="text-xs font-medium text-[var(--cb-text-muted)]">Confirmados</span>
+                    <span class="text-xs font-bold text-[var(--cb-text-main)]">{{.ContabilExtratoMovementCount}}</span>
+                </div>
+                <a href="?tab=extrato&mes={{.MesAtual}}&ano={{.AnoAtual}}" hx-get="/relatorios?tab=extrato&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content" hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true" class="mt-3 inline-flex text-[11px] font-semibold text-[var(--cb-accent)] hover:underline">Ver Extrato completo</a>
+            </section>
+        </div>
+
+        {{if .HasRendimentosFinanceiros}}
+        <section class="cb-card-dense p-4 md:p-5 mb-5">
+            <div class="mb-4">
+                <p class="cb-section-title">Financeiro</p>
+                <h2 class="text-xs font-bold text-[var(--cb-text-main)] mt-0.5">Receitas Financeiras</h2>
+                <p class="cb-text-micro text-[var(--cb-text-muted)]">Macro Receitas Financeiras — rendimentos, juros e receitas de aplicações.</p>
+            </div>
+            <div class="space-y-2">
+                {{range .ContabilRendimentos}}
+                <div class="flex items-center justify-between gap-3 py-2 border-b border-[var(--cb-border-subtle)] last:border-0">
+                    <span class="text-xs font-medium text-[var(--cb-text-muted)]">{{.CategoryName}}</span>
+                    <span class="text-xs font-bold text-[var(--cb-success)]" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                </div>
+                {{end}}
+            </div>
+        </section>
+        {{end}}
+
+        {{if .HasContabilInvestimentosPatrimonial}}
+        <section class="cb-card-dense p-4 md:p-5 mb-5">
+            <div class="mb-4">
+                <p class="cb-section-title">Patrimonial</p>
+                <h2 class="text-xs font-bold text-[var(--cb-text-main)] mt-0.5">Investimentos/Patrimonial</h2>
+                <p class="cb-text-micro text-[var(--cb-text-muted)]">Macro Investimentos/Patrimonial — fora do resultado operacional.</p>
+            </div>
+            <div class="flex items-center justify-between gap-3 py-2">
+                <span class="text-xs font-medium text-[var(--cb-text-muted)]">Total do período</span>
+                <span class="text-xs font-bold text-[var(--cb-text-main)]" data-sensitive>R$ {{.ContabilInvestimentosPatrimonial.Reais}}{{.ContabilInvestimentosPatrimonial.Cents}}</span>
+            </div>
+        </section>
+        {{end}}
+
+        {{if .HasContabilMissingReceitasFinanceiras}}
+        <div class="mb-5 p-3 rounded-lg border border-[var(--cb-info)]/30 bg-[var(--cb-info)]/5">
+            <div class="flex items-start gap-2">
+                <i data-lucide="info" class="w-4 h-4 text-[var(--cb-info)] shrink-0 mt-0.5"></i>
+                <div>
+                    <p class="text-xs font-semibold text-[var(--cb-info)]">Nenhuma categoria em Receitas Financeiras</p>
+                    <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">Rendimentos podem não ser destacados.</p>
+                </div>
+            </div>
+        </div>
+        {{end}}
+
+        {{if or .HasContabilOutrasEntradasMovimento .HasContabilOutrasSaidasMovimento}}
+        <div class="mb-5 p-3 rounded-lg border border-[var(--cb-info)]/30 bg-[var(--cb-info)]/5">
+            <div class="flex items-start gap-2">
+                <i data-lucide="info" class="w-4 h-4 text-[var(--cb-info)] shrink-0 mt-0.5"></i>
+                <div>
+                    <p class="text-xs font-semibold text-[var(--cb-info)]">Grupos genéricos em uso</p>
+                    <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">Há valores em Outras Entradas ou Outras Saídas. Revise a classificação das categorias se precisar de relatório contábil mais preciso.</p>
+                </div>
+            </div>
+        </div>
+        {{end}}
+
+        {{if .HasContabilInvestimentosOutrosLegacy}}
+        <div class="mb-5 p-3 rounded-lg border border-[var(--cb-warning)]/30 bg-[var(--cb-warning)]/5">
+            <div class="flex items-start gap-2">
+                <i data-lucide="alert-triangle" class="w-4 h-4 text-[var(--cb-warning)] shrink-0 mt-0.5"></i>
+                <div>
+                    <p class="text-xs font-semibold text-[var(--cb-warning)]">Investimentos/Outros detectado</p>
+                    <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">Existem lançamentos em Investimentos/Outros. Revise a classificação para Investimentos/Patrimonial quando fizer sentido.</p>
+                </div>
+            </div>
+        </div>
+        {{end}}
+
+        <!-- Saldo por conta -->
+        <section class="cb-card-dense p-4 md:p-5 mb-5">
+            <div class="mb-4">
+                <p class="cb-section-title">Conferência</p>
+                <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-0.5">
+                    <h2 class="text-xs font-bold text-[var(--cb-text-main)]">Saldo total em {{.ContabilSaldoReferencia}}</h2>
+                    <span class="cb-badge cb-badge-neutral text-[10px]">reconstruído</span>
+                </div>
+                <p class="text-2xl sm:text-3xl font-black tracking-tight mt-1 whitespace-nowrap {{if .ContabilSaldoTotalNegativo}}text-[var(--cb-danger)]{{else if eq .ContabilSaldoTotalRaw 0}}text-[var(--cb-text-muted)]{{else}}text-[var(--cb-success)]{{end}}" data-sensitive>R$ {{.ContabilSaldoTotal.Reais}}{{.ContabilSaldoTotal.Cents}}</p>
+                <p class="cb-text-micro text-[var(--cb-text-muted)] mt-1">Soma dos saldos reconstruídos por conta. Estimado a partir do saldo atual, revertendo movimentos posteriores à data de referência. Não substitui extrato bancário, conciliação ou fechamento contábil auditável.</p>
+            </div>
+            {{if .ContabilSaldosContas}}
+            <p class="cb-section-title mb-2">Saldo por conta em {{.ContabilSaldoReferencia}}</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {{range .ContabilSaldosContas}}
+                <div class="flex items-center justify-between gap-3 p-3 rounded-lg border border-[var(--cb-border-subtle)]">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                        <i data-lucide="landmark" class="w-4 h-4 text-[var(--cb-text-subtle)] shrink-0"></i>
+                        <span class="text-xs font-medium text-[var(--cb-text-main)] truncate">{{.Name}}{{if .IsArchived}} <span class="text-[10px] text-[var(--cb-text-subtle)]">(arquivada)</span>{{end}}</span>
+                    </div>
+                    <span class="text-xs font-bold whitespace-nowrap {{if lt .RawBalance 0}}text-[var(--cb-danger)]{{else if eq .RawBalance 0}}text-[var(--cb-text-muted)]{{else}}text-[var(--cb-success)]{{end}}" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</span>
+                </div>
+                {{end}}
+            </div>
+            {{else}}
+            <div class="cb-empty-state py-8">
+                <i data-lucide="landmark" class="w-6 h-6 text-[var(--cb-text-subtle)] mb-2"></i>
+                <p class="text-xs text-[var(--cb-text-subtle)]">Nenhuma conta encontrada.</p>
+            </div>
+            {{end}}
         </section>
     </div>
     {{end}}

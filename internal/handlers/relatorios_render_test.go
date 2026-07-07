@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func testRelatoriosBranchTemplates(t *testing.T) *template.Template {
@@ -767,5 +769,350 @@ func TestRelatoriosBusinessRenderizaCompetencia(t *testing.T) {
 	}
 	if strings.Contains(body, "Por lançamento") {
 		t.Fatal("business nao deveria renderizar Por lançamento")
+	}
+}
+
+func TestRelatoriosBusinessRenderizaContabil(t *testing.T) {
+	raw, err := os.ReadFile("../../templates/pages/relatorios.html")
+	if err != nil {
+		t.Fatalf("ReadFile relatorios.html: %v", err)
+	}
+
+	funcs := template.FuncMap{
+		"sub":             func(a, b int) int { return a - b },
+		"colorStyle":      func(_, _ string) template.CSS { return "" },
+		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
+		"dreMacroValue":   dreMacroValue,
+		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
+		"caixaMacroValue": caixaMacroValue,
+	}
+
+	tpl := template.Must(template.New("relatorios-contabil-business").Funcs(funcs).Parse(string(raw)))
+	template.Must(tpl.New("layout-start").Parse("<html><body>"))
+	template.Must(tpl.New("layout-end").Parse("</body></html>"))
+	template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
+
+	data := RelatoriosData{
+		ActiveTab:                 "contabil",
+		IsBusiness:                true,
+		MesAtual:                  8,
+		AnoAtual:                  2026,
+		MonthLabel:                "Agosto 2026",
+		ContabilDRE:               []DRERow{{Competencia: "2026-08", Resultado: MoneyMinor(0)}},
+		ContabilDREMacroGroups:    []string{},
+		ContabilDREAtual:          DRERow{Competencia: "2026-08", Resultado: MoneyMinor(0)},
+		HasContabilDREAtual:       true,
+		ContabilDREOperacional:    DRERow{Competencia: "2026-08", Resultado: MoneyMinor(0)},
+		HasContabilDREOperacional: true,
+		ContabilCaixaAtual:        CaixaRow{Vencimento: "2026-08", Resultado: MoneyMinor(10000)},
+		HasContabilCaixaAtual:     true,
+		ContabilSaldosContas:      []AccountBalance{{Name: "Conta Corrente", Type: "CHECKING", RawBalance: 10000, Balance: MoneyMinor(10000)}},
+		ContabilSaldoReferencia:   "31/08/2026",
+		ContabilSaldoTotal:        MoneyMinor(10000),
+		ContabilSaldoTotalRaw:     10000,
+	}
+
+	var buf strings.Builder
+	if err := tpl.ExecuteTemplate(&buf, "relatorios-page", data); err != nil {
+		t.Fatalf("template execute: %v", err)
+	}
+	body := buf.String()
+	if !strings.Contains(body, "Relatório Contábil") {
+		t.Fatalf("business deveria renderizar aba Relatório Contábil")
+	}
+	if !strings.Contains(body, "/relatorios/contabil.pdf?mes=8&ano=2026") {
+		t.Fatalf("business contabil deveria renderizar botao de PDF contabil")
+	}
+	for _, csvLink := range []string{
+		"/relatorios/contabil-resumo.csv?mes=8&ano=2026",
+		"/relatorios/contabil-macros.csv?mes=8&ano=2026",
+		"/relatorios/contabil-saldos.csv?mes=8&ano=2026",
+	} {
+		if !strings.Contains(body, csvLink) {
+			t.Fatalf("business contabil deveria renderizar link CSV %q", csvLink)
+		}
+	}
+	if !strings.Contains(body, "Resultado operacional por competência") {
+		t.Fatalf("business contabil deveria conter DRE operacional por competência")
+	}
+	for _, want := range []string{"Central de fechamento mensal", "Caixa Realizado", "Entradas por Macro/Categoria", "Saídas por Macro/Categoria", "Impostos/Taxas", "Retiradas", "Movimentos confirmados", "Saldo por conta em", "Saldo total em 31/08/2026"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("business contabil deveria conter %q", want)
+		}
+	}
+	for _, want := range []string{"Contábil", "Fluxo de Caixa", "Competência", "Extrato", "Fluxo", "Compet.", "Relatório Contábil"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("business contabil deveria renderizar %q", want)
+		}
+	}
+	if !strings.Contains(body, "Conta Corrente") {
+		t.Fatalf("business contabil deveria listar contas")
+	}
+	if !strings.Contains(body, "text-[var(--cb-success)]") {
+		t.Fatalf("saldo total positivo deveria usar classe verde (cb-success)")
+	}
+	for _, notWant := range []string{"Atalhos do fechamento contábil", "Ver Competência completa", "Ver Fluxo de Caixa", "Tabela DRE contábil", "Tabela caixa contábil", "Tabela de movimentos contábil", "Fechamento Diário", "Saldo Atual por Conta", "saldo final do mês"} {
+		if strings.Contains(body, notWant) {
+			t.Fatalf("business contabil nao deveria renderizar %q", notWant)
+		}
+	}
+}
+
+func TestRelatoriosContabilSaldoTotalCores(t *testing.T) {
+	raw, err := os.ReadFile("../../templates/pages/relatorios.html")
+	if err != nil {
+		t.Fatalf("ReadFile relatorios.html: %v", err)
+	}
+
+	funcs := template.FuncMap{
+		"sub":             func(a, b int) int { return a - b },
+		"colorStyle":      func(_, _ string) template.CSS { return "" },
+		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
+		"dreMacroValue":   dreMacroValue,
+		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
+		"caixaMacroValue": caixaMacroValue,
+	}
+
+	render := func(t *testing.T, total int64, negative bool) string {
+		t.Helper()
+		tpl := template.Must(template.New("relatorios-contabil-cor").Funcs(funcs).Parse(string(raw)))
+		template.Must(tpl.New("layout-start").Parse("<html><body>"))
+		template.Must(tpl.New("layout-end").Parse("</body></html>"))
+		template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
+
+		data := RelatoriosData{
+			ActiveTab:                  "contabil",
+			IsBusiness:                 true,
+			MesAtual:                   8,
+			AnoAtual:                   2026,
+			MonthLabel:                 "Agosto 2026",
+			HasContabilDREOperacional:  true,
+			ContabilDREOperacional:     DRERow{Competencia: "2026-08", Resultado: MoneyMinor(0)},
+			ContabilCaixaAtual:         CaixaRow{Vencimento: "2026-08", Resultado: MoneyMinor(0)},
+			HasContabilCaixaAtual:      true,
+			ContabilSaldoReferencia:    "31/08/2026",
+			ContabilSaldoTotal:         MoneyMinor(total),
+			ContabilSaldoTotalRaw:      total,
+			ContabilSaldoTotalNegativo: negative,
+		}
+		var buf strings.Builder
+		if err := tpl.ExecuteTemplate(&buf, "relatorios-page", data); err != nil {
+			t.Fatalf("template execute: %v", err)
+		}
+		return buf.String()
+	}
+
+	positiveClass := "text-[var(--cb-success)]"
+	negativeClass := "text-[var(--cb-danger)]"
+	neutralClass := "text-[var(--cb-text-muted)]"
+	accentClass := "text-[var(--cb-accent)]"
+
+	totalLine := func(body string) string {
+		t.Helper()
+		idx := strings.Index(body, "R$ ")
+		_ = idx
+		start := strings.Index(body, "Saldo total em")
+		if start < 0 {
+			t.Fatalf("total line not found")
+		}
+		rest := body[start:]
+		end := strings.Index(rest, "</p>")
+		// Skip the h2 line, find the value paragraph after it.
+		second := strings.Index(rest[end+4:], "</p>")
+		if second < 0 {
+			t.Fatalf("total value paragraph not found")
+		}
+		return rest[:end+4+second+4]
+	}
+
+	if line := totalLine(render(t, 100000, false)); !strings.Contains(line, positiveClass) || strings.Contains(line, accentClass) {
+		t.Fatalf("saldo total positivo deveria ser verde e nao roxo:\n%s", line)
+	}
+	if line := totalLine(render(t, -100000, true)); !strings.Contains(line, negativeClass) {
+		t.Fatalf("saldo total negativo deveria ser vermelho:\n%s", line)
+	}
+	if line := totalLine(render(t, 0, false)); !strings.Contains(line, neutralClass) {
+		t.Fatalf("saldo total zero deveria ser neutro:\n%s", line)
+	}
+}
+
+func TestRelatoriosPersonalNaoRenderizaContabil(t *testing.T) {
+	raw, err := os.ReadFile("../../templates/pages/relatorios.html")
+	if err != nil {
+		t.Fatalf("ReadFile relatorios.html: %v", err)
+	}
+
+	funcs := template.FuncMap{
+		"sub":             func(a, b int) int { return a - b },
+		"colorStyle":      func(_, _ string) template.CSS { return "" },
+		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
+		"dreMacroValue":   dreMacroValue,
+		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
+		"caixaMacroValue": caixaMacroValue,
+	}
+
+	tpl := template.Must(template.New("relatorios-contabil-personal").Funcs(funcs).Parse(string(raw)))
+	template.Must(tpl.New("layout-start").Parse("<html><body>"))
+	template.Must(tpl.New("layout-end").Parse("</body></html>"))
+	template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
+
+	data := RelatoriosData{
+		ActiveTab:        "caixa",
+		CaixaModo:        "realizado",
+		IsCaixaRealizado: true,
+		IsBusiness:       false,
+		MesAtual:         8,
+		AnoAtual:         2026,
+		MonthLabel:       "Agosto 2026",
+	}
+
+	var buf strings.Builder
+	if err := tpl.ExecuteTemplate(&buf, "relatorios-page", data); err != nil {
+		t.Fatalf("template execute: %v", err)
+	}
+	body := buf.String()
+	if !strings.Contains(body, "Fluxo de Caixa") || !strings.Contains(body, "Extrato") {
+		t.Fatalf("personal deveria renderizar Fluxo de Caixa e Extrato")
+	}
+	for _, notWant := range []string{"Relatório Contábil", "Resultado por Competência", "Saldo por conta em", "Saldo total em", "Fechamento Diário", "/relatorios/contabil-resumo.csv", "/relatorios/contabil-macros.csv", "/relatorios/contabil-saldos.csv"} {
+		if strings.Contains(body, notWant) {
+			t.Fatalf("personal nao deveria renderizar %q", notWant)
+		}
+	}
+}
+
+func TestRelatoriosPersonalContabilFallbackParaCaixa(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().Unix()
+	execTestSQL(t, db, `INSERT INTO users (id, name, email, password_hash, created_at, updated_at) VALUES ('u-cont-fb', 'User', 'u@t.com', 'hash', ?, ?)`, now, now)
+	execTestSQL(t, db, `INSERT INTO workspaces (id, name, type, created_at, updated_at) VALUES ('ws-cont-fb', 'WS', 'personal', ?, ?)`, now, now)
+	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-cont-fb', 'u-cont-fb', 'ADMIN', ?)`, now)
+	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-cont-fb', 'ws-cont-fb', 'Carteira', 'WALLET', 0, 0, ?, ?)`, now, now)
+
+	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-cont-fb", UserID: "u-cont-fb"}
+	tab := "contabil"
+	if tab != "caixa" && tab != "competencia" && tab != "extrato" && tab != "contabil" {
+		t.Fatal("tab=contabil deveria ser valido")
+	}
+	if (tab == "competencia" || tab == "contabil") && workspaceType(db, "ws-cont-fb") != "business" {
+		tab = "caixa"
+	}
+	if tab != "caixa" {
+		t.Fatalf("personal com tab=contabil deveria cair para caixa, obteve %s", tab)
+	}
+
+	data, err := handler.buildRelatoriosData("", tab, "movimentos", 8, 2026)
+	if err != nil {
+		t.Fatalf("buildRelatoriosData: %v", err)
+	}
+	if data.ActiveTab != "caixa" {
+		t.Fatalf("ActiveTab deveria ser caixa, obteve %s", data.ActiveTab)
+	}
+}
+
+func TestRelatoriosContabilPreservaMesAno(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().Unix()
+	execTestSQL(t, db, `INSERT INTO users (id, name, email, password_hash, created_at, updated_at) VALUES ('u-cont-ma', 'User', 'u2@t.com', 'hash', ?, ?)`, now, now)
+	execTestSQL(t, db, `INSERT INTO workspaces (id, name, type, created_at, updated_at) VALUES ('ws-cont-ma', 'WS Biz', 'business', ?, ?)`, now, now)
+	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-cont-ma', 'u-cont-ma', 'ADMIN', ?)`, now)
+	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-cont-ma', 'ws-cont-ma', 'Conta Biz', 'CHECKING', 500000, 500000, ?, ?)`, now, now)
+
+	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-cont-ma", UserID: "u-cont-ma"}
+	data, err := handler.buildRelatoriosData("", "contabil", "movimentos", 3, 2026)
+	if err != nil {
+		t.Fatalf("buildRelatoriosData: %v", err)
+	}
+	if data.ActiveTab != "contabil" {
+		t.Fatalf("ActiveTab deveria ser contabil, obteve %s", data.ActiveTab)
+	}
+	if !strings.Contains(data.MonthLabel, "Março 2026") {
+		t.Fatalf("MonthLabel deveria conter Março 2026, obteve %s", data.MonthLabel)
+	}
+	if data.MesAtual != 3 || data.AnoAtual != 2026 {
+		t.Fatalf("mes=%d ano=%d, want mes=3 ano=2026", data.MesAtual, data.AnoAtual)
+	}
+}
+
+func TestContabilQueriesNaoIgnoramErroDeScan(t *testing.T) {
+	raw, err := os.ReadFile("relatorios.go")
+	if err != nil {
+		t.Fatalf("ReadFile relatorios.go: %v", err)
+	}
+	content := string(raw)
+
+	querysNomes := []string{
+		"queryContabilReceitasByMacro",
+		"queryImpostosAmounts",
+		"queryRendimentosFinanceiros",
+		"queryAccountBalances",
+	}
+
+	for _, nome := range querysNomes {
+		idx := strings.Index(content, "func (h *RelatoriosHandler) "+nome)
+		if idx < 0 {
+			t.Fatalf("funcao %s nao encontrada em relatorios.go", nome)
+		}
+		funcBody := content[idx:]
+		if end := strings.Index(funcBody, "\n}\n"); end > 0 {
+			funcBody = funcBody[:end+2]
+		}
+
+		lines := strings.Split(funcBody, "\n")
+		inScanBlock := false
+		for _, line := range lines {
+			if strings.Contains(line, "rows.Scan") {
+				inScanBlock = true
+				continue
+			}
+			if inScanBlock {
+				if strings.Contains(line, "continue") {
+					t.Fatalf("funcao %s contem continue silencioso apos rows.Scan:\n%s", nome, line)
+				}
+				if strings.Contains(line, "return") && strings.Contains(line, "err") {
+					inScanBlock = false
+				}
+				if !strings.Contains(line, "if") && !strings.Contains(line, "return") && !strings.Contains(line, "err") && strings.TrimSpace(line) == "" {
+					continue
+				}
+				if strings.HasPrefix(strings.TrimSpace(line), "return") && !strings.Contains(line, "err") {
+					t.Fatalf("funcao %s retorna sem propagar erro apos rows.Scan:\n%s", nome, line)
+				}
+			}
+		}
+		if inScanBlock {
+			t.Fatalf("funcao %s: bloco de Scan nao teve retorno de erro detectado", nome)
+		}
+	}
+
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().Unix()
+	execTestSQL(t, db, `INSERT INTO users (id, name, email, password_hash, created_at, updated_at) VALUES ('u-scn', 'Scn', 'scn@t.com', 'hash', ?, ?)`, now, now)
+	execTestSQL(t, db, `INSERT INTO workspaces (id, name, type, created_at, updated_at) VALUES ('ws-scn', 'WS Scn', 'business', ?, ?)`, now, now)
+	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-scn', 'u-scn', 'ADMIN', ?)`, now)
+	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-scn', 'ws-scn', 'Conta Teste', 'CHECKING', 0, 0, ?, ?)`, now, now)
+
+	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-scn", UserID: "u-scn"}
+	ctx := context.Background()
+	ms := testUnixDate("2026-03-01")
+	me := testUnixDate("2026-03-31")
+
+	if _, err := handler.queryContabilReceitasByMacro(ctx, ms, me); err != nil {
+		t.Fatalf("queryContabilReceitasByMacro: %v", err)
+	}
+	if _, err := handler.queryImpostosAmounts(ctx, ms, me); err != nil {
+		t.Fatalf("queryImpostosAmounts: %v", err)
+	}
+	if _, err := handler.queryRendimentosFinanceiros(ctx, ms, me); err != nil {
+		t.Fatalf("queryRendimentosFinanceiros: %v", err)
+	}
+	if _, err := handler.queryAccountBalances(ctx); err != nil {
+		t.Fatalf("queryAccountBalances: %v", err)
 	}
 }

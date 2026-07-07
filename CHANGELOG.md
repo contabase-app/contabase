@@ -11,6 +11,30 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
+## [v0.1.0-beta.6]
+
+### Adicionado
+- **Relatórios — Contabilidade empresarial:** novo relatório contábil para workspaces Business, com resumo, grupos de macro, saldos de contas e exportações CSV, PDF e ZIP.
+- **Relatórios — Contrato de macros:** contrato centralizado para classificar linhas do relatório por macro e padronizar os agrupamentos.
+- **Business — base de validação:** novo seed de receita financeira empresarial e fixture de smoke para cobrir o relatório contábil.
+
+### Alterado
+- **Interface — Dashboard:** card carousel redesenhado com controles em grid e remoção do painel de resumo.
+- **Interface — Estilo e navegação:** Tailwind atualizado para v4.3.0, estilos refinados e navegação responsiva polida.
+- **Interface — Mobile settings:** espaçamento normalizado nas telas de configurações.
+- **Relatórios — cores semânticas:** saldos passaram a usar cores semânticas nos resumos e exportações.
+
+### Corrigido
+- **Business — categorias canônicas:** reparo das categorias canônicas usadas pelo workspace Business.
+- **CSS — build:** remoção da camada de propriedades do Tailwind do `style.css`.
+- **Relatórios — ação de PDF:** exposição da ação de PDF do relatório contábil ajustada.
+
+### Testes
+- **Relatórios contábeis:** adicionada cobertura de PDF, CSV, ZIP, macro grouping, smoke Business e renderização.
+
+### Documentação
+- **Documentação pública:** clarificada a orientação prática de macros no relatório contábil.
+
 ## [v0.1.0-beta.5]
 
 ### Adicionado

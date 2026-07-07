@@ -1,6 +1,6 @@
 {{define "configuracoes-categorias-page"}}
 {{template "layout-start" .}}
-<div class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pb-28 pt-5 md:pb-10 md:pt-8 relative">
+<div class="w-full max-w-7xl mx-auto px-0 md:px-6 lg:px-8 pb-28 pt-5 md:pb-10 md:pt-8 relative">
     <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
 
     <!-- Desktop View: SaaS Split Layout -->
@@ -119,19 +119,11 @@
                         <span class="cb-label">Grupo macro</span>
                         <select name="macro_group" data-cat-macro-select class="cb-input">
                             <option value="" data-cat-macro-for-type="EXPENSE,INCOME">Nenhum</option>
-                            {{if .IsBusiness}}
-                            <option value="Receitas Operacionais" data-cat-macro-for-type="INCOME">Receitas Operacionais</option>
-                            <option value="Deduções/Impostos" data-cat-macro-for-type="EXPENSE">Deduções/Impostos</option>
-                            <option value="Custos Operacionais" data-cat-macro-for-type="EXPENSE">Custos Operacionais</option>
-                            <option value="Despesas Administrativas" data-cat-macro-for-type="EXPENSE">Despesas Administrativas</option>
-                            <option value="Despesas Comerciais" data-cat-macro-for-type="EXPENSE">Despesas Comerciais</option>
-                            <option value="Equipe e Prestadores" data-cat-macro-for-type="EXPENSE">Equipe e Prestadores</option>
-                            <option value="Financeiro" data-cat-macro-for-type="EXPENSE">Financeiro</option>
-                            <option value="Investimentos/Outros" data-cat-macro-for-type="EXPENSE">Investimentos/Outros</option>
-                            {{else}}
-                            <option value="Essencial" data-cat-macro-for-type="EXPENSE">Essencial</option>
-                            <option value="Receitas" data-cat-macro-for-type="INCOME">Receitas</option>
-                            <option value="Estilo de Vida" data-cat-macro-for-type="EXPENSE">Estilo de Vida</option>
+                            {{range .CategoryIncomeMacros}}
+                            <option value="{{.Name}}" data-cat-macro-for-type="INCOME">{{.Name}}</option>
+                            {{end}}
+                            {{range .CategoryExpenseMacros}}
+                            <option value="{{.Name}}" data-cat-macro-for-type="EXPENSE">{{.Name}}</option>
                             {{end}}
                             <option value="custom" data-cat-macro-for-type="EXPENSE,INCOME">Outro grupo...</option>
                         </select>
@@ -144,6 +136,24 @@
 
                 <div data-cat-sub-info class="hidden mt-3 text-xs text-[var(--cb-text-subtle)]">
                     <i data-lucide="info" class="w-3.5 h-3.5 inline mr-1"></i> Subcategoria herda automaticamente o Grupo Macro da categoria pai.
+                </div>
+                <div data-cat-macro-help class="mt-3 p-3 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)]" {{if .IsBusiness}}data-is-business{{end}}>
+                    {{if .IsBusiness}}
+                    <p class="text-xs font-semibold text-[var(--cb-text-main)] mb-1">Grupo Macro define como a categoria aparece nos relatórios</p>
+                    <ul class="text-xs text-[var(--cb-text-muted)] space-y-0.5 list-disc list-inside">
+                        <li><strong>Receitas Financeiras</strong>: rendimentos, juros e aplicações.</li>
+                        <li><strong>Retiradas/Distribuição</strong>: fica fora do resultado operacional.</li>
+                        <li><strong>Investimentos/Patrimonial</strong>: fica separado do resultado operacional.</li>
+                        <li><strong>Investimentos/Outros</strong>: legado, revise para Investimentos/Patrimonial.</li>
+                    </ul>
+                    {{else}}
+                    <p class="text-xs font-semibold text-[var(--cb-text-main)] mb-1">Grupo Macro organiza suas categorias nos relatórios</p>
+                    <ul class="text-xs text-[var(--cb-text-muted)] space-y-0.5 list-disc list-inside">
+                        <li><strong>Receitas</strong>: entradas de dinheiro.</li>
+                        <li><strong>Essencial</strong>: gastos necessários e recorrentes.</li>
+                        <li><strong>Estilo de Vida</strong>: lazer, consumo e escolhas pessoais.</li>
+                    </ul>
+                    {{end}}
                 </div>
 
                 <button class="cb-button cb-button-primary h-11 px-6 text-sm mt-4">Criar categoria</button>

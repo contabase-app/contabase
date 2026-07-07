@@ -5,6 +5,16 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Em preparação
 
+- **v0.1.0-beta.6** — *Relatório contábil empresarial com exportações CSV, PDF e ZIP*
+
+  O workspace Business ganhou um relatório contábil novo, com resumo, macros e saldos de contas. As exportações CSV, PDF e ZIP agora saem do mesmo contrato de relatório, incluindo o total de saldos nas saídas.
+
+  **Macros e categorias.** O contrato de macros foi centralizado para classificar as linhas do relatório de forma consistente. As categorias canônicas do Business foram reparadas e a base financeira empresarial recebeu seed de receita para validar o fluxo.
+
+  **UI e consistência.** O dashboard recebeu um card carousel redesenhado com controles em grid e sem painel de resumo. O Tailwind foi atualizado para v4.3.0, os saldos passaram a usar cores semânticas e o espaçamento das configurações mobile foi normalizado.
+
+  **Validação.** Foi adicionado um smoke fixture de relatório contábil e cobertura de testes para PDF, CSV, ZIP, macro grouping e renderização.
+
 - **v0.1.0-beta.5** — *Relatórios financeiros com Fluxo de Caixa, DRE, Extrato e exportações*
 
   A área de Relatórios foi reorganizada para separar melhor três perguntas diferentes: o que já entrou ou saiu do caixa, o que pertence ao resultado do período e quais movimentos já foram confirmados.

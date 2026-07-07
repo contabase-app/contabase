@@ -118,31 +118,19 @@
                 <span class="cb-label">Grupo Macro</span>
                 <select name="macro_group" data-parent-dependent class="cb-input">
                     <option value="" {{if eq .MacroGroup ""}}selected{{end}}>Nenhum</option>
-                    {{if .IsBusiness}}
-                    {{if eq .Type "INCOME"}}
-                    <option value="Receitas Operacionais" {{if eq .MacroGroup "Receitas Operacionais"}}selected{{end}}>Receitas Operacionais</option>
-                    {{else}}
-                    <option value="Deduções/Impostos" {{if eq .MacroGroup "Deduções/Impostos"}}selected{{end}}>Deduções/Impostos</option>
-                    <option value="Custos Operacionais" {{if eq .MacroGroup "Custos Operacionais"}}selected{{end}}>Custos Operacionais</option>
-                    <option value="Despesas Administrativas" {{if eq .MacroGroup "Despesas Administrativas"}}selected{{end}}>Despesas Administrativas</option>
-                    <option value="Despesas Comerciais" {{if eq .MacroGroup "Despesas Comerciais"}}selected{{end}}>Despesas Comerciais</option>
-                    <option value="Equipe e Prestadores" {{if eq .MacroGroup "Equipe e Prestadores"}}selected{{end}}>Equipe e Prestadores</option>
-                    <option value="Financeiro" {{if eq .MacroGroup "Financeiro"}}selected{{end}}>Financeiro</option>
-                    <option value="Investimentos/Outros" {{if eq .MacroGroup "Investimentos/Outros"}}selected{{end}}>Investimentos/Outros</option>
-                    {{end}}
-                    {{else}}
-                    {{if eq .Type "INCOME"}}
-                    <option value="Receitas" {{if eq .MacroGroup "Receitas"}}selected{{end}}>Receitas</option>
-                    {{else}}
-                    <option value="Essencial" {{if eq .MacroGroup "Essencial"}}selected{{end}}>Essencial</option>
-                    <option value="Estilo de Vida" {{if eq .MacroGroup "Estilo de Vida"}}selected{{end}}>Estilo de Vida</option>
-                    {{end}}
+                    {{range .MacroGroupOptions}}
+                    <option value="{{.Name}}" {{if eq $.MacroGroup .Name}}selected{{end}}>{{.Name}}{{if .Legacy}} (legado){{end}}</option>
                     {{end}}
                 </select>
                 <input type="text" name="macro_group_custom" placeholder="Ou digite um novo grupo macro" data-parent-dependent class="mt-2 cb-input">
             </label>
         </div>
         <p data-parent-hint class="hidden text-xs text-[var(--cb-text-subtle)]">Subcategoria herda automaticamente o Grupo Macro da categoria pai.</p>
+        {{if .IsBusiness}}
+        <p class="text-xs text-[var(--cb-text-muted)] mt-1">Grupo Macro define como a categoria aparece nos relatórios. Receitas Financeiras = rendimentos/juros. Retiradas/Distribuição e Investimentos/Patrimonial ficam fora do resultado operacional.</p>
+        {{else}}
+        <p class="text-xs text-[var(--cb-text-muted)] mt-1">Grupo Macro organiza suas categorias. Receitas: entradas de dinheiro. Essencial: gastos necessários e recorrentes. Estilo de Vida: lazer, consumo e escolhas pessoais.</p>
+        {{end}}
         <div class="flex items-center gap-2 justify-end">
             <button type="button"
                 class="cb-button cb-button-secondary h-9 px-3 text-xs"

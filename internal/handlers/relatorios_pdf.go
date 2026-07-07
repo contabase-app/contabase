@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/contabase-app/contabase/internal/categorycontract"
 	"github.com/contabase-app/contabase/internal/models"
 	"github.com/contabase-app/contabase/internal/paths"
 	"golang.org/x/image/font"
@@ -208,6 +209,43 @@ func (h *RelatoriosHandler) HandleExportarCaixaPDF(w http.ResponseWriter, r *htt
 	}
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.pdf"`, filenamePrefix, vencimento))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(pdfBytes)
+}
+
+func (h *RelatoriosHandler) HandleExportarContabilPDF(w http.ResponseWriter, r *http.Request) {
+	mes, ano, err := parseDREPDFPeriod(r)
+	if err != nil {
+		http.Error(w, "periodo invalido", http.StatusBadRequest)
+		return
+	}
+
+	data, err := h.buildRelatoriosDataWithModo("", "contabil", "movimentos", "realizado", mes, ano)
+	if err != nil {
+		http.Error(w, "erro ao gerar pdf", http.StatusInternalServerError)
+		return
+	}
+
+	if !data.IsBusiness {
+		http.Error(w, "relatorio contabil disponivel apenas para workspaces business", http.StatusForbidden)
+		return
+	}
+
+	identity, err := h.queryWorkspaceReportIdentity()
+	if err != nil {
+		http.Error(w, "erro ao carregar workspace", http.StatusInternalServerError)
+		return
+	}
+
+	pdfBytes, err := buildContabilPDFReport(data, identity, h.WorkspaceID, mes, ano, time.Now())
+	if err != nil {
+		http.Error(w, "erro ao gerar pdf", http.StatusInternalServerError)
+		return
+	}
+
+	filename := fmt.Sprintf("relatorio-contabil-%04d-%02d.pdf", ano, mes)
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	_, _ = w.Write(pdfBytes)
 }
@@ -755,13 +793,13 @@ func caixaRowForVencimento(rows []CaixaRow, vencimento string) *CaixaRow {
 func buildCaixaSummaryColumns(contentWidth float64, isPrevisao bool) []pdfTableColumn {
 	if isPrevisao {
 		return []pdfTableColumn{
-			{Label: "Mes", Width: math.Floor(contentWidth*0.25), Align: "left"},
-			{Label: "Resultado", Width: math.Floor(contentWidth*0.35), Align: "right"},
+			{Label: "Mes", Width: math.Floor(contentWidth * 0.25), Align: "left"},
+			{Label: "Resultado", Width: math.Floor(contentWidth * 0.35), Align: "right"},
 			{Label: "Saldo Projetado", Width: contentWidth - math.Floor(contentWidth*0.25) - math.Floor(contentWidth*0.35), Align: "right"},
 		}
 	}
 	return []pdfTableColumn{
-		{Label: "Mes", Width: math.Floor(contentWidth*0.35), Align: "left"},
+		{Label: "Mes", Width: math.Floor(contentWidth * 0.35), Align: "left"},
 		{Label: "Resultado", Width: contentWidth - math.Floor(contentWidth*0.35), Align: "right"},
 	}
 }
@@ -1000,6 +1038,377 @@ func buildCaixaPDFReport(data RelatoriosData, identity workspaceReportIdentity, 
 	}
 
 	return buildPDFDocument(pages, logo), nil
+}
+
+func buildContabilPDFReport(data RelatoriosData, identity workspaceReportIdentity, workspaceID string, mes, ano int, generatedAt time.Time) ([]byte, error) {
+	competencia := fmt.Sprintf("%04d-%02d", ano, mes)
+	periodLabel := drePDFMonthLabel(mes, ano)
+	logo, _ := loadWorkspacePDFLogo(workspaceID, identity.preferredLogoURL())
+
+	var pages []*pdfCanvas
+	doc := newDREPDFPage()
+	pages = append(pages, doc)
+
+	headerY := pdfPageHeight - 62
+	if logo != nil {
+		ratio := math.Min(54/float64(logo.Width), 30/float64(logo.Height))
+		doc.image("Im1", drePDFMargin, headerY-26, float64(logo.Width)*ratio, float64(logo.Height)*ratio)
+	} else {
+		doc.setColor(pdfColor{103, 68, 241})
+		doc.rect(drePDFMargin, headerY-28, 30, 30, true)
+		doc.text(drePDFMargin+7, headerY-10, 11.2, pdfColor{255, 255, 255}, initials(identity.displayName()))
+	}
+	doc.text(84, headerY-4, 12.2, pdfColor{24, 24, 27}, identity.displayName())
+	doc.text(84, headerY-20, 7.5, pdfColor{113, 113, 122}, "Relatorio Contabil — Natureza Economica (Grupo Macro)")
+	doc.text(402, headerY-4, 14.2, pdfColor{24, 24, 27}, "Relatorio Contabil")
+	doc.text(402, headerY-20, 7.8, pdfColor{113, 113, 122}, "Periodo: "+periodLabel+" ("+competencia+")")
+
+	infoY := headerY - 48
+	for _, line := range drePDFIdentityLines(identity) {
+		doc.text(drePDFMargin, infoY, 7.8, pdfColor{82, 82, 91}, line)
+		infoY -= 11
+	}
+	doc.text(402, headerY-46, 7.5, pdfColor{82, 82, 91}, "Resumo operacional consolidado")
+	doc.text(402, headerY-56, 7.5, pdfColor{82, 82, 91}, "Gerado em: "+generatedAt.Format("02/01/2006 15:04"))
+
+	cardY := pdfPageHeight - 206
+	cardW := 115.0
+	resultColor := pdfColor{103, 68, 241}
+	if data.HasContabilDREOperacional && data.ContabilDREOperacional.ResultadoNegativo {
+		resultColor = pdfColor{239, 68, 68}
+	}
+	doc.summaryCard(drePDFMargin, cardY, cardW, "Resultado Oper.", formatCurrencyLabel(data.ContabilDREOperacional.RawResultado), resultColor)
+
+	caixaColor := pdfColor{103, 68, 241}
+	if data.HasContabilCaixaAtual && data.ContabilCaixaAtual.ResultadoNegativo {
+		caixaColor = pdfColor{239, 68, 68}
+	}
+	caixaResult := int64(0)
+	if data.HasContabilCaixaAtual {
+		caixaResult = data.ContabilCaixaAtual.RawResultado
+	}
+	doc.summaryCard(drePDFMargin+cardW+16, cardY, cardW, "Caixa Realizado", formatCurrencyLabel(caixaResult), caixaColor)
+
+	movCount := data.ContabilExtratoMovementCount
+	if movCount == 0 {
+		movCount = data.ExtratoMovementCount
+	}
+	doc.summaryCard(drePDFMargin+(cardW+16)*2, cardY, cardW, "Movimentos", fmt.Sprintf("%d", movCount), pdfColor{24, 24, 27})
+
+	doc.summaryCard(drePDFMargin+(cardW+16)*3, cardY, cardW, "Retiradas/Dist.", formatCurrencyLabel(data.ContabilProLabore.rawCents()), pdfColor{245, 158, 11})
+
+	y := cardY - drePDFBlockGap
+
+	// Resultado Operacional
+	if data.HasContabilDREOperacional && len(data.ContabilDREOperacional.MacroGroups) > 0 {
+		doc.dreSectionTitle(drePDFMargin, y, "Resultado Operacional por Competencia")
+		y -= drePDFTableHeaderGap
+		cols := fitPDFColumnsToWidth([]pdfTableColumn{
+			{Label: "Macro grupo", Width: 260, Align: "left"},
+			{Label: "Tipo", Width: 82, Align: "left"},
+			{Label: "Valor", Width: 150, Align: "right"},
+		}, drePDFContentWidth)
+		doc.dreTableHeader(drePDFMargin, y, cols)
+		y -= drePDFTableRowGap
+		for _, item := range data.ContabilDREOperacional.MacroGroups {
+			kind := contabilMacroGroupKind(item.MacroGroup)
+			valueColor := contabilMacroGroupValueColor(item.MacroGroup, item.RawAmount)
+			doc.dreTableRow(drePDFMargin, y, []pdfTableCell{
+				{Text: item.MacroGroup, Width: cols[0].Width, Align: "left", Color: pdfColor{39, 39, 42}},
+				{Text: kind, Width: cols[1].Width, Align: "left", Color: pdfColor{82, 82, 91}},
+				{Text: formatCurrencyLabel(item.RawAmount), Width: cols[2].Width, Align: "right", Color: valueColor},
+			})
+			y -= drePDFTableRowGap
+		}
+		resultRowColor := pdfColor{103, 68, 241}
+		if data.ContabilDREOperacional.ResultadoNegativo {
+			resultRowColor = pdfColor{239, 68, 68}
+		}
+		doc.dreTableRowEmphasis(drePDFMargin, y, []pdfTableCell{
+			{Text: "Resultado Operacional", Width: cols[0].Width + cols[1].Width, Align: "left", Color: pdfColor{24, 24, 27}},
+			{Text: formatCurrencyLabel(data.ContabilDREOperacional.RawResultado), Width: cols[2].Width, Align: "right", Color: resultRowColor},
+		})
+		y -= drePDFBlockGap
+	}
+
+	// Caixa Realizado
+	if data.HasContabilCaixaAtual && len(data.ContabilCaixaAtual.MacroGroups) > 0 {
+		doc.dreSectionTitle(drePDFMargin, y, "Caixa Realizado por Macro")
+		y -= drePDFTableHeaderGap
+		cols := fitPDFColumnsToWidth([]pdfTableColumn{
+			{Label: "Macro grupo", Width: 300, Align: "left"},
+			{Label: "Valor", Width: 192, Align: "right"},
+		}, drePDFContentWidth)
+		doc.dreTableHeader(drePDFMargin, y, cols)
+		y -= drePDFTableRowGap
+		for _, item := range data.ContabilCaixaAtual.MacroGroups {
+			valueColor := pdfColor{34, 197, 94}
+			if item.RawAmount < 0 {
+				valueColor = pdfColor{239, 68, 68}
+			}
+			doc.dreTableRow(drePDFMargin, y, []pdfTableCell{
+				{Text: item.MacroGroup, Width: cols[0].Width, Align: "left", Color: pdfColor{39, 39, 42}},
+				{Text: formatCurrencyLabel(item.RawAmount), Width: cols[1].Width, Align: "right", Color: valueColor},
+			})
+			y -= drePDFTableRowGap
+		}
+		caixaResultColor := pdfColor{103, 68, 241}
+		if data.ContabilCaixaAtual.ResultadoNegativo {
+			caixaResultColor = pdfColor{239, 68, 68}
+		}
+		doc.dreTableRowEmphasis(drePDFMargin, y, []pdfTableCell{
+			{Text: "Resultado Caixa", Width: cols[0].Width, Align: "left", Color: pdfColor{24, 24, 27}},
+			{Text: formatCurrencyLabel(data.ContabilCaixaAtual.RawResultado), Width: cols[1].Width, Align: "right", Color: caixaResultColor},
+		})
+		y -= drePDFBlockGap
+	}
+
+	// Page overflow check for remaining sections
+	if y < 180 {
+		doc = newDREPDFPage()
+		pages = append(pages, doc)
+		y = pdfPageHeight - 80
+	}
+
+	// Receitas por Macro
+	if len(data.ContabilReceitasMacro) > 0 {
+		y = contabilRenderMacroTable(doc, drePDFMargin, y, "Receitas por Macro", data.ContabilReceitasMacro, false)
+	}
+
+	// Despesas por Macro
+	if len(data.ContabilDespesasMacro) > 0 {
+		y = contabilRenderMacroTable(doc, drePDFMargin, y, "Despesas por Macro", data.ContabilDespesasMacro, true)
+	}
+
+	// Receitas Financeiras
+	if data.HasRendimentosFinanceiros && len(data.ContabilRendimentos) > 0 {
+		if y < 160 {
+			doc = newDREPDFPage()
+			pages = append(pages, doc)
+			y = pdfPageHeight - 80
+		}
+		doc.dreSectionTitle(drePDFMargin, y, "Receitas Financeiras")
+		y -= drePDFTableHeaderGap
+		cols := fitPDFColumnsToWidth([]pdfTableColumn{
+			{Label: "Categoria", Width: 350, Align: "left"},
+			{Label: "Valor", Width: 142, Align: "right"},
+		}, drePDFContentWidth)
+		doc.dreTableHeader(drePDFMargin, y, cols)
+		y -= drePDFTableRowGap
+		for _, item := range data.ContabilRendimentos {
+			doc.dreTableRow(drePDFMargin, y, []pdfTableCell{
+				{Text: item.CategoryName, Width: cols[0].Width, Align: "left", Color: pdfColor{39, 39, 42}},
+				{Text: formatCurrencyLabel(item.RawAmount), Width: cols[1].Width, Align: "right", Color: pdfColor{34, 197, 94}},
+			})
+			y -= drePDFTableRowGap
+		}
+		y -= drePDFBlockGap
+	}
+
+	// Tributos
+	if y < 120 {
+		doc = newDREPDFPage()
+		pages = append(pages, doc)
+		y = pdfPageHeight - 80
+	}
+	if len(data.ContabilImpostos) > 0 {
+		doc.dreSectionTitle(drePDFMargin, y, "Tributos (Deduções/Impostos)")
+		y -= drePDFTableHeaderGap
+		cols := fitPDFColumnsToWidth([]pdfTableColumn{
+			{Label: "Macro grupo", Width: 350, Align: "left"},
+			{Label: "Valor", Width: 142, Align: "right"},
+		}, drePDFContentWidth)
+		doc.dreTableHeader(drePDFMargin, y, cols)
+		y -= drePDFTableRowGap
+		for _, item := range data.ContabilImpostos {
+			doc.dreTableRow(drePDFMargin, y, []pdfTableCell{
+				{Text: item.MacroGroup, Width: cols[0].Width, Align: "left", Color: pdfColor{39, 39, 42}},
+				{Text: formatCurrencyLabel(item.RawAmount), Width: cols[1].Width, Align: "right", Color: pdfColor{239, 68, 68}},
+			})
+			y -= drePDFTableRowGap
+		}
+		y -= drePDFBlockGap
+	}
+
+	// Retiradas/Distribuição
+	if data.HasRetiradasDistribuicao {
+		if y < 120 {
+			doc = newDREPDFPage()
+			pages = append(pages, doc)
+			y = pdfPageHeight - 80
+		}
+		doc.dreSectionTitle(drePDFMargin, y, "Retiradas/Distribuição")
+		y -= drePDFTableHeaderGap
+		doc.text(drePDFMargin+10, y, 8.4, pdfColor{245, 158, 11}, "Total Retiradas/Distribuição: "+formatCurrencyLabel(data.ContabilProLabore.rawCents()))
+		y -= drePDFBlockGap
+	}
+
+	// Investimentos/Patrimonial
+	if data.HasContabilInvestimentosPatrimonial {
+		if y < 120 {
+			doc = newDREPDFPage()
+			pages = append(pages, doc)
+			y = pdfPageHeight - 80
+		}
+		doc.dreSectionTitle(drePDFMargin, y, "Investimentos/Patrimonial")
+		y -= drePDFTableHeaderGap
+		doc.text(drePDFMargin+10, y, 8.4, pdfColor{39, 39, 42}, "Total Investimentos/Patrimonial: "+formatCurrencyLabel(data.ContabilInvestimentosPatrimonialRaw))
+		y -= drePDFBlockGap
+	}
+
+	// Saldo operacional reconstruído
+	if y < 200 {
+		doc = newDREPDFPage()
+		pages = append(pages, doc)
+		y = pdfPageHeight - 80
+	}
+	if len(data.ContabilSaldosContas) > 0 {
+		doc.dreSectionTitle(drePDFMargin, y, "Saldo por conta em "+data.ContabilSaldoReferencia)
+		doc.text(drePDFMargin+10, y-16, 6.8, pdfColor{113, 113, 122}, "Referencia: "+data.ContabilSaldoReferencia)
+		y -= drePDFTableHeaderGap
+		cols := fitPDFColumnsToWidth([]pdfTableColumn{
+			{Label: "Conta", Width: 300, Align: "left"},
+			{Label: "Saldo", Width: 192, Align: "right"},
+		}, drePDFContentWidth)
+		doc.dreTableHeader(drePDFMargin, y, cols)
+		y -= drePDFTableRowGap
+		for _, acc := range data.ContabilSaldosContas {
+			name := acc.Name
+			if acc.IsArchived {
+				name += " (arquivada)"
+			}
+			balanceColor := pdfColor{39, 39, 42}
+			if acc.RawBalance < 0 {
+				balanceColor = pdfColor{239, 68, 68}
+			}
+			doc.dreTableRow(drePDFMargin, y, []pdfTableCell{
+				{Text: name, Width: cols[0].Width, Align: "left", Color: pdfColor{39, 39, 42}},
+				{Text: formatCurrencyLabel(acc.RawBalance), Width: cols[1].Width, Align: "right", Color: balanceColor},
+			})
+			y -= drePDFTableRowGap
+		}
+		totalColor := pdfColor{39, 39, 42}
+		if data.ContabilSaldoTotalNegativo {
+			totalColor = pdfColor{239, 68, 68}
+		}
+		doc.dreTableRow(drePDFMargin, y, []pdfTableCell{
+			{Text: "TOTAL", Width: cols[0].Width, Align: "left", Color: pdfColor{39, 39, 42}},
+			{Text: formatCurrencyLabel(data.ContabilSaldoTotalRaw), Width: cols[1].Width, Align: "right", Color: totalColor},
+		})
+		y -= drePDFTableRowGap
+		y -= 28
+	}
+
+	// Alertas
+	hasAlerts := data.HasContabilInvestimentosOutrosLegacy || data.HasContabilMissingReceitasFinanceiras ||
+		data.HasContabilOutrasEntradasMovimento || data.HasContabilOutrasSaidasMovimento
+	if hasAlerts {
+		if y < 200 {
+			doc = newDREPDFPage()
+			pages = append(pages, doc)
+			y = pdfPageHeight - 80
+		}
+		doc.dreSectionTitle(drePDFMargin, y, "Observacoes e Alertas")
+		y -= 28
+		alertY := y
+		if data.HasContabilMissingReceitasFinanceiras {
+			doc.text(drePDFMargin+10, alertY, 7.4, pdfColor{14, 165, 233}, "Nenhuma categoria em Receitas Financeiras. Rendimentos podem nao ser destacados.")
+			alertY -= 16
+		}
+		if data.HasContabilInvestimentosOutrosLegacy {
+			doc.text(drePDFMargin+10, alertY, 7.4, pdfColor{245, 158, 11}, "Existem lancamentos em Investimentos/Outros. Revise para Investimentos/Patrimonial.")
+			alertY -= 16
+		}
+		if data.HasContabilOutrasEntradasMovimento || data.HasContabilOutrasSaidasMovimento {
+			doc.text(drePDFMargin+10, alertY, 7.4, pdfColor{14, 165, 233}, "Ha valores em grupos genericos (Outras Entradas/Saidas). Revise a classificacao.")
+			alertY -= 16
+		}
+		y = alertY - 12
+	}
+
+	// Nota obrigatória
+	if y < 100 {
+		doc = newDREPDFPage()
+		pages = append(pages, doc)
+		y = pdfPageHeight - 80
+	}
+	y -= 20
+	doc.setColor(pdfColor{245, 243, 255})
+	doc.rect(drePDFMargin, y-8, drePDFContentWidth, 36, true)
+	doc.text(drePDFMargin+12, y+8, 6.8, pdfColor{82, 82, 91},
+		"Saldo operacional reconstruido e estimativa operacional; nao substitui extrato bancario,")
+	doc.text(drePDFMargin+12, y-6, 6.8, pdfColor{82, 82, 91},
+		"conciliacao ou fechamento contabil auditavel.")
+
+	for i, page := range pages {
+		drawCompactDREPDFFooter(page, identity, generatedAt, i+1, len(pages))
+	}
+
+	return buildPDFDocument(pages, logo), nil
+}
+
+func contabilRenderMacroTable(doc *pdfCanvas, x, y float64, title string, items []BusinessCostMacroRow, isExpense bool) float64 {
+	doc.dreSectionTitle(x, y, title)
+	y -= drePDFTableHeaderGap
+	cols := fitPDFColumnsToWidth([]pdfTableColumn{
+		{Label: "Macro grupo", Width: 260, Align: "left"},
+		{Label: "Percentual", Width: 82, Align: "right"},
+		{Label: "Valor", Width: 150, Align: "right"},
+	}, drePDFContentWidth)
+	doc.dreTableHeader(x, y, cols)
+	y -= drePDFTableRowGap
+	for _, item := range items {
+		valueColor := pdfColor{34, 197, 94}
+		if isExpense {
+			valueColor = pdfColor{239, 68, 68}
+		}
+		doc.dreTableRow(x, y, []pdfTableCell{
+			{Text: item.MacroGroup, Width: cols[0].Width, Align: "left", Color: pdfColor{39, 39, 42}},
+			{Text: businessCostPercentText(item), Width: cols[1].Width, Align: "right", Color: pdfColor{82, 82, 91}},
+			{Text: formatCurrencyLabel(item.RawAmount), Width: cols[2].Width, Align: "right", Color: valueColor},
+		})
+		y -= drePDFTableRowGap
+	}
+	y -= drePDFBlockGap
+	return y
+}
+
+var contabilExpenseMacros = map[string]bool{
+	categorycontract.MacroDeducoesImpostos:        true,
+	categorycontract.MacroCustosOperacionais:      true,
+	categorycontract.MacroDespesasAdministrativas: true,
+	categorycontract.MacroDespesasComerciais:      true,
+	categorycontract.MacroEquipePrestadores:       true,
+	categorycontract.MacroFinanceiro:              true,
+	categorycontract.MacroRetiradasDistribuicao:   true,
+	categorycontract.MacroOutrasSaidas:            true,
+	categorycontract.MacroInvestimentosOutros:     true,
+}
+
+var contabilIncomeMacros = map[string]bool{
+	categorycontract.MacroReceitasOperacionais: true,
+	categorycontract.MacroReceitasFinanceiras:  true,
+	categorycontract.MacroOutrasEntradas:       true,
+}
+
+func contabilMacroGroupKind(macroGroup string) string {
+	if contabilExpenseMacros[macroGroup] {
+		return "Despesa"
+	}
+	if macroGroup == categorycontract.MacroInvestimentosPatrimonial {
+		return "Patrimonial"
+	}
+	return "Receita"
+}
+
+func contabilMacroGroupValueColor(macroGroup string, amount int64) pdfColor {
+	if amount == 0 {
+		return pdfColor{82, 82, 91}
+	}
+	if contabilExpenseMacros[macroGroup] || macroGroup == categorycontract.MacroInvestimentosPatrimonial {
+		return pdfColor{239, 68, 68}
+	}
+	return pdfColor{34, 197, 94}
 }
 
 func pdfCategoryPercentText(item pdfCategorySummaryRow) string {

@@ -54,6 +54,30 @@
     let startX = 0;
     let startLeft = 0;
 
+    function onDocPointerMove(event) {
+      if (!dragging) {
+        return;
+      }
+
+      const delta = event.clientX - startX;
+      if (Math.abs(delta) > 6) {
+        moved = true;
+      }
+      rail.scrollLeft = startLeft - delta;
+    }
+
+    function stopDragging() {
+      if (!dragging) {
+        return;
+      }
+      dragging = false;
+      rail.classList.remove('is-dragging');
+      document.removeEventListener('pointermove', onDocPointerMove);
+      document.removeEventListener('pointerup', stopDragging);
+      document.removeEventListener('pointercancel', stopDragging);
+      update();
+    }
+
     rail.addEventListener('pointerdown', function (event) {
       if (event.pointerType !== 'mouse' || window.matchMedia('(max-width: 620px)').matches) {
         return;
@@ -64,39 +88,10 @@
       startX = event.clientX;
       startLeft = rail.scrollLeft;
       rail.classList.add('is-dragging');
-      rail.setPointerCapture(event.pointerId);
+      document.addEventListener('pointermove', onDocPointerMove);
+      document.addEventListener('pointerup', stopDragging);
+      document.addEventListener('pointercancel', stopDragging);
     });
-
-    rail.addEventListener('dragstart', function (event) {
-      if (dragging) {
-        event.preventDefault();
-      }
-    });
-
-    rail.addEventListener('pointermove', function (event) {
-      if (!dragging) {
-        return;
-      }
-
-      const delta = event.clientX - startX;
-      if (Math.abs(delta) > 3) {
-        moved = true;
-      }
-      rail.scrollLeft = startLeft - delta;
-    });
-
-    function stopDragging() {
-      if (!dragging) {
-        return;
-      }
-      dragging = false;
-      rail.classList.remove('is-dragging');
-      update();
-    }
-
-    rail.addEventListener('pointerup', stopDragging);
-    rail.addEventListener('pointercancel', stopDragging);
-    rail.addEventListener('mouseleave', stopDragging);
 
     rail.addEventListener('click', function (event) {
       if (!moved) {

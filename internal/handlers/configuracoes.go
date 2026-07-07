@@ -21,6 +21,7 @@ import (
 
 	"github.com/contabase-app/contabase/internal/admincli"
 	"github.com/contabase-app/contabase/internal/auth"
+	"github.com/contabase-app/contabase/internal/categorycontract"
 	"github.com/contabase-app/contabase/internal/database"
 	"github.com/contabase-app/contabase/internal/httpcookies"
 	"github.com/contabase-app/contabase/internal/models"
@@ -78,6 +79,8 @@ type ConfiguracoesData struct {
 	CanManageWorkspaceProfile bool
 	Categorias                []ConfigCategoryRow
 	CategoryTree              []*ConfigCategoryRow
+	CategoryIncomeMacros      []categorycontract.MacroGroup
+	CategoryExpenseMacros     []categorycontract.MacroGroup
 	Contas                    []ConfigAccountRow
 	ContasArquivadas          []ConfigAccountRow
 	Cartoes                   []ConfigCardRow
@@ -121,6 +124,7 @@ type ConfigCategoryRow struct {
 	ParentName          string
 	IsChild             bool
 	IsBusiness          bool
+	MacroGroupOptions   []categorycontract.MacroGroup
 	ParentOptions       []CategoryParentOption
 	Children            []*ConfigCategoryRow
 }
@@ -1452,6 +1456,7 @@ func (h *ConfiguracoesHandler) queryCategoryRowByID(categoryID string) (ConfigCa
 	}
 	row.IsChild = row.ParentID != ""
 	row.IsBusiness = isBusiness
+	row.MacroGroupOptions = categorycontract.MacroGroupsForType(workspaceTypeNameForBusiness(isBusiness), row.Type, true)
 	return row, nil
 }
 
@@ -2484,21 +2489,25 @@ func (h *ConfiguracoesHandler) renderConfigSectionWithFlashStatus(w http.Respons
 }
 
 func (h *ConfiguracoesHandler) newConfigData(section, errMsg, okMsg string) ConfiguracoesData {
+	isBusiness := workspaceType(h.DB, h.WorkspaceID) == models.WorkspaceTypeBusiness
 	return ConfiguracoesData{
-		Title:               "Configurações",
-		Section:             normalizeConfigSection(section, h.ActorRole),
-		FlashError:          errMsg,
-		FlashSuccess:        okMsg,
-		ActorRole:           h.ActorRole,
-		CanManageOps:        h.ActorRole == models.RoleManager || h.ActorRole == models.RoleAdmin,
-		CanManageMembers:    h.ActorRole == models.RoleAdmin,
-		CanManageGlobal:     h.ActorRole == models.RoleAdmin,
-		CurrentWorkspace:    h.WorkspaceID,
-		BackupTicker:        "24h",
-		BackupRetention:     5,
-		AccountProviders:    accountProviderOptions(),
-		AuditEventFilter:    normalizeAuditEventFilter(h.AuditEventFilter),
-		AuditSeverityFilter: normalizeAuditSeverityFilter(h.AuditSeverityFilter),
+		Title:                 "Configurações",
+		IsBusiness:            isBusiness,
+		Section:               normalizeConfigSection(section, h.ActorRole),
+		FlashError:            errMsg,
+		FlashSuccess:          okMsg,
+		ActorRole:             h.ActorRole,
+		CanManageOps:          h.ActorRole == models.RoleManager || h.ActorRole == models.RoleAdmin,
+		CanManageMembers:      h.ActorRole == models.RoleAdmin,
+		CanManageGlobal:       h.ActorRole == models.RoleAdmin,
+		CurrentWorkspace:      h.WorkspaceID,
+		BackupTicker:          "24h",
+		BackupRetention:       5,
+		AccountProviders:      accountProviderOptions(),
+		AuditEventFilter:      normalizeAuditEventFilter(h.AuditEventFilter),
+		AuditSeverityFilter:   normalizeAuditSeverityFilter(h.AuditSeverityFilter),
+		CategoryIncomeMacros:  categoryMacroGroupsForTemplate(isBusiness, models.CategoryTypeIncome),
+		CategoryExpenseMacros: categoryMacroGroupsForTemplate(isBusiness, models.CategoryTypeExpense),
 	}
 }
 
@@ -2526,6 +2535,8 @@ func (h *ConfiguracoesHandler) loadConfigShellData(data *ConfiguracoesData) erro
 	}
 	data.IsBusiness = normalizeWorkspaceType(workspaceTypeValue) == models.WorkspaceTypeBusiness
 	data.CanManageWorkspaceProfile = data.IsBusiness && h.CanConfigWrite
+	data.CategoryIncomeMacros = categoryMacroGroupsForTemplate(data.IsBusiness, models.CategoryTypeIncome)
+	data.CategoryExpenseMacros = categoryMacroGroupsForTemplate(data.IsBusiness, models.CategoryTypeExpense)
 
 	var photoPath string
 	var updatedAt int64
@@ -2553,6 +2564,8 @@ func (h *ConfiguracoesHandler) loadConfigSectionData(data *ConfiguracoesData, sh
 	case "categorias":
 		if !shellLoaded {
 			data.IsBusiness = workspaceType(h.DB, h.WorkspaceID) == models.WorkspaceTypeBusiness
+			data.CategoryIncomeMacros = categoryMacroGroupsForTemplate(data.IsBusiness, models.CategoryTypeIncome)
+			data.CategoryExpenseMacros = categoryMacroGroupsForTemplate(data.IsBusiness, models.CategoryTypeExpense)
 		}
 		rows, tree, err := h.queryCategoriasWithWorkspaceType(repo, data.IsBusiness)
 		if err != nil {
@@ -2646,6 +2659,8 @@ func (h *ConfiguracoesHandler) buildConfigData(section, errMsg, okMsg string) (C
 		AuditEventFilter:          normalizeAuditEventFilter(h.AuditEventFilter),
 		AuditSeverityFilter:       normalizeAuditSeverityFilter(h.AuditSeverityFilter),
 	}
+	data.CategoryIncomeMacros = categoryMacroGroupsForTemplate(data.IsBusiness, models.CategoryTypeIncome)
+	data.CategoryExpenseMacros = categoryMacroGroupsForTemplate(data.IsBusiness, models.CategoryTypeExpense)
 	data.UserInitials = queryUserInitials(repo, h.UserID)
 	if data.UserInitials == "" {
 		data.UserInitials = "US"
@@ -3010,6 +3025,7 @@ func (h *ConfiguracoesHandler) queryCategoriasWithWorkspaceType(repo *repository
 			ParentName:          item.ParentName,
 			IsChild:             item.ParentID != "",
 			IsBusiness:          isBusiness,
+			MacroGroupOptions:   categoryMacroGroupsForTemplate(isBusiness, item.Type),
 		})
 	}
 	tree := buildCategoryTree(flat)
@@ -3544,50 +3560,26 @@ func normalizeMacroGroup(v string) string {
 }
 
 func defaultMacroGroupForWorkspace(isBusiness bool, typ string) string {
-	if !isBusiness {
-		if typ == "INCOME" {
-			return "Receitas"
-		}
-		return "Estilo de Vida"
-	}
-	if typ == "INCOME" {
-		return "Receitas Operacionais"
-	}
-	return "Custos Operacionais"
+	return categorycontract.DefaultMacroGroup(workspaceTypeNameForBusiness(isBusiness), typ)
 }
 
 func validMacroGroupsForType(isBusiness bool, typ string) []string {
-	if !isBusiness {
-		if typ == "INCOME" {
-			return []string{"Receitas"}
-		}
-		return []string{"Essencial", "Estilo de Vida"}
-	}
-	if typ == "INCOME" {
-		return []string{"Receitas Operacionais"}
-	}
-	return []string{
-		"Deduções/Impostos",
-		"Custos Operacionais",
-		"Despesas Administrativas",
-		"Despesas Comerciais",
-		"Equipe e Prestadores",
-		"Financeiro",
-		"Investimentos/Outros",
-	}
+	return categorycontract.MacroGroupNamesForType(workspaceTypeNameForBusiness(isBusiness), typ, true)
 }
 
 func isMacroGroupValidForType(isBusiness bool, macroGroup, typ string) bool {
-	macroGroup = strings.TrimSpace(macroGroup)
-	if macroGroup == "" {
-		return true
+	return categorycontract.IsMacroGroupValidForType(workspaceTypeNameForBusiness(isBusiness), typ, macroGroup)
+}
+
+func categoryMacroGroupsForTemplate(isBusiness bool, typ string) []categorycontract.MacroGroup {
+	return categorycontract.MacroGroupsForType(workspaceTypeNameForBusiness(isBusiness), typ, false)
+}
+
+func workspaceTypeNameForBusiness(isBusiness bool) string {
+	if isBusiness {
+		return categorycontract.WorkspaceTypeBusiness
 	}
-	for _, valid := range validMacroGroupsForType(isBusiness, typ) {
-		if macroGroup == valid {
-			return true
-		}
-	}
-	return false
+	return categorycontract.WorkspaceTypePersonal
 }
 
 func normalizeAccountType(v string) string {

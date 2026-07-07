@@ -20,16 +20,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/contabase-app/contabase/internal/categorycontract"
 	"github.com/google/uuid"
 )
 
 // categoryNode representa um nó da árvore de categorias a ser semeado.
 // Cada nó é uma Categoria Pai; seus Children são as Subcategorias.
 type categoryNode struct {
-	Name       string   // Nome da Categoria Pai (exibido na interface)
-	Type       string   // "EXPENSE" ou "INCOME"
-	MacroGroup string   // Grupo Macro para filtros de DRE/Dashboard
-	Children   []string // Nomes das Subcategorias vinculadas a este pai
+	Name            string   // Nome da Categoria Pai (exibido na interface)
+	Type            string   // "EXPENSE" ou "INCOME"
+	MacroGroup      string   // Grupo Macro para filtros de DRE/Dashboard
+	EquivalentNames []string // Variações aceitas para idempotência/backfill
+	Children        []string // Nomes das Subcategorias vinculadas a este pai
 }
 
 type CategoryReseedItem struct {
@@ -196,6 +198,60 @@ func ApplyWorkspaceCategoryReseed(db *sql.DB, workspaceID string) (CategoryResee
 	return workspaceCategoryReseed(db, workspaceID, true)
 }
 
+func EnsureBusinessCanonicalCategoriesForExistingWorkspacesTx(tx *sql.Tx) (int, error) {
+	if tx == nil {
+		return 0, fmt.Errorf("business category repair: tx não pode ser nil")
+	}
+	hasWorkspaces, err := tableExists(tx, "workspaces")
+	if err != nil {
+		return 0, fmt.Errorf("business category repair: falha ao verificar tabela workspaces: %w", err)
+	}
+	hasCategories, err := tableExists(tx, "categories")
+	if err != nil {
+		return 0, fmt.Errorf("business category repair: falha ao verificar tabela categories: %w", err)
+	}
+	if !hasWorkspaces || !hasCategories {
+		return 0, nil
+	}
+	hasWorkspaceType, err := columnExists(tx, "workspaces", "type")
+	if err != nil {
+		return 0, fmt.Errorf("business category repair: falha ao verificar coluna workspaces.type: %w", err)
+	}
+	if !hasWorkspaceType {
+		return 0, nil
+	}
+
+	rows, err := tx.Query(`SELECT id FROM workspaces WHERE COALESCE(type, 'personal') = 'business' ORDER BY id`)
+	if err != nil {
+		return 0, fmt.Errorf("business category repair: falha ao listar workspaces business: %w", err)
+	}
+	var workspaceIDs []string
+	for rows.Next() {
+		var workspaceID string
+		if err := rows.Scan(&workspaceID); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("business category repair: falha ao ler workspace business: %w", err)
+		}
+		workspaceIDs = append(workspaceIDs, workspaceID)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, fmt.Errorf("business category repair: falha ao fechar consulta de workspaces business: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("business category repair: falha ao iterar workspaces business: %w", err)
+	}
+
+	createdTotal := 0
+	for _, workspaceID := range workspaceIDs {
+		created, _, err := ensureCanonicalCategoryTreeTx(tx, workspaceID, categorycontract.WorkspaceTypeBusiness)
+		if err != nil {
+			return 0, err
+		}
+		createdTotal += len(created)
+	}
+	return createdTotal, nil
+}
+
 func workspaceCategoryReseed(db *sql.DB, workspaceID string, apply bool) (CategoryReseedReport, error) {
 	if db == nil {
 		return CategoryReseedReport{}, fmt.Errorf("category reseed: db não pode ser nil")
@@ -281,6 +337,12 @@ func planWorkspaceCategoryReseedTx(tx *sql.Tx, workspaceID string) (CategoryRese
 	for _, category := range categories {
 		key := categoryReseedKey(category.Name, category.Type, category.MacroGroup, category.ParentName)
 		if canonical[key] && !category.ParentMissing {
+			preserve[category.ID] = true
+		}
+		if categoryEquivalentToFinancialRevenue(category.Name, category.Type, category.MacroGroup) {
+			preserve[category.ID] = true
+		}
+		if categoryMatchesFinancialRevenueName(category.Name, category.Type) {
 			preserve[category.ID] = true
 		}
 
@@ -426,7 +488,7 @@ func ensureCanonicalCategoryTreeTx(tx *sql.Tx, workspaceID, workspaceType string
 	var existing []CategoryReseedItem
 
 	for _, parent := range tree {
-		parentID, found, err := findCanonicalCategoryIDTx(tx, workspaceID, parent.Name, parent.Type, parent.MacroGroup, "")
+		parentID, found, err := findCanonicalCategoryIDTx(tx, workspaceID, parent.Name, parent.Type, parent.MacroGroup, "", parent.EquivalentNames)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -446,7 +508,7 @@ func ensureCanonicalCategoryTreeTx(tx *sql.Tx, workspaceID, workspaceType string
 		}
 
 		for _, childName := range parent.Children {
-			childID, found, err := findCanonicalCategoryIDTx(tx, workspaceID, childName, parent.Type, parent.MacroGroup, parentID)
+			childID, found, err := findCanonicalCategoryIDTx(tx, workspaceID, childName, parent.Type, parent.MacroGroup, parentID, nil)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -470,45 +532,55 @@ func ensureCanonicalCategoryTreeTx(tx *sql.Tx, workspaceID, workspaceType string
 	return created, existing, nil
 }
 
-func findCanonicalCategoryIDTx(tx *sql.Tx, workspaceID, name, typ, macroGroup, parentID string) (string, bool, error) {
-	var id string
-	var err error
-	if parentID == "" {
-		err = tx.QueryRow(`
-			SELECT id
-			FROM categories
-			WHERE workspace_id = ? AND parent_id IS NULL AND name = ? AND type = ? AND COALESCE(macro_group, '') = ?
-			ORDER BY created_at, id
-			LIMIT 1
-		`, workspaceID, name, typ, macroGroup).Scan(&id)
-	} else {
-		err = tx.QueryRow(`
-			SELECT id
-			FROM categories
-			WHERE workspace_id = ? AND parent_id = ? AND name = ? AND type = ? AND COALESCE(macro_group, '') = ?
-			ORDER BY created_at, id
-			LIMIT 1
-		`, workspaceID, parentID, name, typ, macroGroup).Scan(&id)
+func findCanonicalCategoryIDTx(tx *sql.Tx, workspaceID, name, typ, macroGroup, parentID string, equivalentNames []string) (string, bool, error) {
+	rows, err := tx.Query(`
+		SELECT id, name, COALESCE(macro_group, '')
+		FROM categories
+		WHERE workspace_id = ?
+		  AND type = ?
+		  AND (
+			(? = '' AND parent_id IS NULL)
+			OR (? <> '' AND parent_id = ?)
+		  )
+		ORDER BY created_at, id
+	`, workspaceID, typ, parentID, parentID, parentID)
+	if err != nil {
+		return "", false, fmt.Errorf("category reseed: falha ao verificar categoria canônica %q: %w", name, err)
 	}
-	if err == nil {
-		return id, true, nil
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, existingName, existingMacroGroup string
+		if err := rows.Scan(&id, &existingName, &existingMacroGroup); err != nil {
+			return "", false, fmt.Errorf("category reseed: falha ao ler categoria canônica %q: %w", name, err)
+		}
+		if categoryNameMatchesCanonical(existingName, name, equivalentNames) && categoryMacroGroupMatches(existingMacroGroup, macroGroup) {
+			return id, true, nil
+		}
 	}
-	if err == sql.ErrNoRows {
-		return "", false, nil
+	if err := rows.Err(); err != nil {
+		return "", false, fmt.Errorf("category reseed: falha ao iterar categoria canônica %q: %w", name, err)
 	}
-	return "", false, fmt.Errorf("category reseed: falha ao verificar categoria canônica %q: %w", name, err)
+
+	if parentID == "" && categoryEquivalentToFinancialRevenue(name, typ, macroGroup) {
+		foundID, found, err := findFinancialRevenueEquivalentCategoryIDTx(tx, workspaceID, typ, macroGroup)
+		if err != nil {
+			return "", false, err
+		}
+		if found {
+			return foundID, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 func planCanonicalCategoryCreates(categories []categoryReseedRow, removeSet map[string]bool, workspaceID, workspaceType string) ([]CategoryReseedItem, []CategoryReseedItem) {
-	existingKeys := make(map[string]CategoryReseedItem)
+	existingRows := make([]categoryReseedRow, 0, len(categories))
 	for _, category := range categories {
 		if removeSet[category.ID] || category.ParentMissing {
 			continue
 		}
-		key := categoryReseedKey(category.Name, category.Type, category.MacroGroup, category.ParentName)
-		if _, ok := existingKeys[key]; !ok {
-			existingKeys[key] = category.CategoryReseedItem
-		}
+		existingRows = append(existingRows, category)
 	}
 
 	var created []CategoryReseedItem
@@ -519,25 +591,48 @@ func planCanonicalCategoryCreates(categories []categoryReseedRow, removeSet map[
 	}
 	for _, parent := range tree {
 		parentItem := CategoryReseedItem{WorkspaceID: workspaceID, Name: parent.Name, Type: parent.Type, MacroGroup: parent.MacroGroup}
-		parentKey := categoryReseedKey(parent.Name, parent.Type, parent.MacroGroup, "")
-		if item, ok := existingKeys[parentKey]; ok {
+		parentAliases := append([]string{parent.Name}, parent.EquivalentNames...)
+		if item, ok := findExistingCanonicalReseedItem(existingRows, parent.Name, parent.Type, parent.MacroGroup, nil, parent.EquivalentNames); ok {
 			existing = append(existing, item)
 		} else {
 			created = append(created, parentItem)
-			existingKeys[parentKey] = parentItem
 		}
 		for _, childName := range parent.Children {
 			childItem := CategoryReseedItem{WorkspaceID: workspaceID, Name: childName, Type: parent.Type, MacroGroup: parent.MacroGroup, ParentName: parent.Name}
-			childKey := categoryReseedKey(childName, parent.Type, parent.MacroGroup, parent.Name)
-			if item, ok := existingKeys[childKey]; ok {
+			if item, ok := findExistingCanonicalReseedItem(existingRows, childName, parent.Type, parent.MacroGroup, parentAliases, nil); ok {
 				existing = append(existing, item)
 				continue
 			}
 			created = append(created, childItem)
-			existingKeys[childKey] = childItem
 		}
 	}
 	return created, existing
+}
+
+func findExistingCanonicalReseedItem(categories []categoryReseedRow, name, typ, macroGroup string, parentNames, equivalentNames []string) (CategoryReseedItem, bool) {
+	for _, category := range categories {
+		if strings.ToUpper(strings.TrimSpace(category.Type)) != strings.ToUpper(strings.TrimSpace(typ)) {
+			continue
+		}
+		if !categoryNameMatchesCanonical(category.Name, name, equivalentNames) {
+			continue
+		}
+		if !categoryMacroGroupMatches(category.MacroGroup, macroGroup) {
+			if len(parentNames) != 0 || !categoryEquivalentToFinancialRevenue(category.Name, category.Type, category.MacroGroup) {
+				continue
+			}
+		}
+		if len(parentNames) == 0 {
+			if category.ParentName != "" {
+				continue
+			}
+			return category.CategoryReseedItem, true
+		}
+		if categoryParentNameMatches(category.ParentName, parentNames) {
+			return category.CategoryReseedItem, true
+		}
+	}
+	return CategoryReseedItem{}, false
 }
 
 func findCategoryReseedConflicts(categories []categoryReseedRow, removeSet map[string]bool, workspaceType string) []CategoryReseedItem {
@@ -598,6 +693,110 @@ func canonicalCategoryKeySet(workspaceType string) map[string]bool {
 
 func categoryReseedKey(name, typ, macroGroup, parentName string) string {
 	return strings.ToUpper(strings.TrimSpace(typ)) + "\x00" + strings.TrimSpace(macroGroup) + "\x00" + strings.TrimSpace(parentName) + "\x00" + strings.TrimSpace(name)
+}
+
+func normalizedCategoryNameKey(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	name = strings.ToLower(RemoveAccents(name))
+	return strings.Join(strings.Fields(name), " ")
+}
+
+func categoryNameMatchesCanonical(existingName, canonicalName string, equivalentNames []string) bool {
+	existing := normalizedCategoryNameKey(existingName)
+	if existing == "" {
+		return false
+	}
+	if existing == normalizedCategoryNameKey(canonicalName) {
+		return true
+	}
+	for _, equivalentName := range equivalentNames {
+		if existing == normalizedCategoryNameKey(equivalentName) {
+			return true
+		}
+	}
+	return false
+}
+
+func categoryParentNameMatches(existingParentName string, parentNames []string) bool {
+	existing := normalizedCategoryNameKey(existingParentName)
+	if existing == "" {
+		return false
+	}
+	for _, parentName := range parentNames {
+		if existing == normalizedCategoryNameKey(parentName) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizedMacroGroupKey(macroGroup string) string {
+	return normalizedCategoryNameKey(strings.ReplaceAll(macroGroup, "/", " "))
+}
+
+func categoryMacroGroupMatches(existingMacroGroup, canonicalMacroGroup string) bool {
+	return normalizedMacroGroupKey(existingMacroGroup) == normalizedMacroGroupKey(canonicalMacroGroup)
+}
+
+func categoryEquivalentToFinancialRevenue(name, typ, macroGroup string) bool {
+	if strings.ToUpper(strings.TrimSpace(typ)) != "INCOME" {
+		return false
+	}
+	switch strings.TrimSpace(macroGroup) {
+	case categorycontract.MacroReceitasFinanceiras:
+	default:
+		return false
+	}
+	return categoryMatchesFinancialRevenueName(name, typ)
+}
+
+func categoryMatchesFinancialRevenueName(name, typ string) bool {
+	if strings.ToUpper(strings.TrimSpace(typ)) != "INCOME" {
+		return false
+	}
+	switch normalizedCategoryNameKey(name) {
+	case
+		normalizedCategoryNameKey("Rendimentos financeiros"),
+		normalizedCategoryNameKey("Rendimento financeiro"),
+		normalizedCategoryNameKey("Juros de aplicação"),
+		normalizedCategoryNameKey("Juros sobre aplicação"),
+		normalizedCategoryNameKey("Rendimentos de aplicação"),
+		normalizedCategoryNameKey("Rendimentos de aplicações"),
+		normalizedCategoryNameKey("Receitas financeiras"),
+		normalizedCategoryNameKey("Receita financeira"):
+		return true
+	default:
+		return false
+	}
+}
+
+func findFinancialRevenueEquivalentCategoryIDTx(tx *sql.Tx, workspaceID, typ, _ string) (string, bool, error) {
+	rows, err := tx.Query(`
+		SELECT id, name, COALESCE(macro_group, '')
+		FROM categories
+		WHERE workspace_id = ? AND type = ?
+	`, workspaceID, typ)
+	if err != nil {
+		return "", false, fmt.Errorf("category reseed: falha ao buscar categorias equivalentes de rendimentos financeiros: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, name, existingMacroGroup string
+		if err := rows.Scan(&id, &name, &existingMacroGroup); err != nil {
+			return "", false, fmt.Errorf("category reseed: falha ao ler categoria equivalente de rendimentos financeiros: %w", err)
+		}
+		if categoryEquivalentToFinancialRevenue(name, typ, existingMacroGroup) {
+			return id, true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", false, fmt.Errorf("category reseed: falha ao iterar categorias equivalentes de rendimentos financeiros: %w", err)
+	}
+	return "", false, nil
 }
 
 func reseedUsageReason(category categoryReseedRow) string {
@@ -948,13 +1147,17 @@ func personalCategoryTree() []categoryNode {
 //
 // Grupos Macros canônicos do workspace business:
 //   - "Receitas Operacionais"
+//   - "Receitas Financeiras"
+//   - "Outras Entradas"
 //   - "Deduções/Impostos"
 //   - "Custos Operacionais"
 //   - "Despesas Administrativas"
 //   - "Despesas Comerciais"
 //   - "Equipe e Prestadores"
 //   - "Financeiro"
-//   - "Investimentos/Outros"
+//   - "Retiradas/Distribuição"
+//   - "Investimentos/Patrimonial"
+//   - "Outras Saídas"
 
 func businessCategoryTree() []categoryNode {
 	return []categoryNode{
@@ -963,7 +1166,7 @@ func businessCategoryTree() []categoryNode {
 		{
 			Name:       "Vendas",
 			Type:       "INCOME",
-			MacroGroup: "Receitas Operacionais",
+			MacroGroup: categorycontract.MacroReceitasOperacionais,
 			Children: []string{
 				"Venda de produto",
 				"Venda de serviço",
@@ -977,7 +1180,7 @@ func businessCategoryTree() []categoryNode {
 		{
 			Name:       "Clientes",
 			Type:       "INCOME",
-			MacroGroup: "Receitas Operacionais",
+			MacroGroup: categorycontract.MacroReceitasOperacionais,
 			Children: []string{
 				"Mensalidade de cliente",
 				"Reembolso de cliente",
@@ -985,12 +1188,36 @@ func businessCategoryTree() []categoryNode {
 				"Renovação",
 			},
 		},
+		{
+			Name: "Rendimentos financeiros",
+			EquivalentNames: []string{
+				"Rendimento financeiro",
+				"Juros de aplicação",
+				"Juros sobre aplicação",
+				"Rendimentos de aplicação",
+				"Rendimentos de aplicações",
+				"Receitas financeiras",
+				"Receita financeira",
+			},
+			Type:       "INCOME",
+			MacroGroup: categorycontract.MacroReceitasFinanceiras,
+		},
+		{
+			Name:       "Outras Entradas",
+			Type:       "INCOME",
+			MacroGroup: categorycontract.MacroOutrasEntradas,
+			Children: []string{
+				"Aporte dos sócios",
+				"Venda de ativo",
+				"Reembolso não operacional",
+			},
+		},
 
 		// ── DEDUÇÕES/IMPOSTOS ───────────────────────────────────
 		{
 			Name:       "Impostos sobre Receita",
 			Type:       "EXPENSE",
-			MacroGroup: "Deduções/Impostos",
+			MacroGroup: categorycontract.MacroDeducoesImpostos,
 			Children: []string{
 				"DAS/Simples Nacional",
 				"ISS",
@@ -1003,7 +1230,7 @@ func businessCategoryTree() []categoryNode {
 		{
 			Name:       "Deduções",
 			Type:       "EXPENSE",
-			MacroGroup: "Deduções/Impostos",
+			MacroGroup: categorycontract.MacroDeducoesImpostos,
 			Children: []string{
 				"Estorno",
 				"Desconto concedido",
@@ -1016,7 +1243,7 @@ func businessCategoryTree() []categoryNode {
 		{
 			Name:       "Fornecedores",
 			Type:       "EXPENSE",
-			MacroGroup: "Custos Operacionais",
+			MacroGroup: categorycontract.MacroCustosOperacionais,
 			Children: []string{
 				"Compra de mercadoria",
 				"Insumos",
@@ -1028,7 +1255,7 @@ func businessCategoryTree() []categoryNode {
 		{
 			Name:       "Entrega/Produção",
 			Type:       "EXPENSE",
-			MacroGroup: "Custos Operacionais",
+			MacroGroup: categorycontract.MacroCustosOperacionais,
 			Children: []string{
 				"Plataforma operacional",
 				"Hospedagem/servidor de cliente",
@@ -1039,7 +1266,7 @@ func businessCategoryTree() []categoryNode {
 		{
 			Name:       "Inteligência Artificial",
 			Type:       "EXPENSE",
-			MacroGroup: "Custos Operacionais",
+			MacroGroup: categorycontract.MacroCustosOperacionais,
 			Children: []string{
 				"APIs de IA",
 				"Modelos de IA",
@@ -1054,7 +1281,7 @@ func businessCategoryTree() []categoryNode {
 		{
 			Name:       "Administração",
 			Type:       "EXPENSE",
-			MacroGroup: "Despesas Administrativas",
+			MacroGroup: categorycontract.MacroDespesasAdministrativas,
 			Children: []string{
 				"Contabilidade",
 				"Jurídico",
@@ -1071,7 +1298,7 @@ func businessCategoryTree() []categoryNode {
 		{
 			Name:       "Sistemas e Produtividade",
 			Type:       "EXPENSE",
-			MacroGroup: "Despesas Administrativas",
+			MacroGroup: categorycontract.MacroDespesasAdministrativas,
 			Children: []string{
 				"Ferramentas/SaaS",
 				"Armazenamento em nuvem",
@@ -1084,7 +1311,7 @@ func businessCategoryTree() []categoryNode {
 		{
 			Name:       "Marketing e Vendas",
 			Type:       "EXPENSE",
-			MacroGroup: "Despesas Comerciais",
+			MacroGroup: categorycontract.MacroDespesasComerciais,
 			Children: []string{
 				"Google Ads",
 				"Meta Ads",
@@ -1100,7 +1327,7 @@ func businessCategoryTree() []categoryNode {
 		{
 			Name:       "Comercial",
 			Type:       "EXPENSE",
-			MacroGroup: "Despesas Comerciais",
+			MacroGroup: categorycontract.MacroDespesasComerciais,
 			Children: []string{
 				"Prospecção",
 				"Brindes comerciais",
@@ -1112,7 +1339,7 @@ func businessCategoryTree() []categoryNode {
 		{
 			Name:       "Equipe",
 			Type:       "EXPENSE",
-			MacroGroup: "Equipe e Prestadores",
+			MacroGroup: categorycontract.MacroEquipePrestadores,
 			Children: []string{
 				"Salários",
 				"Pró-labore",
@@ -1128,7 +1355,7 @@ func businessCategoryTree() []categoryNode {
 		{
 			Name:       "Financeiro",
 			Type:       "EXPENSE",
-			MacroGroup: "Financeiro",
+			MacroGroup: categorycontract.MacroFinanceiro,
 			Children: []string{
 				"Juros pagos",
 				"Multas",
@@ -1140,11 +1367,27 @@ func businessCategoryTree() []categoryNode {
 			},
 		},
 
-		// ── INVESTIMENTOS/OUTROS ────────────────────────────────
+		// ── RETIRADAS/DISTRIBUIÇÃO ──────────────────────────────
+		{
+			Name: "Retiradas e Distribuição",
+			EquivalentNames: []string{
+				"Retiradas/Distribuição",
+				"Retiradas Distribuição",
+			},
+			Type:       "EXPENSE",
+			MacroGroup: categorycontract.MacroRetiradasDistribuicao,
+			Children: []string{
+				"Distribuição de lucros",
+				"Retirada de sócios",
+				"Adiantamento a sócios",
+			},
+		},
+
+		// ── INVESTIMENTOS/PATRIMONIAL ───────────────────────────
 		{
 			Name:       "Investimentos",
 			Type:       "EXPENSE",
-			MacroGroup: "Investimentos/Outros",
+			MacroGroup: categorycontract.MacroInvestimentosPatrimonial,
 			Children: []string{
 				"Equipamentos",
 				"Computadores",
@@ -1155,13 +1398,13 @@ func businessCategoryTree() []categoryNode {
 			},
 		},
 		{
-			Name:       "Outros",
+			Name:       "Outras Saídas",
 			Type:       "EXPENSE",
-			MacroGroup: "Investimentos/Outros",
+			MacroGroup: categorycontract.MacroOutrasSaidas,
 			Children: []string{
-				"Aporte dos sócios",
-				"Venda de ativo",
 				"Despesa não recorrente",
+				"Ajuste operacional",
+				"Perdas diversas",
 			},
 		},
 	}

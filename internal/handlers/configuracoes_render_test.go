@@ -187,6 +187,142 @@ func TestConfiguracoesLeanSectionDataKeepsRequiredFields(t *testing.T) {
 	}
 }
 
+func newConfiguracoesPersonalRenderTestHandler(t *testing.T) ConfiguracoesHandler {
+	t.Helper()
+	handler := newConfiguracoesRenderTestHandler(t)
+	execTestSQL(t, handler.DB, `UPDATE workspaces SET type = 'personal' WHERE id = 'config-workspace'`)
+	return handler
+}
+
+func TestConfiguracoesCategoriasMacroHelpBusiness(t *testing.T) {
+	handler := newConfiguracoesRenderTestHandler(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/configuracoes/categorias", nil)
+	req.Header.Set("HX-Request", "true")
+	rr := httptest.NewRecorder()
+	handler.HandleConfiguracoesSection(rr, req, "categorias")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	body := rr.Body.String()
+
+	businessTexts := []string{
+		"Receitas Financeiras",
+		"Retiradas/Distribui",
+		"Investimentos/Patrimonial",
+		"Investimentos/Outros",
+		"data-is-business",
+	}
+	personalTexts := []string{
+		"entradas de dinheiro",
+		"gastos necess",
+		"Estilo de Vida",
+	}
+	for _, text := range businessTexts {
+		assertContains(t, body, text)
+	}
+	for _, text := range personalTexts {
+		if strings.Contains(body, text) {
+			t.Fatalf("Business categorias render must not contain Personal text: %q", text)
+		}
+	}
+}
+
+func TestConfiguracoesCategoriasMacroHelpPersonal(t *testing.T) {
+	handler := newConfiguracoesPersonalRenderTestHandler(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/configuracoes/categorias", nil)
+	req.Header.Set("HX-Request", "true")
+	rr := httptest.NewRecorder()
+	handler.HandleConfiguracoesSection(rr, req, "categorias")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	body := rr.Body.String()
+
+	personalTexts := []string{
+		"entradas de dinheiro",
+		"gastos necess",
+		"Estilo de Vida",
+	}
+	businessTexts := []string{
+		"Receitas Financeiras",
+		"Retiradas/Distribui",
+		"Investimentos/Patrimonial",
+		"Investimentos/Outros",
+	}
+	for _, text := range personalTexts {
+		assertContains(t, body, text)
+	}
+	for _, text := range businessTexts {
+		if strings.Contains(body, text) {
+			t.Fatalf("Personal categorias render must not contain Business text: %q", text)
+		}
+	}
+	if strings.Contains(body, "data-is-business") {
+		t.Fatalf("Personal categorias render must not contain data-is-business attribute")
+	}
+}
+
+func TestConfiguracoesCategoriasInlineEditHelpBusiness(t *testing.T) {
+	handler := newConfiguracoesRenderTestHandler(t)
+	now := time.Now().Unix()
+	execTestSQL(t, handler.DB, `
+		INSERT INTO categories (id, workspace_id, name, icon, color, type, macro_group, created_at)
+		VALUES ('cat-biz-edit', 'config-workspace', 'Categoria Biz', 'tag', '#6b7280', 'EXPENSE', 'Custos Operacionais', ?)
+	`, now)
+
+	req := httptest.NewRequest(http.MethodGet, "/configuracoes/categorias/cat-biz-edit/formulario", nil)
+	rr := httptest.NewRecorder()
+	handler.HandleCategoriasInlineForm(rr, req, "cat-biz-edit")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	body := rr.Body.String()
+
+	businessHelp := "Receitas Financeiras = rendimentos/juros"
+	assertContains(t, body, businessHelp)
+
+	personalHelp := "gastos necess"
+	if strings.Contains(body, personalHelp) {
+		t.Fatalf("Business inline edit form must not contain Personal text: %q", personalHelp)
+	}
+}
+
+func TestConfiguracoesCategoriasInlineEditHelpPersonal(t *testing.T) {
+	handler := newConfiguracoesPersonalRenderTestHandler(t)
+	now := time.Now().Unix()
+	execTestSQL(t, handler.DB, `
+		INSERT INTO categories (id, workspace_id, name, icon, color, type, macro_group, created_at)
+		VALUES ('cat-pers-edit', 'config-workspace', 'Categoria Personal', 'tag', '#6b7280', 'EXPENSE', 'Essencial', ?)
+	`, now)
+
+	req := httptest.NewRequest(http.MethodGet, "/configuracoes/categorias/cat-pers-edit/formulario", nil)
+	rr := httptest.NewRecorder()
+	handler.HandleCategoriasInlineForm(rr, req, "cat-pers-edit")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	body := rr.Body.String()
+
+	personalTexts := []string{
+		"gastos necess",
+		"Estilo de Vida",
+	}
+	for _, text := range personalTexts {
+		assertContains(t, body, text)
+	}
+
+	businessHelp := "Receitas Financeiras = rendimentos/juros"
+	if strings.Contains(body, businessHelp) {
+		t.Fatalf("Personal inline edit form must not contain Business text: %q", businessHelp)
+	}
+}
+
 func TestConfiguracoesAuditoriaFullPageAndRowsContracts(t *testing.T) {
 	handler := newConfiguracoesRenderTestHandler(t)
 	execTestSQL(t, handler.DB, `

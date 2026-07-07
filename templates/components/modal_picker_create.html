@@ -38,7 +38,7 @@
             <select name="macro_group" data-meta-macro-select
                 class="w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-4 py-3 text-sm text-[var(--cb-text-main)] focus:border-indigo-500/50 outline-none transition-colors">
                 {{range .MacroGroups}}
-                <option value="{{.}}" {{if eq . $.SelectedMacro}}selected{{else if and (not $.SelectedMacro) (eq . $.DefaultMacro)}}selected{{end}}>{{.}}</option>
+                <option value="{{.Name}}" {{if eq .Name $.SelectedMacro}}selected{{else if and (not $.SelectedMacro) (eq .Name $.DefaultMacro)}}selected{{end}}>{{.Name}}{{if .Legacy}} (legado){{end}}</option>
                 {{end}}
             </select>
             <p class="macro-inherit-help hidden text-[0.65rem] text-[var(--cb-text-muted)] mt-1.5">O grupo macro será herdado da categoria pai.</p>

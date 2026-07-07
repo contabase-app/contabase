@@ -24,6 +24,7 @@ import (
 
 	"github.com/contabase-app/contabase/internal/assets"
 	"github.com/contabase-app/contabase/internal/auth"
+	"github.com/contabase-app/contabase/internal/categorycontract"
 	"github.com/contabase-app/contabase/internal/database"
 	"github.com/contabase-app/contabase/internal/handlers"
 	"github.com/contabase-app/contabase/internal/httpcookies"
@@ -1450,6 +1451,76 @@ func main() {
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
 		h.HandleExportarCaixaPDF(w, r)
+	}))
+	mux.HandleFunc("/relatorios/contabil.pdf", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !models.HasPermission(&ctx.Member, models.PermissionReportsView) {
+			respondForbidden(w, r)
+			return
+		}
+		h := relBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleExportarContabilPDF(w, r)
+	}))
+	mux.HandleFunc("/relatorios/contabil-resumo.csv", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !models.HasPermission(&ctx.Member, models.PermissionReportsView) {
+			respondForbidden(w, r)
+			return
+		}
+		h := relBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleExportarContabilResumoCSV(w, r)
+	}))
+	mux.HandleFunc("/relatorios/contabil-macros.csv", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !models.HasPermission(&ctx.Member, models.PermissionReportsView) {
+			respondForbidden(w, r)
+			return
+		}
+		h := relBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleExportarContabilMacrosCSV(w, r)
+	}))
+	mux.HandleFunc("/relatorios/contabil-saldos.csv", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !models.HasPermission(&ctx.Member, models.PermissionReportsView) {
+			respondForbidden(w, r)
+			return
+		}
+		h := relBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleExportarContabilSaldosCSV(w, r)
+	}))
+	mux.HandleFunc("/relatorios/contabil.zip", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !models.HasPermission(&ctx.Member, models.PermissionReportsView) {
+			respondForbidden(w, r)
+			return
+		}
+		h := relBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleExportarContabilZIP(w, r)
 	}))
 	mux.HandleFunc("/relatorios/export.pdf", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if r.Method != http.MethodGet {
@@ -3729,12 +3800,12 @@ func seedDemoB2B(db *sql.DB, workspaceID, userID string) error {
 		Macro string
 	}
 	categories := []demoCategory{
-		{Key: "cat-operating-revenue", Name: "Receita de Prestação de Serviços", Type: "INCOME", Macro: "Receitas Operacionais"},
-		{Key: "cat-tax-deductions", Name: "Tributos sobre Receita", Type: "EXPENSE", Macro: "Deduções/Impostos"},
-		{Key: "cat-operating-costs", Name: "Custos de Produção", Type: "EXPENSE", Macro: "Custos Operacionais"},
-		{Key: "cat-admin-expenses", Name: "Despesas Administrativas", Type: "EXPENSE", Macro: "Despesas Administrativas"},
-		{Key: "cat-sales-expenses", Name: "Despesas Comerciais", Type: "EXPENSE", Macro: "Despesas Comerciais"},
-		{Key: "cat-investments-other", Name: "Investimentos e Outros", Type: "EXPENSE", Macro: "Investimentos/Outros"},
+		{Key: "cat-operating-revenue", Name: "Receita de Prestação de Serviços", Type: "INCOME", Macro: categorycontract.MacroReceitasOperacionais},
+		{Key: "cat-tax-deductions", Name: "Tributos sobre Receita", Type: "EXPENSE", Macro: categorycontract.MacroDeducoesImpostos},
+		{Key: "cat-operating-costs", Name: "Custos de Produção", Type: "EXPENSE", Macro: categorycontract.MacroCustosOperacionais},
+		{Key: "cat-admin-expenses", Name: "Despesas Administrativas", Type: "EXPENSE", Macro: categorycontract.MacroDespesasAdministrativas},
+		{Key: "cat-sales-expenses", Name: "Despesas Comerciais", Type: "EXPENSE", Macro: categorycontract.MacroDespesasComerciais},
+		{Key: "cat-investments-other", Name: "Investimentos e Patrimonial", Type: "EXPENSE", Macro: categorycontract.MacroInvestimentosPatrimonial},
 	}
 	categoryIDs := make(map[string]string, len(categories))
 	now := time.Now().Unix()
@@ -3931,10 +4002,10 @@ func seedWorkspaceDefaultCategoryTree(db *sql.DB, workspaceID, workspaceType str
 		{Name: "Lazer & Estilo de Vida", Type: models.CategoryTypeExpense, Macro: "Lazer & Estilo de Vida", Children: []string{"Cinema/Streaming", "Viagens", "Academias/Esportes"}},
 	}
 	business := []seedCategoryTreeNode{
-		{Name: "Receitas Operacionais", Type: models.CategoryTypeIncome, Macro: "Receitas Operacionais", Children: []string{"Venda de Produtos", "Prestação de Serviços", "Receita de Licenças/SaaS"}},
-		{Name: "Custos Operacionais (CMV/CPV)", Type: models.CategoryTypeExpense, Macro: "Custos Operacionais (CMV/CPV)", Children: []string{"Matéria-Prima/Insumos", "Fretes e Logística", "Ferramentas de Produção"}},
-		{Name: "Despesas Administrativas", Type: models.CategoryTypeExpense, Macro: "Despesas Administrativas", Children: []string{"Aluguel do Escritório", "Softwares e Assinaturas (SaaS)", "Material de Escritório/Copa"}},
-		{Name: "Pessoal & Recursos Humanos", Type: models.CategoryTypeExpense, Macro: "Pessoal & Recursos Humanos", Children: []string{"Salários/Folha", "Pró-labore dos Sócios", "Benefícios (VR/VA)", "Encargos Sociais"}},
+		{Name: "Receitas Operacionais", Type: models.CategoryTypeIncome, Macro: categorycontract.MacroReceitasOperacionais, Children: []string{"Venda de Produtos", "Prestação de Serviços", "Receita de Licenças/SaaS"}},
+		{Name: "Custos Operacionais (CMV/CPV)", Type: models.CategoryTypeExpense, Macro: categorycontract.MacroCustosOperacionais, Children: []string{"Matéria-Prima/Insumos", "Fretes e Logística", "Ferramentas de Produção"}},
+		{Name: "Despesas Administrativas", Type: models.CategoryTypeExpense, Macro: categorycontract.MacroDespesasAdministrativas, Children: []string{"Aluguel do Escritório", "Softwares e Assinaturas (SaaS)", "Material de Escritório/Copa"}},
+		{Name: "Pessoal & Recursos Humanos", Type: models.CategoryTypeExpense, Macro: categorycontract.MacroEquipePrestadores, Children: []string{"Salários/Folha", "Pró-labore dos Sócios", "Benefícios (VR/VA)", "Encargos Sociais"}},
 	}
 
 	tree := personal

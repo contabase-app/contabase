@@ -1,7 +1,7 @@
 {{define "seletor_meses"}}
-<div id="monthSelector" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} class="mx-auto flex w-full max-w-7xl items-center justify-between gap-2 px-3 pb-1.5 md:gap-4 md:px-6 lg:px-8">
+<div id="monthSelector" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} class="flex w-full items-center justify-between gap-2 pb-1.5 md:gap-3">
     <div class="min-w-0 flex-1 overflow-x-auto scrollbar-hide scrollbar-none">
-        <div id="monthRail" class="flex min-w-max items-center gap-1.5 sm:gap-2">
+        <div id="monthRail" class="flex min-w-max items-center gap-1 -ml-1.5 sm:gap-1.5 md:min-w-0 md:w-full md:justify-between md:gap-1 md:-ml-3">
             {{range .MonthOptions}}
             <button type="button"
                 hx-get="{{if and $.MonthSelectorHXGet .Query}}{{printf "%s?%s" $.MonthSelectorHXGet .Query}}{{else}}{{.URL}}{{end}}"
@@ -12,7 +12,7 @@
                 {{if .IsActive}}data-month-active="true"{{end}}
                 class="month-btn border
                     {{if .IsActive}}
-                        {{if .IsCurrent}}border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/15 dark:text-violet-200{{else}}border-violet-300 bg-violet-50/50 text-violet-600 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-200/80{{end}}
+                        {{if .IsCurrent}}border-violet-300 bg-violet-100 text-violet-700 dark:border-violet-500/30 dark:bg-violet-500/15 dark:text-violet-200{{else}}border-violet-300 bg-violet-100/70 text-violet-700 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-200/80{{end}}
                     {{else}}
                         {{if .IsCurrent}}border-violet-200 bg-transparent text-violet-600 hover:bg-violet-50 dark:border-violet-500/20 dark:text-violet-300 dark:hover:bg-violet-500/10{{else}}border-transparent text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)]{{end}}
                     {{end}}">

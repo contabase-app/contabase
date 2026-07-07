@@ -1508,6 +1508,16 @@ var migrations = []migration{
 			return nil
 		},
 	},
+	{
+		version: 49,
+		name:    "business_canonical_categories_repair",
+		up: func(tx *sql.Tx) error {
+			if _, err := EnsureBusinessCanonicalCategoriesForExistingWorkspacesTx(tx); err != nil {
+				return fmt.Errorf("migration 49 repair business canonical categories: %w", err)
+			}
+			return nil
+		},
+	},
 }
 
 func runMigrations(db *sql.DB) error {

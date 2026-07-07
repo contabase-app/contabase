@@ -7,23 +7,39 @@
         color: #000000 !important;
     }
     </style>
-    <div class="cb-cards-header">
-        <h2 class="text-sm font-semibold text-[var(--cb-text-muted)] uppercase tracking-wider">Meus Cartões</h2>
-        {{if .Cards}}
-        <div class="cb-cards-controls" aria-label="Navegar cartões">
-            <button type="button" class="cb-cards-control" data-cards-scroll="prev" aria-label="Cartões anteriores" disabled>
-                <i data-lucide="chevron-left" class="h-4 w-4"></i>
-            </button>
-            <button type="button" class="cb-cards-control" data-cards-scroll="next" aria-label="Próximos cartões" disabled>
-                <i data-lucide="chevron-right" class="h-4 w-4"></i>
-            </button>
-        </div>
+    {{$cardCount := len .Cards}}
+    {{if lt $cardCount 2}}
+    <!-- zero or one card: flat grid matching the pair grid below -->
+    <div class="cb-cards-grid grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+        {{range $idx, $card := .Cards}}
+        <a href="/cartoes/faturas/{{$card.InvoiceID}}"
+           hx-get="/cartoes/faturas/{{$card.InvoiceID}}"
+           hx-target="#main-content"
+           hx-select="#main-content"
+           hx-swap="innerHTML show:top"
+           hx-push-url="true"
+           class="card-cc block w-full text-left relative overflow-hidden btn-tactile cursor-pointer p-3 sm:p-4" style="--ic: {{$card.Color}}">
+            {{template "dashboard-card-inner" $card}}
+        </a>
+        {{end}}
+        {{if eq $cardCount 0}}
+        {{template "dashboard-card-placeholder" "Cadastre seu primeiro cartão"}}
+        {{template "dashboard-card-placeholder" "Cadastre seu primeiro cartão"}}
+        {{else}}
+        {{template "dashboard-card-placeholder" "Cadastre outro cartão"}}
         {{end}}
     </div>
-    {{if .Cards}}
+    {{else}}
+    <!-- two or more cards: horizontal carousel rail -->
     <div class="cb-cards-carousel" data-show-more-group="cards" data-show-more-initial="6">
         <div class="cb-cards-viewport">
-            <div class="cb-cards-rail" aria-label="Cartões de crédito">
+            <button type="button" class="cb-cards-control cb-cards-control-prev" data-cards-scroll="prev" aria-label="Cartões anteriores" disabled>
+                <i data-lucide="chevron-left" class="h-4 w-4"></i>
+            </button>
+            <button type="button" class="cb-cards-control cb-cards-control-next" data-cards-scroll="next" aria-label="Próximos cartões" disabled>
+                <i data-lucide="chevron-right" class="h-4 w-4"></i>
+            </button>
+            <div class="cb-cards-rail" aria-label="Cartões de crédito" data-real-card-count="{{$cardCount}}">
         {{range $idx, $card := .Cards}}
         <a data-show-more-item="{{$idx}}"
            href="/cartoes/faturas/{{$card.InvoiceID}}"
@@ -32,92 +48,97 @@
            hx-select="#main-content"
            hx-swap="innerHTML show:top"
            hx-push-url="true"
-            class="card-cc block w-full text-left relative overflow-hidden btn-tactile cursor-pointer p-3 sm:p-4" style="--ic: {{$card.Color}}">
-
-            <!-- Colored ambient blob — tinted by card color -->
-            <div class="card-cc-blob"></div>
-
-            <!-- Top Row: Name and Emblem Badge (Compact) -->
-            <div class="flex items-center justify-between gap-3 mb-2 sm:mb-2.5 relative z-10">
-                <h3 class="text-sm sm:text-base font-extrabold text-[var(--cb-text-main)] tracking-wide truncate leading-tight">{{$card.Name}}</h3>
-                <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none shrink-0" style="--ic: {{$card.Color}}">
-                    {{template "financial-emblem" $card}}
-                </span>
-            </div>
-
-            <!-- Middle Row: Fatura e Vencimento (inline at all breakpoints) -->
-            <div class="flex flex-row items-stretch justify-between gap-2 sm:gap-3 py-2 sm:py-2.5 relative z-10 border-t border-b border-[var(--cb-border-subtle)]/60">
-                <!-- Fatura Atual -->
-                <div class="flex-1 min-w-0 pr-2 sm:pr-3.5 border-r border-[var(--cb-border-subtle)]/60">
-                    <span class="cb-text-micro text-[var(--cb-text-muted)] block mb-0.5 uppercase tracking-wider font-semibold">Fatura Atual</span>
-                    <p class="text-base sm:text-xl font-black text-[var(--cb-text-main)] tracking-tight leading-none truncate" data-sensitive>
-                        R$ {{$card.Money.Reais}}{{$card.Money.Cents}}
-                    </p>
-                </div>
-                <!-- Vencimento -->
-                <div class="flex-1 min-w-0 pl-2 sm:pl-3.5 flex flex-col justify-center">
-                    <span class="cb-text-micro text-[var(--cb-text-muted)] block mb-0.5 uppercase tracking-wider font-semibold">Vencimento</span>
-                    <span class="text-xs font-bold text-[var(--cb-text-main)] block truncate leading-tight">
-                        Dia {{$card.DueDateCompact}}
-                    </span>
-                    {{if $card.ClosingDaysLabel}}
-                    <span class="text-[10px] font-medium text-[var(--cb-text-muted)] truncate mt-0.5">{{$card.ClosingDaysLabel}}</span>
-                    {{end}}
-                </div>
-            </div>
-
-            <!-- Bottom Row: Limite Disponível & Chevron (Compact) -->
-            <div class="flex items-center justify-between pt-2 sm:pt-2.5 pb-1 relative z-10">
-                <div class="flex items-center gap-1.5">
-                    <span class="flex h-5 w-5 items-center justify-center rounded bg-[color-mix(in srgb,var(--ic) 12%,transparent)] text-colored select-none shrink-0" style="--ic: {{$card.Color}}">
-                        <i data-lucide="credit-card" class="h-3 w-3 icon-colored" style="--ic: {{$card.Color}}"></i>
-                    </span>
-                    <span class="cb-text-micro uppercase tracking-wider font-semibold text-[var(--cb-text-muted)]">Limite Disponível</span>
-                </div>
-                <div class="flex items-center gap-1.5">
-                    <span class="font-bold text-[var(--cb-text-main)] text-xs sm:text-[13px]" data-sensitive>R$ {{$card.LimitMoney.Reais}}{{$card.LimitMoney.Cents}}</span>
-                    {{if $card.InvoiceID}}
-                    <i data-lucide="chevron-right" class="h-3.5 w-3.5 text-[var(--cb-text-muted)] opacity-60"></i>
-                    {{end}}
-                </div>
-            </div>
-
-            <!-- Edge-to-edge bottom limit bar -->
-            <div class="card-cc-bar">
-                <div class="card-cc-bar-fill" style="width: {{$card.LimitPercent}}%"></div>
-            </div>
+           class="card-cc cb-card-rail-item block w-full text-left relative overflow-hidden btn-tactile cursor-pointer p-3 sm:p-4" style="--ic: {{$card.Color}}">
+            {{template "dashboard-card-inner" $card}}
         </a>
         {{end}}
             </div>
         </div>
 
-        {{if gt (len .Cards) 6}}
+        {{if gt $cardCount 6}}
         <div class="mt-3 text-center" data-show-more-toggle-container>
             <button data-onclick-ev="toggleShowMore" data-show-more-toggle type="button" class="btn-tactile text-xs font-bold text-[var(--cb-accent)] hover:text-[var(--cb-accent-hover)] focus:outline-none">
-                <span data-show-more-label-expand>Mostrar mais (mais {{sub (len .Cards) 6}})</span>
+                <span data-show-more-label-expand>Mostrar mais (mais {{sub $cardCount 6}})</span>
                 <span data-show-more-label-collapse class="hidden">Mostrar menos</span>
             </button>
         </div>
         {{end}}
     </div>
-    {{else}}
-    <div class="cb-empty-state p-4 text-center">
-        <div class="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--cb-surface-3)] text-[var(--cb-text-muted)]">
-            <i data-lucide="credit-card" class="h-5 w-5"></i>
-        </div>
-        <p class="text-sm font-bold text-[var(--cb-text-main)]">Nenhum cartão cadastrado</p>
-        <p class="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-[var(--cb-text-muted)]">Cartões são opcionais no início. Adicione um quando quiser acompanhar faturas, vencimentos e limite disponível.</p>
-        <a href="/configuracoes/cartoes"
-            class="!hidden md:!inline-flex cb-button cb-button-secondary btn-tactile mt-3 h-10 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold active:scale-[0.98]">
-            <i data-lucide="plus" class="h-4 w-4"></i>
-            Criar cartão
-        </a>
-        <a href="/configuracoes/cartoes"
-           class="!flex md:!hidden cb-button cb-button-secondary btn-tactile mt-3 h-10 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold active:scale-[0.98]">
-            <i data-lucide="plus" class="h-4 w-4"></i>
-            Criar cartão
-        </a>
-    </div>
     {{end}}
 </section>
+{{end}}
+
+{{define "dashboard-card-inner"}}
+<!-- Colored ambient blob — tinted by card color -->
+<div class="card-cc-blob"></div>
+
+<!-- Top Row: Name and Emblem Badge (Compact) -->
+<div class="flex items-center justify-between gap-3 mb-2 sm:mb-2.5 relative z-10">
+    <h3 class="text-sm sm:text-base font-extrabold text-[var(--cb-text-main)] tracking-wide truncate leading-tight">{{.Name}}</h3>
+    <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none shrink-0" style="--ic: {{.Color}}">
+        {{template "financial-emblem" .}}
+    </span>
+</div>
+
+<!-- Middle Row: Fatura e Vencimento (inline at all breakpoints) -->
+<div class="flex flex-row items-stretch justify-between gap-2 sm:gap-3 py-2 sm:py-2.5 relative z-10 border-t border-b border-[var(--cb-border-subtle)]/60">
+    <!-- Fatura Atual -->
+    <div class="flex-1 min-w-0 pr-2 sm:pr-3.5 border-r border-[var(--cb-border-subtle)]/60">
+        <span class="cb-text-micro text-[var(--cb-text-muted)] block mb-0.5 uppercase tracking-wider font-semibold">Fatura Atual</span>
+        <p class="text-base sm:text-xl font-black text-[var(--cb-text-main)] tracking-tight leading-none truncate" data-sensitive>
+            R$ {{.Money.Reais}}{{.Money.Cents}}
+        </p>
+    </div>
+    <!-- Vencimento -->
+    <div class="flex-1 min-w-0 pl-2 sm:pl-3.5 flex flex-col justify-center">
+        <span class="cb-text-micro text-[var(--cb-text-muted)] block mb-0.5 uppercase tracking-wider font-semibold">Vencimento</span>
+        <span class="text-xs font-bold text-[var(--cb-text-main)] block truncate leading-tight">
+            Dia {{.DueDateCompact}}
+        </span>
+        {{if .ClosingDaysLabel}}
+        <span class="text-[10px] font-medium text-[var(--cb-text-muted)] truncate mt-0.5">{{.ClosingDaysLabel}}</span>
+        {{end}}
+    </div>
+</div>
+
+<!-- Bottom Row: Limite Disponível & Chevron (Compact) -->
+<div class="flex items-center justify-between pt-2 sm:pt-2.5 pb-1 relative z-10">
+    <div class="flex items-center gap-1.5">
+        <span class="flex h-5 w-5 items-center justify-center rounded bg-[color-mix(in srgb,var(--ic) 12%,transparent)] text-colored select-none shrink-0" style="--ic: {{.Color}}">
+            <i data-lucide="credit-card" class="h-3 w-3 icon-colored" style="--ic: {{.Color}}"></i>
+        </span>
+        <span class="cb-text-micro uppercase tracking-wider font-semibold text-[var(--cb-text-muted)]">Limite Disponível</span>
+    </div>
+    <div class="flex items-center gap-1.5">
+        <span class="font-bold text-[var(--cb-text-main)] text-xs sm:text-[13px]" data-sensitive>R$ {{.LimitMoney.Reais}}{{.LimitMoney.Cents}}</span>
+        {{if .InvoiceID}}
+        <i data-lucide="chevron-right" class="h-3.5 w-3.5 text-[var(--cb-text-muted)] opacity-60"></i>
+        {{end}}
+    </div>
+</div>
+
+<!-- Edge-to-edge bottom limit bar -->
+<div class="card-cc-bar">
+    <div class="card-cc-bar-fill" style="width: {{.LimitPercent}}%"></div>
+</div>
+{{end}}
+
+{{define "dashboard-card-placeholder"}}
+<a href="/configuracoes/cartoes"
+   class="card-cc-placeholder block w-full text-left relative overflow-hidden btn-tactile cursor-pointer"
+   data-dashboard-card-placeholder="true">
+    <div class="card-cc-placeholder-icon">
+        <i data-lucide="credit-card" class="h-5 w-5"></i>
+    </div>
+    <div class="card-cc-placeholder-content relative z-10">
+        <div class="card-cc-placeholder-copy">
+            <p class="text-sm font-extrabold text-[var(--cb-text-main)]">{{.}}</p>
+            <p class="mt-1.5 text-xs leading-relaxed text-[var(--cb-text-muted)]">Acompanhe faturas, limites e vencimentos.</p>
+        </div>
+        <span class="card-cc-placeholder-cta inline-flex h-10 w-fit items-center gap-2 rounded-xl bg-[var(--cb-surface-2)] px-3 text-xs font-bold text-[var(--cb-text-main)] ring-1 ring-inset ring-[var(--cb-border-subtle)]">
+            <i data-lucide="plus" class="h-4 w-4"></i>
+            Adicionar cartão
+        </span>
+    </div>
+</a>
 {{end}}

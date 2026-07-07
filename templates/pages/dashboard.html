@@ -62,46 +62,6 @@
         <!-- RIGHT COLUMN: summary + cards + limits/goals + pay/receive -->
         <div class="cb-dashboard-stack order-2 lg:col-span-8 flex flex-col gap-4 min-w-0">
 
-        <!-- ROW1: Resumo do mês (single panel, 4-cell grid) -->
-        <div id="dashboard-metrics-row1"
-            hx-trigger="refreshFinancials from:body"
-            hx-get="/"
-            hx-select="#dashboard-metrics-row1"
-            hx-swap="outerHTML">
-            <div class="cb-card-dense cb-summary-panel flex flex-col">
-                <div class="cb-summary-head flex items-center justify-between">
-                    <span class="cb-text-micro font-bold text-[var(--cb-text-muted)] uppercase tracking-wider truncate">Resumo do mês</span>
-                    <span class="cb-text-micro font-bold text-[var(--cb-text-muted)] tabular-nums">{{.ResumoMesLabel}}</span>
-                </div>
-                <div class="cb-summary-grid">
-                    <div class="cb-summary-cell">
-                        <i data-lucide="arrow-down-left" class="w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
-                        <span class="cb-summary-label">Recebido</span>
-                        <span class="cb-summary-value text-[var(--cb-success)]" data-sensitive>R$ {{.ResumoEntradas.Reais}}{{.ResumoEntradas.Cents}}</span>
-                        <span class="cb-summary-meta">Caixa realizado</span>
-                    </div>
-                    <div class="cb-summary-cell">
-                        <i data-lucide="arrow-up-right" class="w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
-                        <span class="cb-summary-label">Gasto</span>
-                        <span class="cb-summary-value text-[var(--cb-danger)]" data-sensitive>R$ {{.ResumoSaidas.Reais}}{{.ResumoSaidas.Cents}}</span>
-                        <span class="cb-summary-meta">Caixa realizado</span>
-                    </div>
-                    <div class="cb-summary-cell">
-                        <i data-lucide="minus-circle" class="w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
-                        <span class="cb-summary-label">Saldo do mês</span>
-                        <span class="cb-summary-value {{if .ResumoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-info)]{{end}}" data-sensitive>R$ {{.ResumoSaldo.Reais}}{{.ResumoSaldo.Cents}}</span>
-                        <span class="cb-summary-meta">Realizado</span>
-                    </div>
-                    <div class="cb-summary-cell">
-                        <i data-lucide="sun" class="w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
-                        <span class="cb-summary-label">Previsão final</span>
-                        <span class="cb-summary-value {{if .PrevisaoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-info)]{{end}}" data-sensitive>R$ {{.PrevisaoSaldo.Reais}}{{.PrevisaoSaldo.Cents}}</span>
-                        <span class="cb-summary-meta">Aberto</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Cards (moved to right column, grid layout) -->
         <div>
             {{template "dashboard-cards" .}}

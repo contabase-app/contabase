@@ -64,23 +64,56 @@
                 <i data-lucide="bar-chart-3" class="h-5 w-5 text-[var(--cb-success)]"></i>
             </div>
             <h2 class="text-base font-bold text-[var(--cb-text-main)]">Como funcionam os Relatórios</h2>
-            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">A área de <span class="font-semibold">Relatórios</span> separa três perguntas diferentes: quanto dinheiro já entrou ou saiu, qual foi o resultado do período e quais movimentos já foram confirmados. No Personal, você vê Fluxo de Caixa e Extrato. No Business, também aparece a visão de Competência / DRE.</p>
-            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs md:grid md:grid-cols-2 xl:grid-cols-4 md:gap-4 space-y-3 md:space-y-0">
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">A área de <span class="font-semibold">Relatórios</span> separa quatro perguntas diferentes: caixa realizado, resultado por competência, movimentos confirmados e, no Business, fechamento por Natureza Econômica / Grupo Macro.</p>
+            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs md:grid md:grid-cols-2 xl:grid-cols-5 md:gap-4 space-y-3 md:space-y-0">
                 <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
                     <p class="text-[11px] font-bold tracking-wide text-[var(--cb-success)]">Fluxo de Caixa</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Use para entender dinheiro que entrou, saiu ou está previsto. O modo <span class="font-semibold">Realizado</span> mostra apenas valores já pagos ou recebidos. O modo <span class="font-semibold">Previsão</span> soma o que já aconteceu com o que ainda está pendente.</p>
-                </article>
-                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
-                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-info)]">Saldo Projetado</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Mostra quanto deve sobrar até o fim do mês selecionado. Ele parte do saldo atual das contas reais, soma entradas pendentes e subtrai despesas e faturas pendentes.</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Usa pagamentos e recebimentos confirmados. O modo <span class="font-semibold">Realizado</span> considera o que já foi pago ou recebido; <span class="font-semibold">Previsão</span> soma pendências futuras.</p>
                 </article>
                 <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
                     <p class="text-[11px] font-bold tracking-wide text-[var(--cb-accent)]">Competência / DRE</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">{{if .IsBusiness}}Disponível no Business para análise gerencial e contábil. Ela mostra receitas e despesas pela origem econômica do lançamento, então pode ser diferente do caixa quando compra e pagamento acontecem em meses distintos.{{else}}Disponível em workspaces Business. Ela mostra receitas e despesas pela origem econômica do lançamento, por isso pode ser diferente do caixa.{{end}}</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Usa a data de competência, isto é, a origem econômica do lançamento. Pode ser diferente do caixa quando a compra e o pagamento acontecem em meses distintos.</p>
                 </article>
                 <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
                     <p class="text-[11px] font-bold tracking-wide text-[var(--cb-warning)]">Extrato</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Mostra movimentos confirmados. Transferências aparecem como entrada e saída por conta para facilitar a conferência, mas transferências internas não alteram o resultado consolidado.</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Lista movimentos confirmados. Transferências aparecem para conferência por conta, mas não aumentam nem reduzem o resultado consolidado.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-info)]">Relatório Contábil</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">{{if .IsBusiness}}Central Business por Natureza Econômica / Grupo Macro. Mostra resultado operacional, caixa realizado, retiradas, investimentos e saldo por conta no fechamento.{{else}}Disponível apenas em workspaces Business. Usa Natureza Econômica / Grupo Macro para separar operação, retiradas, investimentos e alertas.{{end}}</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-info)]">Saldo por conta</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">No Relatório Contábil, o saldo em DD/MM/AAAA é reconstruído a partir do saldo atual das contas reais, revertendo movimentos pagos depois da data de fechamento.</p>
+                </article>
+            </div>
+        </section>
+
+        <!-- Relatório Contábil -->
+        <section id="relatorio-contabil-natureza-economica"
+
+            class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-6 flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--cb-border-strong)] md:col-span-2 lg:col-span-3">
+            <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl" style="background: color-mix(in srgb, var(--cb-info) 12%, transparent); border: 1px solid color-mix(in srgb, var(--cb-info) 20%, transparent)">
+                <i data-lucide="landmark" class="h-5 w-5 text-[var(--cb-info)]"></i>
+            </div>
+            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Relatório Contábil e Natureza Econômica</h2>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">No Business, o Grupo Macro da categoria funciona como Natureza Econômica. Classificações erradas mudam onde o valor aparece no Relatório Contábil, nos alertas e nos PDFs.</p>
+            <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs md:grid md:grid-cols-2 xl:grid-cols-4 md:gap-4 space-y-3 md:space-y-0">
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-accent)]">Resultado operacional</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Mostra o desempenho da operação por competência. Retiradas/Distribuição, Investimentos/Patrimonial e Investimentos/Outros ficam fora desse resultado.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-success)]">Caixa realizado</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Mostra o dinheiro que entrou e saiu de contas reais no período. Transferências internas não entram no resultado consolidado.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-warning)]">Retiradas e investimentos</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Retiradas/Distribuição mostra saídas dos sócios. Investimentos/Patrimonial separa aquisição patrimonial e não deve ser misturado com despesa operacional.</p>
+                </article>
+                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
+                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-danger)]">Alertas</p>
+                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Sem Receitas Financeiras, Outras Entradas/Saídas e Investimentos/Outros legado são sinais de classificação que podem exigir revisão.</p>
                 </article>
             </div>
         </section>
@@ -96,10 +129,11 @@
                 <i data-lucide="credit-card" class="h-5 w-5 text-[var(--cb-info)]"></i>
             </div>
             <h2 class="text-base font-bold text-[var(--cb-text-main)]">Cartão de crédito e faturas</h2>
-            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">O cartão aparece de formas diferentes conforme a pergunta do relatório.</p>
+            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">O cartão aparece de formas diferentes conforme a pergunta do relatório, sem duplicar compra e pagamento de fatura.</p>
             <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
-                <p class="leading-relaxed text-[var(--cb-text-muted)]">Compra no cartão <span class="font-semibold">não sai do caixa imediatamente</span>. O caixa muda quando a fatura é paga.</p>
-                <p class="leading-relaxed text-[var(--cb-text-muted)]">Na composição por categoria, os itens da fatura são analisados individualmente. Isso evita somar compra e fatura duas vezes.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Compra no cartão entra na <span class="font-semibold">Competência / DRE</span> pela data da compra e pela categoria do item.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Pagamento da fatura entra no <span class="font-semibold">Fluxo de Caixa</span> quando sai de uma conta real.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">A composição por categoria usa os itens da fatura; o pagamento da fatura não entra de novo na competência.</p>
                 <p class="leading-relaxed text-[var(--cb-text-muted)]">Se a fatura estiver parcialmente paga, a parte já quitada entra no realizado e o saldo restante continua na previsão.</p>
             </div>
         </section>
@@ -117,7 +151,7 @@
                 <p class="leading-relaxed text-[var(--cb-text-muted)]">Se você compra no cartão em julho e paga a fatura em agosto, a compra aparece na análise por categoria, mas a saída de caixa acontece no pagamento da fatura.</p>
                 <p class="leading-relaxed text-[var(--cb-text-muted)]">Uma receita pendente entra na previsão, mas só entra no realizado quando for recebida.</p>
                 <p class="leading-relaxed text-[var(--cb-text-muted)]">Uma transferência entre suas próprias contas aparece no extrato, mas não aumenta nem reduz seu resultado.</p>
-                <p class="leading-relaxed text-[var(--cb-text-muted)]">Os PDFs usam a identidade do workspace quando disponível. CSV e PDF existem para Fluxo de Caixa, Extrato e, no Business, também para Competência / DRE.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Os PDFs usam a identidade do workspace quando disponível. CSV e PDF existem para Fluxo de Caixa, Extrato e, no Business, também para Competência / DRE e Relatório Contábil.</p>
             </div>
         </section>
 

@@ -11,7 +11,7 @@ O ContaBase usa SemVer. A tag pública, o arquivo `VERSION`, o changelog e a not
 ## Versões publicadas
 
 - `v0.1.0-beta.1` — primeira Beta pública. Tag, GitHub Release, GHCR e assets disponíveis nos canais públicos.
-- `v0.1.0-beta.3` — Beta pública atual/preparada para publicação.
+- `v0.1.0-beta.6` — Beta pública atual/preparada para publicação.
 
 ## Fluxo de publicação
 
@@ -22,7 +22,7 @@ O ContaBase usa SemVer. A tag pública, o arquivo `VERSION`, o changelog e a not
 3. criação de `docs/releases/vX.Y.Z-beta.N.md` com nota da release;
 4. validações Go, diff check e export público limpo;
 5. export e sync para a branch `beta` do repositório público (`contabase`);
-6. criação da tag beta pública (ex: `v0.1.0-beta.3`);
+6. criação da tag beta pública (ex: `v0.1.0-beta.6`);
 7. push da branch `beta` e da tag para o repositório público;
 8. execução do workflow de artifacts e GHCR;
 9. criação da GitHub Release beta (`prerelease=true`);
@@ -117,5 +117,5 @@ O update automático por release artifact ainda não existe; até lá, a troca d
 - [Release Notes](../RELEASE_NOTES.md)
 - [GitHub Releases](https://github.com/contabase-app/contabase/releases)
 - [GHCR](https://github.com/contabase-app/contabase/pkgs/container/contabase)
-- [Nota da v0.1.0-beta.3](releases/v0.1.0-beta.3.md)
+- [Nota da v0.1.0-beta.6](releases/v0.1.0-beta.6.md)
 - [Canal de instalação](https://get-contabase.pages.dev)

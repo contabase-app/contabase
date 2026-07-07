@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/contabase-app/contabase/internal/categorycontract"
 )
 
 type seededCategory struct {
@@ -135,16 +137,20 @@ func TestSeederBusinessWorkspace(t *testing.T) {
 	err = tx.QueryRow(`
 		SELECT COUNT(1) FROM categories 
 		WHERE workspace_id = ? 
-		AND macro_group NOT IN (
-			'Receitas Operacionais',
-			'Deduções/Impostos',
-			'Custos Operacionais',
-			'Despesas Administrativas',
-			'Despesas Comerciais',
-			'Equipe e Prestadores',
-			'Financeiro',
-			'Investimentos/Outros'
-		) AND parent_id IS NULL
+			AND macro_group NOT IN (
+				'Receitas Operacionais',
+				'Receitas Financeiras',
+				'Outras Entradas',
+				'Deduções/Impostos',
+				'Custos Operacionais',
+				'Despesas Administrativas',
+				'Despesas Comerciais',
+				'Equipe e Prestadores',
+				'Financeiro',
+				'Retiradas/Distribuição',
+				'Investimentos/Patrimonial',
+				'Outras Saídas'
+			) AND parent_id IS NULL
 	`, workspaceID).Scan(&invalidMacroCount)
 	if err != nil && err != sql.ErrNoRows {
 		t.Fatalf("failed to check macro groups: %v", err)
@@ -188,6 +194,9 @@ func TestSeederPersonalCanonicalCategoryTree(t *testing.T) {
 	assertNoLegacySeedMacroGroups(t, categories)
 	assertSeedChildrenMatchParents(t, categories)
 	assertNoDuplicateRootNames(t, categories)
+	assertSeedNameMissing(t, categories, "Rendimentos financeiros")
+	assertSeedNameMissing(t, categories, "Receita financeira")
+	assertSeedNameMissing(t, categories, "Receitas financeiras")
 
 	assertSeedParent(t, categories, "Alimentação", "EXPENSE", "Essencial")
 	assertSeedParent(t, categories, "Refeições", "EXPENSE", "Estilo de Vida")
@@ -224,29 +233,39 @@ func TestSeederBusinessCanonicalCategoryTree(t *testing.T) {
 
 	categories := querySeededCategories(t, tx, workspaceID)
 	assertSeedMacroGroups(t, categories, []string{
-		"Custos Operacionais",
-		"Despesas Administrativas",
-		"Despesas Comerciais",
-		"Deduções/Impostos",
-		"Equipe e Prestadores",
-		"Financeiro",
-		"Investimentos/Outros",
-		"Receitas Operacionais",
+		categorycontract.MacroCustosOperacionais,
+		categorycontract.MacroDespesasAdministrativas,
+		categorycontract.MacroDespesasComerciais,
+		categorycontract.MacroDeducoesImpostos,
+		categorycontract.MacroEquipePrestadores,
+		categorycontract.MacroFinanceiro,
+		categorycontract.MacroInvestimentosPatrimonial,
+		categorycontract.MacroOutrasEntradas,
+		categorycontract.MacroOutrasSaidas,
+		categorycontract.MacroReceitasFinanceiras,
+		categorycontract.MacroReceitasOperacionais,
+		categorycontract.MacroRetiradasDistribuicao,
 	})
 	assertNoLegacySeedMacroGroups(t, categories)
 	assertSeedChildrenMatchParents(t, categories)
 	assertNoDuplicateRootNames(t, categories)
 
-	assertSeedParent(t, categories, "Vendas", "INCOME", "Receitas Operacionais")
-	assertSeedParent(t, categories, "Inteligência Artificial", "EXPENSE", "Custos Operacionais")
-	assertSeedParent(t, categories, "Sistemas e Produtividade", "EXPENSE", "Despesas Administrativas")
-	assertSeedParent(t, categories, "Marketing e Vendas", "EXPENSE", "Despesas Comerciais")
-	assertSeedParent(t, categories, "Equipe", "EXPENSE", "Equipe e Prestadores")
-	assertSeedParent(t, categories, "Financeiro", "EXPENSE", "Financeiro")
+	assertSeedParent(t, categories, "Vendas", "INCOME", categorycontract.MacroReceitasOperacionais)
+	assertSeedParent(t, categories, "Rendimentos financeiros", "INCOME", categorycontract.MacroReceitasFinanceiras)
+	assertSeedParent(t, categories, "Outras Entradas", "INCOME", categorycontract.MacroOutrasEntradas)
+	assertSeedParent(t, categories, "Inteligência Artificial", "EXPENSE", categorycontract.MacroCustosOperacionais)
+	assertSeedParent(t, categories, "Sistemas e Produtividade", "EXPENSE", categorycontract.MacroDespesasAdministrativas)
+	assertSeedParent(t, categories, "Marketing e Vendas", "EXPENSE", categorycontract.MacroDespesasComerciais)
+	assertSeedParent(t, categories, "Equipe", "EXPENSE", categorycontract.MacroEquipePrestadores)
+	assertSeedParent(t, categories, "Financeiro", "EXPENSE", categorycontract.MacroFinanceiro)
+	assertSeedParent(t, categories, "Retiradas e Distribuição", "EXPENSE", categorycontract.MacroRetiradasDistribuicao)
+	assertSeedParent(t, categories, "Investimentos", "EXPENSE", categorycontract.MacroInvestimentosPatrimonial)
+	assertSeedParent(t, categories, "Outras Saídas", "EXPENSE", categorycontract.MacroOutrasSaidas)
 
-	assertSeedChild(t, categories, "Inteligência Artificial", "APIs de IA", "EXPENSE", "Custos Operacionais")
-	assertSeedChild(t, categories, "Sistemas e Produtividade", "IA administrativa", "EXPENSE", "Despesas Administrativas")
-	assertSeedChild(t, categories, "Marketing e Vendas", "IA para marketing", "EXPENSE", "Despesas Comerciais")
+	assertSeedChild(t, categories, "Inteligência Artificial", "APIs de IA", "EXPENSE", categorycontract.MacroCustosOperacionais)
+	assertSeedChild(t, categories, "Sistemas e Produtividade", "IA administrativa", "EXPENSE", categorycontract.MacroDespesasAdministrativas)
+	assertSeedChild(t, categories, "Marketing e Vendas", "IA para marketing", "EXPENSE", categorycontract.MacroDespesasComerciais)
+	assertSeedChild(t, categories, "Retiradas e Distribuição", "Distribuição de lucros", "EXPENSE", categorycontract.MacroRetiradasDistribuicao)
 }
 
 func TestWorkspaceCategoryReseedDryRunReportsWithoutDeleting(t *testing.T) {
@@ -350,8 +369,9 @@ func TestWorkspaceCategoryReseedBusinessIsIdempotentAndIsolated(t *testing.T) {
 	assertReseedCategoryMissing(t, db, "old-business")
 	assertReseedCategoryExists(t, db, "old-other")
 	categories := querySeededCategoriesFromDB(t, db, "ws-reseed-business")
-	assertSeedParent(t, categories, "Inteligência Artificial", "EXPENSE", "Custos Operacionais")
-	assertSeedChild(t, categories, "Inteligência Artificial", "APIs de IA", "EXPENSE", "Custos Operacionais")
+	assertSeedParent(t, categories, "Inteligência Artificial", "EXPENSE", categorycontract.MacroCustosOperacionais)
+	assertSeedChild(t, categories, "Inteligência Artificial", "APIs de IA", "EXPENSE", categorycontract.MacroCustosOperacionais)
+	assertSeedParent(t, categories, "Rendimentos financeiros", "INCOME", categorycontract.MacroReceitasFinanceiras)
 
 	countAfterFirstApply := countReseedCategories(t, db, "ws-reseed-business")
 	second, err := ApplyWorkspaceCategoryReseed(db, "ws-reseed-business")
@@ -367,6 +387,222 @@ func TestWorkspaceCategoryReseedBusinessIsIdempotentAndIsolated(t *testing.T) {
 	}
 	assertNoDuplicateReseedCategories(t, db, "ws-reseed-business")
 	assertReseedCategoryExists(t, db, "old-other")
+}
+
+func TestWorkspaceCategoryReseedBusinessAliasInOperationalDoesNotBlockFinancialCanonical(t *testing.T) {
+	db := openSeederTestDB(t)
+	defer db.Close()
+	seedReseedWorkspace(t, db, "ws-reseed-op-alias", "business")
+	// Alias name in wrong macro — should NOT block canonical creation.
+	insertReseedCategory(t, db, "fin-rev-op-alias", "ws-reseed-op-alias", "Receitas financeiras", "INCOME", "Receitas Operacionais", "")
+
+	report, err := ApplyWorkspaceCategoryReseed(db, "ws-reseed-op-alias")
+	if err != nil {
+		t.Fatalf("apply business reseed with alias in operational: %v", err)
+	}
+
+	// Old alias preserved.
+	assertReseedCategoryExists(t, db, "fin-rev-op-alias")
+	// Canonical "Rendimentos financeiros" in Receitas Financeiras created.
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM categories WHERE workspace_id = ? AND name = 'Rendimentos financeiros' AND macro_group = ?`,
+		"ws-reseed-op-alias", categorycontract.MacroReceitasFinanceiras).Scan(&count); err != nil {
+		t.Fatalf("count canonical financial revenue: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected canonical Rendimentos financeiros to be created, got %d", count)
+	}
+	found := false
+	for _, item := range report.CanonicalCreated {
+		if item.Name == "Rendimentos financeiros" && item.MacroGroup == categorycontract.MacroReceitasFinanceiras {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("report should include created canonical Rendimentos financeiros in Receitas Financeiras")
+	}
+}
+
+func TestWorkspaceCategoryReseedBusinessAliasInCorrectMacroDoesNotDuplicate(t *testing.T) {
+	db := openSeederTestDB(t)
+	defer db.Close()
+	seedReseedWorkspace(t, db, "ws-reseed-correct", "business")
+	// Alias already in Receitas Financeiras — should NOT duplicate.
+	insertReseedCategory(t, db, "fin-rev-correct", "ws-reseed-correct", "Receitas financeiras", "INCOME", categorycontract.MacroReceitasFinanceiras, "")
+
+	report, err := ApplyWorkspaceCategoryReseed(db, "ws-reseed-correct")
+	if err != nil {
+		t.Fatalf("apply business reseed with correct macro: %v", err)
+	}
+
+	assertReseedCategoryExists(t, db, "fin-rev-correct")
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM categories WHERE workspace_id = ? AND name = 'Rendimentos financeiros' AND macro_group = ?`,
+		"ws-reseed-correct", categorycontract.MacroReceitasFinanceiras).Scan(&count); err != nil {
+		t.Fatalf("count canonical financial revenue: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected NO duplicate canonical, got %d", count)
+	}
+	for _, item := range report.CanonicalCreated {
+		if item.Name == "Rendimentos financeiros" {
+			t.Fatalf("report should NOT create duplicate canonical financial revenue: %#v", item)
+		}
+	}
+}
+
+func TestWorkspaceCategoryReseedPersonalDoesNotGetBusinessCanonical(t *testing.T) {
+	db := openSeederTestDB(t)
+	defer db.Close()
+	seedReseedWorkspace(t, db, "ws-pers-fin", "personal")
+
+	report, err := ApplyWorkspaceCategoryReseed(db, "ws-pers-fin")
+	if err != nil {
+		t.Fatalf("apply personal reseed: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM categories WHERE workspace_id = ? AND name = 'Rendimentos financeiros'`,
+		"ws-pers-fin").Scan(&count); err != nil {
+		t.Fatalf("count financial revenue in personal: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("personal should not receive business Rendimentos financeiros, got %d", count)
+	}
+	_ = report
+}
+
+func TestWorkspaceCategoryReseedRerunIdempotentWithAliasInOperational(t *testing.T) {
+	db := openSeederTestDB(t)
+	defer db.Close()
+	seedReseedWorkspace(t, db, "ws-idem-op", "business")
+	insertReseedCategory(t, db, "idem-alias", "ws-idem-op", "Receitas financeiras", "INCOME", "Receitas Operacionais", "")
+
+	// First run: creates canonical.
+	_, err := ApplyWorkspaceCategoryReseed(db, "ws-idem-op")
+	if err != nil {
+		t.Fatalf("first reseed: %v", err)
+	}
+	count1 := countReseedCategories(t, db, "ws-idem-op")
+
+	// Second run: idempotent, no duplicates.
+	report2, err := ApplyWorkspaceCategoryReseed(db, "ws-idem-op")
+	if err != nil {
+		t.Fatalf("second reseed: %v", err)
+	}
+	count2 := countReseedCategories(t, db, "ws-idem-op")
+	if count2 != count1 {
+		t.Fatalf("rerun should be idempotent: count1=%d count2=%d", count1, count2)
+	}
+
+	assertReseedCategoryExists(t, db, "idem-alias")
+	var canonicalCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM categories WHERE workspace_id = ? AND name = 'Rendimentos financeiros' AND macro_group = ?`,
+		"ws-idem-op", categorycontract.MacroReceitasFinanceiras).Scan(&canonicalCount); err != nil {
+		t.Fatalf("count canonical: %v", err)
+	}
+	if canonicalCount != 1 {
+		t.Fatalf("expected exactly 1 canonical, got %d", canonicalCount)
+	}
+	for _, item := range report2.CanonicalCreated {
+		if item.Name == "Rendimentos financeiros" {
+			t.Fatalf("second run should NOT recreate canonical: %#v", item)
+		}
+	}
+}
+
+func TestEnsureBusinessCanonicalCategoriesForExistingWorkspacesTx(t *testing.T) {
+	db := openSeederTestDB(t)
+	defer db.Close()
+
+	seedReseedWorkspace(t, db, "ws-business-existing", "business")
+	seedReseedWorkspace(t, db, "ws-personal-existing", "personal")
+	seedReseedLedgerBase(t, db, "ws-business-existing")
+
+	insertReseedCategory(t, db, "biz-custom", "ws-business-existing", "Categoria Customizada", "EXPENSE", "Custom", "")
+	insertReseedCategory(t, db, "biz-prolabore", "ws-business-existing", "Pró-labore", "EXPENSE", categorycontract.MacroEquipePrestadores, "")
+	insertReseedCategory(t, db, "biz-invest-old", "ws-business-existing", "Investimentos/Outros", "EXPENSE", categorycontract.MacroInvestimentosOutros, "")
+	insertReseedTransaction(t, db, "tx-invest-old", "ws-business-existing", "biz-invest-old")
+	insertReseedCategory(t, db, "biz-marketing-case", "ws-business-existing", "marketing e vendas", "EXPENSE", "Despesas Comerciais", "")
+	insertReseedCategory(t, db, "personal-custom", "ws-personal-existing", "Categoria Personal", "EXPENSE", "Estilo de Vida", "")
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("begin repair tx: %v", err)
+	}
+	created, err := EnsureBusinessCanonicalCategoriesForExistingWorkspacesTx(tx)
+	if err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("ensure business canonical categories: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit repair tx: %v", err)
+	}
+	if created == 0 {
+		t.Fatalf("expected existing business workspace to receive missing canonical categories")
+	}
+
+	categories := querySeededCategoriesFromDB(t, db, "ws-business-existing")
+	assertSeedParent(t, categories, "Rendimentos financeiros", "INCOME", categorycontract.MacroReceitasFinanceiras)
+	assertSeedParent(t, categories, "Outras Entradas", "INCOME", categorycontract.MacroOutrasEntradas)
+	assertSeedParent(t, categories, "Retiradas e Distribuição", "EXPENSE", categorycontract.MacroRetiradasDistribuicao)
+	assertSeedParent(t, categories, "Investimentos", "EXPENSE", categorycontract.MacroInvestimentosPatrimonial)
+	assertSeedParent(t, categories, "Outras Saídas", "EXPENSE", categorycontract.MacroOutrasSaidas)
+	assertReseedCategoryExists(t, db, "biz-custom")
+	assertReseedCategoryExists(t, db, "biz-prolabore")
+	assertReseedCategoryExists(t, db, "biz-invest-old")
+	assertReseedTransactionCategory(t, db, "tx-invest-old", "biz-invest-old")
+
+	if count := countReseedCategoriesByName(t, db, "ws-business-existing", "Marketing e Vendas"); count != 1 {
+		t.Fatalf("expected one Marketing e Vendas equivalent root after repair, got %d", count)
+	}
+	if count := countReseedCategoriesByName(t, db, "ws-personal-existing", "Rendimentos financeiros"); count != 0 {
+		t.Fatalf("personal workspace received business category Rendimentos financeiros: count=%d", count)
+	}
+
+	before := countReseedCategories(t, db, "ws-business-existing")
+	tx, err = db.Begin()
+	if err != nil {
+		t.Fatalf("begin second repair tx: %v", err)
+	}
+	createdAgain, err := EnsureBusinessCanonicalCategoriesForExistingWorkspacesTx(tx)
+	if err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("second ensure business canonical categories: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit second repair tx: %v", err)
+	}
+	after := countReseedCategories(t, db, "ws-business-existing")
+	if createdAgain != 0 || after != before {
+		t.Fatalf("repair should be idempotent: createdAgain=%d before=%d after=%d", createdAgain, before, after)
+	}
+	assertNoDuplicateReseedCategories(t, db, "ws-business-existing")
+}
+
+func TestEnsureBusinessCanonicalCategoriesDoesNotDuplicateFinancialRevenueEquivalent(t *testing.T) {
+	db := openSeederTestDB(t)
+	defer db.Close()
+
+	seedReseedWorkspace(t, db, "ws-business-equivalent", "business")
+	insertReseedCategory(t, db, "biz-financial-equivalent", "ws-business-equivalent", "Receita financeira", "INCOME", categorycontract.MacroReceitasFinanceiras, "")
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("begin repair tx: %v", err)
+	}
+	if _, err := EnsureBusinessCanonicalCategoriesForExistingWorkspacesTx(tx); err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("ensure business canonical categories: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("commit repair tx: %v", err)
+	}
+
+	if count := countReseedCategoriesByName(t, db, "ws-business-equivalent", "Rendimentos financeiros"); count != 0 {
+		t.Fatalf("expected no canonical financial revenue duplicate after repair, got %d", count)
+	}
+	assertReseedCategoryExists(t, db, "biz-financial-equivalent")
 }
 
 func TestWorkspaceCategoryReseedApplyRollsBackOnSeedError(t *testing.T) {
@@ -704,6 +940,15 @@ func assertSeedChildMissing(t *testing.T, categories []seededCategory, parentNam
 	}
 }
 
+func assertSeedNameMissing(t *testing.T, categories []seededCategory, name string) {
+	t.Helper()
+	for _, category := range categories {
+		if category.Name == name {
+			t.Fatalf("category %q unexpectedly found in seed", name)
+		}
+	}
+}
+
 func openSeederTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := Open(":memory:")
@@ -914,6 +1159,42 @@ func assertReseedCategoryMissing(t *testing.T, db *sql.DB, categoryID string) {
 	if count != 0 {
 		t.Fatalf("expected category %s to be missing, got count %d", categoryID, count)
 	}
+}
+
+func assertReseedTransactionCategory(t *testing.T, db *sql.DB, transactionID, wantCategoryID string) {
+	t.Helper()
+	var got string
+	if err := db.QueryRow(`SELECT category_id FROM transactions WHERE id = ?`, transactionID).Scan(&got); err != nil {
+		t.Fatalf("query transaction %s category: %v", transactionID, err)
+	}
+	if got != wantCategoryID {
+		t.Fatalf("transaction %s category_id = %q, want %q", transactionID, got, wantCategoryID)
+	}
+}
+
+func countReseedCategoriesByName(t *testing.T, db *sql.DB, workspaceID, name string) int {
+	t.Helper()
+	rows, err := db.Query(`SELECT name FROM categories WHERE workspace_id = ?`, workspaceID)
+	if err != nil {
+		t.Fatalf("query categories by name %q: %v", name, err)
+	}
+	defer rows.Close()
+
+	want := normalizedCategoryNameKey(name)
+	count := 0
+	for rows.Next() {
+		var got string
+		if err := rows.Scan(&got); err != nil {
+			t.Fatalf("scan category name: %v", err)
+		}
+		if normalizedCategoryNameKey(got) == want {
+			count++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate categories by name %q: %v", name, err)
+	}
+	return count
 }
 
 func assertNoDuplicateReseedCategories(t *testing.T, db *sql.DB, workspaceID string) {

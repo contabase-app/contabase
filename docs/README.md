@@ -63,6 +63,9 @@ Não use `latest`.
 
 ## Notas de versão
 
+- [v0.1.0-beta.6 — Beta pública controlada](releases/v0.1.0-beta.6.md)
+- [v0.1.0-beta.5 — Beta pública controlada](releases/v0.1.0-beta.5.md)
+- [v0.1.0-beta.4 — Beta pública controlada](releases/v0.1.0-beta.4.md)
 - [v0.1.0-beta.3 — Beta pública controlada](releases/v0.1.0-beta.3.md)
 - [v0.1.0-beta.2 — Beta pública controlada](releases/v0.1.0-beta.2.md)
 - [v0.1.0-beta.1 — primeira Beta pública controlada](releases/v0.1.0-beta.1.md)
