@@ -964,6 +964,7 @@ func CalculateVirtualInvoiceTotal(db *sql.DB, workspaceID, accountID, reference 
 
 type recurringInvoiceRuleSeed struct {
 	id                   string
+	seriesID             sql.NullString
 	userID               string
 	destinationAccountID sql.NullString
 	categoryID           sql.NullString
@@ -1009,7 +1010,7 @@ func materializeRecurringInvoiceTransactionsTx(tx *sql.Tx, workspaceID, invoiceI
 	cycleEnd := time.Unix(cycleEndUnix, 0).UTC()
 
 	rows, err := tx.Query(`
-		SELECT rr.id, rr.user_id, rr.destination_account_id, rr.category_id, rr.amount, rr.description, rr.start_date, rr.frequency, rr.total_occurrences
+		SELECT rr.id, rr.series_id, rr.user_id, rr.destination_account_id, rr.category_id, rr.amount, rr.description, rr.start_date, rr.frequency, rr.total_occurrences
 		FROM recurring_rules rr
 		WHERE rr.workspace_id = ?
 		  AND rr.account_id = ?
@@ -1024,7 +1025,7 @@ func materializeRecurringInvoiceTransactionsTx(tx *sql.Tx, workspaceID, invoiceI
 	var rules []recurringInvoiceRuleSeed
 	for rows.Next() {
 		var rule recurringInvoiceRuleSeed
-		if err := rows.Scan(&rule.id, &rule.userID, &rule.destinationAccountID, &rule.categoryID, &rule.amount, &rule.description, &rule.startDate, &rule.frequency, &rule.totalOccurrences); err != nil {
+		if err := rows.Scan(&rule.id, &rule.seriesID, &rule.userID, &rule.destinationAccountID, &rule.categoryID, &rule.amount, &rule.description, &rule.startDate, &rule.frequency, &rule.totalOccurrences); err != nil {
 			rows.Close()
 			return err
 		}
@@ -1035,6 +1036,12 @@ func materializeRecurringInvoiceTransactionsTx(tx *sql.Tx, workspaceID, invoiceI
 	}
 
 	for _, rule := range rules {
+		seriesID, err := EnsureRecurringSeriesForRuleTx(tx, workspaceID, rule.id, now)
+		if err != nil {
+			return err
+		}
+		rule.seriesID = sql.NullString{String: seriesID, Valid: true}
+
 		occurrence := time.Unix(rule.startDate, 0).UTC()
 		seq := int64(1)
 		for guard := 0; guard < 20000 && occurrence.Before(cycleStart); guard++ {
@@ -1085,9 +1092,9 @@ func materializeRecurringInvoiceOccurrenceTx(tx *sql.Tx, workspaceID, invoiceID,
 		}
 		_, execErr := tx.Exec(`
 			UPDATE transactions
-			SET invoice_id = ?, status = 'paid', updated_at = ?
+			SET invoice_id = ?, status = 'paid', series_id = COALESCE(series_id, ?), updated_at = ?
 			WHERE id = ? AND workspace_id = ?
-		`, invoiceID, now, existingID, workspaceID)
+		`, invoiceID, nullStringInterface(rule.seriesID), now, existingID, workspaceID)
 		return execErr
 	}
 	if err != sql.ErrNoRows {
@@ -1104,9 +1111,9 @@ func materializeRecurringInvoiceOccurrenceTx(tx *sql.Tx, workspaceID, invoiceID,
 	}
 	id := uuid.NewString()
 	_, execErr := tx.Exec(`
-		INSERT OR IGNORE INTO transactions (id, workspace_id, user_id, account_id, destination_account_id, category_id, invoice_id, type, amount, date, description, installment_number, total_installments, parent_id, recurring_rule_id, recurrence_sequence, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NULL, ?, ?, 'paid', ?, ?)
-	`, id, workspaceID, rule.userID, accountID, destID, catID, invoiceID, models.TransactionTypeExpense, rule.amount, occurrenceUnix, rule.description, rule.id, seq, now, now)
+		INSERT OR IGNORE INTO transactions (id, workspace_id, user_id, account_id, destination_account_id, category_id, invoice_id, type, amount, date, description, installment_number, total_installments, parent_id, recurring_rule_id, recurrence_sequence, series_id, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NULL, ?, ?, ?, 'paid', ?, ?)
+	`, id, workspaceID, rule.userID, accountID, destID, catID, invoiceID, models.TransactionTypeExpense, rule.amount, occurrenceUnix, rule.description, rule.id, seq, nullStringInterface(rule.seriesID), now, now)
 	return execErr
 }
 

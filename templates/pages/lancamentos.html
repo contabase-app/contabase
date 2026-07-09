@@ -408,7 +408,7 @@
     {{end}}>
     <div data-swipe-bg-left><i data-lucide="trash-2" class="swipe-icon"></i></div>
     <div data-swipe-bg-right class="{{if or .IsOverdue .IsPending}}bg-emerald-500{{else}}bg-red-500{{end}}"><i data-lucide="{{if or .IsOverdue .IsPending}}check-circle-2{{else}}clock{{end}}" class="swipe-icon"></i></div>
-    <div data-swipe-content class="tx-content">
+    <div data-swipe-content class="tx-content {{if .IsBusiness}}max-md:items-start{{end}}">
         <input type="checkbox" class="bulk-checkbox h-4 w-4 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 shrink-0" data-tx-checkbox data-ignore-select value="{{.ID}}">
         <button type="button" data-ignore-select data-stop-propagation
             {{if eq .PaymentStatus "paid"}}
@@ -423,12 +423,18 @@
         </button>
         <button type="button" data-ignore-select class="flex flex-1 min-w-0 items-center gap-3 text-left" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false">
             <span class="flex-1 min-w-0">
-                <span class="flex items-center gap-1.5 mb-0.5">
-                    <h4 class="text-sm font-semibold text-[var(--cb-text-main)] truncate">{{.Description}}</h4>
-                    {{if .UsesDueDate}}<span class="cb-status-chip cb-status-chip-warning">Venc. {{.DisplayDateLabel}}</span>{{end}}
+                <span class="flex items-center gap-1.5 mb-0.5 min-w-0 max-md:flex-col max-md:items-start max-md:gap-0">
+                    <h4 class="text-sm font-semibold text-[var(--cb-text-main)] min-w-0 {{if .IsBusiness}}max-md:line-clamp-2 max-md:w-full md:flex-1 md:truncate{{else}}flex-1 truncate{{end}}">{{.Description}}</h4>
+                    {{if .UsesDueDate}}<span class="cb-text-micro text-[var(--cb-text-muted)] shrink-0 max-md:mt-0.5">Comp. {{.CompetenciaDateLabel}}</span>{{end}}
                 </span>
                 <p class="cb-text-micro text-[var(--cb-text-muted)] whitespace-normal break-words leading-snug">
-                    {{if .IsBusiness}}{{if .ContactName}}{{.ContactName}} · {{end}}{{.AccountName}}{{if .CategoryName}} · {{.CategoryName}}{{end}}{{else}}{{.AccountName}}{{if .CategoryName}} · {{.CategoryName}}{{end}}{{end}}
+                    {{if .IsBusiness}}
+                        {{if .ContactName}}<span class="max-md:inline-block max-md:max-w-[50%] max-md:truncate max-md:align-bottom">{{.ContactName}}</span><span class="max-md:inline"> · </span>{{end}}
+                        <span class="max-md:inline-block max-md:max-w-[50%] max-md:truncate max-md:align-bottom">{{.AccountName}}</span>
+                        {{if .CategoryName}}<span class="max-md:hidden"> · {{.CategoryName}}</span>{{end}}
+                    {{else}}
+                        {{.AccountName}}{{if .CategoryName}} · {{.CategoryName}}{{end}}
+                    {{end}}
                 </p>
                 {{if and (eq .PaymentStatus "paid") .PaidAt}}<p class="cb-text-micro text-emerald-600 dark:text-emerald-400 mt-0.5">Pago em {{.PaidAtDisplay}}</p>{{end}}
                 {{if .IsScheduled}}<p class="cb-text-micro text-violet-600 dark:text-violet-300 mt-0.5">Agendado para {{.ScheduledPaymentAtDisplay}}</p>{{end}}
@@ -445,7 +451,7 @@
         </button>
         <div class="flex flex-col items-end shrink-0 gap-0.5 min-w-0">
             <p class="text-sm font-bold {{if eq .Type "INCOME"}}text-emerald-600 dark:text-emerald-400{{else if eq .Type "EXPENSE"}}text-red-600 dark:text-red-400{{else}}text-sky-600 dark:text-sky-400{{end}}" data-sensitive>{{.AmountDisplay}}</p>
-            <span class="cb-text-micro text-[var(--cb-text-muted)]">{{if .UsesDueDate}}{{.DisplayDateLabel}}{{else}}{{.DateLabel}}{{end}}</span>
+            <span class="cb-text-micro text-[var(--cb-text-muted)]">{{.DateLabel}}</span>
         </div>
         <span class="tx-desktop-actions">
             <button type="button" data-ignore-select class="tx-action-btn" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Editar">

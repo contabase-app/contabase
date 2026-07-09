@@ -19,7 +19,7 @@ func TestLancamentosResumoStatusDefaultReflectsVisibleItems(t *testing.T) {
 		t.Fatalf("buildLancamentosData: %v", err)
 	}
 
-	assertLancamentosSummary(t, data, "pago", 0, 0)
+	assertLancamentosSummary(t, data, "pago", 16000, 2)
 	assertLancamentosSummary(t, data, "pendente", 131000, 3)
 	assertLancamentosSummary(t, data, "vencido", 0, 0)
 	assertLancamentosSummary(t, data, "agendado", 33000, 1)

@@ -11,6 +11,40 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
+## [v0.1.0-beta.7]
+
+### Adicionado
+- **Recorrências — série versionada:** cada lançamento fixo passa a pertencer a uma série. As alterações são registradas como versões da mesma série, preservando o histórico e mantendo o passado intacto.
+- **Recorrências — materialização automática:** as ocorrências futuras de cada recorrência são mantidas automaticamente em uma janela móvel de aproximadamente 15 meses à frente, sem ação manual.
+- **Recorrências — atualização automática da projeção:** uma varredura diária, uma varredura leve no start da aplicação e um preenchimento sob demanda em Dashboard e Lançamentos mantêm as recorrências futuras sempre atualizadas, sem travar as telas.
+
+### Alterado
+- **Recorrências — editar "apenas esta":** alterar uma única ocorrência agora a marca como exceção manual da série. As demais ocorrências não mudam e a exceção não é sobrescrita por atualizações posteriores da série.
+- **Recorrências — editar "esta e futuras":** a partir da ocorrência escolhida, a série passa a usar uma nova versão. A versão anterior é encerrada no ponto do corte e as ocorrências futuras seguem a nova versão, mantendo a mesma série.
+- **Recorrências — editar "toda a série":** as ocorrências que podem mudar são atualizadas de uma vez, mas exceções manuais, lançamentos já pagos e itens em faturas fechadas/pagas ficam protegidos.
+- **Recorrências — excluir "esta e futuras":** a exclusão encerra a série a partir do ponto escolhido, remove apenas as ocorrências futuras elegíveis e não regenera as ocorrências apagadas nas próximas atualizações.
+- **Recorrências — projeção sob demanda restrita:** o preenchimento automático por acesso ocorre apenas em Dashboard e Lançamentos. Faturas e Relatórios não disparam esse preenchimento.
+- **Lançamentos — visibilidade padrão:** a listagem `/lancamentos` agora inclui lançamentos pagos por padrão, sem precisar selecionar o filtro manualmente. O resumo reflete todos os status visíveis.
+- **Lançamentos Business — separação de competência e vencimento:** a listagem agrupa pelo vencimento (`due_date`) quando disponível, mas preserva a competência real (`date`) para edição. Um indicador discreto "Comp. DD/MM/AAAA" aparece apenas quando a competência difere do vencimento.
+- **Lançamentos Business — layout mobile:** o card mobile foi refinado para permitir descrição em até duas linhas, mantendo cliente truncado, conta visível e categoria oculta em telas pequenas.
+
+### Corrigido
+- **Recorrências — sem duplicidade:** o motor de materialização é idempotente. Rodar a projeção mais de uma vez não cria ocorrências duplicadas por série/sequência nem por regra/sequência.
+- **Lançamentos Business — edição:** o formulário de edição agora carrega a competência e o vencimento reais (`date` e `due_date` separados), sem sobrescrever a competência pelo vencimento. Ao alterar a data ou o vencimento, a listagem recarrega automaticamente e move o lançamento para o grupo correto.
+- **Lançamentos Business — badge removido:** o badge grande "Venc." foi removido dos cards, eliminando poluição visual no mobile.
+
+### Segurança
+- **Recorrências — preservação financeira:** faturas fechadas ou pagas e transações já pagas são preservadas em todas as operações de recorrência. Saldos e faturas permanecem consistentes após as atualizações automáticas.
+
+### Testes
+- **Recorrências e materializador:** adicionada cobertura para série versionada, edição single/future/all, exclusão future, estado/lock/throttle de materialização, job/boot/fallback e isolamento por workspace, além de smoke completo de upgrade de banco existente e CRUD recorrente pela interface.
+
+### Limitações conhecidas
+- **Bancos migrados:** as novas colunas de vínculo de série (`series_id`, `parent_rule_id`, `contact_id`) são adicionadas sem chave estrangeira em bancos que já existiam, por opção de migração aditiva. Instalações novas criam essas colunas com a restrição completa. A convergência é planejada para uma fase futura.
+
+### Notas de atualização
+- **Upgrade seguro de bancos existentes:** a atualização aplica as migrations `50` e `51`, cria a tabela `recurring_series`, faz o backfill de `series_id` em regras e lançamentos recorrentes antigos e cria a tabela de estado `recurring_materialization_state`. O processo é aditivo e não altera saldos nem faturas existentes. Backup antes de atualizar continua obrigatório.
+
 ## [v0.1.0-beta.6]
 
 ### Adicionado

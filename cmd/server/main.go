@@ -81,6 +81,11 @@ func main() {
 	defer stopScheduledPayments()
 	handlers.StartScheduledPaymentExecutor(scheduledPaymentCtx, db, 5*time.Minute)
 
+	recurringMaterializationCtx, stopRecurringMaterialization := context.WithCancel(context.Background())
+	defer stopRecurringMaterialization()
+	handlers.InitRecurringMaterializationFallback(db)
+	handlers.StartRecurringMaterializationJob(recurringMaterializationCtx, db, 24*time.Hour)
+
 	debugMode := strings.EqualFold(strings.TrimSpace(os.Getenv("APP_DEBUG")), "true")
 	assets.SetDebugMode(debugMode)
 	tpl, err := newAppTemplateEngine(debugMode, buildFuncMap())
@@ -716,6 +721,8 @@ func main() {
 			return
 		}
 
+		handlers.ScheduleRecurringMaterializationFallback(ctx.ActiveWorkspaceID)
+
 		t0 := time.Now()
 		reqID := handlers.PerfReqID()
 		dbB := handlers.DbSnap(db)
@@ -815,6 +822,7 @@ func main() {
 		h := txBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		handlers.ScheduleRecurringMaterializationFallback(ctx.ActiveWorkspaceID)
 		h.HandleListarTransacoes(w, r)
 	}))
 

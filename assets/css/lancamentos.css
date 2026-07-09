@@ -159,6 +159,14 @@
     .invoice-content { padding: .625rem .75rem; }
 }
 
+/* === LINE CLAMP FALLBACK (Tailwind utility depends on build) === */
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
 /* === BULK SELECTION VISIBILITY (CSP-compliant, class-based) === */
 .bulk-checkbox { display: none; }
 .bulk-mode .bulk-checkbox { display: inline-flex; }

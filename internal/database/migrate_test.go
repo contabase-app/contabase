@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,6 +143,189 @@ func TestMigration49RepairsBusinessCanonicalCategories(t *testing.T) {
 		t.Fatalf("migration rerun changed business categories: first=%d second=%d", countAfterFirstRun, countAfterSecondRun)
 	}
 	assertNoDuplicateReseedCategories(t, db, "ws-mig49-business")
+}
+
+func TestMigration50CreatesRecurringSeriesVersioningSchemaOnFreshDatabase(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open memory database: %v", err)
+	}
+	defer db.Close()
+
+	assertSchemaObjectExists(t, db, "table", "recurring_series")
+	assertColumnExists(t, db, "recurring_rules", "series_id")
+	assertColumnExists(t, db, "recurring_rules", "parent_rule_id")
+	assertColumnExists(t, db, "recurring_rules", "effective_start_sequence")
+	assertColumnExists(t, db, "recurring_rules", "effective_end_sequence")
+	assertColumnExists(t, db, "recurring_rules", "starts_at")
+	assertColumnExists(t, db, "recurring_rules", "end_date")
+	assertColumnExists(t, db, "recurring_rules", "contact_id")
+	assertColumnExists(t, db, "recurring_rules", "due_date_policy")
+	assertColumnExists(t, db, "recurring_rules", "due_date_offset_days")
+	assertColumnExists(t, db, "transactions", "series_id")
+	assertColumnExists(t, db, "transactions", "is_recurring_exception")
+	assertColumnExists(t, db, "transactions", "recurring_exception_reason")
+	assertSchemaObjectExists(t, db, "index", "idx_transactions_workspace_recurring_sequence_unique")
+	assertSchemaObjectExists(t, db, "index", "idx_transactions_workspace_series_sequence")
+	assertSchemaObjectExists(t, db, "index", "idx_transactions_workspace_series_date")
+}
+
+func TestMigration50BackfillsRecurringSeriesWithoutRewritingTransactions(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration50-backfill.db")
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("open raw database: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+
+	createLegacyRecurringVersioningFixture(t, db)
+	seedAppliedMigrationsBefore(t, db, 50)
+
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	assertMigrationApplied(t, db, 50)
+
+	var seriesCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM recurring_series`).Scan(&seriesCount); err != nil {
+		t.Fatalf("count recurring_series: %v", err)
+	}
+	if seriesCount != 2 {
+		t.Fatalf("recurring_series count = %d, want 2", seriesCount)
+	}
+
+	var (
+		seriesID               sql.NullString
+		effectiveStartSequence int
+		contactID              sql.NullString
+		dueDatePolicy          sql.NullString
+	)
+	if err := db.QueryRow(`
+		SELECT series_id, effective_start_sequence, contact_id, due_date_policy
+		FROM recurring_rules
+		WHERE id = 'rule-a'
+	`).Scan(&seriesID, &effectiveStartSequence, &contactID, &dueDatePolicy); err != nil {
+		t.Fatalf("query backfilled recurring rule: %v", err)
+	}
+	if !seriesID.Valid || seriesID.String != "rule-a" {
+		t.Fatalf("recurring_rules.series_id = %q valid=%v, want rule-a", seriesID.String, seriesID.Valid)
+	}
+	if effectiveStartSequence != 1 {
+		t.Fatalf("effective_start_sequence = %d, want 1", effectiveStartSequence)
+	}
+	if contactID.Valid {
+		t.Fatalf("contact_id = %q, want NULL during safe backfill", contactID.String)
+	}
+	if dueDatePolicy.Valid {
+		t.Fatalf("due_date_policy = %q, want NULL during safe backfill", dueDatePolicy.String)
+	}
+
+	assertTransactionSeries50(t, db, "tx-a-1", "rule-a", 0, 1714521600)
+	assertTransactionSeries50(t, db, "tx-b-1", "rule-b", 0, 1714521600)
+	assertTransactionSeries50(t, db, "tx-cross-workspace", "", 0, 1717200000)
+}
+
+func TestMigration50FailsOnDuplicateRecurringRuleSequence(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration50-duplicate-sequence.db")
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("open raw database: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+
+	createLegacyRecurringVersioningFixture(t, db)
+	seedAppliedMigrationsBefore(t, db, 50)
+	if _, err := db.Exec(`
+		INSERT INTO transactions (id, workspace_id, recurring_rule_id, recurrence_sequence, date)
+		VALUES ('tx-a-duplicate', 'ws-a', 'rule-a', 1, 1719792000)
+	`); err != nil {
+		t.Fatalf("insert duplicate recurring sequence fixture: %v", err)
+	}
+
+	err = runMigrations(db)
+	if err == nil {
+		t.Fatalf("expected migration 50 to fail on duplicate recurring_rule_id recurrence_sequence")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"migration 50 aborted",
+		"duplicate (workspace_id, recurring_rule_id, recurrence_sequence)",
+		`recurring_rule_id="rule-a"`,
+		"recurrence_sequence=1",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("duplicate error message = %q, want substring %q", msg, want)
+		}
+	}
+
+	if _, statErr := os.Stat(dbPath); statErr != nil {
+		t.Fatalf("stat duplicate fixture db: %v", statErr)
+	}
+	var indexCount int
+	if scanErr := db.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type = 'index' AND name = 'idx_transactions_workspace_recurring_sequence_unique'`).Scan(&indexCount); scanErr != nil {
+		t.Fatalf("query unique index after failed migration: %v", scanErr)
+	}
+	if indexCount != 0 {
+		t.Fatalf("unique index created despite duplicate preflight failure")
+	}
+}
+
+// TestMigration50ForeignKeyListMatchesFreshSchemaConstraints pins the fresh-install side of
+// the intentional fresh-vs-migrated divergence documented on migrateRecurringSeriesVersioningBase.
+// On a clean database the new recurring-series columns carry real FOREIGN KEY constraints
+// because sqlite.go creates the tables with them inline.
+func TestMigration50ForeignKeyListMatchesFreshSchemaConstraints(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open memory database: %v", err)
+	}
+	defer db.Close()
+
+	rules := foreignKeyTargets(t, db, "recurring_rules")
+	assertForeignKeyTarget(t, "recurring_rules", rules, "series_id", "recurring_series")
+	assertForeignKeyTarget(t, "recurring_rules", rules, "parent_rule_id", "recurring_rules")
+	assertForeignKeyTarget(t, "recurring_rules", rules, "contact_id", "contacts")
+
+	transactions := foreignKeyTargets(t, db, "transactions")
+	assertForeignKeyTarget(t, "transactions", transactions, "series_id", "recurring_series")
+}
+
+// TestMigration50ForeignKeyListOmitsConstraintsOnMigratedDatabase pins the migrated-install
+// side of the SAME intentional divergence. ALTER TABLE ADD COLUMN cannot attach FKs in SQLite
+// and Fase 1 deliberately avoids a table rebuild, so on existing databases the new columns
+// exist WITHOUT the FKs that a fresh install gets. This is known and accepted: preflight,
+// indexes, and application-level validation compensate until a later phase rebuilds the tables.
+func TestMigration50ForeignKeyListOmitsConstraintsOnMigratedDatabase(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration50-fk-divergence.db")
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("open raw database: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+
+	createLegacyRecurringVersioningFixture(t, db)
+	seedAppliedMigrationsBefore(t, db, 50)
+
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	assertMigrationApplied(t, db, 50)
+
+	assertColumnExists(t, db, "recurring_rules", "series_id")
+	assertColumnExists(t, db, "recurring_rules", "parent_rule_id")
+	assertColumnExists(t, db, "recurring_rules", "contact_id")
+	assertColumnExists(t, db, "transactions", "series_id")
+
+	rules := foreignKeyTargets(t, db, "recurring_rules")
+	assertNoForeignKeyFrom(t, "recurring_rules", rules, "series_id")
+	assertNoForeignKeyFrom(t, "recurring_rules", rules, "parent_rule_id")
+	assertNoForeignKeyFrom(t, "recurring_rules", rules, "contact_id")
+
+	transactions := foreignKeyTargets(t, db, "transactions")
+	assertNoForeignKeyFrom(t, "transactions", transactions, "series_id")
 }
 
 func TestDestructiveMigrationsRequireExplicitReview(t *testing.T) {
@@ -1091,9 +1275,42 @@ func assertTableExists(t *testing.T, db *sql.DB, table string) {
 	}
 }
 
+func TestMigration51CreatesRecurringMaterializationStateSchema(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "recurring-materialization-state.db")
+	rawDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open raw database: %v", err)
+	}
+	seedAppliedMigrationsBefore(t, rawDB, 51)
+	if err := rawDB.Close(); err != nil {
+		t.Fatalf("close raw database: %v", err)
+	}
+
+	db := openMigratedRawDB(t, dbPath)
+	defer db.Close()
+
+	assertMigrationApplied(t, db, 51)
+	assertTableExists(t, db, "recurring_materialization_state")
+	assertColumnExists(t, db, "recurring_materialization_state", "workspace_id")
+	assertColumnExists(t, db, "recurring_materialization_state", "materialized_until")
+	assertColumnExists(t, db, "recurring_materialization_state", "last_attempt_at")
+	assertColumnExists(t, db, "recurring_materialization_state", "last_success_at")
+	assertColumnExists(t, db, "recurring_materialization_state", "last_error")
+	assertColumnExists(t, db, "recurring_materialization_state", "status")
+	assertColumnExists(t, db, "recurring_materialization_state", "locked_until")
+	assertColumnExists(t, db, "recurring_materialization_state", "lock_owner")
+
+	var indexCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type = 'index' AND name = 'idx_recurring_materialization_state_locked_until'`).Scan(&indexCount); err != nil {
+		t.Fatalf("check locked_until index: %v", err)
+	}
+	if indexCount != 1 {
+		t.Fatalf("expected idx_recurring_materialization_state_locked_until to exist")
+	}
+}
+
 func singlePreMigrationBackup(t *testing.T, dataDir string) string {
 	t.Helper()
-
 	backupDir := filepath.Join(dataDir, "backups", "pre-migration")
 	entries, err := os.ReadDir(backupDir)
 	if err != nil {
@@ -1327,6 +1544,93 @@ func seedAppliedMigrationsBefore(t *testing.T, db *sql.DB, version int) {
 	}
 }
 
+func createLegacyRecurringVersioningFixture(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	stmts := []string{
+		`CREATE TABLE workspaces (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL
+		)`,
+		`CREATE TABLE users (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			email TEXT NOT NULL,
+			password_hash TEXT NOT NULL
+		)`,
+		`CREATE TABLE recurring_rules (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			active INTEGER NOT NULL DEFAULT 1,
+			total_occurrences INTEGER,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		)`,
+		`CREATE TABLE transactions (
+			id TEXT PRIMARY KEY,
+			workspace_id TEXT NOT NULL,
+			recurring_rule_id TEXT,
+			recurrence_sequence INTEGER,
+			date INTEGER NOT NULL
+		)`,
+		`INSERT INTO workspaces (id, name, type) VALUES ('ws-a', 'Workspace A', 'personal')`,
+		`INSERT INTO workspaces (id, name, type) VALUES ('ws-b', 'Workspace B', 'business')`,
+		`INSERT INTO users (id, name, email, password_hash) VALUES ('user-a', 'User A', 'a@example.test', 'hash')`,
+		`INSERT INTO users (id, name, email, password_hash) VALUES ('user-b', 'User B', 'b@example.test', 'hash')`,
+		`INSERT INTO recurring_rules (id, workspace_id, user_id, active, total_occurrences, created_at, updated_at)
+			VALUES ('rule-a', 'ws-a', 'user-a', 1, 12, 1711929600, 1711929700)`,
+		`INSERT INTO recurring_rules (id, workspace_id, user_id, active, total_occurrences, created_at, updated_at)
+			VALUES ('rule-b', 'ws-b', 'user-b', 1, NULL, 1711929600, 1711929800)`,
+		`INSERT INTO transactions (id, workspace_id, recurring_rule_id, recurrence_sequence, date)
+			VALUES ('tx-a-1', 'ws-a', 'rule-a', 1, 1714521600)`,
+		`INSERT INTO transactions (id, workspace_id, recurring_rule_id, recurrence_sequence, date)
+			VALUES ('tx-b-1', 'ws-b', 'rule-b', 1, 1714521600)`,
+		`INSERT INTO transactions (id, workspace_id, recurring_rule_id, recurrence_sequence, date)
+			VALUES ('tx-cross-workspace', 'ws-b', 'rule-a', 9, 1717200000)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("execute recurring versioning legacy fixture: %v", err)
+		}
+	}
+}
+
+func assertTransactionSeries50(t *testing.T, db *sql.DB, transactionID, wantSeriesID string, wantException int, wantDate int64) {
+	t.Helper()
+
+	var (
+		gotSeriesID  sql.NullString
+		gotException int
+		gotDate      int64
+		reason       sql.NullString
+	)
+	if err := db.QueryRow(`
+		SELECT series_id, is_recurring_exception, date, recurring_exception_reason
+		FROM transactions
+		WHERE id = ?
+	`, transactionID).Scan(&gotSeriesID, &gotException, &gotDate, &reason); err != nil {
+		t.Fatalf("query transaction %s series fields: %v", transactionID, err)
+	}
+	if wantSeriesID == "" {
+		if gotSeriesID.Valid {
+			t.Fatalf("transaction %s series_id = %q, want NULL", transactionID, gotSeriesID.String)
+		}
+	} else if !gotSeriesID.Valid || gotSeriesID.String != wantSeriesID {
+		t.Fatalf("transaction %s series_id = %q valid=%v, want %q", transactionID, gotSeriesID.String, gotSeriesID.Valid, wantSeriesID)
+	}
+	if gotException != wantException {
+		t.Fatalf("transaction %s is_recurring_exception = %d, want %d", transactionID, gotException, wantException)
+	}
+	if gotDate != wantDate {
+		t.Fatalf("transaction %s date = %d, want %d", transactionID, gotDate, wantDate)
+	}
+	if reason.Valid {
+		t.Fatalf("transaction %s recurring_exception_reason = %q, want NULL", transactionID, reason.String)
+	}
+}
+
 func openMigratedRawDB(t *testing.T, dbPath string) *sql.DB {
 	t.Helper()
 
@@ -1493,6 +1797,58 @@ func assertSchemaObjectExists(t *testing.T, db *sql.DB, objectType, name string)
 	}
 	if count != 1 {
 		t.Fatalf("schema object %s %s count = %d, want 1", objectType, name, count)
+	}
+}
+
+func foreignKeyTargets(t *testing.T, db *sql.DB, table string) map[string]string {
+	t.Helper()
+
+	rows, err := db.Query("PRAGMA foreign_key_list(" + table + ")")
+	if err != nil {
+		t.Fatalf("foreign_key_list %s: %v", table, err)
+	}
+	defer rows.Close()
+
+	targets := make(map[string]string)
+	for rows.Next() {
+		var (
+			id       int
+			seq      int
+			refTable string
+			from     string
+			to       sql.NullString
+			onUpdate string
+			onDelete string
+			match    string
+		)
+		if err := rows.Scan(&id, &seq, &refTable, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+			t.Fatalf("scan foreign_key_list %s: %v", table, err)
+		}
+		targets[from] = refTable
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("foreign_key_list %s rows: %v", table, err)
+	}
+	return targets
+}
+
+func assertForeignKeyTarget(t *testing.T, table string, targets map[string]string, from, wantTable string) {
+	t.Helper()
+
+	got, ok := targets[from]
+	if !ok {
+		t.Fatalf("%s.%s missing foreign key, want -> %s", table, from, wantTable)
+	}
+	if got != wantTable {
+		t.Fatalf("%s.%s foreign key -> %s, want -> %s", table, from, got, wantTable)
+	}
+}
+
+func assertNoForeignKeyFrom(t *testing.T, table string, targets map[string]string, from string) {
+	t.Helper()
+
+	if got, ok := targets[from]; ok {
+		t.Fatalf("%s.%s has foreign key -> %s on migrated database, want none (intentional fresh-vs-migrated divergence in Fase 1)", table, from, got)
 	}
 }
 

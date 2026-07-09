@@ -946,8 +946,8 @@ func TestBuildLancamentosDataInvoicePendingPartialAndPaidBadges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildLancamentosData default after settle: %v", err)
 	}
-	if len(defaultData.Invoices) != 0 {
-		t.Fatalf("default invoice count after settle = %d, want 0", len(defaultData.Invoices))
+	if len(defaultData.Invoices) != 1 {
+		t.Fatalf("default invoice count after settle = %d, want 1 (paid invoices now shown by default)", len(defaultData.Invoices))
 	}
 
 	paidData, err := handler.buildLancamentosData("", 8, 2026, LancamentosFilters{Situacoes: []string{"pago"}})
@@ -1306,7 +1306,7 @@ func TestBuildLancamentosDataZeroPaidInvoiceDoesNotBecomePendingExpense(t *testi
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
 	}
-	data, err := handler.buildLancamentosData("", int(dueDate.Month()), dueDate.Year(), LancamentosFilters{})
+	data, err := handler.buildLancamentosData("", int(dueDate.Month()), dueDate.Year(), LancamentosFilters{Situacoes: []string{"pendente", "vencido", "agendado"}})
 	if err != nil {
 		t.Fatalf("buildLancamentosData: %v", err)
 	}
@@ -1335,12 +1335,14 @@ func TestBuildFaturaDataMaterializaRecorrenciaAntigaNaFatura(t *testing.T) {
 		VALUES ('rule-card-monthly', 'ws-test', 'user-test', 'card-test', 'EXPENSE', 7000, 'Assinatura Cartao', ?, 'MONTHLY', 'PAID', 1, ?, ?)
 	`, testUnixDate("2026-01-05"), now, now)
 
-	data, err := buildFaturaDataForInvoice(db, "ws-test", "invoice-2026-12", "desc")
-	if err != nil {
-		t.Fatalf("buildFaturaDataForInvoice: %v", err)
-	}
-	if len(data.Transactions) != 1 {
-		t.Fatalf("transactions = %d, want 1", len(data.Transactions))
+	for i := 0; i < 2; i++ {
+		data, err := buildFaturaDataForInvoice(db, "ws-test", "invoice-2026-12", "desc")
+		if err != nil {
+			t.Fatalf("buildFaturaDataForInvoice run %d: %v", i+1, err)
+		}
+		if len(data.Transactions) != 1 {
+			t.Fatalf("run %d transactions = %d, want 1", i+1, len(data.Transactions))
+		}
 	}
 	total, err := sumInvoiceTotal(db, "ws-test", "invoice-2026-12")
 	if err != nil {
@@ -1349,17 +1351,31 @@ func TestBuildFaturaDataMaterializaRecorrenciaAntigaNaFatura(t *testing.T) {
 	if total != 7000 {
 		t.Fatalf("invoice total = %d, want 7000", total)
 	}
-	var invoiceID, status string
+	var invoiceID, status, seriesID string
 	occurrence := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC).Unix()
 	if err := db.QueryRow(`
-		SELECT invoice_id, status
+		SELECT invoice_id, status, COALESCE(series_id, '')
 		FROM transactions
 		WHERE recurring_rule_id = 'rule-card-monthly' AND date = ?
-	`, occurrence).Scan(&invoiceID, &status); err != nil {
+	`, occurrence).Scan(&invoiceID, &status, &seriesID); err != nil {
 		t.Fatalf("materialized recurrence query: %v", err)
 	}
 	if invoiceID != "invoice-2026-12" || status != "paid" {
 		t.Fatalf("materialized invoice/status = %q/%q, want invoice-2026-12/paid", invoiceID, status)
+	}
+	if seriesID != "rule-card-monthly" {
+		t.Fatalf("materialized series_id = %q, want rule-card-monthly", seriesID)
+	}
+	var count int
+	if err := db.QueryRow(`
+		SELECT COUNT(1)
+		FROM transactions
+		WHERE recurring_rule_id = 'rule-card-monthly' AND date = ?
+	`, occurrence).Scan(&count); err != nil {
+		t.Fatalf("materialized recurrence count query: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("materialized recurrence count = %d, want 1", count)
 	}
 }
 

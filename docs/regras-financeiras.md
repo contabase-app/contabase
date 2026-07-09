@@ -146,9 +146,26 @@ Administradores podem verificar inconsistências no endpoint interno `/admin/cai
 
 ## Recorrencias e parcelamentos
 
+Parcelamentos:
+
 - series infinitas usam `TotalInstallments = 0` ou `1`;
 - parcelas passadas nao devem ser alteradas;
 - para edicoes futuras, a condicao de atualizacao precisa preservar a parcela atual e as seguintes.
+
+Recorrencias versionadas:
+
+- cada lancamento fixo pertence a uma serie (`recurring_series`). As regras da serie ficam em `recurring_rules`, ligadas pelo `series_id`;
+- editar **apenas esta** marca a ocorrencia como excecao manual (`is_recurring_exception = 1`). As demais ocorrencias nao mudam e a excecao nao e sobrescrita pela materializacao;
+- editar **esta e futuras** cria uma nova regra da mesma serie a partir do ponto do corte. A regra anterior recebe `effective_end_sequence`; a nova regra recebe `parent_rule_id` e um novo `effective_start_sequence`, mantendo o mesmo `series_id`;
+- editar **toda a serie** atualiza as ocorrencias mutaveis de uma vez, sem tocar em excecoes manuais, lancamentos pagos ou itens em faturas fechadas/pagas;
+- excluir **esta e futuras** encerra a serie no ponto escolhido e remove apenas as ocorrencias futuras eliminaveis. As ocorrencias apagadas nao sao regeneradas.
+
+Materializacao automatica:
+
+- o motor central mantem as ocorrencias futuras em uma janela movel de aproximadamente 15 meses;
+- o estado por workspace fica em `recurring_materialization_state` (horizonte materializado, lock e throttle);
+- a projecao e mantida por um job diario, uma varredura assincrona no boot e um fallback leve por acesso, restrito a Dashboard e Lancamentos. Faturas e Relatorios nao disparam a materializacao;
+- o motor e idempotente: rodar a projecao mais de uma vez nao duplica ocorrencias por serie/sequencia nem por regra/sequencia.
 
 ## Valores nulos
 

@@ -5,6 +5,22 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Em preparação
 
+- **v0.1.0-beta.7** — *Recorrências versionadas e projeção automática das ocorrências futuras*
+
+  As recorrências (lançamentos fixos) foram reconstruídas sobre um modelo de série versionada. Agora cada recorrência tem um histórico claro, o passado é preservado e as mudanças ficam registradas como versões da mesma série.
+
+  **Editar uma ocorrência.** "Apenas esta" transforma a ocorrência em uma exceção manual, sem afetar as demais e sem ser sobrescrita depois. "Esta e futuras" cria uma nova versão da série a partir do ponto escolhido, encerrando a versão anterior sem apagar o histórico. "Toda a série" atualiza de uma vez as ocorrências que podem mudar, protegendo exceções manuais, lançamentos pagos e itens em faturas fechadas/pagas.
+
+  **Excluir a partir de um ponto.** "Esta e futuras" encerra a série no ponto escolhido e remove apenas as ocorrências futuras elegíveis. As ocorrências apagadas não voltam nas próximas atualizações automáticas.
+
+  **Projeção automática.** As ocorrências futuras são mantidas automaticamente por cerca de 15 meses à frente. Uma varredura diária, uma varredura leve ao iniciar o servidor e um preenchimento sob demanda ao abrir o Dashboard e os Lançamentos mantêm tudo atualizado, sem travar as telas. Faturas e Relatórios não disparam esse preenchimento.
+
+  **Segurança dos dados.** Faturas fechadas ou pagas e transações já pagas são sempre preservadas. Saldos e faturas continuam consistentes, e rodar a projeção mais de uma vez não cria lançamentos duplicados.
+
+   **Atualização.** O upgrade de bancos já existentes é seguro e aditivo: cria a estrutura de séries, faz o backfill dos lançamentos recorrentes antigos e prepara o controle de projeção, sem mexer em saldos ou faturas. Backup antes de atualizar continua obrigatório.
+
+   **Ajustes em `/lancamentos`.** A listagem agora inclui lançamentos pagos por padrão. Workspaces Business separam corretamente a competência (`date`) do vencimento (`due_date`): a listagem agrupa pelo vencimento quando disponível, o formulário de edição carrega ambas as datas sem confusão e um indicador discreto "Comp." aparece apenas quando as datas diferem. O badge "Venc." foi removido dos cards e o layout mobile do Business foi refinado para permitir descrição em até duas linhas sem quebrar o cliente, a conta ou o valor. A release ainda não foi publicada.
+
 - **v0.1.0-beta.6** — *Relatório contábil empresarial com exportações CSV, PDF e ZIP*
 
   O workspace Business ganhou um relatório contábil novo, com resumo, macros e saldos de contas. As exportações CSV, PDF e ZIP agora saem do mesmo contrato de relatório, incluindo o total de saldos nas saídas.

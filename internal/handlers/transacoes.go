@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"math"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -30,6 +31,7 @@ import (
 )
 
 var errPaidInvoiceMutationBlocked = errors.New("transacao vinculada a fatura paga")
+var errRecurringFutureSplitBlocked = errors.New("recorrencia futura bloqueada")
 var errBoxReserveInsufficient = errors.New("saldo reservado insuficiente para consumo da caixinha")
 var errBoxCategoryAmbiguous = errors.New("categoria vinculada a múltiplas caixinhas")
 
@@ -513,9 +515,11 @@ func (h *TransactionHandler) insertTransaction(tipo string, amountCents int64, d
 
 	now := time.Now().Unix()
 	var recurringRuleID interface{}
+	var recurringSeriesID interface{}
 	var projectionRule *recurrenceProjectionRule
 	if fixed {
 		ruleID := uuid.NewString()
+		seriesID := uuid.NewString()
 		ruleStatus := recurringRuleDefaultStatus(paymentStatus, accType, tipo)
 		var catID interface{}
 		if categoriaID != "" {
@@ -525,15 +529,20 @@ func (h *TransactionHandler) insertTransaction(tipo string, amountCents int64, d
 		if destinoContaID != "" {
 			destID = destinoContaID
 		}
+		if err := h.insertRecurringSeriesTx(tx, seriesID, totalOccurrences, now); err != nil {
+			return "", fmt.Errorf("insert recurring series: %w", err)
+		}
 		if err := execOneTx(tx, `
-			INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, destination_account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
-		`, ruleID, h.WorkspaceID, h.UserID, origemContaID, destID, catID, tipo, amountCents, descricao, dateUnix, recurrenceFrequency, ruleStatus, totalOccurrences, now, now); err != nil {
+			INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, destination_account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+		`, ruleID, h.WorkspaceID, h.UserID, origemContaID, destID, catID, tipo, amountCents, descricao, dateUnix, recurrenceFrequency, ruleStatus, totalOccurrences, seriesID, now, now); err != nil {
 			return "", fmt.Errorf("insert recurring rule: %w", err)
 		}
 		recurringRuleID = ruleID
+		recurringSeriesID = seriesID
 		projectionRule = &recurrenceProjectionRule{
 			ID:                   ruleID,
+			SeriesID:             seriesID,
 			AccountID:            origemContaID,
 			DestinationAccountID: destinoContaID,
 			CategoryID:           categoriaID,
@@ -655,9 +664,9 @@ func (h *TransactionHandler) insertTransaction(tipo string, amountCents int64, d
 		}
 
 		err := execOneTx(tx, `
-			INSERT INTO transactions (id, workspace_id, user_id, account_id, destination_account_id, category_id, invoice_id, type, amount, date, description, notes, attachment_path, installment_number, total_installments, parent_id, recurring_rule_id, recurrence_sequence, status, due_date, contact_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, id, h.WorkspaceID, h.UserID, origemContaID, destID, catID, invoiceID, tipo, amount, installmentDate, descricao, anotacoes, attachmentPath, i, totalInstallments, pid, recurringRuleID, recurrenceSequence(i, fixed), installmentStatus, dueDate, contactRef, now, now)
+			INSERT INTO transactions (id, workspace_id, user_id, account_id, destination_account_id, category_id, invoice_id, type, amount, date, description, notes, attachment_path, installment_number, total_installments, parent_id, recurring_rule_id, recurrence_sequence, series_id, status, due_date, contact_id, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, id, h.WorkspaceID, h.UserID, origemContaID, destID, catID, invoiceID, tipo, amount, installmentDate, descricao, anotacoes, attachmentPath, i, totalInstallments, pid, recurringRuleID, recurrenceSequence(i, fixed), recurringSeriesID, installmentStatus, dueDate, contactRef, now, now)
 		if err != nil {
 			return "", fmt.Errorf("insert transaction: %w", err)
 		}
@@ -880,6 +889,7 @@ func insertReversalLedgerEventTx(tx *sql.Tx, consumeEvent activeConsumeEvent, so
 
 type recurrenceProjectionRule struct {
 	ID                   string
+	SeriesID             string
 	AccountID            string
 	DestinationAccountID string
 	CategoryID           string
@@ -890,9 +900,16 @@ type recurrenceProjectionRule struct {
 	Frequency            string
 	DefaultPaymentStatus string
 	TotalOccurrences     *int64
+	EffectiveStartSeq    int64
 }
 
 func (h *TransactionHandler) generateRecurrenceProjection(tx *sql.Tx, rule recurrenceProjectionRule, now int64) error {
+	seriesID, err := EnsureRecurringSeriesForRuleTx(tx, h.WorkspaceID, rule.ID, now)
+	if err != nil {
+		return err
+	}
+	rule.SeriesID = seriesID
+
 	horizon := safeAddMonths(now, 12)
 	var accType string
 	if err := tx.QueryRow(`SELECT type FROM accounts WHERE id = ? AND workspace_id = ?`, rule.AccountID, h.WorkspaceID).Scan(&accType); err != nil {
@@ -915,12 +932,22 @@ func (h *TransactionHandler) generateRecurrenceProjection(tx *sql.Tx, rule recur
 	}
 
 	var maxSeq sql.NullInt64
-	if err := tx.QueryRow(`
-		SELECT MAX(recurrence_sequence)
-		FROM transactions
-		WHERE workspace_id = ? AND recurring_rule_id = ?
-	`, h.WorkspaceID, rule.ID).Scan(&maxSeq); err != nil {
-		return err
+	if strings.TrimSpace(rule.SeriesID) != "" {
+		if err := tx.QueryRow(`
+			SELECT MAX(recurrence_sequence)
+			FROM transactions
+			WHERE workspace_id = ? AND series_id = ?
+		`, h.WorkspaceID, rule.SeriesID).Scan(&maxSeq); err != nil {
+			return err
+		}
+	} else {
+		if err := tx.QueryRow(`
+			SELECT MAX(recurrence_sequence)
+			FROM transactions
+			WHERE workspace_id = ? AND recurring_rule_id = ?
+		`, h.WorkspaceID, rule.ID).Scan(&maxSeq); err != nil {
+			return err
+		}
 	}
 
 	lastDate := rule.StartDate
@@ -928,12 +955,31 @@ func (h *TransactionHandler) generateRecurrenceProjection(tx *sql.Tx, rule recur
 	var lastInvID sql.NullString
 	if maxSeq.Valid {
 		nextSeq = maxSeq.Int64 + 1
-		if err := tx.QueryRow(`
-			SELECT date, invoice_id
-			FROM transactions
-			WHERE workspace_id = ? AND recurring_rule_id = ? AND recurrence_sequence = ?
-		`, h.WorkspaceID, rule.ID, maxSeq.Int64).Scan(&lastDate, &lastInvID); err != nil {
-			return err
+		if rule.EffectiveStartSeq > 0 && maxSeq.Int64 >= rule.EffectiveStartSeq {
+			lastDate = recurrenceDateFromOffset(rule.StartDate, rule.Frequency, maxSeq.Int64-rule.EffectiveStartSeq)
+			if strings.TrimSpace(rule.SeriesID) != "" {
+				_ = tx.QueryRow(`
+					SELECT invoice_id
+					FROM transactions
+					WHERE workspace_id = ? AND series_id = ? AND recurrence_sequence = ?
+				`, h.WorkspaceID, rule.SeriesID, maxSeq.Int64).Scan(&lastInvID)
+			}
+		} else if strings.TrimSpace(rule.SeriesID) != "" {
+			if err := tx.QueryRow(`
+				SELECT date, invoice_id
+				FROM transactions
+				WHERE workspace_id = ? AND series_id = ? AND recurrence_sequence = ?
+			`, h.WorkspaceID, rule.SeriesID, maxSeq.Int64).Scan(&lastDate, &lastInvID); err != nil {
+				return err
+			}
+		} else {
+			if err := tx.QueryRow(`
+				SELECT date, invoice_id
+				FROM transactions
+				WHERE workspace_id = ? AND recurring_rule_id = ? AND recurrence_sequence = ?
+			`, h.WorkspaceID, rule.ID, maxSeq.Int64).Scan(&lastDate, &lastInvID); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -963,6 +1009,10 @@ func (h *TransactionHandler) generateRecurrenceProjection(tx *sql.Tx, rule recur
 		if rule.DestinationAccountID != "" {
 			destID = rule.DestinationAccountID
 		}
+		var seriesID interface{}
+		if strings.TrimSpace(rule.SeriesID) != "" {
+			seriesID = rule.SeriesID
+		}
 
 		var invoiceID interface{}
 		status := projectionStatusForRule(rule.DefaultPaymentStatus)
@@ -990,9 +1040,9 @@ func (h *TransactionHandler) generateRecurrenceProjection(tx *sql.Tx, rule recur
 				id, workspace_id, user_id, account_id, destination_account_id,
 				category_id, invoice_id, type, amount, date, description,
 				installment_number, total_installments, parent_id,
-				recurring_rule_id, recurrence_sequence, status, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NULL, ?, ?, ?, ?, ?)
-		`, id, h.WorkspaceID, h.UserID, rule.AccountID, destID, catID, invoiceID, rule.Type, rule.Amount, occurrence.Unix(), rule.Description, rule.ID, nextSeq, status, now, now); err != nil {
+				recurring_rule_id, recurrence_sequence, series_id, status, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NULL, ?, ?, ?, ?, ?, ?)
+		`, id, h.WorkspaceID, h.UserID, rule.AccountID, destID, catID, invoiceID, rule.Type, rule.Amount, occurrence.Unix(), rule.Description, rule.ID, nextSeq, seriesID, status, now, now); err != nil {
 			return err
 		}
 		nextSeq++
@@ -1009,19 +1059,502 @@ func (h *TransactionHandler) generateRecurrenceProjection(tx *sql.Tx, rule recur
 	`, horizon, now, rule.ID, h.WorkspaceID)
 }
 
-func (h *TransactionHandler) insertRecurringRuleTx(tx *sql.Tx, ruleID string, tipo string, amountCents int64, dateUnix int64, descricao string, origemContaID string, destinoContaID string, categoriaID string, paymentStatus string, recurrenceFrequency string, now int64) error {
-	if err := ensureAccountInWorkspaceTx(tx, origemContaID, h.WorkspaceID); err != nil {
+// EnsureRecurringMaterialized materializa ocorrências recorrentes faltantes para
+// todas as séries ativas do workspace até horizonDate. Não liga job, boot ou
+// fallback; deve ser chamada explicitamente pelo caller.
+func EnsureRecurringMaterialized(db *sql.DB, workspaceID string, horizonDate time.Time) error {
+	if strings.TrimSpace(workspaceID) == "" {
+		return fmt.Errorf("workspace_id obrigatorio")
+	}
+	tx, err := db.Begin()
+	if err != nil {
 		return err
+	}
+	if err := EnsureRecurringMaterializedTx(tx, workspaceID, horizonDate, time.Now().Unix()); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
+// EnsureRecurringMaterializedTx é o motor central de materialização recorrente.
+// Para cada série ativa, identifica as regras ativas e os intervalos de
+// recurrence_sequence esperados. Gera apenas ocorrências faltantes, preservando
+// pagas, exceções manuais, faturas CLOSED/PAID e nunca sobrescrevendo transações
+// existentes.
+func EnsureRecurringMaterializedTx(tx *sql.Tx, workspaceID string, horizonDate time.Time, now int64) error {
+	if strings.TrimSpace(workspaceID) == "" {
+		return fmt.Errorf("workspace_id obrigatorio")
+	}
+	if tx == nil {
+		return fmt.Errorf("tx obrigatorio")
+	}
+
+	h := &TransactionHandler{DB: nil, WorkspaceID: workspaceID, UserID: ""}
+
+	// Backfill de regras legadas sem series_id: cria recurring_series e vincula
+	// regras/transações antes de iterar. Isso garante que regras antigas sejam
+	// materializadas sem exigir migration adicional.
+	rowsLegacy, err := tx.Query(`
+		SELECT id FROM recurring_rules
+		WHERE workspace_id = ? AND active = 1 AND (series_id IS NULL OR TRIM(series_id) = '')
+	`, workspaceID)
+	if err != nil {
+		return fmt.Errorf("listar regras legadas: %w", err)
+	}
+	var legacyRuleIDs []string
+	for rowsLegacy.Next() {
+		var ruleID string
+		if err := rowsLegacy.Scan(&ruleID); err != nil {
+			_ = rowsLegacy.Close()
+			return err
+		}
+		legacyRuleIDs = append(legacyRuleIDs, ruleID)
+	}
+	_ = rowsLegacy.Close()
+	for _, ruleID := range legacyRuleIDs {
+		if _, err := EnsureRecurringSeriesForRuleTx(tx, workspaceID, ruleID, now); err != nil {
+			return fmt.Errorf("backfill regra legada %s: %w", ruleID, err)
+		}
+	}
+
+	rows, err := tx.Query(`
+		SELECT id, total_occurrences
+		FROM recurring_series
+		WHERE workspace_id = ? AND active = 1
+		ORDER BY created_at ASC, id ASC
+	`, workspaceID)
+	if err != nil {
+		return fmt.Errorf("listar series: %w", err)
+	}
+	defer rows.Close()
+
+	type seriesInfo struct {
+		id               string
+		totalOccurrences sql.NullInt64
+	}
+	var seriesList []seriesInfo
+	for rows.Next() {
+		var s seriesInfo
+		if err := rows.Scan(&s.id, &s.totalOccurrences); err != nil {
+			return fmt.Errorf("scan series: %w", err)
+		}
+		seriesList = append(seriesList, s)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterar series: %w", err)
+	}
+
+	for _, s := range seriesList {
+		if err := h.ensureSeriesMaterializedTx(tx, workspaceID, s.id, s.totalOccurrences, horizonDate, now); err != nil {
+			return fmt.Errorf("materializar serie %s: %w", s.id, err)
+		}
+	}
+
+	return nil
+}
+
+type recurringMaterializedRule struct {
+	id                   string
+	accountID            string
+	destinationAccountID sql.NullString
+	categoryID           sql.NullString
+	trType               string
+	amount               int64
+	description          string
+	startDate            int64
+	frequency            string
+	defaultPaymentStatus string
+	effectiveStartSeq    int64
+	effectiveEndSeq      sql.NullInt64
+	totalOccurrences     sql.NullInt64
+	endDate              sql.NullInt64
+	dueDatePolicy        sql.NullString
+	dueDateOffsetDays    sql.NullInt64
+	contactID            sql.NullString
+	isBusiness           bool
+}
+
+func (h *TransactionHandler) loadActiveSeriesRulesTx(tx *sql.Tx, workspaceID, seriesID string) ([]recurringMaterializedRule, error) {
+	rows, err := tx.Query(`
+		SELECT
+		    r.id,
+		    r.account_id,
+		    r.destination_account_id,
+		    r.category_id,
+		    r.type,
+		    r.amount,
+		    r.description,
+		    r.start_date,
+		    r.frequency,
+		    r.default_payment_status,
+		    r.effective_start_sequence,
+		    r.effective_end_sequence,
+		    r.total_occurrences,
+		    r.end_date,
+		    r.due_date_policy,
+		    r.due_date_offset_days,
+		    r.contact_id,
+		    CASE WHEN w.type = 'business' THEN 1 ELSE 0 END AS is_business
+		FROM recurring_rules r
+		JOIN workspaces w ON w.id = r.workspace_id
+		WHERE r.workspace_id = ? AND r.series_id = ? AND r.active = 1
+		ORDER BY r.effective_start_sequence ASC, r.created_at ASC
+	`, workspaceID, seriesID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rules []recurringMaterializedRule
+	for rows.Next() {
+		var r recurringMaterializedRule
+		if err := rows.Scan(
+			&r.id,
+			&r.accountID,
+			&r.destinationAccountID,
+			&r.categoryID,
+			&r.trType,
+			&r.amount,
+			&r.description,
+			&r.startDate,
+			&r.frequency,
+			&r.defaultPaymentStatus,
+			&r.effectiveStartSeq,
+			&r.effectiveEndSeq,
+			&r.totalOccurrences,
+			&r.endDate,
+			&r.dueDatePolicy,
+			&r.dueDateOffsetDays,
+			&r.contactID,
+			&r.isBusiness,
+		); err != nil {
+			return nil, err
+		}
+		rules = append(rules, r)
+	}
+	return rules, rows.Err()
+}
+
+func (h *TransactionHandler) ensureSeriesMaterializedTx(tx *sql.Tx, workspaceID, seriesID string, seriesTotalOccurrences sql.NullInt64, horizonDate time.Time, now int64) error {
+	// Garante que regras legadas sem series_id sejam compatibilizadas.
+	// Primeiro tenta pela série; se não houver, busca uma regra ativa com o próprio
+	// id da série (caso de legacy onde series_id ainda não foi preenchido).
+	rowsRules, err := tx.Query(`
+		SELECT id, user_id FROM recurring_rules
+		WHERE workspace_id = ? AND series_id = ? AND active = 1
+		ORDER BY effective_start_sequence ASC
+		LIMIT 1
+	`, workspaceID, seriesID)
+	if err != nil {
+		return err
+	}
+	var firstRuleID, firstUserID string
+	var hasRule bool
+	if rowsRules.Next() {
+		hasRule = true
+		if err := rowsRules.Scan(&firstRuleID, &firstUserID); err != nil {
+			_ = rowsRules.Close()
+			return err
+		}
+	}
+	_ = rowsRules.Close()
+	if !hasRule {
+		rowsLegacy, err := tx.Query(`
+			SELECT id, user_id FROM recurring_rules
+			WHERE workspace_id = ? AND id = ? AND active = 1
+			ORDER BY effective_start_sequence ASC
+			LIMIT 1
+		`, workspaceID, seriesID)
+		if err != nil {
+			return err
+		}
+		if rowsLegacy.Next() {
+			hasRule = true
+			if err := rowsLegacy.Scan(&firstRuleID, &firstUserID); err != nil {
+				_ = rowsLegacy.Close()
+				return err
+			}
+		}
+		_ = rowsLegacy.Close()
+	}
+	if !hasRule {
+		return nil
+	}
+
+	// Regras legadas sem series_id: backfill via EnsureRecurringSeriesForRuleTx.
+	if _, err := EnsureRecurringSeriesForRuleTx(tx, workspaceID, firstRuleID, now); err != nil {
+		return err
+	}
+
+	rules, err := h.loadActiveSeriesRulesTx(tx, workspaceID, seriesID)
+	if err != nil {
+		return err
+	}
+	if len(rules) == 0 {
+		return nil
+	}
+
+	// Limite absoluto de sequence: total_occurrences da série, se houver.
+	var absoluteMaxSeq int64 = math.MaxInt64
+	if seriesTotalOccurrences.Valid && seriesTotalOccurrences.Int64 > 0 {
+		absoluteMaxSeq = seriesTotalOccurrences.Int64
+	}
+
+	horizonUnix := horizonDate.Unix()
+
+	// Cache de tipo de conta por account_id, evitando N+1 de SELECT type dentro do
+	// loop de sequences para regras que compartilham a mesma conta.
+	accountTypeCache := make(map[string]string)
+
+	// Para cada regra ativa, determinar o intervalo de sequences esperado.
+	for i, rule := range rules {
+		startSeq := rule.effectiveStartSeq
+		if startSeq < 1 {
+			startSeq = 1
+		}
+
+		endSeq := absoluteMaxSeq
+		if rule.effectiveEndSeq.Valid && rule.effectiveEndSeq.Int64 < endSeq {
+			endSeq = rule.effectiveEndSeq.Int64
+		}
+		// recurring_rules.total_occurrences é aplicado como limite adicional
+		// conservador. Como recurrence_sequence é global na série, tratamos o
+		// total_occurrences da regra como um teto de sequence global (mesma
+		// semântica do total_occurrences da série). Vence sempre o menor limite.
+		if rule.totalOccurrences.Valid && rule.totalOccurrences.Int64 > 0 && rule.totalOccurrences.Int64 < endSeq {
+			endSeq = rule.totalOccurrences.Int64
+		}
+		// Regras intermediárias terminam antes do início da próxima regra.
+		if i+1 < len(rules) {
+			nextStart := rules[i+1].effectiveStartSeq - 1
+			if nextStart < endSeq {
+				endSeq = nextStart
+			}
+		}
+
+		if startSeq > endSeq {
+			continue
+		}
+
+		for seq := startSeq; seq <= endSeq; seq++ {
+			dateUnix := recurrenceDateFromOffset(rule.startDate, rule.frequency, seq-startSeq)
+			// Normaliza para meia-noite UTC para comparação consistente com datas de
+			// calendário (evita diferenças de horário causadas por safeAddMonths).
+			dateUnix = dateAtMidnightUTC(dateUnix)
+
+			// Limites temporais.
+			if dateUnix > horizonUnix {
+				break
+			}
+			if rule.endDate.Valid && dateUnix > rule.endDate.Int64 {
+				break
+			}
+
+			exists, err := h.seriesSequenceExistsTx(tx, workspaceID, seriesID, seq)
+			if err != nil {
+				return err
+			}
+			if exists {
+				continue
+			}
+
+			if err := h.insertMaterializedOccurrenceTx(tx, workspaceID, firstUserID, seriesID, rule, seq, dateUnix, now, accountTypeCache); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func dateAtMidnightUTC(dateUnix int64) int64 {
+	t := time.Unix(dateUnix, 0).UTC()
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC).Unix()
+}
+
+func (h *TransactionHandler) seriesSequenceExistsTx(tx *sql.Tx, workspaceID, seriesID string, seq int64) (bool, error) {
+	var count int
+	if err := tx.QueryRow(`
+		SELECT COUNT(1)
+		FROM transactions
+		WHERE workspace_id = ? AND series_id = ? AND recurrence_sequence = ?
+	`, workspaceID, seriesID, seq).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (h *TransactionHandler) insertMaterializedOccurrenceTx(tx *sql.Tx, workspaceID, userID, seriesID string, rule recurringMaterializedRule, seq int64, dateUnix, now int64, accountTypeCache map[string]string) error {
+	accountType, ok := accountTypeCache[rule.accountID]
+	if !ok {
+		if err := tx.QueryRow(`SELECT type FROM accounts WHERE id = ? AND workspace_id = ?`, rule.accountID, workspaceID).Scan(&accountType); err != nil {
+			return fmt.Errorf("tipo da conta %s: %w", rule.accountID, err)
+		}
+		accountTypeCache[rule.accountID] = accountType
+	}
+
+	status := projectionStatusForRule(rule.defaultPaymentStatus)
+	isCreditCard := accountType == "CREDIT_CARD" && rule.trType == "EXPENSE"
+	if isCreditCard {
+		status = "paid"
+	}
+
+	var invoiceID interface{}
+	if isCreditCard {
+		invID, _, _, _, _, err := ensureOpenInvoiceTx(tx, workspaceID, rule.accountID, dateUnix)
+		if err != nil {
+			return fmt.Errorf("fatura para recorrencia: %w", err)
+		}
+		invoiceID = invID
+	}
+
+	var catID interface{}
+	if rule.categoryID.Valid && rule.categoryID.String != "" {
+		catID = rule.categoryID.String
+	}
+	var destID interface{}
+	if rule.destinationAccountID.Valid && rule.destinationAccountID.String != "" {
+		destID = rule.destinationAccountID.String
+	}
+	var contactID interface{}
+	var dueDate interface{}
+	if rule.isBusiness {
+		if rule.contactID.Valid && rule.contactID.String != "" {
+			contactID = rule.contactID.String
+		}
+		dueDate = calculateDueDateForRule(rule, dateUnix)
+	}
+	// Personal: contact_id e due_date permanecem NULL, independentemente dos
+	// metadados da regra.
+
+	id := uuid.NewString()
+	_, err := tx.Exec(`
+		INSERT INTO transactions (
+		    id, workspace_id, user_id, account_id, destination_account_id,
+		    category_id, invoice_id, type, amount, date, description,
+		    installment_number, total_installments, parent_id,
+		    recurring_rule_id, recurrence_sequence, series_id, status, due_date, contact_id,
+		    created_at, updated_at
+		) VALUES (
+		?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		    1, 1, NULL,
+		    ?, ?, ?, ?, ?, ?,
+		    ?, ?
+		)
+	`, id, workspaceID, userID, rule.accountID, destID, catID, invoiceID, rule.trType, rule.amount, dateUnix, rule.description,
+		rule.id, seq, seriesID, status, dueDate, contactID,
+		now, now)
+	if err != nil {
+		return fmt.Errorf("inserir ocorrencia seq %d: %w", seq, err)
+	}
+	return nil
+}
+
+func calculateDueDateForRule(rule recurringMaterializedRule, dateUnix int64) interface{} {
+	if !rule.dueDateOffsetDays.Valid || rule.dueDateOffsetDays.Int64 == 0 {
+		return nil
+	}
+	t := time.Unix(dateUnix, 0).UTC().AddDate(0, 0, int(rule.dueDateOffsetDays.Int64))
+	return dateAtMidnightUTC(t.Unix())
+}
+
+func (h *TransactionHandler) insertRecurringSeriesTx(tx *sql.Tx, seriesID string, totalOccurrences *int64, now int64) error {
+	return execOneTx(tx, `
+		INSERT INTO recurring_series (id, workspace_id, user_id, active, total_occurrences, created_at, updated_at)
+		VALUES (?, ?, ?, 1, ?, ?, ?)
+	`, seriesID, h.WorkspaceID, h.UserID, totalOccurrences, now, now)
+}
+
+func EnsureRecurringSeriesForRuleTx(tx *sql.Tx, workspaceID, recurringRuleID string, now int64) (string, error) {
+	if strings.TrimSpace(workspaceID) == "" || strings.TrimSpace(recurringRuleID) == "" {
+		return "", fmt.Errorf("workspace_id e recurring_rule_id são obrigatórios")
+	}
+
+	var existingSeriesID sql.NullString
+	var userID sql.NullString
+	var active int
+	var totalOccurrences sql.NullInt64
+	var createdAt sql.NullInt64
+	var updatedAt sql.NullInt64
+	if err := tx.QueryRow(`
+		SELECT series_id, user_id, active, total_occurrences, created_at, updated_at
+		FROM recurring_rules
+		WHERE id = ? AND workspace_id = ?
+	`, recurringRuleID, workspaceID).Scan(&existingSeriesID, &userID, &active, &totalOccurrences, &createdAt, &updatedAt); err != nil {
+		return "", fmt.Errorf("query recurring rule series: %w", err)
+	}
+
+	seriesID := strings.TrimSpace(existingSeriesID.String)
+	if !existingSeriesID.Valid || seriesID == "" {
+		seriesID = recurringRuleID
+		created := now
+		if createdAt.Valid && createdAt.Int64 > 0 {
+			created = createdAt.Int64
+		}
+		updated := now
+		if updatedAt.Valid && updatedAt.Int64 > 0 {
+			updated = updatedAt.Int64
+		}
+		if _, err := tx.Exec(`
+			INSERT OR IGNORE INTO recurring_series (id, workspace_id, user_id, active, total_occurrences, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, seriesID, workspaceID, nullStringInterface(userID), active, nullInt64Interface(totalOccurrences), created, updated); err != nil {
+			return "", fmt.Errorf("insert recurring series for rule: %w", err)
+		}
+		// Backfill de compatibilidade: preencher series_id NÃO é uma modificação de
+		// domínio do usuário, então preserva-se recurring_rules.updated_at (não é bumpado).
+		if _, err := tx.Exec(`
+			UPDATE recurring_rules
+			SET series_id = ?
+			WHERE id = ? AND workspace_id = ?
+			  AND (series_id IS NULL OR TRIM(series_id) = '')
+		`, seriesID, recurringRuleID, workspaceID); err != nil {
+			return "", fmt.Errorf("update recurring rule series_id: %w", err)
+		}
+	}
+
+	// Isolamento multi-tenant: valida a existência da série SOMENTE dentro do workspace
+	// informado. Nunca lê workspace_id da série (evita ler metadado de outro tenant) e o
+	// erro é genérico, sem expor workspace estrangeiro ou qualquer dado de outro tenant.
+	var seriesExistsInWorkspace int
+	if err := tx.QueryRow(`
+		SELECT COUNT(1)
+		FROM recurring_series
+		WHERE id = ? AND workspace_id = ?
+	`, seriesID, workspaceID).Scan(&seriesExistsInWorkspace); err != nil {
+		return "", fmt.Errorf("query recurring series: %w", err)
+	}
+	if seriesExistsInWorkspace == 0 {
+		return "", fmt.Errorf("recurring series não encontrada no workspace informado")
+	}
+
+	if _, err := tx.Exec(`
+		UPDATE transactions
+		SET series_id = ?
+		WHERE workspace_id = ?
+		  AND recurring_rule_id = ?
+		  AND (series_id IS NULL OR TRIM(series_id) = '')
+	`, seriesID, workspaceID, recurringRuleID); err != nil {
+		return "", fmt.Errorf("update recurring transactions series_id: %w", err)
+	}
+
+	return seriesID, nil
+}
+
+func (h *TransactionHandler) insertRecurringRuleTx(tx *sql.Tx, ruleID string, tipo string, amountCents int64, dateUnix int64, descricao string, origemContaID string, destinoContaID string, categoriaID string, paymentStatus string, recurrenceFrequency string, now int64) (string, error) {
+	if err := ensureAccountInWorkspaceTx(tx, origemContaID, h.WorkspaceID); err != nil {
+		return "", err
 	}
 	if err := ensureAccountInWorkspaceTx(tx, destinoContaID, h.WorkspaceID); err != nil {
-		return err
+		return "", err
 	}
 	if err := ensureCategoryInWorkspaceTx(tx, categoriaID, h.WorkspaceID); err != nil {
-		return err
+		return "", err
 	}
 	var accType string
 	if err := tx.QueryRow(`SELECT type FROM accounts WHERE id = ? AND workspace_id = ? AND archived_at IS NULL`, origemContaID, h.WorkspaceID).Scan(&accType); err != nil {
-		return err
+		return "", err
 	}
 
 	var catID interface{}
@@ -1033,11 +1566,18 @@ func (h *TransactionHandler) insertRecurringRuleTx(tx *sql.Tx, ruleID string, ti
 		destID = destinoContaID
 	}
 	ruleStatus := recurringRuleDefaultStatus(paymentStatus, accType, tipo)
+	seriesID := uuid.NewString()
+	if err := h.insertRecurringSeriesTx(tx, seriesID, nil, now); err != nil {
+		return "", err
+	}
 	err := execOneTx(tx, `
-		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, destination_account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-	`, ruleID, h.WorkspaceID, h.UserID, origemContaID, destID, catID, tipo, amountCents, descricao, dateUnix, recurrenceFrequency, ruleStatus, now, now)
-	return err
+		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, destination_account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, series_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+	`, ruleID, h.WorkspaceID, h.UserID, origemContaID, destID, catID, tipo, amountCents, descricao, dateUnix, recurrenceFrequency, ruleStatus, seriesID, now, now)
+	if err != nil {
+		return "", err
+	}
+	return seriesID, nil
 }
 
 func (h *TransactionHandler) lancamentosDataForCurrentRequest(r *http.Request, dateUnix int64, accountID string) (LancamentosData, bool) {
@@ -1702,6 +2242,13 @@ func nullStringInterface(v sql.NullString) interface{} {
 		return nil
 	}
 	return v.String
+}
+
+func nullInt64Interface(v sql.NullInt64) interface{} {
+	if !v.Valid {
+		return nil
+	}
+	return v.Int64
 }
 
 func ensureAccountInWorkspaceTx(tx *sql.Tx, accountID, workspaceID string) error {
@@ -3665,7 +4212,10 @@ type TransactionRow struct {
 	ListIndex                 int
 	DateLabel                 string
 	DisplayDateLabel          string
+	CompetenciaDateLabel      string
 	UsesDueDate               bool
+	HasDueDate                bool
+	DueDateDiffers            bool
 	TimeDisplay               string
 	DateInput                 string
 	Description               string
@@ -3700,6 +4250,8 @@ type TransactionRow struct {
 	PaidAtDisplay             string
 	ScheduledPaymentAt        *int64
 	ScheduledPaymentAtDisplay string
+	CompetenceDate            int64
+	DueDate                   *int64
 }
 
 type TransactionVisualStatus struct {
@@ -3871,14 +4423,15 @@ func (h *TransactionHandler) HandleDeletarTransacao(w http.ResponseWriter, r *ht
 	var ignoredDestAccountID sql.NullString
 	var ignoredStatus string
 	var ignoredAccType string
+	var recurrenceSequence sql.NullInt64
 
 	tLoad := time.Now()
 	err = tx.QueryRow(`
-		SELECT t.type, t.amount, t.account_id, t.destination_account_id, t.status, a.type, t.invoice_id, t.parent_id, t.recurring_rule_id, t.installment_number, t.total_installments, t.date
+		SELECT t.type, t.amount, t.account_id, t.destination_account_id, t.status, a.type, t.invoice_id, t.parent_id, t.recurring_rule_id, t.installment_number, t.total_installments, t.date, t.recurrence_sequence
 		FROM transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		WHERE t.id = ? AND t.workspace_id = ?
-	`, id, h.WorkspaceID).Scan(&ignoredType, &ignoredAmount, &ignoredAccountID, &ignoredDestAccountID, &ignoredStatus, &ignoredAccType, &invoiceID, &parentID, &recurringRuleID, &installmentNumber, &totalInstallments, &txDate)
+	`, id, h.WorkspaceID).Scan(&ignoredType, &ignoredAmount, &ignoredAccountID, &ignoredDestAccountID, &ignoredStatus, &ignoredAccType, &invoiceID, &parentID, &recurringRuleID, &installmentNumber, &totalInstallments, &txDate, &recurrenceSequence)
 	perfStep(reqID, "DeletarTransacao", "loadTransaction+workspace", time.Since(tLoad))
 	if err != nil {
 		log.Printf("find transaction error: %v", err)
@@ -3899,19 +4452,70 @@ func (h *TransactionHandler) HandleDeletarTransacao(w http.ResponseWriter, r *ht
 		rootID = parentID.String
 	}
 
+	now := time.Now().Unix()
+
+	// Delete scope=future em recorrência (Fase 6): caminho VERSIONADO.
+	// Encerra a regra ativa em current_sequence-1 e remove apenas ocorrências futuras
+	// deletáveis, preservando pagas, CLOSED/PAID e exceções manuais.
+	if scope == "future" && recurringRuleID.Valid {
+		if !recurrenceSequence.Valid || recurrenceSequence.Int64 <= 0 {
+			w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Recorrência sem sequência válida"}}`)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		_, affectedInvoiceIDs, err := h.deleteFutureRecurringSeriesVersionedTx(tx, recurringRuleID.String, recurrenceSequence.Int64, now)
+		if err != nil {
+			log.Printf("delete future recurring series error: %v", err)
+			w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Erro ao remover recorrências futuras"}}`)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		for _, invID := range dedupeIDs(affectedInvoiceIDs) {
+			if err := reconcileInvoiceStatusTx(tx, h.WorkspaceID, invID); err != nil {
+				log.Printf("reconcile invoice after future delete error: %v", err)
+				w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Erro ao reconciliar fatura"}}`)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			log.Printf("commit error: %v", err)
+			w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Erro interno ao consolidar remoção"}}`)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if returnInvoiceID != "" {
+			if err := h.renderInvoiceContextOOB(w, r, returnInvoiceID, fromSheet); err != nil {
+				log.Printf("render invoice ctx oob error: %v", err)
+				w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Erro ao atualizar fatura visualmente"}}`)
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			perfStep(reqID, "DeletarTransacao", "renderInvoiceContextOOB", time.Since(t0))
+			_ = h.renderLancamentosResumoOOB(w, r)
+			perfDBDelta(reqID, "DeletarTransacao", "total", dbB, dbSnap(h.DB))
+			perfStep(reqID, "DeletarTransacao", "responseTotal", time.Since(t0))
+			return
+		}
+		w.Header().Set("HX-Trigger", "refreshFinancials")
+		if !isLancamentosContext(r) {
+			if err := h.renderDashboardOOB(w); err != nil {
+				log.Printf("delete dashboard render error: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			_ = h.renderLancamentosResumoOOB(w, r)
+		}
+		perfDBDelta(reqID, "DeletarTransacao", "total", dbB, dbSnap(h.DB))
+		perfStep(reqID, "DeletarTransacao", "responseTotal", time.Since(t0))
+		return
+	}
+
 	selectionSQL := `SELECT t.id
 		FROM transactions t
 		WHERE t.workspace_id = ? AND t.id = ?`
 	args := []interface{}{h.WorkspaceID, id}
 	if scope == "future" {
 		switch {
-		case recurringRuleID.Valid:
-			selectionSQL = `SELECT t.id
-				FROM transactions t
-				WHERE t.workspace_id = ?
-				  AND t.recurring_rule_id = ?
-				  AND t.date >= ?`
-			args = []interface{}{h.WorkspaceID, recurringRuleID.String, txDate}
 		case totalInstallments > 1:
 			selectionSQL = `SELECT t.id
 				FROM transactions t
@@ -3967,7 +4571,6 @@ func (h *TransactionHandler) HandleDeletarTransacao(w http.ResponseWriter, r *ht
 	}
 	perfStep(reqID, "DeletarTransacao", "selectScopeIDs", time.Since(tSelect))
 
-	now := time.Now().Unix()
 	tReverse := time.Now()
 	for _, txID := range idsToDelete {
 		if err := h.reverseActiveConsumesForTransactionTx(tx, txID, now); err != nil {
@@ -3996,13 +4599,6 @@ func (h *TransactionHandler) HandleDeletarTransacao(w http.ResponseWriter, r *ht
 		if err := execOneTx(tx, `DELETE FROM recurring_rules WHERE id = ? AND workspace_id = ?`, recurringRuleID.String, h.WorkspaceID); err != nil {
 			log.Printf("delete recurring rule error: %v", err)
 			w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Erro ao remover regra recorrente"}}`)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-	} else if scope == "future" && recurringRuleID.Valid {
-		if err := execOneTx(tx, `UPDATE recurring_rules SET active = 0, updated_at = ? WHERE id = ? AND workspace_id = ?`, now, recurringRuleID.String, h.WorkspaceID); err != nil {
-			log.Printf("update recurring rule error: %v", err)
-			w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Erro ao desativar regra recorrente"}}`)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
@@ -4421,7 +5017,6 @@ func (h *TransactionHandler) HandleDetalheTransacao(w http.ResponseWriter, r *ht
 	data.TipoInicial = formTypeFromTransactionType(row.Type)
 	data.ValorPreenchido = "R$ " + row.AmountInput
 	data.DescricaoPreenchida = row.Description
-	data.DataPreenchida = row.DateInput
 	data.StatusInicial = status
 
 	var accountID string
@@ -4493,6 +5088,7 @@ func (h *TransactionHandler) HandleDetalheTransacao(w http.ResponseWriter, r *ht
 		}
 		data.IsSeriesEdit = totalInstallments > 1 || recurringRuleID.Valid
 
+		data.DataPreenchida = time.Unix(txDate, 0).Format("2006-01-02")
 		data.CompetenciaDisplay = formatDateLabelFromUnix(txDate)
 		if dueDate.Valid {
 			data.VencimentoDisplay = formatDateLabelFromUnix(dueDate.Int64)
@@ -4659,6 +5255,8 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 	if newStatus != "pending" {
 		newStatus = "paid"
 	}
+	_, dueDateProvided := r.Form["due_date"]
+	_, contactProvided := r.Form["contact_id"]
 	isBusiness := workspaceType(h.DB, h.WorkspaceID) == "business"
 	dueDateUnix, hasDueDate := int64(0), false
 	if isBusiness && newStatus != "paid" {
@@ -4727,21 +5325,26 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 	var invoiceID sql.NullString
 	var parentID sql.NullString
 	var recurringRuleID sql.NullString
+	var oldSeriesID sql.NullString
+	var oldRecurrenceSequence sql.NullInt64
 	var installmentNumber, totalInstallments int64
 	var oldAccType string
 	var oldAttachmentPath string
 	var oldDateUnix int64
+	var oldDueDate sql.NullInt64
+	var oldContactID sql.NullString
 
 	err = tx.QueryRow(`
-		SELECT t.type, t.amount, t.account_id, t.destination_account_id, t.status, t.category_id, t.invoice_id, t.parent_id, t.recurring_rule_id, t.installment_number, t.total_installments, a.type, t.attachment_path, t.date
+		SELECT t.type, t.amount, t.account_id, t.destination_account_id, t.status, t.category_id, t.invoice_id, t.parent_id, t.recurring_rule_id, t.series_id, t.recurrence_sequence, t.installment_number, t.total_installments, a.type, t.attachment_path, t.date, t.due_date, t.contact_id
 		FROM transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		WHERE t.id = ? AND t.workspace_id = ?
-	`, id, h.WorkspaceID).Scan(&oldTrType, &oldAmount, &oldAccountID, &oldDestAccountID, &oldPaymentStatus, &oldCategoryID, &invoiceID, &parentID, &recurringRuleID, &installmentNumber, &totalInstallments, &oldAccType, &oldAttachmentPath, &oldDateUnix)
+	`, id, h.WorkspaceID).Scan(&oldTrType, &oldAmount, &oldAccountID, &oldDestAccountID, &oldPaymentStatus, &oldCategoryID, &invoiceID, &parentID, &recurringRuleID, &oldSeriesID, &oldRecurrenceSequence, &installmentNumber, &totalInstallments, &oldAccType, &oldAttachmentPath, &oldDateUnix, &oldDueDate, &oldContactID)
 	if err != nil {
 		http.Error(w, "transação não encontrada", http.StatusNotFound)
 		return
 	}
+	wasRecurringOccurrence := recurringRuleID.Valid
 	if returnInvoiceID != "" && (!invoiceID.Valid || invoiceID.String != returnInvoiceID) {
 		http.Error(w, "fatura não autorizada ou não encontrada", http.StatusNotFound)
 		return
@@ -4754,6 +5357,16 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+	now := time.Now().Unix()
+	if recurringRuleID.Valid {
+		seriesID, err := EnsureRecurringSeriesForRuleTx(tx, h.WorkspaceID, recurringRuleID.String, now)
+		if err != nil {
+			log.Printf("ensure recurring series error: %v", err)
+			http.Error(w, "erro ao preparar recorrencia", http.StatusInternalServerError)
+			return
+		}
+		oldSeriesID = sql.NullString{String: seriesID, Valid: true}
+	}
 	scope := normalizeEditScope(r.URL.Query().Get("escopo"))
 	if scope == "" {
 		scope = normalizeEditScope(r.FormValue("escopo"))
@@ -4765,7 +5378,6 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 		scope = "single"
 	}
 
-	now := time.Now().Unix()
 	attachmentPath, err := h.persistTransactionUpload(r)
 	if err != nil {
 		http.Error(w, "arquivo inválido ou não permitido", http.StatusBadRequest)
@@ -4774,6 +5386,197 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 	if attachmentPath == "" {
 		attachmentPath = oldAttachmentPath
 	}
+	// scope=future em recorrência (Fase 4): caminho VERSIONADO. Faz split da regra em
+	// current_sequence, cria nova regra versionada (parent_rule_id + mesma series_id) e
+	// move apenas as ocorrências mutáveis. Intercepta ANTES do fluxo legado abaixo.
+	// scope=all versionado (Fase 5) é interceptado a seguir; este bloco só trata future.
+	if scope == "future" && recurringRuleID.Valid {
+		if !oldRecurrenceSequence.Valid || oldRecurrenceSequence.Int64 <= 0 {
+			http.Error(w, "recorrencia sem sequencia valida", http.StatusConflict)
+			return
+		}
+		_, touchedIDs, oldInvoiceIDs, err := h.splitFutureRecurringRuleTx(tx, recurringFutureSplitParams{
+			CurrentID:         id,
+			RuleID:            recurringRuleID.String,
+			SeriesID:          oldSeriesID.String,
+			CurrentSequence:   oldRecurrenceSequence.Int64,
+			Type:              tipo,
+			Amount:            newAmount,
+			Date:              newDate,
+			Description:       descricao,
+			Notes:             anotacoes,
+			AttachmentPath:    attachmentPath,
+			AccountID:         origemContaID,
+			DestinationID:     destinoContaID,
+			CategoryID:        categoriaID,
+			Status:            newStatus,
+			Frequency:         recorrencia,
+			DueDateUnix:       dueDateUnix,
+			HasDueDate:        hasDueDate,
+			DueDateProvided:   dueDateProvided,
+			ContactID:         contactID,
+			ContactProvided:   contactProvided,
+			IsBusiness:        isBusiness,
+			Now:               now,
+			AllowBoxOverdraft: allowBoxOverdraft,
+		})
+		if err != nil {
+			if errors.Is(err, errRecurringFutureSplitBlocked) || errors.Is(err, errPaidInvoiceMutationBlocked) {
+				http.Error(w, "não é possível alterar recorrencias futuras protegidas", http.StatusConflict)
+				return
+			}
+			if errors.Is(err, errBoxReserveInsufficient) {
+				http.Error(w, "saldo reservado insuficiente na reserva vinculada; confirme excedente para continuar", http.StatusUnprocessableEntity)
+				return
+			}
+			if errors.Is(err, errBoxCategoryAmbiguous) {
+				http.Error(w, "há mais de uma reserva vinculada para a categoria informada", http.StatusUnprocessableEntity)
+				return
+			}
+			log.Printf("split future recurring rule error: %v", err)
+			http.Error(w, "erro ao atualizar recorrencias futuras", http.StatusInternalServerError)
+			return
+		}
+		if err := reconcileInvoicesForTransactionsTx(tx, h.WorkspaceID, touchedIDs); err != nil {
+			http.Error(w, "erro ao reconcilizar fatura", http.StatusInternalServerError)
+			return
+		}
+		for _, oldInvID := range dedupeIDs(oldInvoiceIDs) {
+			if err := reconcileInvoiceStatusTx(tx, h.WorkspaceID, oldInvID); err != nil {
+				http.Error(w, "erro ao reconcilizar fatura anterior", http.StatusInternalServerError)
+				return
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if returnInvoiceID != "" {
+			if err := h.renderInvoiceContextOOB(w, r, returnInvoiceID, true); err != nil {
+				log.Printf("render invoice after future recurring split error: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+			return
+		}
+		if isHXFromContas(r) {
+			respondContasRefreshAndCloseSheet(w)
+			return
+		}
+		h.respondBroadEditAndCloseSheet(w, r)
+		return
+	}
+
+	// scope=all em recorrência (Fase 5): caminho VERSIONADO quando data e frequência
+	// NÃO mudam. A detecção DEVE acontecer ANTES do bloco legado abaixo, pois o legado
+	// chama updateRecurringRule que reescreve start_date/frequency e inviabilizaria a
+	// comparação. Se data/frequência mudarem, cai no fluxo legado que recalcula datas.
+	// A comparação de data usa dia UTC (não timestamp exato), pois parseDate normaliza
+	// para meio-dia UTC enquanto seeds/testes podem usar meia-noite UTC. Além disso,
+	// só usa o caminho versionado quando a série já está completamente materializada;
+	// caso contrário cai no legado, que regenera projeções sem perder o histórico.
+	useVersionedAll := false
+	if scope == "all" && recurringRuleID.Valid {
+		var ruleStartDate int64
+		var ruleFrequency string
+		var totalOccurrences sql.NullInt64
+		if scanErr := tx.QueryRow(`
+			SELECT start_date, frequency, total_occurrences
+			FROM recurring_rules
+			WHERE id = ? AND workspace_id = ?
+		`, recurringRuleID.String, h.WorkspaceID).Scan(&ruleStartDate, &ruleFrequency, &totalOccurrences); scanErr != nil {
+			log.Printf("load recurring rule for all scope error: %v", scanErr)
+			http.Error(w, "erro ao carregar recorrencia", http.StatusInternalServerError)
+			return
+		}
+		ruleDay := time.Unix(ruleStartDate, 0).UTC().Format("2006-01-02")
+		newDay := time.Unix(newDate, 0).UTC().Format("2006-01-02")
+		if ruleDay == newDay && ruleFrequency == recorrencia {
+			useVersionedAll = true
+			if totalOccurrences.Valid {
+				var materializedCount int64
+				if countErr := tx.QueryRow(`
+					SELECT COUNT(1)
+					FROM transactions
+					WHERE workspace_id = ? AND series_id = ?
+				`, h.WorkspaceID, oldSeriesID.String).Scan(&materializedCount); countErr != nil {
+					log.Printf("count materialized occurrences error: %v", countErr)
+					http.Error(w, "erro ao contar ocorrências", http.StatusInternalServerError)
+					return
+				}
+				if materializedCount < totalOccurrences.Int64 {
+					useVersionedAll = false
+				}
+			}
+		}
+	}
+	if useVersionedAll {
+		touchedIDs, oldInvoiceIDs, err := h.updateAllRecurringSeriesVersionedTx(tx, recurringAllVersionedParams{
+			RuleID:            recurringRuleID.String,
+			SeriesID:          oldSeriesID.String,
+			Type:              tipo,
+			Amount:            newAmount,
+			Description:       descricao,
+			Notes:             anotacoes,
+			AttachmentPath:    attachmentPath,
+			AccountID:         origemContaID,
+			DestinationID:     destinoContaID,
+			CategoryID:        categoriaID,
+			Status:            newStatus,
+			DueDateUnix:       dueDateUnix,
+			HasDueDate:        hasDueDate,
+			DueDateProvided:   dueDateProvided,
+			ContactID:         contactID,
+			ContactProvided:   contactProvided,
+			IsBusiness:        isBusiness,
+			Now:               now,
+			AllowBoxOverdraft: allowBoxOverdraft,
+		})
+		if err != nil {
+			if errors.Is(err, errPaidInvoiceMutationBlocked) {
+				http.Error(w, "não é possível alterar lançamentos de fatura paga", http.StatusConflict)
+				return
+			}
+			if errors.Is(err, errBoxReserveInsufficient) {
+				http.Error(w, "saldo reservado insuficiente na reserva vinculada; confirme excedente para continuar", http.StatusUnprocessableEntity)
+				return
+			}
+			if errors.Is(err, errBoxCategoryAmbiguous) {
+				http.Error(w, "há mais de uma reserva vinculada para a categoria informada", http.StatusUnprocessableEntity)
+				return
+			}
+			log.Printf("update all recurring series versioned error: %v", err)
+			http.Error(w, "erro ao atualizar série", http.StatusInternalServerError)
+			return
+		}
+		if err := reconcileInvoicesForTransactionsTx(tx, h.WorkspaceID, touchedIDs); err != nil {
+			http.Error(w, "erro ao reconcilizar fatura", http.StatusInternalServerError)
+			return
+		}
+		for _, oldInvID := range dedupeIDs(oldInvoiceIDs) {
+			if err := reconcileInvoiceStatusTx(tx, h.WorkspaceID, oldInvID); err != nil {
+				http.Error(w, "erro ao reconcilizar fatura anterior", http.StatusInternalServerError)
+				return
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if returnInvoiceID != "" {
+			if err := h.renderInvoiceContextOOB(w, r, returnInvoiceID, true); err != nil {
+				log.Printf("render invoice after all recurring update error: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+			return
+		}
+		if isHXFromContas(r) {
+			respondContasRefreshAndCloseSheet(w)
+			return
+		}
+		h.respondBroadEditAndCloseSheet(w, r)
+		return
+	}
+
 	if scope != "single" && (totalInstallments > 1 || recurringRuleID.Valid) {
 		if recurringRuleID.Valid {
 			if err := h.updateRecurringRule(tx, recurringRuleID.String, tipo, newAmount, newDate, descricao, origemContaID, destinoContaID, categoriaID, newStatus, recorrencia, now); err != nil {
@@ -4834,6 +5637,10 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 				}
 			}
 		case "all":
+			// FLUXO LEGADO: scope=all cai aqui apenas quando data ou frequência mudaram
+			// (ou quando não é recorrência). Nesses casos recalculamos datas das
+			// ocorrências mutáveis. O caminho versionado (data/freq inalteradas) é
+			// interceptado ANTES deste bloco.
 			if totalInstallments > 1 {
 				if err := h.updateAllTransactionSeries(tx, id, parentID, tipo, newAmount, newDate, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, dueDateUnix, hasDueDate, contactID, now, allowBoxOverdraft); err != nil {
 					if errors.Is(err, errPaidInvoiceMutationBlocked) {
@@ -4885,6 +5692,7 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 			}
 			if err := h.generateRecurrenceProjection(tx, recurrenceProjectionRule{
 				ID:                   recurringRuleID.String,
+				SeriesID:             oldSeriesID.String,
 				AccountID:            origemContaID,
 				DestinationAccountID: destinoContaID,
 				CategoryID:           categoriaID,
@@ -4924,15 +5732,18 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 		return
 	}
 
+	var newRecurringProjectionRule *recurrenceProjectionRule
 	if fixo && !recurringRuleID.Valid {
 		ruleID := uuid.NewString()
-		if err := h.insertRecurringRuleTx(tx, ruleID, tipo, newAmount, newDate, descricao, origemContaID, destinoContaID, categoriaID, newStatus, recorrencia, now); err != nil {
+		seriesID, err := h.insertRecurringRuleTx(tx, ruleID, tipo, newAmount, newDate, descricao, origemContaID, destinoContaID, categoriaID, newStatus, recorrencia, now)
+		if err != nil {
 			log.Printf("update transaction series error: %v", err)
 			http.Error(w, "erro ao criar recorrencia", http.StatusInternalServerError)
 			return
 		}
-		if err := h.generateRecurrenceProjection(tx, recurrenceProjectionRule{
+		newRecurringProjectionRule = &recurrenceProjectionRule{
 			ID:                   ruleID,
+			SeriesID:             seriesID,
 			AccountID:            origemContaID,
 			DestinationAccountID: destinoContaID,
 			CategoryID:           categoriaID,
@@ -4942,11 +5753,9 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 			StartDate:            newDate,
 			Frequency:            recorrencia,
 			DefaultPaymentStatus: strings.ToUpper(newStatus),
-		}, now); err != nil {
-			http.Error(w, "erro ao criar recorrencia", http.StatusInternalServerError)
-			return
 		}
 		recurringRuleID = sql.NullString{String: ruleID, Valid: true}
+		oldSeriesID = sql.NullString{String: seriesID, Valid: true}
 	}
 
 	oldDest := ""
@@ -4972,10 +5781,14 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 	dueDateRef := interface{}(nil)
 	if hasDueDate {
 		dueDateRef = dueDateUnix
+	} else if wasRecurringOccurrence && isBusiness && !dueDateProvided && newStatus != "paid" && oldDueDate.Valid {
+		dueDateRef = oldDueDate.Int64
 	}
 	contactRef := interface{}(nil)
 	if contactID != "" {
 		contactRef = contactID
+	} else if wasRecurringOccurrence && isBusiness && !contactProvided && oldContactID.Valid {
+		contactRef = oldContactID.String
 	}
 
 	var newAccType string
@@ -5023,14 +5836,32 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 		invoiceID = sql.NullString{String: invID, Valid: true}
 	}
 
+	recurrenceSeqRef := recurrenceSequence(1, recurringRuleID.Valid)
+	if wasRecurringOccurrence && oldRecurrenceSequence.Valid {
+		recurrenceSeqRef = oldRecurrenceSequence.Int64
+	}
+	seriesIDRef := nullStringInterface(oldSeriesID)
+	isRecurringException := 0
+	var recurringExceptionReason interface{}
+	if wasRecurringOccurrence {
+		isRecurringException = 1
+		recurringExceptionReason = "manual_edit"
+	}
+
 	err = execOneTx(tx, `
 		UPDATE transactions
-		SET type = ?, account_id = ?, destination_account_id = ?, amount = ?, date = ?, description = ?, notes = ?, attachment_path = ?, category_id = ?, status = ?, due_date = ?, contact_id = ?, invoice_id = ?, recurring_rule_id = ?, recurrence_sequence = ?, updated_at = ?
+		SET type = ?, account_id = ?, destination_account_id = ?, amount = ?, date = ?, description = ?, notes = ?, attachment_path = ?, category_id = ?, status = ?, due_date = ?, contact_id = ?, invoice_id = ?, recurring_rule_id = ?, recurrence_sequence = ?, series_id = ?, is_recurring_exception = ?, recurring_exception_reason = ?, updated_at = ?
 		WHERE id = ? AND workspace_id = ?
-	`, tipo, origemContaID, destID, newAmount, newDate, descricao, anotacoes, attachmentPath, catID, newStatus, dueDateRef, contactRef, invoiceID, nullStringInterface(recurringRuleID), recurrenceSequence(1, recurringRuleID.Valid), now, id, h.WorkspaceID)
+	`, tipo, origemContaID, destID, newAmount, newDate, descricao, anotacoes, attachmentPath, catID, newStatus, dueDateRef, contactRef, invoiceID, nullStringInterface(recurringRuleID), recurrenceSeqRef, seriesIDRef, isRecurringException, recurringExceptionReason, now, id, h.WorkspaceID)
 	if err != nil {
 		http.Error(w, "erro ao atualizar", http.StatusInternalServerError)
 		return
+	}
+	if newRecurringProjectionRule != nil {
+		if err := h.generateRecurrenceProjection(tx, *newRecurringProjectionRule, now); err != nil {
+			http.Error(w, "erro ao criar recorrencia", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	if newStatus == "paid" {
@@ -5066,6 +5897,21 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 
 	if isHXFromContas(r) {
 		respondContasRefreshAndCloseSheet(w)
+		return
+	}
+
+	dateChanged := oldDateUnix != newDate
+	if !dateChanged {
+		oldHasDueDate := oldDueDate.Valid
+		if oldHasDueDate != hasDueDate {
+			dateChanged = true
+		} else if hasDueDate && oldDueDate.Int64 != dueDateUnix {
+			dateChanged = true
+		}
+	}
+
+	if dateChanged {
+		h.respondBroadEditAndCloseSheet(w, r)
 		return
 	}
 
@@ -5278,6 +6124,693 @@ func (h *TransactionHandler) updateRecurringRule(tx *sql.Tx, ruleID string, tipo
 	return err
 }
 
+type recurringFutureSplitParams struct {
+	CurrentID         string
+	RuleID            string
+	SeriesID          string
+	CurrentSequence   int64
+	Type              string
+	Amount            int64
+	Date              int64
+	Description       string
+	Notes             string
+	AttachmentPath    string
+	AccountID         string
+	DestinationID     string
+	CategoryID        string
+	Status            string
+	Frequency         string
+	DueDateUnix       int64
+	HasDueDate        bool
+	DueDateProvided   bool
+	ContactID         string
+	ContactProvided   bool
+	IsBusiness        bool
+	Now               int64
+	AllowBoxOverdraft bool
+}
+
+type recurringFutureSplitItem struct {
+	id                 string
+	trType             string
+	amount             int64
+	accountID          string
+	destinationID      sql.NullString
+	categoryID         sql.NullString
+	paymentStatus      string
+	accountType        string
+	dateUnix           int64
+	invoiceID          sql.NullString
+	invoiceStatus      sql.NullString
+	dueDate            sql.NullInt64
+	contactID          sql.NullString
+	recurrenceSequence int64
+	isException        int
+}
+
+func recurringFutureSplitItemMutable(item recurringFutureSplitItem) bool {
+	if item.isException != 0 {
+		return false
+	}
+	if item.invoiceID.Valid {
+		if !item.invoiceStatus.Valid {
+			return false
+		}
+		status := strings.ToUpper(strings.TrimSpace(item.invoiceStatus.String))
+		return status != "CLOSED" && status != "PAID"
+	}
+	return item.paymentStatus != "paid"
+}
+
+func recurringFutureSplitDueDateRef(item recurringFutureSplitItem, hasDueDate bool, dueDateUnix int64, dueDateProvided bool, isBusiness bool, newStatus string) interface{} {
+	if hasDueDate {
+		return dueDateUnix
+	}
+	if isBusiness && !dueDateProvided && newStatus != "paid" && item.dueDate.Valid {
+		return item.dueDate.Int64
+	}
+	return nil
+}
+
+func recurringFutureSplitContactRef(item recurringFutureSplitItem, contactID string, contactProvided bool, isBusiness bool) interface{} {
+	if contactID != "" {
+		return contactID
+	}
+	if isBusiness && !contactProvided && item.contactID.Valid {
+		return item.contactID.String
+	}
+	return nil
+}
+
+type recurringAllVersionedParams struct {
+	RuleID            string
+	SeriesID          string
+	Type              string
+	Amount            int64
+	Description       string
+	Notes             string
+	AttachmentPath    string
+	AccountID         string
+	DestinationID     string
+	CategoryID        string
+	Status            string
+	DueDateUnix       int64
+	HasDueDate        bool
+	DueDateProvided   bool
+	ContactID         string
+	ContactProvided   bool
+	IsBusiness        bool
+	Now               int64
+	AllowBoxOverdraft bool
+}
+
+type recurringAllVersionedItem struct {
+	id                 string
+	trType             string
+	amount             int64
+	accountID          string
+	destinationID      sql.NullString
+	categoryID         sql.NullString
+	paymentStatus      string
+	accountType        string
+	dateUnix           int64
+	invoiceID          sql.NullString
+	invoiceStatus      sql.NullString
+	dueDate            sql.NullInt64
+	contactID          sql.NullString
+	recurrenceSequence int64
+	isException        int
+}
+
+func recurringAllVersionedItemMutable(item recurringAllVersionedItem) bool {
+	if item.isException != 0 {
+		return false
+	}
+	if item.invoiceID.Valid {
+		if !item.invoiceStatus.Valid {
+			return false
+		}
+		status := strings.ToUpper(strings.TrimSpace(item.invoiceStatus.String))
+		return status != "CLOSED" && status != "PAID"
+	}
+	return strings.ToLower(strings.TrimSpace(item.paymentStatus)) != "paid"
+}
+
+// updateAllRecurringSeriesVersionedTx implementa scope=all versionado SEGURO (Fase 5).
+//
+// Semântica:
+// - Não cria nova regra.
+// - Não consolida cadeia de regras.
+// - Não encerra regras ativas intermediárias.
+// - Não chama generateRecurrenceProjection.
+// - Não limpa projeções futuras.
+// - Atualiza apenas regras ativas (active=1) da mesma series_id, preservando
+//   series_id, parent_rule_id, effective_start_sequence, effective_end_sequence,
+//   active, start_date, starts_at, frequency e total_occurrences.
+// - Atualiza apenas transações materializadas mutáveis da série, preservando:
+//   is_recurring_exception=1, transações pagas sem fatura, faturas CLOSED/PAID.
+// - Workspace isolation: todas as queries usam workspace_id.
+// - Personal: contact_id sempre NULL.
+// - Business: contact_id/due_date seguem payload; omitidos, preservam valores existentes.
+//
+// Deve ser chamado apenas quando data e frequência NÃO mudaram em relação à regra
+// atual; caso contrário o handler cai no fluxo legado.
+func (h *TransactionHandler) updateAllRecurringSeriesVersionedTx(tx *sql.Tx, params recurringAllVersionedParams) ([]string, []string, error) {
+	if err := ensureAccountInWorkspaceTx(tx, params.AccountID, h.WorkspaceID); err != nil {
+		return nil, nil, err
+	}
+	if err := ensureAccountInWorkspaceTx(tx, params.DestinationID, h.WorkspaceID); err != nil {
+		return nil, nil, err
+	}
+	if err := ensureCategoryInWorkspaceTx(tx, params.CategoryID, h.WorkspaceID); err != nil {
+		return nil, nil, err
+	}
+	if err := ensureContactInWorkspaceTx(tx, params.ContactID, h.WorkspaceID); err != nil {
+		return nil, nil, err
+	}
+
+	var newAccType string
+	if err := tx.QueryRow(`SELECT type FROM accounts WHERE id = ? AND workspace_id = ?`, params.AccountID, h.WorkspaceID).Scan(&newAccType); err != nil {
+		return nil, nil, err
+	}
+	newStatus := params.Status
+	if params.Type == "EXPENSE" && newAccType == "CREDIT_CARD" {
+		newStatus = "paid"
+	}
+
+	// Garante series_id sem vazar tenant (Fase 3.1.1).
+	seriesID, err := EnsureRecurringSeriesForRuleTx(tx, h.WorkspaceID, params.RuleID, params.Now)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var catID interface{}
+	if params.CategoryID != "" {
+		catID = params.CategoryID
+	}
+	var destID interface{}
+	if params.DestinationID != "" {
+		destID = params.DestinationID
+	}
+	ruleStatus := strings.ToUpper(newStatus)
+	ruleContactRef := interface{}(nil)
+	if params.IsBusiness && params.ContactID != "" {
+		ruleContactRef = params.ContactID
+	}
+
+	// Atualiza apenas regras ATIVAS da série, preservando a estrutura versionada.
+	if _, err := tx.Exec(`
+		UPDATE recurring_rules
+		SET account_id = ?,
+		    destination_account_id = ?,
+		    category_id = ?,
+		    type = ?,
+		    amount = ?,
+		    description = ?,
+		    default_payment_status = ?,
+		    contact_id = ?,
+		    updated_at = ?
+		WHERE workspace_id = ?
+		  AND series_id = ?
+		  AND active = 1
+	`, params.AccountID, destID, catID, params.Type, params.Amount, params.Description, ruleStatus, ruleContactRef, params.Now, h.WorkspaceID, seriesID); err != nil {
+		return nil, nil, fmt.Errorf("update active recurring rules: %w", err)
+	}
+
+	rows, err := tx.Query(`
+		SELECT t.id, t.type, t.amount, t.account_id, t.destination_account_id,
+		       t.category_id, t.status, a.type, t.date, t.invoice_id, i.status,
+		       t.due_date, t.contact_id, t.recurrence_sequence,
+		       COALESCE(t.is_recurring_exception, 0)
+		FROM transactions t
+		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		LEFT JOIN invoices i ON i.id = t.invoice_id AND i.account_id = t.account_id
+		WHERE t.workspace_id = ?
+		  AND t.series_id = ?
+		ORDER BY t.recurrence_sequence ASC
+	`, h.WorkspaceID, seriesID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var items []recurringAllVersionedItem
+	var oldInvoiceIDs []string
+	for rows.Next() {
+		var item recurringAllVersionedItem
+		if err := rows.Scan(&item.id, &item.trType, &item.amount, &item.accountID, &item.destinationID, &item.categoryID, &item.paymentStatus, &item.accountType, &item.dateUnix, &item.invoiceID, &item.invoiceStatus, &item.dueDate, &item.contactID, &item.recurrenceSequence, &item.isException); err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		items = append(items, item)
+		if item.invoiceID.Valid && item.invoiceID.String != "" {
+			oldInvoiceIDs = append(oldInvoiceIDs, item.invoiceID.String)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, err
+	}
+
+	touchedIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		if !recurringAllVersionedItemMutable(item) {
+			continue
+		}
+
+		oldDest := ""
+		if item.destinationID.Valid {
+			oldDest = item.destinationID.String
+		}
+		if strings.ToLower(strings.TrimSpace(item.paymentStatus)) == "paid" {
+			if err := services.ReverseBalanceEffect(tx, h.WorkspaceID, item.trType, item.accountType, item.amount, item.accountID, oldDest, params.Now); err != nil {
+				return nil, nil, err
+			}
+		}
+		if err := h.adjustReserveForSingleTransactionUpdateTx(tx, item.id, item.trType, item.categoryID, item.amount, params.Type, params.CategoryID, params.Amount, item.dateUnix, params.Now, params.AllowBoxOverdraft); err != nil {
+			return nil, nil, err
+		}
+
+		dueDateRef := interface{}(nil)
+		if params.HasDueDate {
+			dueDateRef = params.DueDateUnix
+		} else if params.IsBusiness && !params.DueDateProvided && newStatus != "paid" && item.dueDate.Valid {
+			dueDateRef = item.dueDate.Int64
+		}
+		contactRef := interface{}(nil)
+		if params.ContactID != "" {
+			contactRef = params.ContactID
+		} else if params.IsBusiness && !params.ContactProvided && item.contactID.Valid {
+			contactRef = item.contactID.String
+		}
+
+		if err := execOneTx(tx, `
+			UPDATE transactions
+			SET type = ?,
+			    account_id = ?,
+			    destination_account_id = ?,
+			    amount = ?,
+			    description = ?,
+			    notes = ?,
+			    attachment_path = ?,
+			    category_id = ?,
+			    status = ?,
+			    due_date = ?,
+			    contact_id = ?,
+			    recurring_rule_id = (
+			        SELECT id FROM recurring_rules
+			        WHERE workspace_id = ? AND series_id = ? AND active = 1
+			          AND effective_start_sequence <= ?
+			          AND (effective_end_sequence IS NULL OR effective_end_sequence >= ?)
+			        ORDER BY effective_start_sequence DESC
+			        LIMIT 1
+			    ),
+			    updated_at = ?
+			WHERE id = ? AND workspace_id = ?
+		`, params.Type, params.AccountID, destID, params.Amount, params.Description, params.Notes, params.AttachmentPath, catID, newStatus, dueDateRef, contactRef, h.WorkspaceID, seriesID, item.recurrenceSequence, item.recurrenceSequence, params.Now, item.id, h.WorkspaceID); err != nil {
+			return nil, nil, err
+		}
+
+		if newStatus == "paid" {
+			if err := services.ApplyBalanceEffect(tx, h.WorkspaceID, params.Type, newAccType, newStatus, params.Amount, params.AccountID, params.DestinationID, params.Now); err != nil {
+				return nil, nil, err
+			}
+		}
+		touchedIDs = append(touchedIDs, item.id)
+	}
+
+	return touchedIDs, oldInvoiceIDs, nil
+}
+
+// deleteFutureRecurringSeriesVersionedTx implementa delete scope=future versionado (Fase 6).
+//
+// Semântica:
+// - Garante series_id via EnsureRecurringSeriesForRuleTx.
+// - Encontra a regra ativa da mesma series_id/workspace que cobre currentSequence.
+// - Se não houver regra ativa cobrindo currentSequence, retorna erro sem deletar nada.
+// - Encerra essa regra em currentSequence-1 e desativa (active=0).
+// - Apaga fisicamente apenas transações futuras deletáveis (recurrence_sequence >= currentSequence),
+//   preservando pagas sem fatura, faturas CLOSED/PAID e exceções manuais.
+// - Reconcilia faturas OPEN afetadas.
+// - Não consolida cadeia de regras; não apaga regras antigas encerradas.
+func (h *TransactionHandler) deleteFutureRecurringSeriesVersionedTx(tx *sql.Tx, ruleID string, currentSequence int64, now int64) ([]string, []string, error) {
+	if currentSequence <= 0 {
+		return nil, nil, fmt.Errorf("sequencia invalida")
+	}
+
+	seriesID, err := EnsureRecurringSeriesForRuleTx(tx, h.WorkspaceID, ruleID, now)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var activeRuleID string
+	var effectiveStartSequence int64
+	var effectiveEndSequence sql.NullInt64
+	if err := tx.QueryRow(`
+		SELECT id, effective_start_sequence, effective_end_sequence
+		FROM recurring_rules
+		WHERE workspace_id = ? AND series_id = ? AND active = 1
+		  AND effective_start_sequence <= ?
+		  AND (effective_end_sequence IS NULL OR effective_end_sequence >= ?)
+		ORDER BY effective_start_sequence DESC
+		LIMIT 1
+	`, h.WorkspaceID, seriesID, currentSequence, currentSequence).Scan(&activeRuleID, &effectiveStartSequence, &effectiveEndSequence); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil, fmt.Errorf("nenhuma regra ativa cobre a sequencia atual")
+		}
+		return nil, nil, err
+	}
+
+	newEndSequence := currentSequence - 1
+	// Quando current_sequence coincide com o início efetivo da regra, newEndSequence
+	// ficaria menor que effective_start_sequence. Nesse caso usamos 0 como convenção
+	// para indicar que a regra foi esvaziada antes da primeira ocorrência válida
+	// (ex.: delete future a partir de current_sequence=1). 0 NÃO significa série sem
+	// limite; regras sem limite continuam representadas por effective_end_sequence IS NULL.
+	if newEndSequence < effectiveStartSequence {
+		newEndSequence = 0
+	}
+	if _, err := tx.Exec(`
+		UPDATE recurring_rules
+		SET effective_end_sequence = ?,
+		    active = 0,
+		    updated_at = ?
+		WHERE id = ? AND workspace_id = ? AND series_id = ?
+	`, newEndSequence, now, activeRuleID, h.WorkspaceID, seriesID); err != nil {
+		return nil, nil, fmt.Errorf("encerrar regra ativa: %w", err)
+	}
+
+	rows, err := tx.Query(`
+		SELECT t.id, t.type, t.amount, t.account_id, t.destination_account_id,
+		       t.category_id, t.status, a.type, t.date, t.invoice_id, i.status,
+		       t.due_date, t.contact_id, t.recurrence_sequence,
+		       COALESCE(t.is_recurring_exception, 0)
+		FROM transactions t
+		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		LEFT JOIN invoices i ON i.id = t.invoice_id AND i.account_id = t.account_id
+		WHERE t.workspace_id = ?
+		  AND t.series_id = ?
+		  AND t.recurrence_sequence >= ?
+		ORDER BY t.recurrence_sequence ASC
+	`, h.WorkspaceID, seriesID, currentSequence)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var items []recurringAllVersionedItem
+	for rows.Next() {
+		var item recurringAllVersionedItem
+		if err := rows.Scan(&item.id, &item.trType, &item.amount, &item.accountID, &item.destinationID, &item.categoryID, &item.paymentStatus, &item.accountType, &item.dateUnix, &item.invoiceID, &item.invoiceStatus, &item.dueDate, &item.contactID, &item.recurrenceSequence, &item.isException); err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, err
+	}
+
+	var idsToDelete []string
+	var oldInvoiceIDs []string
+	for _, item := range items {
+		if !recurringAllVersionedItemMutable(item) {
+			continue
+		}
+		idsToDelete = append(idsToDelete, item.id)
+		if item.invoiceID.Valid && item.invoiceID.String != "" {
+			oldInvoiceIDs = append(oldInvoiceIDs, item.invoiceID.String)
+		}
+	}
+
+	if len(idsToDelete) > 0 {
+		if err := h.deleteTransactionsByIDsTx(tx, idsToDelete, now); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return idsToDelete, dedupeIDs(oldInvoiceIDs), nil
+}
+
+func (h *TransactionHandler) splitFutureRecurringRuleTx(tx *sql.Tx, params recurringFutureSplitParams) (string, []string, []string, error) {
+	if params.CurrentSequence <= 0 {
+		return "", nil, nil, errRecurringFutureSplitBlocked
+	}
+	if err := ensureAccountInWorkspaceTx(tx, params.AccountID, h.WorkspaceID); err != nil {
+		return "", nil, nil, err
+	}
+	if err := ensureAccountInWorkspaceTx(tx, params.DestinationID, h.WorkspaceID); err != nil {
+		return "", nil, nil, err
+	}
+	if err := ensureCategoryInWorkspaceTx(tx, params.CategoryID, h.WorkspaceID); err != nil {
+		return "", nil, nil, err
+	}
+	if err := ensureContactInWorkspaceTx(tx, params.ContactID, h.WorkspaceID); err != nil {
+		return "", nil, nil, err
+	}
+
+	var newAccType string
+	if err := tx.QueryRow(`SELECT type FROM accounts WHERE id = ? AND workspace_id = ?`, params.AccountID, h.WorkspaceID).Scan(&newAccType); err != nil {
+		return "", nil, nil, err
+	}
+	newStatus := params.Status
+	if params.Type == "EXPENSE" && newAccType == "CREDIT_CARD" {
+		newStatus = "paid"
+	}
+
+	var ruleUserID sql.NullString
+	var ruleSeriesID sql.NullString
+	var parentRuleID sql.NullString
+	var effectiveStartSequence int64
+	var totalOccurrences sql.NullInt64
+	if err := tx.QueryRow(`
+		SELECT user_id, series_id, parent_rule_id, COALESCE(effective_start_sequence, 1), total_occurrences
+		FROM recurring_rules
+		WHERE id = ? AND workspace_id = ?
+	`, params.RuleID, h.WorkspaceID).Scan(&ruleUserID, &ruleSeriesID, &parentRuleID, &effectiveStartSequence, &totalOccurrences); err != nil {
+		return "", nil, nil, err
+	}
+
+	seriesID := strings.TrimSpace(params.SeriesID)
+	if seriesID == "" {
+		seriesID = strings.TrimSpace(ruleSeriesID.String)
+	}
+	if seriesID == "" {
+		var err error
+		seriesID, err = EnsureRecurringSeriesForRuleTx(tx, h.WorkspaceID, params.RuleID, params.Now)
+		if err != nil {
+			return "", nil, nil, err
+		}
+	} else if ensuredSeriesID, err := EnsureRecurringSeriesForRuleTx(tx, h.WorkspaceID, params.RuleID, params.Now); err != nil {
+		return "", nil, nil, err
+	} else if ensuredSeriesID != seriesID {
+		return "", nil, nil, fmt.Errorf("recurring series mismatch")
+	}
+
+	rows, err := tx.Query(`
+		SELECT t.id, t.type, t.amount, t.account_id, t.destination_account_id,
+		       t.category_id, t.status, a.type, t.date, t.invoice_id, i.status,
+		       t.due_date, t.contact_id, t.recurrence_sequence,
+		       COALESCE(t.is_recurring_exception, 0)
+		FROM transactions t
+		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		LEFT JOIN invoices i ON i.id = t.invoice_id AND i.account_id = t.account_id
+		WHERE t.workspace_id = ?
+		  AND t.series_id = ?
+		  AND t.recurrence_sequence >= ?
+		ORDER BY t.recurrence_sequence ASC
+	`, h.WorkspaceID, seriesID, params.CurrentSequence)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	var items []recurringFutureSplitItem
+	var currentItem recurringFutureSplitItem
+	currentFound := false
+	for rows.Next() {
+		var item recurringFutureSplitItem
+		if err := rows.Scan(&item.id, &item.trType, &item.amount, &item.accountID, &item.destinationID, &item.categoryID, &item.paymentStatus, &item.accountType, &item.dateUnix, &item.invoiceID, &item.invoiceStatus, &item.dueDate, &item.contactID, &item.recurrenceSequence, &item.isException); err != nil {
+			rows.Close()
+			return "", nil, nil, err
+		}
+		if item.id == params.CurrentID {
+			currentFound = true
+			currentItem = item
+		}
+		items = append(items, item)
+	}
+	if err := rows.Close(); err != nil {
+		return "", nil, nil, err
+	}
+	if !currentFound || !recurringFutureSplitItemMutable(currentItem) {
+		return "", nil, nil, errRecurringFutureSplitBlocked
+	}
+
+	var catID interface{}
+	if params.CategoryID != "" {
+		catID = params.CategoryID
+	}
+	var destID interface{}
+	if params.DestinationID != "" {
+		destID = params.DestinationID
+	}
+	ruleContactRef := recurringFutureSplitContactRef(currentItem, params.ContactID, params.ContactProvided, params.IsBusiness)
+	ruleStatus := strings.ToUpper(newStatus)
+	targetRuleID := params.RuleID
+	if !parentRuleID.Valid || effectiveStartSequence != params.CurrentSequence {
+		targetRuleID = uuid.NewString()
+		var previousEndDate interface{}
+		if params.CurrentSequence > 1 {
+			var previousDate sql.NullInt64
+			if err := tx.QueryRow(`
+				SELECT date
+				FROM transactions
+				WHERE workspace_id = ? AND series_id = ? AND recurrence_sequence = ?
+				ORDER BY date DESC
+				LIMIT 1
+			`, h.WorkspaceID, seriesID, params.CurrentSequence-1).Scan(&previousDate); err != nil && err != sql.ErrNoRows {
+				return "", nil, nil, err
+			}
+			if previousDate.Valid {
+				previousEndDate = previousDate.Int64
+			}
+		}
+		if err := execOneTx(tx, `
+			UPDATE recurring_rules
+			SET active = 0,
+			    effective_end_sequence = ?,
+			    end_date = ?,
+			    updated_at = ?
+			WHERE id = ? AND workspace_id = ?
+		`, params.CurrentSequence-1, previousEndDate, params.Now, params.RuleID, h.WorkspaceID); err != nil {
+			return "", nil, nil, err
+		}
+		if err := execOneTx(tx, `
+			INSERT INTO recurring_rules (
+				id, workspace_id, user_id, account_id, destination_account_id,
+				category_id, type, amount, description, start_date, frequency,
+				default_payment_status, active, total_occurrences, series_id,
+				parent_rule_id, effective_start_sequence, starts_at, contact_id,
+				created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, targetRuleID, h.WorkspaceID, nullStringInterface(ruleUserID), params.AccountID, destID, catID, params.Type, params.Amount, params.Description, params.Date, params.Frequency, ruleStatus, nullInt64Interface(totalOccurrences), seriesID, params.RuleID, params.CurrentSequence, params.Date, ruleContactRef, params.Now, params.Now); err != nil {
+			return "", nil, nil, err
+		}
+	}
+	if err := execOneTx(tx, `
+		UPDATE recurring_rules
+		SET account_id = ?,
+		    destination_account_id = ?,
+		    category_id = ?,
+		    type = ?,
+		    amount = ?,
+		    description = ?,
+		    start_date = ?,
+		    frequency = ?,
+		    default_payment_status = ?,
+		    active = 1,
+		    series_id = ?,
+		    effective_start_sequence = ?,
+		    starts_at = ?,
+		    effective_end_sequence = NULL,
+		    end_date = NULL,
+		    contact_id = ?,
+		    generated_until = NULL,
+		    updated_at = ?
+		WHERE id = ? AND workspace_id = ?
+	`, params.AccountID, destID, catID, params.Type, params.Amount, params.Description, params.Date, params.Frequency, ruleStatus, seriesID, params.CurrentSequence, params.Date, ruleContactRef, params.Now, targetRuleID, h.WorkspaceID); err != nil {
+		return "", nil, nil, err
+	}
+
+	touchedIDs := make([]string, 0, len(items))
+	oldInvoiceIDs := make([]string, 0)
+	for _, item := range items {
+		if !recurringFutureSplitItemMutable(item) {
+			continue
+		}
+		if item.invoiceID.Valid && item.invoiceID.String != "" {
+			oldInvoiceIDs = append(oldInvoiceIDs, item.invoiceID.String)
+		}
+		oldDest := ""
+		if item.destinationID.Valid {
+			oldDest = item.destinationID.String
+		}
+		if item.paymentStatus == "paid" {
+			if err := services.ReverseBalanceEffect(tx, h.WorkspaceID, item.trType, item.accountType, item.amount, item.accountID, oldDest, params.Now); err != nil {
+				return "", nil, nil, err
+			}
+		}
+
+		newItemDate := recurrenceDateFromOffset(params.Date, params.Frequency, item.recurrenceSequence-params.CurrentSequence)
+		if err := h.adjustReserveForSingleTransactionUpdateTx(tx, item.id, item.trType, item.categoryID, item.amount, params.Type, params.CategoryID, params.Amount, newItemDate, params.Now, params.AllowBoxOverdraft); err != nil {
+			return "", nil, nil, err
+		}
+
+		var invoiceID interface{}
+		if params.Type == "EXPENSE" && newAccType == "CREDIT_CARD" {
+			invID, _, _, _, _, err := ensureOpenInvoiceTx(tx, h.WorkspaceID, params.AccountID, newItemDate)
+			if err != nil {
+				return "", nil, nil, err
+			}
+			invoiceID = invID
+		}
+		dueDateRef := recurringFutureSplitDueDateRef(item, params.HasDueDate, params.DueDateUnix, params.DueDateProvided, params.IsBusiness, newStatus)
+		contactRef := recurringFutureSplitContactRef(item, params.ContactID, params.ContactProvided, params.IsBusiness)
+
+		if err := execOneTx(tx, `
+			UPDATE transactions
+			SET type = ?,
+			    account_id = ?,
+			    destination_account_id = ?,
+			    amount = ?,
+			    date = ?,
+			    description = ?,
+			    notes = ?,
+			    attachment_path = ?,
+			    category_id = ?,
+			    status = ?,
+			    due_date = ?,
+			    contact_id = ?,
+			    invoice_id = ?,
+			    recurring_rule_id = ?,
+			    recurrence_sequence = ?,
+			    series_id = ?,
+			    updated_at = ?
+			WHERE id = ? AND workspace_id = ?
+		`, params.Type, params.AccountID, destID, params.Amount, newItemDate, params.Description, params.Notes, params.AttachmentPath, catID, newStatus, dueDateRef, contactRef, invoiceID, targetRuleID, item.recurrenceSequence, seriesID, params.Now, item.id, h.WorkspaceID); err != nil {
+			return "", nil, nil, err
+		}
+
+		if newStatus == "paid" {
+			if err := services.ApplyBalanceEffect(tx, h.WorkspaceID, params.Type, newAccType, newStatus, params.Amount, params.AccountID, params.DestinationID, params.Now); err != nil {
+				return "", nil, nil, err
+			}
+		}
+		touchedIDs = append(touchedIDs, item.id)
+	}
+
+	ruleTotalOccurrences := (*int64)(nil)
+	if totalOccurrences.Valid && totalOccurrences.Int64 > 0 {
+		value := totalOccurrences.Int64
+		ruleTotalOccurrences = &value
+	}
+	if err := h.generateRecurrenceProjection(tx, recurrenceProjectionRule{
+		ID:                   targetRuleID,
+		SeriesID:             seriesID,
+		AccountID:            params.AccountID,
+		DestinationAccountID: params.DestinationID,
+		CategoryID:           params.CategoryID,
+		Type:                 params.Type,
+		Amount:               params.Amount,
+		Description:          params.Description,
+		StartDate:            params.Date,
+		Frequency:            params.Frequency,
+		DefaultPaymentStatus: ruleStatus,
+		TotalOccurrences:     ruleTotalOccurrences,
+		EffectiveStartSeq:    params.CurrentSequence,
+	}, params.Now); err != nil {
+		return "", nil, nil, err
+	}
+
+	return targetRuleID, touchedIDs, oldInvoiceIDs, nil
+}
+
 func (h *TransactionHandler) updateFutureRecurringTransactions(tx *sql.Tx, ruleID string, currentID string, fromDate int64, newDate int64, oldCurrentDate int64, tipo string, newAmount int64, descricao string, anotacoes string, attachmentPath string, origemContaID string, destinoContaID string, categoriaID string, newStatus string, dueDateUnix int64, hasDueDate bool, contactID string, now int64, allowBoxOverdraft bool) error {
 	delta := newDate - oldCurrentDate
 	rows, err := tx.Query(`
@@ -5285,6 +6818,7 @@ func (h *TransactionHandler) updateFutureRecurringTransactions(tx *sql.Tx, ruleI
 		FROM transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		WHERE t.workspace_id = ? AND t.recurring_rule_id = ? AND t.id != ? AND t.date >= ?
+		  AND COALESCE(t.is_recurring_exception, 0) = 0
 	`, h.WorkspaceID, ruleID, currentID, fromDate)
 	if err != nil {
 		return err
@@ -6162,7 +7696,7 @@ func (h *TransactionHandler) logSecurityTamperingTx(tx *sql.Tx, r *http.Request,
 func (h *TransactionHandler) fetchTransactionRow(id string) (TransactionRow, error) {
 	isBusiness := workspaceType(h.DB, h.WorkspaceID) == "business"
 	rows, err := h.DB.Query(`
-		SELECT t.id, t.type, t.amount, COALESCE(t.due_date, t.date), t.created_at, t.description, t.status,
+		SELECT t.id, t.type, t.amount, t.date, t.due_date, t.created_at, t.description, t.status,
 			COALESCE(c.name, 'Sem categoria'),
 			COALESCE(c.icon, 'tag'),
 			COALESCE(c.color, '#6b7280'),
@@ -6177,7 +7711,7 @@ func (h *TransactionHandler) fetchTransactionRow(id string) (TransactionRow, err
 			t.scheduled_payment_at
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
-		LEFT JOIN contacts ct ON ct.id = t.contact_id AND c.workspace_id = t.workspace_id
+		LEFT JOIN contacts ct ON ct.id = t.contact_id AND ct.workspace_id = t.workspace_id
 		LEFT JOIN recurring_rules rr ON rr.id = t.recurring_rule_id
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		LEFT JOIN users u ON u.id = t.user_id
@@ -6289,7 +7823,7 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 		filterLabels = append(filterLabels, FilterLabelItem{Key: "tipo", Label: label})
 	}
 	statuses = filters.normalizedStatuses()
-	defaultStatus := len(statuses) == 3 && containsString(statuses, "pendente") && containsString(statuses, "vencido") && containsString(statuses, "agendado")
+	defaultStatus := len(statuses) == 4 && containsString(statuses, "pendente") && containsString(statuses, "vencido") && containsString(statuses, "agendado") && containsString(statuses, "pago")
 	if !defaultStatus {
 		for _, s := range statuses {
 			label := s
@@ -6322,7 +7856,7 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 	}
 
 	query := `
-		SELECT t.id, t.type, t.amount, COALESCE(t.due_date, t.date), t.created_at, t.description, t.status,
+		SELECT t.id, t.type, t.amount, t.date, t.due_date, t.created_at, t.description, t.status,
 			COALESCE(c.name, 'Sem categoria'),
 			COALESCE(c.icon, 'tag'),
 			COALESCE(c.color, '#6b7280'),
@@ -6890,7 +8424,7 @@ func (f LancamentosFilters) normalizedTypes() []string {
 
 func (f LancamentosFilters) normalizedStatuses() []string {
 	if len(f.Situacoes) == 0 {
-		return []string{"pendente", "vencido", "agendado"}
+		return []string{"pendente", "vencido", "agendado", "pago"}
 	}
 	seen := make(map[string]struct{}, len(f.Situacoes))
 	var statuses []string
@@ -6913,7 +8447,7 @@ func (f LancamentosFilters) normalizedStatuses() []string {
 
 func (f LancamentosFilters) hasActiveSelections(accountFilter string) bool {
 	statuses := f.normalizedStatuses()
-	defaultStatus := len(statuses) == 3 && containsString(statuses, "pendente") && containsString(statuses, "vencido") && containsString(statuses, "agendado")
+	defaultStatus := len(statuses) == 4 && containsString(statuses, "pendente") && containsString(statuses, "vencido") && containsString(statuses, "agendado") && containsString(statuses, "pago")
 	return accountFilter != "" || len(f.normalizedTypes()) > 0 || len(f.OrigemIDs) > 0 || len(f.DestinoIDs) > 0 || len(f.Categorias) > 0 || f.Busca != "" || !defaultStatus
 }
 
@@ -7029,6 +8563,21 @@ func nextRecurrenceDate(t time.Time, frequency string) time.Time {
 	default:
 		return time.Unix(safeAddMonths(t.Unix(), 1), 0).UTC()
 	}
+}
+
+func recurrenceDateFromOffset(startUnix int64, frequency string, offset int64) int64 {
+	if offset <= 0 {
+		return startUnix
+	}
+	occurrence := time.Unix(startUnix, 0).UTC()
+	for i := int64(0); i < offset; i++ {
+		prev := occurrence.Unix()
+		occurrence = nextRecurrenceDate(occurrence, frequency)
+		if occurrence.Unix() <= prev {
+			break
+		}
+	}
+	return occurrence.Unix()
 }
 
 func (h *TransactionHandler) paidNetCashFlowBetween(start, end time.Time) int64 {
@@ -7260,13 +8809,14 @@ func scanLancamentosRowsWithWorkspace(rows *sql.Rows, isBusiness bool) []Transac
 		var trType string
 		var amount int64
 		var dateUnix int64
+		var dueDate sql.NullInt64
 		var catName, catIcon, catColor sql.NullString
 		var hasDueDate int64
 		var isSeries int64
 		var paidAt sql.NullInt64
 		var scheduledPaymentAt sql.NullInt64
 
-		if err := rows.Scan(&row.ID, &trType, &amount, &dateUnix, &row.CreatedAt, &row.Description, &row.PaymentStatus,
+		if err := rows.Scan(&row.ID, &trType, &amount, &dateUnix, &dueDate, &row.CreatedAt, &row.Description, &row.PaymentStatus,
 			&catName, &catIcon, &catColor,
 			&row.InstallmentNumber, &row.TotalInstallments,
 			&row.AccountName, &row.ContactName, &row.Author, &hasDueDate, &isSeries, &paidAt, &scheduledPaymentAt); err != nil {
@@ -7276,7 +8826,19 @@ func scanLancamentosRowsWithWorkspace(rows *sql.Rows, isBusiness bool) []Transac
 		row.IsBusiness = isBusiness
 		row.Type = trType
 		row.Amount = amount
-		row.Date = dateUnix
+		row.CompetenceDate = dateUnix
+		if dueDate.Valid {
+			row.DueDate = &dueDate.Int64
+		}
+		row.HasDueDate = dueDate.Valid
+		row.DueDateDiffers = dueDate.Valid && dueDate.Int64 != dateUnix
+
+		displayDate := dateUnix
+		if dueDate.Valid {
+			displayDate = dueDate.Int64
+		}
+		row.Date = displayDate
+
 		row.CategoryName = catName.String
 		if isBusiness && strings.EqualFold(row.CategoryName, "Salário") {
 			row.CategoryName = "Faturamento/Receita"
@@ -7291,9 +8853,12 @@ func scanLancamentosRowsWithWorkspace(rows *sql.Rows, isBusiness bool) []Transac
 
 		row.IsSeries = isSeries == 1
 		row.HasInstallmentInfo = row.IsSeries || row.TotalInstallments > 1
-		row.UsesDueDate = isBusiness && row.IsPending && hasDueDate == 1
+		row.UsesDueDate = isBusiness && row.HasDueDate && row.DueDateDiffers
 		if row.UsesDueDate {
-			row.DisplayDateLabel = formatDateLabelFromUnix(dateUnix)
+			row.DisplayDateLabel = formatDateLabelFromUnix(displayDate)
+			row.CompetenciaDateLabel = formatDateLabelFromUnix(dateUnix)
+		} else if row.HasDueDate {
+			row.DisplayDateLabel = formatDateLabelFromUnix(displayDate)
 		}
 
 		if paidAt.Valid {
@@ -7305,15 +8870,16 @@ func scanLancamentosRowsWithWorkspace(rows *sql.Rows, isBusiness bool) []Transac
 			row.ScheduledPaymentAtDisplay = formatAppDateLabelFromUnix(scheduledPaymentAt.Int64)
 		}
 
-		t := time.Unix(dateUnix, 0).UTC()
-		localTime := time.Unix(dateUnix, 0)
+		t := time.Unix(displayDate, 0).UTC()
+		localTime := time.Unix(displayDate, 0)
+		competenceLocalTime := time.Unix(dateUnix, 0)
 		row.TimeDisplay = localTime.Format("15:04")
-		row.DateInput = localTime.Format("2006-01-02")
+		row.DateInput = competenceLocalTime.Format("2006-01-02")
 		dateOnly := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 
 		row.IsScheduled = row.IsPending && row.ScheduledPaymentAt != nil
 		row.IsOverdue = row.PaymentStatus != "paid" && !row.IsScheduled && dateOnly.Before(today)
-		visual := transactionVisualStatus(row.Type, row.PaymentStatus, dateUnix, row.ScheduledPaymentAt)
+		visual := transactionVisualStatus(row.Type, row.PaymentStatus, displayDate, row.ScheduledPaymentAt)
 		row.PaymentIcon = visual.Icon
 		row.PaymentTone = visual.Tone
 		row.PaymentTitle = visual.Title

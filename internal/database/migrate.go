@@ -1518,6 +1518,26 @@ var migrations = []migration{
 			return nil
 		},
 	},
+	{
+		version: 50,
+		name:    "recurring_series_versioning_base",
+		up: func(tx *sql.Tx) error {
+			if err := migrateRecurringSeriesVersioningBase(tx); err != nil {
+				return fmt.Errorf("migration 50 recurring series versioning base: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 51,
+		name:    "recurring_materialization_state",
+		up: func(tx *sql.Tx) error {
+			if err := migrateRecurringMaterializationState(tx); err != nil {
+				return fmt.Errorf("migration 51 recurring materialization state: %w", err)
+			}
+			return nil
+		},
+	},
 }
 
 func runMigrations(db *sql.DB) error {
@@ -1664,6 +1684,254 @@ func tableExists(tx *sql.Tx, table string) (bool, error) {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// migrateRecurringSeriesVersioningBase adds the recurring-series versioning base schema
+// (the recurring_series table plus new columns on recurring_rules and transactions) to an
+// already existing database. It is additive only: no table rebuild, no destructive change,
+// and no functional behavior (job, fallback, materializer) is enabled here.
+//
+// INTENTIONAL fresh-vs-migrated constraint divergence (Fase 1):
+// On a fresh install, sqlite.go creates the new columns inline WITH FOREIGN KEY constraints:
+//   - recurring_rules.series_id     -> recurring_series(id)
+//   - recurring_rules.parent_rule_id -> recurring_rules(id)
+//   - recurring_rules.contact_id    -> contacts(id)
+//   - transactions.series_id        -> recurring_series(id)
+//
+// On an existing database these columns are added with ALTER TABLE ADD COLUMN, which in SQLite
+// CANNOT attach FOREIGN KEY constraints. Because Fase 1 deliberately avoids a destructive table
+// rebuild, migrated databases keep these columns as plain TEXT/INTEGER WITHOUT the FKs that a
+// fresh install gets. This divergence is known and accepted for now. It is pinned by the
+// TestMigration50ForeignKeyList* tests and is compensated by the duplicate preflight below,
+// the indexes created here, and application-level validation planned for later phases (a future
+// phase may rebuild the tables to converge the constraints).
+func migrateRecurringSeriesVersioningBase(tx *sql.Tx) error {
+	if _, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS recurring_series (
+			id                TEXT PRIMARY KEY,
+			workspace_id      TEXT NOT NULL,
+			user_id           TEXT,
+			active            INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+			total_occurrences INTEGER,
+			created_at        INTEGER NOT NULL DEFAULT (unixepoch()),
+			updated_at        INTEGER NOT NULL DEFAULT (unixepoch()),
+			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+			FOREIGN KEY (user_id)      REFERENCES users(id)      ON DELETE SET NULL
+		)
+	`); err != nil {
+		return fmt.Errorf("create recurring_series: %w", err)
+	}
+
+	rulesExist, err := tableExists(tx, "recurring_rules")
+	if err != nil {
+		return err
+	}
+	if !rulesExist {
+		return nil
+	}
+	// FK-divergent columns: on a fresh schema (sqlite.go) series_id, parent_rule_id and
+	// contact_id carry FOREIGN KEY constraints; here they are plain columns because ALTER
+	// TABLE ADD COLUMN cannot attach FKs and Fase 1 does not rebuild the table. See the
+	// function doc for the accepted fresh-vs-migrated divergence.
+	if err := addColumnIfMissing(tx, "recurring_rules", "series_id", "TEXT"); err != nil {
+		return fmt.Errorf("add recurring_rules.series_id: %w", err)
+	}
+	if err := addColumnIfMissing(tx, "recurring_rules", "parent_rule_id", "TEXT"); err != nil {
+		return fmt.Errorf("add recurring_rules.parent_rule_id: %w", err)
+	}
+	if err := addColumnIfMissing(tx, "recurring_rules", "effective_start_sequence", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return fmt.Errorf("add recurring_rules.effective_start_sequence: %w", err)
+	}
+	if err := addColumnIfMissing(tx, "recurring_rules", "effective_end_sequence", "INTEGER"); err != nil {
+		return fmt.Errorf("add recurring_rules.effective_end_sequence: %w", err)
+	}
+	if err := addColumnIfMissing(tx, "recurring_rules", "starts_at", "INTEGER"); err != nil {
+		return fmt.Errorf("add recurring_rules.starts_at: %w", err)
+	}
+	if err := addColumnIfMissing(tx, "recurring_rules", "end_date", "INTEGER"); err != nil {
+		return fmt.Errorf("add recurring_rules.end_date: %w", err)
+	}
+	if err := addColumnIfMissing(tx, "recurring_rules", "contact_id", "TEXT"); err != nil {
+		return fmt.Errorf("add recurring_rules.contact_id: %w", err)
+	}
+	if err := addColumnIfMissing(tx, "recurring_rules", "due_date_policy", "TEXT"); err != nil {
+		return fmt.Errorf("add recurring_rules.due_date_policy: %w", err)
+	}
+	if err := addColumnIfMissing(tx, "recurring_rules", "due_date_offset_days", "INTEGER"); err != nil {
+		return fmt.Errorf("add recurring_rules.due_date_offset_days: %w", err)
+	}
+
+	transactionsExist, err := tableExists(tx, "transactions")
+	if err != nil {
+		return err
+	}
+	if transactionsExist {
+		// FK-divergent column: transactions.series_id references recurring_series(id) on a
+		// fresh schema, but is added here without the FK (see function doc).
+		if err := addColumnIfMissing(tx, "transactions", "series_id", "TEXT"); err != nil {
+			return fmt.Errorf("add transactions.series_id: %w", err)
+		}
+		if err := addColumnIfMissing(tx, "transactions", "is_recurring_exception", "INTEGER NOT NULL DEFAULT 0 CHECK (is_recurring_exception IN (0, 1))"); err != nil {
+			return fmt.Errorf("add transactions.is_recurring_exception: %w", err)
+		}
+		if err := addColumnIfMissing(tx, "transactions", "recurring_exception_reason", "TEXT"); err != nil {
+			return fmt.Errorf("add transactions.recurring_exception_reason: %w", err)
+		}
+	}
+
+	if _, err := tx.Exec(`
+		INSERT OR IGNORE INTO recurring_series (
+			id,
+			workspace_id,
+			user_id,
+			active,
+			total_occurrences,
+			created_at,
+			updated_at
+		)
+		SELECT
+			rr.id,
+			rr.workspace_id,
+			rr.user_id,
+			rr.active,
+			rr.total_occurrences,
+			COALESCE(rr.created_at, unixepoch()),
+			COALESCE(rr.updated_at, rr.created_at, unixepoch())
+		FROM recurring_rules rr
+		WHERE rr.id IS NOT NULL
+	`); err != nil {
+		return fmt.Errorf("backfill recurring_series: %w", err)
+	}
+
+	if _, err := tx.Exec(`
+		UPDATE recurring_rules
+		SET series_id = id,
+			effective_start_sequence = COALESCE(effective_start_sequence, 1)
+		WHERE series_id IS NULL
+	`); err != nil {
+		return fmt.Errorf("backfill recurring_rules.series_id: %w", err)
+	}
+
+	if transactionsExist {
+		if _, err := tx.Exec(`
+			UPDATE transactions
+			SET series_id = (
+				SELECT rr.series_id
+				FROM recurring_rules rr
+				WHERE rr.id = transactions.recurring_rule_id
+				  AND rr.workspace_id = transactions.workspace_id
+			)
+			WHERE recurring_rule_id IS NOT NULL
+			  AND series_id IS NULL
+		`); err != nil {
+			return fmt.Errorf("backfill transactions.series_id: %w", err)
+		}
+
+		if err := preflightRecurringSequenceDuplicates(tx); err != nil {
+			return err
+		}
+	}
+
+	stmts := []string{
+		`CREATE INDEX IF NOT EXISTS idx_recurring_series_workspace ON recurring_series(workspace_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_recurring_rules_workspace_series_start ON recurring_rules(workspace_id, series_id, effective_start_sequence)`,
+		`CREATE INDEX IF NOT EXISTS idx_recurring_rules_workspace_series_dates ON recurring_rules(workspace_id, series_id, starts_at, end_date)`,
+	}
+	if transactionsExist {
+		stmts = append(stmts,
+			`CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_workspace_recurring_sequence_unique ON transactions(workspace_id, recurring_rule_id, recurrence_sequence) WHERE recurring_rule_id IS NOT NULL AND recurrence_sequence IS NOT NULL`,
+			`CREATE INDEX IF NOT EXISTS idx_transactions_workspace_series_sequence ON transactions(workspace_id, series_id, recurrence_sequence)`,
+			`CREATE INDEX IF NOT EXISTS idx_transactions_workspace_series_date ON transactions(workspace_id, series_id, date)`,
+			`CREATE INDEX IF NOT EXISTS idx_transactions_workspace_series ON transactions(workspace_id, series_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_transactions_workspace_recurring_sequence ON transactions(workspace_id, recurring_rule_id, recurrence_sequence)`,
+		)
+	}
+	for _, stmt := range stmts {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("create recurring series versioning index: %w", err)
+		}
+	}
+	return nil
+}
+
+func migrateRecurringMaterializationState(tx *sql.Tx) error {
+	if _, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS recurring_materialization_state (
+			workspace_id       TEXT PRIMARY KEY,
+			materialized_until INTEGER NOT NULL DEFAULT 0,
+			last_attempt_at    INTEGER NOT NULL DEFAULT 0,
+			last_success_at    INTEGER NOT NULL DEFAULT 0,
+			last_error         TEXT,
+			status             TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'running', 'error')),
+			locked_until       INTEGER NOT NULL DEFAULT 0,
+			lock_owner         TEXT,
+			created_at         INTEGER NOT NULL DEFAULT (unixepoch()),
+			updated_at         INTEGER NOT NULL DEFAULT (unixepoch()),
+			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+		)
+	`); err != nil {
+		return fmt.Errorf("create recurring_materialization_state: %w", err)
+	}
+	if _, err := tx.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_recurring_materialization_state_locked_until
+		ON recurring_materialization_state(locked_until)
+	`); err != nil {
+		return fmt.Errorf("create idx_recurring_materialization_state_locked_until: %w", err)
+	}
+	return nil
+}
+// idx_transactions_workspace_recurring_sequence_unique BEFORE it is created. Without this
+// check a duplicate would surface only as an opaque "UNIQUE constraint failed" error while
+// creating the index. Instead this fails the migration with an actionable message that points
+// to the offending (workspace_id, recurring_rule_id, recurrence_sequence) combination so the
+// operator can resolve the real duplicate before upgrading.
+func preflightRecurringSequenceDuplicates(tx *sql.Tx) error {
+	rows, err := tx.Query(`
+		SELECT workspace_id, recurring_rule_id, recurrence_sequence, COUNT(1) AS dup_count
+		FROM transactions
+		WHERE recurring_rule_id IS NOT NULL
+		  AND recurrence_sequence IS NOT NULL
+		GROUP BY workspace_id, recurring_rule_id, recurrence_sequence
+		HAVING COUNT(1) > 1
+		ORDER BY dup_count DESC, workspace_id, recurring_rule_id, recurrence_sequence
+	`)
+	if err != nil {
+		return fmt.Errorf("preflight recurring sequence duplicates: %w", err)
+	}
+	defer rows.Close()
+
+	var (
+		groups      int
+		sampleWs    string
+		sampleRule  string
+		sampleSeq   int64
+		sampleCount int
+	)
+	for rows.Next() {
+		var (
+			ws    string
+			rule  string
+			seq   int64
+			count int
+		)
+		if err := rows.Scan(&ws, &rule, &seq, &count); err != nil {
+			return fmt.Errorf("preflight recurring sequence duplicates scan: %w", err)
+		}
+		if groups == 0 {
+			sampleWs, sampleRule, sampleSeq, sampleCount = ws, rule, seq, count
+		}
+		groups++
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("preflight recurring sequence duplicates rows: %w", err)
+	}
+	if groups > 0 {
+		return fmt.Errorf(
+			"migration 50 aborted: found %d duplicate (workspace_id, recurring_rule_id, recurrence_sequence) group(s) in transactions that violate the unique recurring sequence index; example workspace_id=%q recurring_rule_id=%q recurrence_sequence=%d repeats %d times; resolve these duplicate recurring occurrences before upgrading",
+			groups, sampleWs, sampleRule, sampleSeq, sampleCount,
+		)
+	}
+	return nil
 }
 
 func tableSchemaSQL(tx *sql.Tx, table string) ([]string, error) {

@@ -273,6 +273,17 @@ A atualização não deve:
 
 Se precisar restaurar backup, faça isso manualmente e com cuidado.
 
+## Recorrências versionadas (a partir da v0.1.0-beta.7)
+
+A atualização para a v0.1.0-beta.7 ou superior aplica automaticamente as migrations `50` e `51`:
+
+- cria a tabela `recurring_series` e faz o backfill de `series_id` nas regras e nos lançamentos recorrentes antigos;
+- cria a tabela de estado `recurring_materialization_state`, usada pela projeção automática das recorrências.
+
+Esse processo é **aditivo e seguro**: não altera saldos, não altera faturas existentes e não apaga dados. Após a atualização, o ContaBase mantém automaticamente as ocorrências futuras das recorrências em uma janela de aproximadamente 15 meses.
+
+Como em qualquer atualização, faça backup antes.
+
 ## Leia também
 
 - [Instalação rápida](instalacao.md)

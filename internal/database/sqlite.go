@@ -247,6 +247,18 @@ CREATE TABLE IF NOT EXISTS invoices (
     UNIQUE (account_id, reference)
 );
 
+CREATE TABLE IF NOT EXISTS recurring_series (
+    id                TEXT PRIMARY KEY,
+    workspace_id      TEXT NOT NULL,
+    user_id           TEXT,
+    active            INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    total_occurrences INTEGER,
+    created_at        INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at        INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id)      REFERENCES users(id)      ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS recurring_rules (
     id                      TEXT PRIMARY KEY,
     workspace_id            TEXT    NOT NULL,
@@ -262,6 +274,15 @@ CREATE TABLE IF NOT EXISTS recurring_rules (
     default_payment_status  TEXT    NOT NULL DEFAULT 'PENDING' CHECK (default_payment_status IN ('PAID', 'PENDING')),
     active                  INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
     total_occurrences       INTEGER,
+    series_id               TEXT,
+    parent_rule_id          TEXT,
+    effective_start_sequence INTEGER NOT NULL DEFAULT 1,
+    effective_end_sequence  INTEGER,
+    starts_at               INTEGER,
+    end_date                INTEGER,
+    contact_id              TEXT,
+    due_date_policy         TEXT,
+    due_date_offset_days    INTEGER,
     generated_until         INTEGER,
     created_at              INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at              INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -269,7 +290,24 @@ CREATE TABLE IF NOT EXISTS recurring_rules (
     FOREIGN KEY (user_id)                REFERENCES users(id)       ON DELETE RESTRICT,
     FOREIGN KEY (account_id)             REFERENCES accounts(id)    ON DELETE RESTRICT,
     FOREIGN KEY (destination_account_id) REFERENCES accounts(id)    ON DELETE SET NULL,
-    FOREIGN KEY (category_id)            REFERENCES categories(id)  ON DELETE SET NULL
+    FOREIGN KEY (category_id)            REFERENCES categories(id)  ON DELETE SET NULL,
+    FOREIGN KEY (series_id)              REFERENCES recurring_series(id) ON DELETE SET NULL,
+    FOREIGN KEY (parent_rule_id)         REFERENCES recurring_rules(id)  ON DELETE SET NULL,
+    FOREIGN KEY (contact_id)             REFERENCES contacts(id)         ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS recurring_materialization_state (
+    workspace_id       TEXT PRIMARY KEY,
+    materialized_until INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at    INTEGER NOT NULL DEFAULT 0,
+    last_success_at    INTEGER NOT NULL DEFAULT 0,
+    last_error         TEXT,
+    status             TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'running', 'error')),
+    locked_until       INTEGER NOT NULL DEFAULT 0,
+    lock_owner         TEXT,
+    created_at         INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at         INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS contacts (
@@ -306,6 +344,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     parent_id               TEXT,
     recurring_rule_id       TEXT,
     recurrence_sequence     INTEGER,
+    series_id               TEXT,
+    is_recurring_exception  INTEGER NOT NULL DEFAULT 0 CHECK (is_recurring_exception IN (0, 1)),
+    recurring_exception_reason TEXT,
     -- LEGADO INATIVO: manter somente para compatibilidade e backfill da migration v11.
     -- @deprecated v20: use 'status' column exclusively.
     payment_status          TEXT    NOT NULL DEFAULT 'PAID' CHECK (payment_status IN ('PAID', 'PENDING')),
@@ -326,7 +367,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     FOREIGN KEY (invoice_id)             REFERENCES invoices(id)    ON DELETE SET NULL,
     FOREIGN KEY (invoice_override_id)    REFERENCES invoices(id)    ON DELETE SET NULL,
     FOREIGN KEY (parent_id)              REFERENCES transactions(id) ON DELETE SET NULL,
-    FOREIGN KEY (recurring_rule_id)      REFERENCES recurring_rules(id) ON DELETE SET NULL
+    FOREIGN KEY (recurring_rule_id)      REFERENCES recurring_rules(id) ON DELETE SET NULL,
+    FOREIGN KEY (series_id)              REFERENCES recurring_series(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS cost_limits (
@@ -406,6 +448,7 @@ CREATE INDEX IF NOT EXISTS idx_invoices_account_reference_status ON invoices(acc
 CREATE INDEX IF NOT EXISTS idx_recurring_rules_workspace   ON recurring_rules(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_recurring_rules_active      ON recurring_rules(active);
 CREATE INDEX IF NOT EXISTS idx_recurring_rules_start_date  ON recurring_rules(start_date);
+CREATE INDEX IF NOT EXISTS idx_recurring_materialization_state_locked_until ON recurring_materialization_state(locked_until);
 CREATE INDEX IF NOT EXISTS idx_contacts_workspace_name_created ON contacts(workspace_id, name COLLATE NOCASE, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_workspace      ON transactions(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_account        ON transactions(account_id);
