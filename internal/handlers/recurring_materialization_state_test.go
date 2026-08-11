@@ -20,12 +20,12 @@ func readMaterializationState(t *testing.T, db *sql.DB, workspaceID string) *Rec
 	t.Helper()
 	var s RecurringMaterializationState
 	err := db.QueryRow(`
-		SELECT workspace_id, materialized_until, last_attempt_at, last_success_at,
+		SELECT workspace_id, materialized_until, materialized_until_civil, last_attempt_at, last_success_at,
 		       last_error, status, locked_until, lock_owner
 		FROM recurring_materialization_state
 		WHERE workspace_id = ?
 	`, workspaceID).Scan(
-		&s.WorkspaceID, &s.MaterializedUntil, &s.LastAttemptAt, &s.LastSuccessAt,
+		&s.WorkspaceID, &s.MaterializedUntil, &s.MaterializedUntilCivil, &s.LastAttemptAt, &s.LastSuccessAt,
 		&s.LastError, &s.Status, &s.LockedUntil, &s.LockOwner,
 	)
 	if err == sql.ErrNoRows {
@@ -38,14 +38,18 @@ func readMaterializationState(t *testing.T, db *sql.DB, workspaceID string) *Rec
 }
 
 func TestDefaultRecurringHorizonIs15Months(t *testing.T) {
+	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
 	now := time.Date(2026, 6, 5, 9, 30, 0, 0, time.UTC).Unix()
-	horizon := defaultRecurringHorizon(now)
-	want := time.Date(2027, 9, 5, 0, 0, 0, 0, time.UTC)
-	if !horizon.Equal(want) {
-		t.Fatalf("horizon = %v, want %v (hoje + 15 meses meia-noite UTC)", horizon, want)
+	horizon, err := defaultRecurringHorizon(now)
+	if err != nil {
+		t.Fatalf("defaultRecurringHorizon: %v", err)
 	}
-	if horizon.Hour() != 0 || horizon.Minute() != 0 || horizon.Second() != 0 {
-		t.Fatalf("horizon not normalized to midnight: %v", horizon)
+	if horizon.Civil() != "2027-09-05" {
+		t.Fatalf("horizon.Civil() = %q, want 2027-09-05", horizon.Civil())
+	}
+	wantLegacy := time.Date(2027, 9, 5, 12, 0, 0, 0, time.UTC).Unix()
+	if horizon.LegacyUnix() != wantLegacy {
+		t.Fatalf("horizon.LegacyUnix() = %d, want %d (noon UTC)", horizon.LegacyUnix(), wantLegacy)
 	}
 }
 
@@ -56,7 +60,7 @@ func TestRunRecurringMaterializationNoStateIsStaleAndExecutes(t *testing.T) {
 
 	now := time.Now().Unix()
 	var called int
-	runner := func(tx *sql.Tx, workspaceID string, horizon time.Time, n int64) error {
+	runner := func(tx *sql.Tx, workspaceID string, horizon CivilWriteDate, n int64) error {
 		called++
 		return nil
 	}
@@ -81,14 +85,14 @@ func TestRunRecurringMaterializationFreshSkipsRunner(t *testing.T) {
 	seedMaterializationWorkspace(t, db, "ws-mat", "user-mat")
 
 	now := time.Now().Unix()
-	horizon := defaultRecurringHorizon(now)
+	horizon, _ := defaultRecurringHorizon(now)
 	execTestSQL(t, db, `
 		INSERT INTO recurring_materialization_state (workspace_id, materialized_until, status, created_at, updated_at)
 		VALUES ('ws-mat', ?, 'idle', ?, ?)
-	`, horizon.Unix(), now, now)
+	`, horizon.LegacyUnix(), now, now)
 
 	var called int
-	runner := func(tx *sql.Tx, workspaceID string, h time.Time, n int64) error {
+	runner := func(tx *sql.Tx, workspaceID string, h CivilWriteDate, n int64) error {
 		called++
 		return nil
 	}
@@ -112,7 +116,7 @@ func TestRunRecurringMaterializationStaleExecutesRunner(t *testing.T) {
 	`, now, now)
 
 	var called int
-	runner := func(tx *sql.Tx, workspaceID string, h time.Time, n int64) error {
+	runner := func(tx *sql.Tx, workspaceID string, h CivilWriteDate, n int64) error {
 		called++
 		return nil
 	}
@@ -135,7 +139,7 @@ func TestRunRecurringMaterializationUpdatesLastAttemptAt(t *testing.T) {
 		VALUES ('ws-mat', 0, 0, 'idle', ?, ?)
 	`, now, now)
 
-	runner := func(tx *sql.Tx, workspaceID string, h time.Time, n int64) error {
+	runner := func(tx *sql.Tx, workspaceID string, h CivilWriteDate, n int64) error {
 		return nil
 	}
 	if err := runRecurringMaterializationForWorkspace(context.Background(), db, "ws-mat", now, runner); err != nil {
@@ -157,7 +161,7 @@ func TestRunRecurringMaterializationCanceledContextDoesNotExecuteRunner(t *testi
 	cancel()
 
 	var called int
-	runner := func(tx *sql.Tx, workspaceID string, h time.Time, n int64) error {
+	runner := func(tx *sql.Tx, workspaceID string, h CivilWriteDate, n int64) error {
 		called++
 		return nil
 	}
@@ -185,7 +189,7 @@ func TestRunRecurringMaterializationLockActivePreventsExecution(t *testing.T) {
 	`, now+600, now, now)
 
 	var called int
-	runner := func(tx *sql.Tx, workspaceID string, h time.Time, n int64) error {
+	runner := func(tx *sql.Tx, workspaceID string, h CivilWriteDate, n int64) error {
 		called++
 		return nil
 	}
@@ -213,7 +217,7 @@ func TestRunRecurringMaterializationLockExpiredAllowsExecution(t *testing.T) {
 	`, now-10, now, now)
 
 	var called int
-	runner := func(tx *sql.Tx, workspaceID string, h time.Time, n int64) error {
+	runner := func(tx *sql.Tx, workspaceID string, h CivilWriteDate, n int64) error {
 		called++
 		return nil
 	}
@@ -231,13 +235,13 @@ func TestRunRecurringMaterializationSuccessUpdatesState(t *testing.T) {
 	seedMaterializationWorkspace(t, db, "ws-mat", "user-mat")
 
 	now := time.Now().Unix()
-	horizon := defaultRecurringHorizon(now)
+	horizon, _ := defaultRecurringHorizon(now)
 	execTestSQL(t, db, `
 		INSERT INTO recurring_materialization_state (workspace_id, materialized_until, status, last_error, created_at, updated_at)
 		VALUES ('ws-mat', 0, 'error', 'previous failure', ?, ?)
 	`, now, now)
 
-	runner := func(tx *sql.Tx, workspaceID string, h time.Time, n int64) error {
+	runner := func(tx *sql.Tx, workspaceID string, h CivilWriteDate, n int64) error {
 		return nil
 	}
 	if err := runRecurringMaterializationForWorkspace(context.Background(), db, "ws-mat", now, runner); err != nil {
@@ -247,8 +251,8 @@ func TestRunRecurringMaterializationSuccessUpdatesState(t *testing.T) {
 	if state.Status != "idle" {
 		t.Fatalf("status = %q, want idle", state.Status)
 	}
-	if state.MaterializedUntil != horizon.Unix() {
-		t.Fatalf("materialized_until = %d, want %d", state.MaterializedUntil, horizon.Unix())
+	if state.MaterializedUntil != horizon.LegacyUnix() {
+		t.Fatalf("materialized_until = %d, want %d", state.MaterializedUntil, horizon.LegacyUnix())
 	}
 	if state.LastSuccessAt != now {
 		t.Fatalf("last_success_at = %d, want %d", state.LastSuccessAt, now)
@@ -273,7 +277,7 @@ func TestRunRecurringMaterializationErrorRecordsAndReleasesLock(t *testing.T) {
 	`, now, now)
 
 	runErr := errors.New("boom no motor")
-	runner := func(tx *sql.Tx, workspaceID string, h time.Time, n int64) error {
+	runner := func(tx *sql.Tx, workspaceID string, h CivilWriteDate, n int64) error {
 		return runErr
 	}
 	err := runRecurringMaterializationForWorkspace(context.Background(), db, "ws-mat", now, runner)
@@ -300,7 +304,7 @@ func TestRunRecurringMaterializationWorkspaceIsolation(t *testing.T) {
 
 	now := time.Now().Unix()
 	var calledWorkspaces []string
-	runner := func(tx *sql.Tx, workspaceID string, h time.Time, n int64) error {
+	runner := func(tx *sql.Tx, workspaceID string, h CivilWriteDate, n int64) error {
 		calledWorkspaces = append(calledWorkspaces, workspaceID)
 		return nil
 	}

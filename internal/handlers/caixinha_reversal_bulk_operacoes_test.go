@@ -80,33 +80,129 @@ func TestBulkDeleteMixedCategoryReserveAdjustsPerItem(t *testing.T) {
 	}
 }
 
-func TestBulkDeleteSucceedsWithPaidInvoiceTx(t *testing.T) {
+func TestBulkDeleteDuplicateIDsAreAppliedOnce(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	seedBoxConsumeCreationScenario(t, db)
-
-	mutableID := createExpenseForReserveTest(t, db, "Bulk Delete Rollback", "checking-test", "cat-expense-direct", 900)
-	beforeMutable := activeConsumesBySourceTx(t, db, mutableID)
-	if len(beforeMutable) != 1 {
-		t.Fatalf("mutable active consume count = %d, want 1", len(beforeMutable))
+	txID := createExpenseForReserveTest(t, db, "Bulk Duplicate", "checking-test", "cat-expense-direct", 700)
+	before := activeConsumesBySourceTx(t, db, txID)
+	if len(before) != 1 {
+		t.Fatalf("active consume count = %d, want 1", len(before))
 	}
-
-	now := time.Now().Unix()
-	execTestSQL(t, db, `UPDATE transactions SET category_id = 'cat-expense-direct' WHERE id = 'purchase-test'`)
-	execTestSQL(t, db, `UPDATE invoices SET status = 'PAID', paid_at = ?, paid_amount = 25000 WHERE id = 'invoice-2026-08'`, now)
-
-	handler := testBulkReserveHandler(db)
-	rr := bulkDeleteRequestForReserveTest(t, handler, []string{mutableID, "purchase-test"})
-	if rr.Code == http.StatusConflict {
-		t.Fatalf("PAID invoice should no longer block bulk delete, got 409: %s", rr.Body.String())
+	rr := bulkDeleteRequestForReserveTest(t, testBulkReserveHandler(db), []string{txID, txID})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
-
-	var count int
-	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE id IN (?, ?)`, mutableID, "purchase-test").Scan(&count); err != nil {
-		t.Fatalf("query: %v", err)
+	assertTransactionRemoved(t, db, txID)
+	if got := countReversalsForConsume(t, db, before[0].ID); got != 1 {
+		t.Fatalf("reversal count = %d, want exactly 1", got)
 	}
-	if count != 0 {
-		t.Fatalf("both transactions should be deleted, count = %d", count)
+}
+
+func TestBulkDeleteInvoiceHistoryPreflightHasZeroPartialEffects(t *testing.T) {
+	for _, protectedStatus := range []string{"CLOSED", "PAID"} {
+		t.Run(protectedStatus, func(t *testing.T) {
+			db := openTestDB(t)
+			defer db.Close()
+			seedBoxConsumeCreationScenario(t, db)
+
+			mutableID := createExpenseForReserveTest(t, db, "Bulk Delete Rollback", "checking-test", "cat-expense-direct", 900)
+			beforeMutable := activeConsumesBySourceTx(t, db, mutableID)
+			if len(beforeMutable) != 1 {
+				t.Fatalf("mutable active consume count = %d, want 1", len(beforeMutable))
+			}
+
+			now := time.Now().Unix()
+			execTestSQL(t, db, `UPDATE transactions SET category_id = 'cat-expense-direct' WHERE id = 'purchase-test'`)
+			execTestSQL(t, db, `UPDATE invoices SET status = ?, paid_at = CASE WHEN ? = 'PAID' THEN ? ELSE NULL END, paid_amount = CASE WHEN ? = 'PAID' THEN 25000 ELSE 0 END WHERE id = 'invoice-2026-08'`, protectedStatus, protectedStatus, now, protectedStatus)
+
+			handler := testBulkReserveHandler(db)
+			rr := bulkDeleteRequestForReserveTest(t, handler, []string{mutableID, "purchase-test"})
+			if rr.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want 409, body = %q", rr.Code, rr.Body.String())
+			}
+
+			var count int
+			if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE id IN (?, ?)`, mutableID, "purchase-test").Scan(&count); err != nil {
+				t.Fatalf("query: %v", err)
+			}
+			if count != 2 {
+				t.Fatalf("transaction count = %d, want 2", count)
+			}
+			afterMutable := activeConsumesBySourceTx(t, db, mutableID)
+			if len(afterMutable) != 1 || afterMutable[0].ID != beforeMutable[0].ID {
+				t.Fatalf("reserve changed before guarded bulk delete: before=%#v after=%#v", beforeMutable, afterMutable)
+			}
+			if got := countReversalsForConsume(t, db, beforeMutable[0].ID); got != 0 {
+				t.Fatalf("reserve reversals = %d, want 0", got)
+			}
+			var invoiceStatus string
+			var paidAmount int64
+			if err := db.QueryRow(`SELECT status, paid_amount FROM invoices WHERE id = 'invoice-2026-08'`).Scan(&invoiceStatus, &paidAmount); err != nil {
+				t.Fatal(err)
+			}
+			wantPaidAmount := int64(0)
+			if protectedStatus == "PAID" {
+				wantPaidAmount = 25000
+			}
+			if invoiceStatus != protectedStatus || paidAmount != wantPaidAmount {
+				t.Fatalf("invoice changed: status=%q paid_amount=%d", invoiceStatus, paidAmount)
+			}
+		})
+	}
+}
+
+func TestBulkUpdateInvoiceHistoryPreflightHasZeroPartialEffects(t *testing.T) {
+	for _, invoiceStatus := range []string{"CLOSED", "PAID"} {
+		t.Run(invoiceStatus, func(t *testing.T) {
+			db := openTestDB(t)
+			defer db.Close()
+			seedBoxConsumeCreationScenario(t, db)
+
+			mutableID := createExpenseForReserveTest(t, db, "Bulk Status Guard", "checking-test", "cat-expense-direct", 900)
+			beforeReserve := activeConsumesBySourceTx(t, db, mutableID)
+			if len(beforeReserve) != 1 {
+				t.Fatalf("active reserve count = %d, want 1", len(beforeReserve))
+			}
+			var beforeBalance int64
+			if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id = 'checking-test'`).Scan(&beforeBalance); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now().Unix()
+			execTestSQL(t, db, `UPDATE invoices SET status = ?, paid_at = CASE WHEN ? = 'PAID' THEN ? ELSE NULL END, paid_amount = CASE WHEN ? = 'PAID' THEN 25000 ELSE 0 END WHERE id = 'invoice-2026-08'`, invoiceStatus, invoiceStatus, now, invoiceStatus)
+
+			handler := testBulkReserveHandler(db)
+			rr := bulkUpdateStatusRequestForReserveTest(t, handler, []string{mutableID, "purchase-test"}, "pending")
+			if rr.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want 409, body = %q", rr.Code, rr.Body.String())
+			}
+
+			var mutableStatus, protectedStatus string
+			if err := db.QueryRow(`SELECT status FROM transactions WHERE id = ?`, mutableID).Scan(&mutableStatus); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.QueryRow(`SELECT status FROM transactions WHERE id = 'purchase-test'`).Scan(&protectedStatus); err != nil {
+				t.Fatal(err)
+			}
+			var afterBalance int64
+			if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id = 'checking-test'`).Scan(&afterBalance); err != nil {
+				t.Fatal(err)
+			}
+			afterReserve := activeConsumesBySourceTx(t, db, mutableID)
+			if mutableStatus != "paid" || protectedStatus != "paid" || afterBalance != beforeBalance {
+				t.Fatalf("partial bulk status effect: mutable=%q protected=%q balance=%d want paid/paid/%d", mutableStatus, protectedStatus, afterBalance, beforeBalance)
+			}
+			if len(afterReserve) != 1 || afterReserve[0].ID != beforeReserve[0].ID || countReversalsForConsume(t, db, beforeReserve[0].ID) != 0 {
+				t.Fatalf("reserve changed: before=%#v after=%#v", beforeReserve, afterReserve)
+			}
+			var finalInvoiceStatus string
+			if err := db.QueryRow(`SELECT status FROM invoices WHERE id = 'invoice-2026-08'`).Scan(&finalInvoiceStatus); err != nil {
+				t.Fatal(err)
+			}
+			if finalInvoiceStatus != invoiceStatus {
+				t.Fatalf("invoice status = %q, want %q", finalInvoiceStatus, invoiceStatus)
+			}
+		})
 	}
 }
 

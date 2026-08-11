@@ -586,13 +586,16 @@ func TestTransactionRowConfirmTexts(t *testing.T) {
 	t.Run("renders confirm attributes on transaction row status toggle", func(t *testing.T) {
 		var buf bytes.Buffer
 		data := TransactionRow{
-			ID:                  "tx-123",
-			PaymentConfirm:      "Marcar este lançamento como pago?",
-			PaymentConfirmTitle: "Confirmar pagamento",
-			PaymentIcon:         "clock",
-			PaymentTitle:        "Pendente — toque para marcar como pago",
-			PaymentStatus:       "pending",
-			IsPending:           true,
+			ID:                          "tx-123",
+			AccountName:                 "Inter",
+			PaymentAccountID:            "acc-inter",
+			PaymentAccountChangeAllowed: true,
+			PaymentConfirm:              "Marcar este lançamento como pago?",
+			PaymentConfirmTitle:         "Confirmar pagamento",
+			PaymentIcon:                 "clock",
+			PaymentTitle:                "Pendente — toque para marcar como pago",
+			PaymentStatus:               "pending",
+			IsPending:                   true,
 		}
 		if err := tplRow.ExecuteTemplate(&buf, "lancamento-row", data); err != nil {
 			t.Fatalf("failed to execute lancamento-row: %v", err)
@@ -601,6 +604,9 @@ func TestTransactionRowConfirmTexts(t *testing.T) {
 		assertContains(t, html, `data-payment-confirm`)
 		assertContains(t, html, `data-swipe-right-payment-confirm="true"`)
 		assertContains(t, html, `data-payment-post-url="/transacoes/tx-123/status-pagamento"`)
+		assertContains(t, html, `data-payment-account-id="acc-inter"`)
+		assertContains(t, html, `data-payment-account-name="Inter"`)
+		assertContains(t, html, `data-payment-account-change-allowed="true"`)
 		if strings.Contains(html, `data-swipe-right-url="/transacoes/tx-123/status-pagamento"`) {
 			t.Fatal("pending transaction row must not post payment status directly from swipe")
 		}

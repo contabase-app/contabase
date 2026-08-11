@@ -89,16 +89,16 @@ func TestTenantIsolationTransactionWritesRejectForeignWorkspaceReferences(t *tes
 	handler := TransactionHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
 	now := time.Now().UTC().Unix()
 
-	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign account", "", "", now, "b-check", "", "a-expense-cat", 1, "paid", false, "", "", 0, false, nil, "", false); err == nil || !strings.Contains(err.Error(), "conta") {
+	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign account", "", "", civilWriteDateFromLegacyUnix(now), "b-check", "", "a-expense-cat", 1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false); err == nil || !strings.Contains(err.Error(), "conta") {
 		t.Fatalf("foreign account insert error = %v, want account authorization error", err)
 	}
-	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign category", "", "", now, "a-check", "", "b-expense-cat", 1, "paid", false, "", "", 0, false, nil, "", false); err == nil || !strings.Contains(err.Error(), "categoria") {
+	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign category", "", "", civilWriteDateFromLegacyUnix(now), "a-check", "", "b-expense-cat", 1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false); err == nil || !strings.Contains(err.Error(), "categoria") {
 		t.Fatalf("foreign category insert error = %v, want category authorization error", err)
 	}
-	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign contact", "", "", now, "a-check", "", "a-expense-cat", 1, "paid", false, "", "b-contact", 0, false, nil, "", false); err == nil || !strings.Contains(err.Error(), "contato") {
+	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign contact", "", "", civilWriteDateFromLegacyUnix(now), "a-check", "", "a-expense-cat", 1, "paid", false, "", "b-contact", OptionalCivilWriteDate{}, nil, "", false); err == nil || !strings.Contains(err.Error(), "contato") {
 		t.Fatalf("foreign contact insert error = %v, want contact authorization error", err)
 	}
-	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign invoice", "", "", now, "a-card", "", "a-expense-cat", 1, "paid", false, "", "", 0, false, nil, "b-invoice", false); err == nil || !strings.Contains(err.Error(), "fatura") {
+	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign invoice", "", "", civilWriteDateFromLegacyUnix(now), "a-card", "", "a-expense-cat", 1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "b-invoice", false); err == nil || !strings.Contains(err.Error(), "fatura") {
 		t.Fatalf("foreign invoice insert error = %v, want invoice authorization error", err)
 	}
 
@@ -122,7 +122,7 @@ func TestTenantIsolationForeignIDsCannotMutateOtherWorkspace(t *testing.T) {
 	}
 	assertRowExists(t, db, "transactions", "b-expense")
 
-	faturaHandler := FaturasHandler{DB: db, Templates: testOOBTemplates(t), WorkspaceID: "ws-a", UserID: "user-a"}
+	faturaHandler := FaturasHandler{DB: db, WriterDB: db, Templates: testOOBTemplates(t), WorkspaceID: "ws-a", UserID: "user-a"}
 	form := url.Values{"invoice_id": {"b-invoice"}, "payment_account_id": {"a-check"}}
 	faturaReq := httptest.NewRequest(http.MethodPost, "/cartoes/faturas/pagar", strings.NewReader(form.Encode()))
 	faturaReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")

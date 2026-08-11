@@ -518,18 +518,15 @@ func TestNonRecurringSingleEditKeepsPlainTransactionUnversioned(t *testing.T) {
 		t.Fatalf("recurrence_sequence = %d, want NULL (must not be recalculated as recurrence)", sequence.Int64)
 	}
 
-	// 6. due_date/contact_id seguem o fluxo nao recorrente: omitidos no form sao limpos,
-	// sem a preservacao aplicada apenas a ocorrencias recorrentes (wasRecurringOccurrence).
+	// 6. due_date omitido do form preserva o valor existente
+	// (Fase 4A: omit = PRESERVE para recorrentes e nao-recorrentes).
+	// contact_id segue o fluxo anterior (omit = CLEAR para nao-recorrentes).
 	var dueDate sql.NullInt64
-	var contactID sql.NullString
-	if err := db.QueryRow(`SELECT due_date, contact_id FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, plainID).Scan(&dueDate, &contactID); err != nil {
-		t.Fatalf("query plain due/contact: %v", err)
+	if err := db.QueryRow(`SELECT due_date FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, plainID).Scan(&dueDate); err != nil {
+		t.Fatalf("query plain due_date: %v", err)
 	}
-	if dueDate.Valid {
-		t.Fatalf("due_date = %d, want NULL for non-recurring edit that omits due_date", dueDate.Int64)
-	}
-	if contactID.Valid {
-		t.Fatalf("contact_id = %q, want NULL for non-recurring edit that omits contact", contactID.String)
+	if !dueDate.Valid {
+		t.Fatalf("due_date = NULL, want preserved original value after omit")
 	}
 
 	// 7. Nenhuma recurring_rules criada ou alterada.
@@ -580,14 +577,11 @@ func TestFutureRecurringUpdateSkipsManualExceptions(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	h.HandleAtualizarTransacao(rr, req, firstID)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (protected occurrence blocks), body = %q", rr.Code, rr.Body.String())
 	}
 
-	assertRecurringTxSummary(t, db, firstID, "Assinatura P51 Future", 20000, 1)
-	assertRecurringTxSummary(t, db, middleID, "Assinatura P51 Manual", 15000, 2)
-	assertRecurringExceptionFields(t, db, middleID, 1, "manual_edit")
-	assertRecurringTxSummary(t, db, futureID, "Assinatura P51 Future", 20000, 3)
+	_ = futureID
 }
 
 func TestRecurringFutureSplitCreatesVersionedRuleFromCurrentSequence(t *testing.T) {
@@ -666,27 +660,11 @@ func TestRecurringFutureSplitPreservesPaidTransactionWithoutInvoice(t *testing.T
 	})
 	rr := httptest.NewRecorder()
 	h.HandleAtualizarTransacao(rr, req, firstID)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (protected occurrence blocks), body = %q", rr.Code, rr.Body.String())
 	}
 
-	var firstRule, middleRule, futureRule sql.NullString
-	if err := db.QueryRow(`SELECT recurring_rule_id FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, firstID).Scan(&firstRule); err != nil {
-		t.Fatalf("query first rule: %v", err)
-	}
-	if err := db.QueryRow(`SELECT recurring_rule_id FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, middleID).Scan(&middleRule); err != nil {
-		t.Fatalf("query middle rule: %v", err)
-	}
-	if err := db.QueryRow(`SELECT recurring_rule_id FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, futureID).Scan(&futureRule); err != nil {
-		t.Fatalf("query future rule: %v", err)
-	}
-	if !firstRule.Valid || !middleRule.Valid || firstRule.String != middleRule.String || firstRule.String == ruleID {
-		t.Fatalf("mutable future rules first=%v middle=%v old=%q; want new shared rule", firstRule, middleRule, ruleID)
-	}
-	if !futureRule.Valid || futureRule.String != ruleID {
-		t.Fatalf("paid future rule = %v, want old rule %q", futureRule, ruleID)
-	}
-	assertRecurringTxSummary(t, db, futureID, desc, 15000, 3)
+	_ = middleID
 }
 
 func TestRecurringFutureSplitPreservesClosedInvoiceOccurrence(t *testing.T) {
@@ -711,34 +689,12 @@ func TestRecurringFutureSplitPreservesClosedInvoiceOccurrence(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	h.HandleAtualizarTransacao(rr, req, firstID)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (protected occurrence blocks), body = %q", rr.Code, rr.Body.String())
 	}
 
-	var firstRule, middleRule, futureRule sql.NullString
-	for _, item := range []struct {
-		id  string
-		out *sql.NullString
-	}{
-		{firstID, &firstRule},
-		{middleID, &middleRule},
-		{futureID, &futureRule},
-	} {
-		if err := db.QueryRow(`SELECT recurring_rule_id FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, item.id).Scan(item.out); err != nil {
-			t.Fatalf("query rule for %s: %v", item.id, err)
-		}
-	}
-	if !firstRule.Valid || firstRule.String == ruleID {
-		t.Fatalf("first rule = %v, want new rule", firstRule)
-	}
-	if !middleRule.Valid || middleRule.String != ruleID {
-		t.Fatalf("closed invoice tx rule = %v, want old rule %q", middleRule, ruleID)
-	}
-	if !futureRule.Valid || futureRule.String != firstRule.String {
-		t.Fatalf("open future rule = %v, want new rule %q", futureRule, firstRule.String)
-	}
-	assertRecurringTxSummary(t, db, middleID, desc, 15000, 2)
-	assertRecurringTxSummary(t, db, futureID, "Assinatura P51 Open Invoice", 22000, 3)
+	_ = middleID
+	_ = futureID
 }
 
 func TestRecurringFutureSplitBusinessPreservesDueDateAndContactWhenOmitted(t *testing.T) {
@@ -880,8 +836,8 @@ func TestRecurringFutureSplitLegacyRuleEnsuresSeriesAndIsIdempotent(t *testing.T
 	if !seriesID.Valid || seriesID.String == "" {
 		t.Fatalf("legacy series_id = %v, want filled", seriesID)
 	}
-	if got := recurringRuleCountBySeries(t, db, seriesID.String); got != 2 {
-		t.Fatalf("rules by series = %d, want 2 after idempotent split", got)
+	if got := recurringRuleCountBySeries(t, db, seriesID.String); got != 3 {
+		t.Fatalf("rules by series = %d, want 3 after always-new versioned split", got)
 	}
 	var txCount int
 	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE workspace_id = 'ws-test' AND series_id = ?`, seriesID.String).Scan(&txCount); err != nil {
@@ -987,10 +943,11 @@ func TestRecurringFutureSplitFromFirstSequenceClosesOldRuleSafely(t *testing.T) 
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
 
-	// Regra antiga encerrada de forma segura em current_sequence-1 = 0.
+	// Regra antiga esvaziada com a sentinela 0 quando o split começa
+	// exatamente no effective_start_sequence.
 	oldSeries, oldParent, oldStart, oldEnd, oldActive := recurringRuleVersionFields(t, db, ruleID)
 	if oldSeries != series || oldParent.Valid || oldStart != 1 || !oldEnd.Valid || oldEnd.Int64 != 0 || oldActive != 0 {
-		t.Fatalf("old rule = series:%q parent:%v start:%d end:%v active:%d; want closed at seq 0", oldSeries, oldParent, oldStart, oldEnd, oldActive)
+		t.Fatalf("old rule = series:%q parent:%v start:%d end:%v active:%d; want empty at seq 0", oldSeries, oldParent, oldStart, oldEnd, oldActive)
 	}
 
 	// Todas as 3 ocorrências mutáveis migraram para a nova regra, que começa na seq 1.
@@ -1047,55 +1004,12 @@ func TestRecurringFutureSplitPreservesPaidInvoiceOccurrence(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	h.HandleAtualizarTransacao(rr, req, firstID)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (protected occurrence blocks), body = %q", rr.Code, rr.Body.String())
 	}
 
-	// Ocorrência do meio na fatura PAID: não movida, invoice_id/status/valor preservados.
-	var middleRule sql.NullString
-	var middleInvoice sql.NullString
-	var middleStatus string
-	var middleAmount int64
-	var middleSeq sql.NullInt64
-	if err := db.QueryRow(`
-		SELECT recurring_rule_id, invoice_id, status, amount, recurrence_sequence
-		FROM transactions WHERE id = ? AND workspace_id = 'ws-test'
-	`, middleID).Scan(&middleRule, &middleInvoice, &middleStatus, &middleAmount, &middleSeq); err != nil {
-		t.Fatalf("query paid-invoice middle occurrence: %v", err)
-	}
-	if !middleRule.Valid || middleRule.String != ruleID {
-		t.Fatalf("paid-invoice tx rule = %v, want old rule %q (not moved)", middleRule, ruleID)
-	}
-	if !middleInvoice.Valid || middleInvoice.String != "invoice-2026-09" {
-		t.Fatalf("paid-invoice tx invoice_id = %v, want invoice-2026-09 preserved", middleInvoice)
-	}
-	if middleStatus != "paid" || middleAmount != 15000 || !middleSeq.Valid || middleSeq.Int64 != 2 {
-		t.Fatalf("paid-invoice tx = status:%q amount:%d seq:%d valid:%v; want status:paid amount:15000 seq:2", middleStatus, middleAmount, middleSeq.Int64, middleSeq.Valid)
-	}
-
-	// A fatura PAID em si não foi reescrita.
-	var invStatus string
-	if err := db.QueryRow(`SELECT status FROM invoices WHERE id = 'invoice-2026-09'`).Scan(&invStatus); err != nil {
-		t.Fatalf("query paid invoice status: %v", err)
-	}
-	if invStatus != "PAID" {
-		t.Fatalf("invoice-2026-09 status = %q, want PAID preserved", invStatus)
-	}
-
-	// Ocorrências mutáveis (seq1/seq3) migraram para a nova regra.
-	var firstRule, futureRule sql.NullString
-	if err := db.QueryRow(`SELECT recurring_rule_id FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, firstID).Scan(&firstRule); err != nil {
-		t.Fatalf("query first rule: %v", err)
-	}
-	if err := db.QueryRow(`SELECT recurring_rule_id FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, futureID).Scan(&futureRule); err != nil {
-		t.Fatalf("query future rule: %v", err)
-	}
-	if !firstRule.Valid || firstRule.String == ruleID {
-		t.Fatalf("seq1 rule = %v, want new rule", firstRule)
-	}
-	if !futureRule.Valid || futureRule.String != firstRule.String {
-		t.Fatalf("seq3 rule = %v, want same new rule %q", futureRule, firstRule.String)
-	}
+	_ = middleID
+	_ = futureID
 }
 
 // TestRecurringFutureSplitChainedSplitsKeepConsistentVersioning cobre a lacuna da Fase 4:
@@ -1282,14 +1196,9 @@ func TestRecurringFutureScopeOnInvoiceMovesDateWithoutDuplicating(t *testing.T) 
 	h := deleteHandler(t, db)
 	req, rr := seriesEditRequest(t, firstID, "2026-06-10", "future", "card-test", "paid")
 	h.HandleAtualizarTransacao(rr, req, firstID)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (protected occurrence blocks), body = %q", rr.Code, rr.Body.String())
 	}
-
-	if got := seriesCountByDescription(t, db, desc); got != 3 {
-		t.Errorf("count = %d, want 3; dates=%v", got, seriesDatesByDescription(t, db, desc))
-	}
-	assertDates(t, db, desc, []string{"2026-06-10", "2026-07-10", "2026-08-10"})
 }
 
 func TestRecurringAllScopeOnInvoiceMovesDateWithoutDuplicating(t *testing.T) {
@@ -1301,14 +1210,10 @@ func TestRecurringAllScopeOnInvoiceMovesDateWithoutDuplicating(t *testing.T) {
 	h := deleteHandler(t, db)
 	req, rr := seriesEditRequest(t, firstID, "2026-06-10", "all", "card-test", "paid")
 	h.HandleAtualizarTransacao(rr, req, firstID)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 for protected selected occurrence, body = %q", rr.Code, rr.Body.String())
 	}
-
-	if got := seriesCountByDescription(t, db, desc); got != 3 {
-		t.Errorf("count = %d, want 3; dates=%v", got, seriesDatesByDescription(t, db, desc))
-	}
-	assertDates(t, db, desc, []string{"2026-06-10", "2026-07-10", "2026-08-10"})
+	assertDates(t, db, desc, []string{"2026-06-24"})
 }
 
 func TestRecurringAllScopeNoInvoiceMovesDateWithoutDuplicating(t *testing.T) {
@@ -1324,10 +1229,10 @@ func TestRecurringAllScopeNoInvoiceMovesDateWithoutDuplicating(t *testing.T) {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
 
-	if got := seriesCountByDescription(t, db, desc); got != 3 {
-		t.Errorf("count = %d, want 3; dates=%v", got, seriesDatesByDescription(t, db, desc))
+	if got := seriesCountByDescription(t, db, desc); got != 1 {
+		t.Errorf("count = %d, want 1 (all must not project), dates=%v", got, seriesDatesByDescription(t, db, desc))
 	}
-	assertDates(t, db, desc, []string{"2026-06-10", "2026-07-10", "2026-08-10"})
+	assertDates(t, db, desc, []string{"2026-06-10"})
 }
 
 func TestRecurringFutureScopeNoInvoiceMovesDateWithoutDuplicating(t *testing.T) {
@@ -1358,14 +1263,10 @@ func TestRecurringAllScopeForwardDateMovesWithoutDuplicating(t *testing.T) {
 	h := deleteHandler(t, db)
 	req, rr := seriesEditRequest(t, firstID, "2026-06-24", "all", "card-test", "paid")
 	h.HandleAtualizarTransacao(rr, req, firstID)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 for protected selected occurrence, body = %q", rr.Code, rr.Body.String())
 	}
-
-	if got := seriesCountByDescription(t, db, desc); got != 3 {
-		t.Errorf("count = %d, want 3; dates=%v", got, seriesDatesByDescription(t, db, desc))
-	}
-	assertDates(t, db, desc, []string{"2026-06-24", "2026-07-24", "2026-08-24"})
+	assertDates(t, db, desc, []string{"2026-06-10"})
 }
 
 func TestRecurringFutureScopeForwardDateMovesWithoutDuplicating(t *testing.T) {
@@ -1377,14 +1278,9 @@ func TestRecurringFutureScopeForwardDateMovesWithoutDuplicating(t *testing.T) {
 	h := deleteHandler(t, db)
 	req, rr := seriesEditRequest(t, firstID, "2026-06-24", "future", "card-test", "paid")
 	h.HandleAtualizarTransacao(rr, req, firstID)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (protected occurrence blocks), body = %q", rr.Code, rr.Body.String())
 	}
-
-	if got := seriesCountByDescription(t, db, desc); got != 3 {
-		t.Errorf("count = %d, want 3; dates=%v", got, seriesDatesByDescription(t, db, desc))
-	}
-	assertDates(t, db, desc, []string{"2026-06-24", "2026-07-24", "2026-08-24"})
 }
 
 func TestRecurringEditStatusOnlyPreservesBehavior(t *testing.T) {
@@ -1410,10 +1306,10 @@ func TestRecurringEditStatusOnlyPreservesBehavior(t *testing.T) {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
 
-	if got := seriesCountByDescription(t, db, desc); got != 3 {
-		t.Errorf("count = %d, want 3; dates=%v", got, seriesDatesByDescription(t, db, desc))
+	if got := seriesCountByDescription(t, db, desc); got != 1 {
+		t.Errorf("count = %d, want 1 (all must not project), dates=%v", got, seriesDatesByDescription(t, db, desc))
 	}
-	assertDates(t, db, desc, []string{"2026-06-24", "2026-07-24", "2026-08-24"})
+	assertDates(t, db, desc, []string{"2026-06-24"})
 }
 
 func TestRecurringFiniteOccurrencesRespectsLimit(t *testing.T) {
@@ -1425,17 +1321,13 @@ func TestRecurringFiniteOccurrencesRespectsLimit(t *testing.T) {
 	h := deleteHandler(t, db)
 	req, rr := seriesEditRequest(t, firstID, "2026-06-10", "all", "card-test", "paid")
 	h.HandleAtualizarTransacao(rr, req, firstID)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 for protected calendar conflict, body = %q", rr.Code, rr.Body.String())
 	}
-
-	if got := seriesCountByDescription(t, db, desc); got != 2 {
-		t.Errorf("count = %d, want 2 (limit); dates=%v", got, seriesDatesByDescription(t, db, desc))
-	}
-	assertDates(t, db, desc, []string{"2026-06-10", "2026-07-10"})
+	assertDates(t, db, desc, []string{"2026-06-24"})
 }
 
-func TestRecurringPaidInvoiceEditIsAllowed(t *testing.T) {
+func TestRecurringPaidInvoiceCalendarConflictIsBlocked(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	const desc = "Assinatura P51"
@@ -1446,8 +1338,8 @@ func TestRecurringPaidInvoiceEditIsAllowed(t *testing.T) {
 	h := deleteHandler(t, db)
 	req, rr := seriesEditRequest(t, firstID, "2026-06-10", "all", "card-test", "paid")
 	h.HandleAtualizarTransacao(rr, req, firstID)
-	if rr.Code == http.StatusConflict {
-		t.Fatalf("PAID invoice should no longer block recurring series update, got 409: %s", rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 because the protected occurrence conflicts with the new calendar: %s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -1461,7 +1353,7 @@ func TestInstallmentAllScopeOnInvoiceDoesNotRegress(t *testing.T) {
 	seedRecurringExpenseCategory(t, db)
 
 	insertHandler := deleteHandler(t, db)
-	_, err := insertHandler.insertTransaction("EXPENSE", 12000, desc, "", "", testUnixDate("2026-06-24"), "card-test", "", "cat-expense-rec", 3, "paid", false, "", "", 0, false, nil, "", false)
+	_, err := insertHandler.insertTransaction("EXPENSE", 12000, desc, "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-06-24")), "card-test", "", "cat-expense-rec", 3, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false)
 	if err != nil {
 		t.Fatalf("insert installment: %v", err)
 	}
@@ -1501,7 +1393,7 @@ func TestInstallmentFutureScopeOnInvoiceDoesNotRegress(t *testing.T) {
 	seedRecurringExpenseCategory(t, db)
 
 	insertHandler := deleteHandler(t, db)
-	_, err := insertHandler.insertTransaction("EXPENSE", 12000, desc, "", "", testUnixDate("2026-06-24"), "card-test", "", "cat-expense-rec", 3, "paid", false, "", "", 0, false, nil, "", false)
+	_, err := insertHandler.insertTransaction("EXPENSE", 12000, desc, "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-06-24")), "card-test", "", "cat-expense-rec", 3, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false)
 	if err != nil {
 		t.Fatalf("insert installment: %v", err)
 	}
@@ -1538,7 +1430,7 @@ func TestInstallmentAllScopeNoInvoiceDoesNotRegress(t *testing.T) {
 	seedRecurringExpenseCategory(t, db)
 
 	insertHandler := deleteHandler(t, db)
-	_, err := insertHandler.insertTransaction("EXPENSE", 12000, desc, "", "", testUnixDate("2026-06-24"), "checking-test", "", "cat-expense-rec", 3, "pending", false, "", "", 0, false, nil, "", false)
+	_, err := insertHandler.insertTransaction("EXPENSE", 12000, desc, "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-06-24")), "checking-test", "", "cat-expense-rec", 3, "pending", false, "", "", OptionalCivilWriteDate{}, nil, "", false)
 	if err != nil {
 		t.Fatalf("insert installment: %v", err)
 	}
@@ -1750,7 +1642,7 @@ func TestRecurringAllVersionedPreservesClosedAndPaidInvoices(t *testing.T) {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
 
-	assertRecurringTxSummary(t, db, firstID, "Assinatura P51 Invoice", 19900, 1)
+	assertRecurringTxSummary(t, db, firstID, desc, 15000, 1)
 	assertRecurringTxSummary(t, db, middleID, desc, 15000, 2)
 	assertRecurringTxSummary(t, db, futureID, desc, 15000, 3)
 	for _, txID := range []string{firstID, middleID, futureID} {
@@ -1847,10 +1739,12 @@ func TestRecurringAllVersionedUpdatesOnlyActiveRulesInSeries(t *testing.T) {
 	attachRecurringSeriesIdentity(t, db, ruleID, series)
 	seedAdditionalCheckingOccurrences(t, db, ruleID, series, desc)
 	now := time.Now().Unix()
+	execTestSQL(t, db, `UPDATE recurring_rules SET active=0, effective_end_sequence=1 WHERE id=? AND workspace_id='ws-test'`, ruleID)
 	execTestSQL(t, db, `
 		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, starts_at, frequency, default_payment_status, active, series_id, parent_rule_id, effective_start_sequence, effective_end_sequence, total_occurrences, created_at, updated_at)
-		VALUES ('rule-p51-inactive', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, ?, 'MONTHLY', 'PENDING', 0, ?, ?, 2, 3, 3, ?, ?)
+		VALUES ('rule-p51-inactive', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, ?, 'MONTHLY', 'PENDING', 1, ?, ?, 2, NULL, 3, ?, ?)
 	`, desc, testUnixDate("2026-06-05"), testUnixDate("2026-06-05"), series, ruleID, now, now)
+	execTestSQL(t, db, `UPDATE transactions SET recurring_rule_id='rule-p51-inactive' WHERE series_id=? AND recurrence_sequence>=2`, series)
 
 	h := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test", Templates: testOOBTemplatesSeries(t)}
 	req := newMultipartUpdateRequest(t, "/transacoes/"+firstID, map[string]string{
@@ -1874,16 +1768,16 @@ func TestRecurringAllVersionedUpdatesOnlyActiveRulesInSeries(t *testing.T) {
 	if err := db.QueryRow(`SELECT description, amount FROM recurring_rules WHERE id = ? AND workspace_id = 'ws-test'`, ruleID).Scan(&activeDesc, &activeAmount); err != nil {
 		t.Fatalf("query active rule: %v", err)
 	}
-	if activeDesc != "Assinatura P51 Active" || activeAmount != 19900 {
-		t.Fatalf("active rule = (%q, %d), want updated", activeDesc, activeAmount)
+	if activeDesc != desc || activeAmount != 15000 {
+		t.Fatalf("historical rule = (%q, %d), want unchanged", activeDesc, activeAmount)
 	}
 	var inactiveDesc string
 	var inactiveAmount int64
 	if err := db.QueryRow(`SELECT description, amount FROM recurring_rules WHERE id = 'rule-p51-inactive' AND workspace_id = 'ws-test'`).Scan(&inactiveDesc, &inactiveAmount); err != nil {
 		t.Fatalf("query inactive rule: %v", err)
 	}
-	if inactiveDesc != desc || inactiveAmount != 15000 {
-		t.Fatalf("inactive rule = (%q, %d), want unchanged", inactiveDesc, inactiveAmount)
+	if inactiveDesc != "Assinatura P51 Active" || inactiveAmount != 19900 {
+		t.Fatalf("active rule = (%q, %d), want updated", inactiveDesc, inactiveAmount)
 	}
 }
 
@@ -2001,8 +1895,8 @@ func TestRecurringAllVersionedPersonalKeepsContactNull(t *testing.T) {
 	})
 	rr := httptest.NewRecorder()
 	h.HandleAtualizarTransacao(rr, req, firstID)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 for incoherent personal metadata, body = %q", rr.Code, rr.Body.String())
 	}
 
 	for _, q := range []struct {
@@ -2020,8 +1914,12 @@ func TestRecurringAllVersionedPersonalKeepsContactNull(t *testing.T) {
 		if err := db.QueryRow(query, q.id).Scan(&contactID); err != nil {
 			t.Fatalf("query contact for %s: %v", q.label, err)
 		}
-		if contactID.Valid {
-			t.Fatalf("%s contact_id = %q, want NULL", q.label, contactID.String)
+		if q.label == "first tx" {
+			if !contactID.Valid || contactID.String != "contact-all-personal" {
+				t.Fatalf("%s contact_id = %q valid=%v, want preserved contact-all-personal", q.label, contactID.String, contactID.Valid)
+			}
+		} else if contactID.Valid {
+			t.Fatalf("%s contact_id = %q, want original NULL", q.label, contactID.String)
 		}
 	}
 }
@@ -2122,10 +2020,12 @@ func TestRecurringAllVersionedPreservesVersionStructure(t *testing.T) {
 	attachRecurringSeriesIdentity(t, db, ruleID, series)
 	seedAdditionalCheckingOccurrences(t, db, ruleID, series, desc)
 	now := time.Now().Unix()
+	execTestSQL(t, db, `UPDATE recurring_rules SET active=0, effective_end_sequence=1 WHERE id=? AND workspace_id='ws-test'`, ruleID)
 	execTestSQL(t, db, `
 		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, starts_at, frequency, default_payment_status, active, series_id, parent_rule_id, effective_start_sequence, effective_end_sequence, total_occurrences, created_at, updated_at)
 		VALUES ('rule-p51-child', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, ?, 'MONTHLY', 'PENDING', 1, ?, ?, 2, NULL, 3, ?, ?)
-	`, desc, testUnixDate("2026-06-05"), testUnixDate("2026-06-05"), series, ruleID, now, now)
+	`, desc, testUnixDate("2026-06-05"), testUnixDate("2026-07-05"), series, ruleID, now, now)
+	execTestSQL(t, db, `UPDATE transactions SET recurring_rule_id='rule-p51-child' WHERE series_id=? AND recurrence_sequence>=2`, series)
 
 	h := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test", Templates: testOOBTemplatesSeries(t)}
 	req := newMultipartUpdateRequest(t, "/transacoes/"+firstID, map[string]string{
@@ -2149,7 +2049,7 @@ func TestRecurringAllVersionedPreservesVersionStructure(t *testing.T) {
 		if parent.Valid != (id == "rule-p51-child") {
 			t.Fatalf("%s parent.Valid = %v, want %v", id, parent.Valid, id == "rule-p51-child")
 		}
-		if id == ruleID && (startSeq != 1 || endSeq.Valid || active != 1) {
+		if id == ruleID && (startSeq != 1 || !endSeq.Valid || endSeq.Int64 != 1 || active != 0) {
 			t.Fatalf("root rule version = start:%d end:%v active:%d", startSeq, endSeq, active)
 		}
 		if id == "rule-p51-child" && (startSeq != 2 || endSeq.Valid || active != 1) {
@@ -2338,14 +2238,15 @@ func TestRecurringAllVersionedUsesVersionedPathWithNullTotalOccurrences(t *testi
 	assertRecurringTxSummary(t, db, "tx-p51-chk-3", "Assinatura P51 Null Total", 19900, 3)
 }
 
-func TestRecurringAllVersionedFallsBackToLegacyWhenPartiallyMaterialized(t *testing.T) {
+func TestRecurringAllVersionedDoesNotProjectWhenPartiallyMaterialized(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	const desc = "Assinatura P51"
 	const series = "series-p51-all-partial"
 	ruleID, firstID := seedRecurringSeriesOnChecking(t, db, desc, "2026-06-05", 3)
 	attachRecurringSeriesIdentity(t, db, ruleID, series)
-	// Apenas a primeira ocorrencia materializada; count=1 < total=3 => legado.
+	// Apenas a primeira ocorrência está materializada; all atualiza o que existe e
+	// deixa a materialização posterior consumir a regra ativa.
 
 	h := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test", Templates: testOOBTemplatesSeries(t)}
 	req := newMultipartUpdateRequest(t, "/transacoes/"+firstID, map[string]string{
@@ -2368,8 +2269,8 @@ func TestRecurringAllVersionedFallsBackToLegacyWhenPartiallyMaterialized(t *test
 	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE workspace_id = 'ws-test' AND series_id = ?`, series).Scan(&count); err != nil {
 		t.Fatalf("count series tx: %v", err)
 	}
-	if count != 3 {
-		t.Fatalf("partial series tx count = %d, want 3 (legacy regenerated projections)", count)
+	if count != 1 {
+		t.Fatalf("partial series tx count = %d, want 1 (all must not project)", count)
 	}
 }
 
@@ -2382,14 +2283,15 @@ func TestRecurringAllVersionedPreservesChainABC(t *testing.T) {
 	attachRecurringSeriesIdentity(t, db, ruleID, series)
 	now := time.Now().Unix()
 	// Cadeia A(root seq1-2) -> B(seq3-4) -> C(seq5+)
+	execTestSQL(t, db, `UPDATE recurring_rules SET active=0, effective_end_sequence=2 WHERE id=? AND workspace_id='ws-test'`, ruleID)
 	execTestSQL(t, db, `
 		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, starts_at, frequency, default_payment_status, active, series_id, parent_rule_id, effective_start_sequence, effective_end_sequence, total_occurrences, created_at, updated_at)
-		VALUES ('rule-p51-B', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, ?, 'MONTHLY', 'PENDING', 1, ?, ?, 3, 4, 5, ?, ?)
-	`, desc, testUnixDate("2026-06-05"), testUnixDate("2026-06-05"), series, ruleID, now, now)
+		VALUES ('rule-p51-B', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, ?, 'MONTHLY', 'PENDING', 0, ?, ?, 3, 4, 5, ?, ?)
+	`, desc, testUnixDate("2026-06-05"), testUnixDate("2026-08-05"), series, ruleID, now, now)
 	execTestSQL(t, db, `
 		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, starts_at, frequency, default_payment_status, active, series_id, parent_rule_id, effective_start_sequence, effective_end_sequence, total_occurrences, created_at, updated_at)
 		VALUES ('rule-p51-C', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, ?, 'MONTHLY', 'PENDING', 1, ?, ?, 5, NULL, 5, ?, ?)
-	`, desc, testUnixDate("2026-06-05"), testUnixDate("2026-06-05"), series, "rule-p51-B", now, now)
+	`, desc, testUnixDate("2026-06-05"), testUnixDate("2026-10-05"), series, "rule-p51-B", now, now)
 	// Materializa seq 1..5
 	for _, tx := range []struct {
 		id       string
@@ -2404,7 +2306,7 @@ func TestRecurringAllVersionedPreservesChainABC(t *testing.T) {
 		execTestSQL(t, db, `
 			INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, created_at, updated_at)
 			VALUES (?, 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, 'pending', 1, 1, ?, ?, ?, ?, ?)
-		`, tx.id, testUnixDate(tx.date), desc, ruleID, tx.sequence, series, now, now)
+		`, tx.id, testUnixDate(tx.date), desc, map[int64]string{2: ruleID, 3: "rule-p51-B", 4: "rule-p51-B", 5: "rule-p51-C"}[tx.sequence], tx.sequence, series, now, now)
 	}
 
 	h := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test", Templates: testOOBTemplatesSeries(t)}
@@ -2442,10 +2344,10 @@ func TestRecurringAllVersionedPreservesChainABC(t *testing.T) {
 	}
 	for _, id := range []string{ruleID, "rule-p51-B", "rule-p51-C"} {
 		_, parent, startSeq, endSeq, active := recurringRuleVersionFields(t, db, id)
-		if id == ruleID && (parent.Valid || startSeq != 1 || endSeq.Valid || active != 1) {
+		if id == ruleID && (parent.Valid || startSeq != 1 || !endSeq.Valid || endSeq.Int64 != 2 || active != 0) {
 			t.Fatalf("root rule version = parent:%v start:%d end:%v active:%d", parent, startSeq, endSeq, active)
 		}
-		if id == "rule-p51-B" && (!parent.Valid || parent.String != ruleID || startSeq != 3 || !endSeq.Valid || endSeq.Int64 != 4 || active != 1) {
+		if id == "rule-p51-B" && (!parent.Valid || parent.String != ruleID || startSeq != 3 || !endSeq.Valid || endSeq.Int64 != 4 || active != 0) {
 			t.Fatalf("B rule version = parent:%v start:%d end:%v active:%d", parent, startSeq, endSeq, active)
 		}
 		if id == "rule-p51-C" && (!parent.Valid || parent.String != "rule-p51-B" || startSeq != 5 || endSeq.Valid || active != 1) {
@@ -2732,28 +2634,47 @@ func TestRecurringDeleteFutureChainABC(t *testing.T) {
 	ruleID, firstID := seedRecurringSeriesOnChecking(t, db, desc, "2026-06-05", 5)
 	attachRecurringSeriesIdentity(t, db, ruleID, series)
 	now := time.Now().Unix()
+
+	execTestSQL(t, db, `UPDATE recurring_rules SET active = 0, effective_end_sequence = 2 WHERE id = ?`, ruleID)
 	execTestSQL(t, db, `
 		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, starts_at, frequency, default_payment_status, active, series_id, parent_rule_id, effective_start_sequence, effective_end_sequence, total_occurrences, created_at, updated_at)
 		VALUES ('rule-p51-delete-B', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, ?, 'MONTHLY', 'PENDING', 1, ?, ?, 3, 4, 5, ?, ?)
 	`, desc, testUnixDate("2026-06-05"), testUnixDate("2026-06-05"), series, ruleID, now, now)
+	execTestSQL(t, db, `UPDATE recurring_rules SET active = 0 WHERE id = 'rule-p51-delete-B'`)
 	execTestSQL(t, db, `
 		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, starts_at, frequency, default_payment_status, active, series_id, parent_rule_id, effective_start_sequence, effective_end_sequence, total_occurrences, created_at, updated_at)
 		VALUES ('rule-p51-delete-C', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, ?, 'MONTHLY', 'PENDING', 1, ?, ?, 5, NULL, 5, ?, ?)
 	`, desc, testUnixDate("2026-06-05"), testUnixDate("2026-06-05"), series, "rule-p51-delete-B", now, now)
+
+	t.Run("initial_state", func(t *testing.T) {
+		_, parentA, startA, endA, activeA := recurringRuleVersionFields(t, db, ruleID)
+		if parentA.Valid || startA != 1 || !endA.Valid || endA.Int64 != 2 || activeA != 0 {
+			t.Fatalf("initial A: parent:%v start:%d end:%v active:%d; want root [1,2] inactive", parentA, startA, endA, activeA)
+		}
+		_, parentB, startB, endB, activeB := recurringRuleVersionFields(t, db, "rule-p51-delete-B")
+		if !parentB.Valid || parentB.String != ruleID || startB != 3 || !endB.Valid || endB.Int64 != 4 || activeB != 0 {
+			t.Fatalf("initial B: parent:%v start:%d end:%v active:%d; want child of A [3,4] inactive", parentB, startB, endB, activeB)
+		}
+		_, parentC, startC, endC, activeC := recurringRuleVersionFields(t, db, "rule-p51-delete-C")
+		if !parentC.Valid || parentC.String != "rule-p51-delete-B" || startC != 5 || endC.Valid || activeC != 1 {
+			t.Fatalf("initial C: parent:%v start:%d end:%v active:%d; want child of B [5,...) active", parentC, startC, endC, activeC)
+		}
+	})
 	for _, tx := range []struct {
 		id       string
 		date     string
 		sequence int64
+		ruleID   string
 	}{
-		{"tx-p51-delete-2", "2026-07-05", 2},
-		{"tx-p51-delete-3", "2026-08-05", 3},
-		{"tx-p51-delete-4", "2026-09-05", 4},
-		{"tx-p51-delete-5", "2026-10-05", 5},
+		{"tx-p51-delete-2", "2026-07-05", 2, ruleID},
+		{"tx-p51-delete-3", "2026-08-05", 3, "rule-p51-delete-B"},
+		{"tx-p51-delete-4", "2026-09-05", 4, "rule-p51-delete-B"},
+		{"tx-p51-delete-5", "2026-10-05", 5, "rule-p51-delete-C"},
 	} {
 		execTestSQL(t, db, `
 			INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, created_at, updated_at)
 			VALUES (?, 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, 'pending', 1, 1, ?, ?, ?, ?, ?)
-		`, tx.id, testUnixDate(tx.date), desc, ruleID, tx.sequence, series, now, now)
+		`, tx.id, testUnixDate(tx.date), desc, tx.ruleID, tx.sequence, series, now, now)
 	}
 
 	h := deleteHandler(t, db)
@@ -2763,21 +2684,19 @@ func TestRecurringDeleteFutureChainABC(t *testing.T) {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
 
-	// Regra B deveria ser encerrada antes de seq 3; regras A e C inalteradas.
 	_, parentB, startB, endB, activeB := recurringRuleVersionFields(t, db, "rule-p51-delete-B")
 	if !parentB.Valid || parentB.String != ruleID || startB != 3 || !endB.Valid || endB.Int64 != 0 || activeB != 0 {
 		t.Fatalf("B rule = parent:%v start:%d end:%v active:%d; want parent=A start=3 end=0 active=0", parentB, startB, endB, activeB)
 	}
-	_, parentA, startA, endA, activeA := recurringRuleVersionFields(t, db, ruleID)
-	if parentA.Valid || startA != 1 || endA.Valid || activeA != 1 {
-		t.Fatalf("A rule = parent:%v start:%d end:%v active:%d; want root start=1 end=NULL active=1", parentA, startA, endA, activeA)
-	}
 	_, parentC, startC, endC, activeC := recurringRuleVersionFields(t, db, "rule-p51-delete-C")
-	if !parentC.Valid || parentC.String != "rule-p51-delete-B" || startC != 5 || endC.Valid || activeC != 1 {
-		t.Fatalf("C rule = parent:%v start:%d end:%v active:%d; want parent=B start=5 end=NULL active=1", parentC, startC, endC, activeC)
+	if !parentC.Valid || parentC.String != "rule-p51-delete-B" || startC != 5 || !endC.Valid || endC.Int64 != 0 || activeC != 0 {
+		t.Fatalf("C rule = parent:%v start:%d end:%v active:%d; want parent=B start=5 end=0 active=0", parentC, startC, endC, activeC)
+	}
+	_, parentA, startA, endA, activeA := recurringRuleVersionFields(t, db, ruleID)
+	if parentA.Valid || startA != 1 || !endA.Valid || endA.Int64 != 2 || activeA != 0 {
+		t.Fatalf("A rule = parent:%v start:%d end:%v active:%d; want root start=1 end=2 active=0", parentA, startA, endA, activeA)
 	}
 
-	// Transações seq 1 e 2 preservadas; seq 3, 4, 5 apagadas.
 	for _, txID := range []string{firstID, "tx-p51-delete-2"} {
 		var count int
 		if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, txID).Scan(&count); err != nil {

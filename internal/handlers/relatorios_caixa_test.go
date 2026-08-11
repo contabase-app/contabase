@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"testing"
@@ -540,6 +541,44 @@ func TestCaixaPrevisaoFaturaParcialUsaSaldoPendenteSemDuplicarPagamento(t *testi
 	}
 	if !foundCardCategory {
 		t.Fatalf("previsao deve abrir saldo pendente da fatura por categoria: %#v", data.CategoriasCaixa)
+	}
+}
+
+func TestCaixaPendingInvoiceAllReversedUsesCanonicalEffectivePaid(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedCaixaRealizadoScenario(t, db)
+
+	now := time.Now().Unix()
+	dueDate := testUnixDate("2026-08-25")
+	execTestSQL(t, db, `
+		INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, paid_amount, created_at)
+		VALUES ('inv-caixa-reversed', 'card-caixa', '2026-08', ?, ?, 'OPEN', 40000, ?)
+	`, testUnixDate("2026-08-20"), dueDate, now)
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, invoice_id, type, amount, date, description, status, installment_number, total_installments, created_at, updated_at)
+		VALUES ('purchase-caixa-reversed', 'ws-caixa', 'u-caixa', 'card-caixa', 'cat-card-caixa', 'inv-caixa-reversed', 'EXPENSE', 40000, ?, 'Compra caixa revertida', 'paid', 1, 1, ?, ?)
+	`, testUnixDate("2026-08-05"), now, now)
+	execTestSQL(t, db, `
+		INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, amount_cents, paid_at, source, reversed_at, created_at)
+		VALUES ('ip-caixa-reversed', 'ws-caixa', 'inv-caixa-reversed', 'chk-caixa', 40000, ?, 'manual', ?, ?)
+	`, testUnixDate("2026-08-10"), testUnixDate("2026-08-11"), now)
+
+	rows, err := buildPendingInvoiceCaixaRows(db, "ws-caixa", testUnixDate("2026-08-01"), testUnixDate("2026-09-01"))
+	if err != nil {
+		t.Fatalf("buildPendingInvoiceCaixaRows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].AmountCents != -40000 {
+		t.Fatalf("pending invoice caixa rows = %#v, want one row of -40000", rows)
+	}
+
+	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	targets, err := handler.queryInvoiceAllocationTargets(context.Background(), testUnixDate("2026-08-01"), testUnixDate("2026-08-31")+86399, "pending")
+	if err != nil {
+		t.Fatalf("queryInvoiceAllocationTargets pending: %v", err)
+	}
+	if len(targets) != 1 || targets["inv-caixa-reversed"] != 40000 {
+		t.Fatalf("pending allocation targets = %#v, want inv-caixa-reversed:40000", targets)
 	}
 }
 

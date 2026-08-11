@@ -7,20 +7,34 @@ INPUT="$PROJECT_ROOT/assets/css/input.css"
 OUTPUT="$PROJECT_ROOT/assets/css/style.css"
 
 require_node_version() {
-    local node_version major
-    node_version="$(node --version 2>/dev/null | sed 's/^v//')"
-    if [ -z "$node_version" ]; then
-        echo "Erro: node não encontrado. O build do CSS (Tailwind 4) exige Node.js 20 ou superior." >&2
+    local node_full major
+    node_full="$(node --version 2>/dev/null)"
+    if [ -z "$node_full" ]; then
+        echo "Erro: node não encontrado. O toolchain CSS do ContaBase exige Node.js 22 ou 24 LTS." >&2
         exit 1
     fi
 
-    major="${node_version%%.*}"
-    if ! [ "$major" -ge 20 ] 2>/dev/null; then
-        echo "Erro: Node.js ${node_version} detectado, mas o build do CSS (Tailwind 4) exige Node.js 20 ou superior." >&2
-        echo "O apt do Debian 12 instala Node 18, o que faz o npm pular o binário nativo @tailwindcss/oxide e quebra o build." >&2
-        echo "Instale Node.js 20+ (ex.: via NodeSource) antes de continuar." >&2
+    major="$(echo "$node_full" | sed -E 's/^v([0-9]+).*/\1/')"
+    case "$major" in
+    22|24)
+        ;;
+    *)
+        cat >&2 <<EOF
+Erro: Node.js ${node_full} não é suportado pelo toolchain CSS do ContaBase.
+
+O toolchain CSS do ContaBase foi validado com Node.js 22 e 24 LTS.
+
+Versoes suportadas:
+  Node.js 24 LTS — recomendada
+  Node.js 22 LTS — compativel
+
+Execute:
+  nvm install 24
+  nvm use 24
+EOF
         exit 1
-    fi
+        ;;
+    esac
 }
 
 require_node_version

@@ -38,6 +38,9 @@ CONTABASE_TIMEZONE_VALUE="${CONTABASE_TIMEZONE:-America/Sao_Paulo}"
 APP_USER="${CONTABASE_USER:-contabase}"
 INSTALL_DIR="${CONTABASE_INSTALL_DIR:-/opt/contabase}"
 DATA_DIR="${CONTABASE_DATA_DIR:-/var/lib/contabase}"
+DB_FILE="${CONTABASE_DB_FILE:-}"
+UPLOADS_DIR="${CONTABASE_UPLOADS_DIR:-}"
+BACKUPS_DIR=""
 CONFIG_DIR="${CONTABASE_CONFIG_DIR:-/etc/contabase}"
 STATE_FILE="${CONFIG_DIR}/install-state.env"
 INSTALL_CHANNEL="${CONTABASE_CHANNEL:-pinned}"
@@ -58,6 +61,18 @@ ENV_BACKUP=""
 SERVICE_FILE="/etc/systemd/system/contabase.service"
 SERVICE_BACKUP=""
 NEW_BUNDLE_ACTIVE=false
+NEW_RUNTIME_STARTED=false
+SERVICE_WAS_ACTIVE=false
+STATE_PRESENT=false
+PREVIOUS_VERSION="desconhecida"
+PREVIOUS_VERSION_RESOLVED=false
+BACKUP_PATH=""
+BACKUP_ID=""
+CANONICAL_BACKUP_HELPER=""
+CANONICAL_RESTORE_HELPER=""
+PERSISTED_RESTORE_HELPER=""
+CANONICAL_BACKUP_SHA256="e91430f5d5751fb088c6a755efddfc1793f3990adae039e47b119edc2b58451c"
+CANONICAL_RESTORE_SHA256="bd41388e27cda6b779e0ecf1adea9590d32d2c811aed57a768f3e115a11e16c1"
 
 say() {
   printf '%s\n' "$*"
@@ -203,7 +218,7 @@ validate_numeric_settings() {
 require_commands() {
   local cmd
   local missing=()
-  for cmd in curl tar install openssl awk grep find mktemp cp wc tr; do
+  for cmd in curl tar install openssl awk grep find mktemp cp wc tr sqlite3; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
   if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
@@ -465,9 +480,22 @@ validate_existing_env() {
     say "DATA_DIR detectado da configuracao existente: ${DATA_DIR}"
   fi
   custom_db_file="$(env_load_value "DB_FILE" "$ENV_FILE" | tr -d "[:space:]'\"")"
-  [ -n "$custom_db_file" ] && say "DB_FILE detectado: ${custom_db_file}"
+  if [ -n "$custom_db_file" ]; then
+    [[ "$custom_db_file" = /* ]] || fail "DB_FILE deve ser absoluto: ${custom_db_file}"
+    DB_FILE="$custom_db_file"
+    say "DB_FILE detectado: ${DB_FILE}"
+  elif [ -z "$DB_FILE" ]; then
+    DB_FILE="${DATA_DIR}/contabase.db"
+  fi
   custom_uploads_dir="$(env_load_value "UPLOADS_DIR" "$ENV_FILE" | tr -d "[:space:]'\"")"
-  [ -n "$custom_uploads_dir" ] && say "UPLOADS_DIR detectado: ${custom_uploads_dir}"
+  if [ -n "$custom_uploads_dir" ]; then
+    [[ "$custom_uploads_dir" = /* ]] || fail "UPLOADS_DIR deve ser absoluto: ${custom_uploads_dir}"
+    UPLOADS_DIR="$custom_uploads_dir"
+    say "UPLOADS_DIR detectado: ${UPLOADS_DIR}"
+  elif [ -z "$UPLOADS_DIR" ]; then
+    UPLOADS_DIR="${DATA_DIR}/uploads"
+  fi
+  BACKUPS_DIR="${DATA_DIR}/backups"
 
   local custom_base_url custom_allowed_hosts custom_proxies
   custom_base_url="$(env_load_value "APP_BASE_URL" "$ENV_FILE" | tr -d "[:space:]'\"")"
@@ -517,7 +545,7 @@ validate_existing_installation() {
   fi
 
   if [ ! -d "$DATA_DIR" ]; then
-    fail "Diretorio de dados nao encontrado: ${DATA_DIR}."
+    say "Diretorio de dados ainda ausente; a classificacao de estado decidira se o update pode continuar."
   fi
 
   if [ -f "$SERVICE_FILE" ]; then
@@ -528,10 +556,11 @@ validate_existing_installation() {
 
   # Detect current installed version
   if [ -f "${INSTALL_DIR}/VERSION" ]; then
-    local current_version
-    current_version="$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")"
-    say "Versao instalada atualmente: ${current_version}"
-    if [ "$current_version" = "$TAG" ]; then
+    PREVIOUS_VERSION="$(tr -d '[:space:]' < "${INSTALL_DIR}/VERSION")"
+    PREVIOUS_VERSION="${PREVIOUS_VERSION:-desconhecida}"
+    [ "$PREVIOUS_VERSION" = "desconhecida" ] || PREVIOUS_VERSION_RESOLVED=true
+    say "Versao instalada atualmente: ${PREVIOUS_VERSION}"
+    if [ "$PREVIOUS_VERSION" = "$TAG" ]; then
       if [ "$ASSUME_YES" = "1" ]; then
         say "Mesma versao ja instalada. Continuando (reinstall seguro)."
       else
@@ -577,6 +606,85 @@ backup_bundle() {
   fail "nao foi possivel preservar o bundle anterior em ${PREVIOUS_DIR}."
 }
 
+validate_persistent_state() {
+  STATE_PRESENT=false
+  if [ -e "$DB_FILE" ] || [ -L "$DB_FILE" ]; then
+    [ -f "$DB_FILE" ] && [ ! -L "$DB_FILE" ] && [ -r "$DB_FILE" ] \
+      || fail "banco existente e invalido, ambiguo ou ilegivel: $DB_FILE"
+    STATE_PRESENT=true
+  elif [ -e "$UPLOADS_DIR" ] || [ -L "$UPLOADS_DIR" ]; then
+    fail "uploads existem sem o banco esperado; estado persistente inconsistente: $UPLOADS_DIR"
+  else
+    say "Nenhum estado persistente encontrado; update pode continuar sem pacote de backup."
+    return 0
+  fi
+
+  if [ -e "$UPLOADS_DIR" ] || [ -L "$UPLOADS_DIR" ]; then
+    [ -d "$UPLOADS_DIR" ] && [ ! -L "$UPLOADS_DIR" ] && [ -r "$UPLOADS_DIR" ] \
+      || fail "uploads invalidos, ambiguos ou ilegíveis: $UPLOADS_DIR"
+  fi
+  [ "$PREVIOUS_VERSION_RESOLVED" = true ] \
+    || fail "nao foi possivel identificar a versao instalada antes do backup."
+}
+
+validate_backup_package() {
+  [ -n "$BACKUP_PATH" ] && [ -d "$BACKUP_PATH" ] || return 1
+  [ -f "$BACKUP_PATH/manifest.txt" ] || return 1
+  [ -f "$BACKUP_PATH/checksums.sha256" ] || return 1
+  [ -f "$BACKUP_PATH/database.sqlite" ] || return 1
+  [ -d "$BACKUP_PATH/uploads" ] || return 1
+  BACKUP_ID="$(awk -F= '$1 == "backup_id" { print $2; exit }' "$BACKUP_PATH/manifest.txt")"
+  [ -n "$BACKUP_ID" ] || return 1
+}
+
+create_canonical_backup() {
+  local helper_output
+  [ "$STATE_PRESENT" = true ] || return 0
+  install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$BACKUPS_DIR"
+  if ! helper_output="$(
+    APP_VERSION="$PREVIOUS_VERSION" \
+      DATA_DIR="$DATA_DIR" DB_FILE="$DB_FILE" UPLOADS_DIR="$UPLOADS_DIR" \
+      "$CANONICAL_BACKUP_HELPER" "$BACKUPS_DIR"
+  )"; then
+    say "Erro: helper canonico de backup falhou; bundle ativo nao sera alterado." >&2
+    return 1
+  fi
+  BACKUP_PATH="$(printf '%s\n' "$helper_output" | tail -n1)"
+  if ! validate_backup_package; then
+    say "Erro: pacote canonico final ausente ou incompleto." >&2
+    return 1
+  fi
+  say "Backup pre-update criado: $BACKUP_PATH"
+  say "Backup ID: $BACKUP_ID"
+  say "Versao anterior registrada: $PREVIOUS_VERSION"
+  say "Pacote confirmado: database.sqlite + uploads/. Preserve-o ate concluir o update."
+}
+
+print_post_start_failure() {
+  say ""
+  say "====================================================================="
+  say "A atualizacao NAO foi concluida."
+  say "O runtime antigo NAO foi reativado automaticamente."
+  say "O novo runtime foi parado; o banco pode ter sido migrado."
+  say "O bundle que falhou e o bundle anterior foram preservados para diagnostico."
+  say "Pacote pre-update: ${BACKUP_PATH:-nao aplicavel (instalacao sem estado)}"
+  if [ -n "$BACKUP_PATH" ]; then
+    say "Restore oficial, somente apos decisao explicita do operador:"
+    say "  CONFIRM_APP_STOPPED=yes DATA_DIR=$DATA_DIR DB_FILE=$DB_FILE UPLOADS_DIR=$UPLOADS_DIR $PERSISTED_RESTORE_HELPER $BACKUP_PATH"
+    say "Aviso: o restore descarta alteracoes feitas depois desse backup."
+  fi
+  say "====================================================================="
+}
+
+fail_after_new_runtime() {
+  local message="$1"
+  systemctl stop contabase >/dev/null 2>&1 || true
+  systemctl status contabase --no-pager || true
+  journalctl -u contabase -n 100 --no-pager || true
+  print_post_start_failure
+  fail "$message"
+}
+
 # ==============================================================================
 # Download & validation (reuses patterns from install script)
 # ==============================================================================
@@ -595,6 +703,25 @@ download_file() {
   curl --fail --location --silent --show-error \
     --proto '=https' --tlsv1.2 \
     "$url" -o "$destination"
+}
+
+download_and_validate_ops_helpers() {
+  local backup_url restore_url backup_actual restore_actual
+  backup_url="${PUBLIC_RAW_BASE}/${TAG}/scripts/ops/backup.sh"
+  restore_url="${PUBLIC_RAW_BASE}/${TAG}/scripts/ops/restore.sh"
+  CANONICAL_BACKUP_HELPER="${TMP_DIR}/backup.sh"
+  CANONICAL_RESTORE_HELPER="${TMP_DIR}/restore.sh"
+
+  download_file "$backup_url" "$CANONICAL_BACKUP_HELPER"
+  download_file "$restore_url" "$CANONICAL_RESTORE_HELPER"
+  backup_actual="$(compute_sha256 "$CANONICAL_BACKUP_HELPER" | tr '[:upper:]' '[:lower:]')"
+  restore_actual="$(compute_sha256 "$CANONICAL_RESTORE_HELPER" | tr '[:upper:]' '[:lower:]')"
+  [ "$backup_actual" = "$CANONICAL_BACKUP_SHA256" ] \
+    || fail "helper de backup da tag ${TAG} diverge do digest canonico vinculado ao updater."
+  [ "$restore_actual" = "$CANONICAL_RESTORE_SHA256" ] \
+    || fail "helper de restore da tag ${TAG} diverge do digest canonico vinculado ao updater."
+  chmod 0700 "$CANONICAL_BACKUP_HELPER" "$CANONICAL_RESTORE_HELPER"
+  say "Helpers operacionais da tag ${TAG} validados pelos digests vinculados ao updater."
 }
 
 compute_sha256() {
@@ -704,6 +831,7 @@ download_and_validate_bundle() {
   validate_tar_entries "$artifact_file"
   tar --no-same-owner --no-same-permissions -xzf "$artifact_file" -C "$EXTRACT_DIR"
   validate_extracted_bundle "${EXTRACT_DIR}/contabase"
+  download_and_validate_ops_helpers
   say "Artifact validado e extraido com seguranca."
 }
 
@@ -778,9 +906,11 @@ render_service_file() {
 
 stop_service() {
   if systemctl is-active --quiet contabase 2>/dev/null; then
+    SERVICE_WAS_ACTIVE=true
     say "Parando servico contabase..."
     systemctl stop contabase || fail "nao foi possivel parar o servico contabase."
   else
+    SERVICE_WAS_ACTIVE=false
     say "Servico contabase ja esta parado."
   fi
 }
@@ -956,12 +1086,13 @@ perform_update() {
     say ""
     say "O que seria feito:"
     say "  1. Parar servico contabase"
-    say "  2. Backup do .env em ${ENV_FILE}.pre-update-<timestamp>.bak"
-    say "  3. Backup do bundle anterior em ${INSTALL_DIR}.previous.<timestamp>.$$"
-    say "  4. Extrair novo bundle em ${INSTALL_DIR}"
-    say "  5. Atualizar unit systemd em ${SERVICE_FILE}"
-    say "  6. Iniciar servico e validar healthcheck em http://127.0.0.1:${PORT}/health"
-    say "  7. Em caso de falha: rollback automatico do bundle"
+    say "  2. Criar pacote canonico pre-update, quando houver estado"
+    say "  3. Backup do .env em ${ENV_FILE}.pre-update-<timestamp>.bak"
+    say "  4. Backup do bundle anterior em ${INSTALL_DIR}.previous.<timestamp>.$$"
+    say "  5. Extrair novo bundle em ${INSTALL_DIR}"
+    say "  6. Atualizar unit systemd em ${SERVICE_FILE}"
+    say "  7. Iniciar servico e validar healthcheck em http://127.0.0.1:${PORT}/health"
+    say "  8. Apos iniciar o novo runtime, falhas param a instancia e exigem decisao de restore"
     say ""
     return 0
   fi
@@ -972,13 +1103,24 @@ perform_update() {
   say "Iniciando atualizacao para ${TAG}..."
   say "====================================================================="
 
-  # Backup env file (always, before any mutation)
+  # Stop service
+  stop_service
+
+  # O pacote canonico precede qualquer alteracao do ambiente ou do bundle.
+  if ! create_canonical_backup; then
+    fail "backup pre-update falhou; update abortado. O servico permanece parado por seguranca; resolva a causa antes de tentar novamente."
+  fi
+
+  PERSISTED_RESTORE_HELPER="${CONFIG_DIR}/ops/restore-${TAG}.sh"
+  install -d -o root -g root -m 0755 "${CONFIG_DIR}/ops"
+  install -o root -g root -m 0700 "$CANONICAL_RESTORE_HELPER" "$PERSISTED_RESTORE_HELPER"
+
+  # Somente depois do pacote pre-update a configuracao pode ser ajustada.
   backup_env_file
   backfill_access_mode_in_env
   env_set_if_missing "CONTABASE_TIMEZONE" "$CONTABASE_TIMEZONE_VALUE" "$ENV_FILE"
 
-  # Stop service
-  stop_service
+  install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$DATA_DIR" "$UPLOADS_DIR" "$BACKUPS_DIR"
 
   # Backup existing bundle
   backup_bundle
@@ -1006,27 +1148,14 @@ perform_update() {
 
   # Start service
   say "Iniciando servico com o novo bundle..."
+  NEW_RUNTIME_STARTED=true
   if ! systemctl restart contabase; then
-    say "Servico nao iniciou com o novo bundle; tentando rollback."
-    systemctl status contabase --no-pager || true
-    journalctl -u contabase -n 100 --no-pager || true
-    if rollback_bundle; then
-      fail "novo bundle falhou; bundle anterior recuperado com sucesso."
-    fi
-    rollback_env
-    fail "novo bundle falhou e o rollback nao recuperou o servico."
+    fail_after_new_runtime "novo bundle falhou ao iniciar; restore de dados exige decisao explicita."
   fi
 
   # Healthcheck
   if ! wait_for_healthcheck; then
-    say "Healthcheck falhou apos o novo bundle; tentando rollback."
-    systemctl status contabase --no-pager || true
-    journalctl -u contabase -n 100 --no-pager || true
-    if rollback_bundle; then
-      fail "novo bundle falhou no healthcheck; bundle anterior recuperado com healthcheck saudavel."
-    fi
-    rollback_env
-    fail "novo bundle falhou no healthcheck e o rollback nao recuperou o servico."
+    fail_after_new_runtime "novo bundle falhou no healthcheck; restore de dados exige decisao explicita."
   fi
 
   NEW_BUNDLE_ACTIVE=false
@@ -1055,6 +1184,8 @@ perform_update() {
   if [ -n "$PREVIOUS_DIR" ] && [ -e "$PREVIOUS_DIR" ]; then
     say "Bundle ant: ${PREVIOUS_DIR}"
   fi
+  say "Backup:      ${BACKUP_PATH:-nao aplicavel}"
+  say "Backup ID:   ${BACKUP_ID:-nao aplicavel}"
   say ""
 }
 
@@ -1081,6 +1212,7 @@ main() {
     check_platform
     validate_existing_env
     validate_existing_installation
+    validate_persistent_state
   fi
 
   build_urls

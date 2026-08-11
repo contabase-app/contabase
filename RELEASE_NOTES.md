@@ -5,6 +5,24 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Em preparação
 
+- **v0.1.0-beta.8 — Draft** — *Datas civis, histórico de faturas protegido, recorrências mais seguras e atualização self-hosted com Node 24*
+
+  Esta Beta prepara o ContaBase para tratar datas financeiras como datas de calendário, sem depender do fuso horário do servidor. O histórico de faturas e pagamentos fica mais protegido: estados e saldos usam pagamentos efetivos de forma consistente, pagamentos podem ser revertidos com proveniência e os registros históricos não são alterados automaticamente. As recorrências também preservam melhor o histórico: excluir apenas uma ocorrência impede que ela volte a ser criada, editar este e os futuros respeita o ponto escolhido e toda a série é atualizada de forma atômica, protegendo lançamentos pagos, exceções e faturas. O healthcheck de monitoramento foi reforçado com documentação para Docker e Uptime Kuma.
+
+  - Indicador da data, hora e timezone configurada no rodapé autenticado.
+
+  A atualização inclui as migrations 52 a 59. A evolução de schema preserva os dados existentes e aplica validações de integridade antes de concluir o upgrade; faça backup WAL-consistente antes de atualizar. O preenchimento ou reparo de dados históricos de data civil não é automático. Para self-hosted, Node.js 24 LTS é a opção recomendada, com Node.js 22 LTS ainda compatível; no fluxo source, a validação ocorre antes de parar o serviço.
+
+  **Backup canônico e rollback seguro.** Os scripts de atualização Docker, source e release agora exigem um backup canônico completo do banco e uploads antes de qualquer mutação. Se o backup falhar, o update é interrompido sem alterar o estado atual; `--no-backup` é rejeitado; e não há fallback para cópias cruas de DB/WAL/SHM. Se o healthcheck do novo runtime falhar, o serviço permanece parado e a versão anterior não é reativada automaticamente; o retorno exige restore explícito do pacote pré-update.
+
+  **Faturas — movimentação manual.** Lançamentos individuais de cartão de crédito podem ser movidos manualmente para outra fatura elegível (aberta ou fechada), com persistência do vínculo em `invoice_override_id`. Pagamentos modernos e legados são preservados, faturas quitadas ou liquidadas permanecem protegidas, e o lançamento pode retornar ao vínculo automático sem alterar sua competência, data ou valor.
+
+  **Faturas — reversão auditável.** Um pagamento de fatura pode ser revertido por usuário autenticado. A operação registra motivo, responsável, data e o lançamento de reversão, preservando o histórico para os relatórios e evitando duplicidade de identidade entre pagamentos e reversões.
+
+  **Reservas — planejamento mensal.** O resumo de planejamento passa a usar projeções determinísticas de aporte necessário por alvo/data, rendimento composto, estimativa de prazo, saldo projetado e análise de suficiência/insuficiência.
+
+  **Atenção no upgrade.** As migrations interrompem o upgrade com uma mensagem de diagnóstico se encontrarem dados recorrentes ou pagamentos de fatura em conflito. Resolva o conflito indicado antes de repetir a atualização; não force o upgrade nem faça downgrade para um binário que não reconheça exclusões unitárias persistentes de recorrências.
+
 - **v0.1.0-beta.7** — *Recorrências versionadas e projeção automática das ocorrências futuras*
 
   As recorrências (lançamentos fixos) foram reconstruídas sobre um modelo de série versionada. Agora cada recorrência tem um histórico claro, o passado é preservado e as mudanças ficam registradas como versões da mesma série.

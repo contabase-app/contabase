@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -37,28 +38,34 @@ func respondMetaFormError(w http.ResponseWriter, idPrefix string, message string
 }
 
 type MetasData struct {
-	Title                  string
-	UserName               string
-	UserFirstName          string
-	UserInitials           string
-	ProfilePhotoURL        string
-	MonthLabel             string
-	Aba                    string
-	ContentOOB             bool
-	FabOOB                 bool
-	TotalLimits            MoneyDisplay
-	TotalAcumulado         MoneyDisplay
-	TotalAcumuladoNegativo bool
-	RealBalance            MoneyDisplay
-	ReservedBalance        MoneyDisplay
-	FreeBalance            MoneyDisplay
-	FreeBalanceNegative    bool
-	LimitesCount           int
-	CaixinhasCount         int
-	Limites                []LimiteCard
-	Caixinhas              []CaixinhaCard
-	IsBusiness             bool
-	ActiveWorkspaceName    string
+	Title                      string
+	UserName                   string
+	UserFirstName              string
+	UserInitials               string
+	ProfilePhotoURL            string
+	MonthLabel                 string
+	Aba                        string
+	ContentOOB                 bool
+	FabOOB                     bool
+	TotalLimits                MoneyDisplay
+	TotalAcumulado             MoneyDisplay
+	TotalAcumuladoNegativo     bool
+	RealBalance                MoneyDisplay
+	ReservedBalance            MoneyDisplay
+	FreeBalance                MoneyDisplay
+	FreeBalanceNegative        bool
+	ProgrammedContributions    MoneyDisplay
+	HasMonthlyPlanning         bool
+	Margin                     MoneyDisplay
+	HasMargin                  bool
+	CoverageText               string
+	HasCoverage                bool
+	LimitesCount               int
+	CaixinhasCount             int
+	Limites                    []LimiteCard
+	Caixinhas                  []CaixinhaCard
+	IsBusiness                 bool
+	ActiveWorkspaceName        string
 }
 
 type MetaFormData struct {
@@ -933,6 +940,13 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 	perfStep(reqID, "Metas", "reserveBalance", time.Since(tS))
 	tS = time.Now()
 
+	monthlySnapshot, snapshotErr := services.BuildMonthlyPlanningSnapshot(context.Background(), h.DB, h.WorkspaceID, now)
+	if snapshotErr != nil {
+		log.Printf("monthly planning snapshot workspace %s: %v", h.WorkspaceID, snapshotErr)
+	}
+	perfStep(reqID, "Metas", "monthlyPlanning", time.Since(tS))
+	tS = time.Now()
+
 	renderMeta := h.loadMetasRenderMetadata()
 	data := MetasData{
 		Title:               "Metas",
@@ -948,6 +962,19 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 		FreeBalanceNegative: reserveBalance.FreeBalance < 0,
 		IsBusiness:          renderMeta.IsBusiness,
 		ActiveWorkspaceName: renderMeta.ActiveWorkspaceName,
+	}
+
+	if snapshotErr == nil {
+		data.HasMonthlyPlanning = true
+		data.ProgrammedContributions = MoneyMinor(monthlySnapshot.ProgrammedContributionsCents)
+		if monthlySnapshot.MarginAvailable {
+			data.HasMargin = true
+			data.Margin = MoneyMinor(monthlySnapshot.MarginCents)
+		}
+		if monthlySnapshot.CoverageAvailable {
+			data.HasCoverage = true
+			data.CoverageText = formatCoverageText(monthlySnapshot.CoverageTenths)
+		}
 	}
 
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
@@ -1254,6 +1281,18 @@ func normalizeMetasAba(aba string) string {
 		return "caixinhas"
 	}
 	return "limites"
+}
+
+func formatCoverageText(tenths int64) string {
+	whole := tenths / 10
+	frac := tenths % 10
+	if frac < 0 {
+		frac = -frac
+	}
+	if whole == 0 || whole == 1 {
+		return fmt.Sprintf("%d,%d mês de custo essencial", whole, frac)
+	}
+	return fmt.Sprintf("%d,%d meses de custo essencial", whole, frac)
 }
 
 func normalizeMetaFormTab(tab string) string {

@@ -8,6 +8,9 @@
 <link rel="stylesheet" href="/assets/css/contas.css">
 <main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative" data-page-title="Contas">
     <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
+    <select id="payment-account-options" class="hidden" aria-hidden="true" tabindex="-1">
+        {{range .PaymentAccounts}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+    </select>
     {{template "contas-body" .}}
 </main>
 {{end}}
@@ -142,6 +145,9 @@
             data-payment-description="{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}"
             data-payment-amount="{{if $isPagar}}- R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}{{else}}+ R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}{{end}}"
             data-payment-type="{{if $isPagar}}EXPENSE{{else}}INCOME{{end}}"
+            data-payment-account-id="{{.PaymentAccountID}}"
+            data-payment-account-name="{{.AccountName}}"
+            data-payment-account-change-allowed="{{if .PaymentAccountChangeAllowed}}true{{else}}false{{end}}"
             {{- if .ScheduledPaymentAtDisplay}} data-payment-scheduled-at="{{.ScheduledPaymentAtDisplay}}"{{end}}
             data-swipe-row="true"
             data-swipe-left-url="/transacoes/{{.ID}}?escopo=single"

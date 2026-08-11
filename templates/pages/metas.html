@@ -170,7 +170,19 @@
         <div class="metas-summary-metric">
             <span class="metas-summary-label">Disponível</span>
             <span class="metas-summary-value {{if .FreeBalanceNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-success)]{{end}}" data-sensitive>R$ {{.FreeBalance.Reais}}{{.FreeBalance.Cents}}</span>
+            {{if .HasCoverage}}
+            <span class="text-sm cb-text-subtle">{{.CoverageText}}</span>
+            {{end}}
         </div>
+        {{if .HasMonthlyPlanning}}
+        <div class="metas-summary-metric">
+            <span class="metas-summary-label">Aportes programados</span>
+            <span class="metas-summary-value" data-sensitive>R$ {{.ProgrammedContributions.Reais}}{{.ProgrammedContributions.Cents}}/mês</span>
+            {{if .HasMargin}}
+            <span class="text-sm cb-text-subtle">Margem mensal estimada: R$ {{.Margin.Reais}}{{.Margin.Cents}}</span>
+            {{end}}
+        </div>
+        {{end}}
     </div>
 </section>
 

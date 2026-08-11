@@ -982,6 +982,15 @@
         var selectedCardDueDay = null;
         var invoiceNoticeRequestSeq = 0;
 
+		formEl.addEventListener('htmx:responseError', function(event) {
+			var xhr = event && event.detail && event.detail.xhr;
+			var errorBox = document.getElementById('lancamento-form-error');
+			if (!xhr || !errorBox) return;
+			var message = (xhr.responseText || 'Não foi possível concluir a ação.').trim();
+			errorBox.textContent = message;
+			errorBox.classList.remove('hidden');
+		});
+
         function syncPaymentStatusUI() {
             if (ns.syncPaymentStatusUI) ns.syncPaymentStatusUI();
         }
@@ -1094,22 +1103,35 @@
             if (input) input.value = val;
         }
 
+		function syncInvoiceAssignmentMode(val) {
+			var input = document.getElementById('invoiceAssignmentMode');
+			if (input) input.value = val;
+		}
+
         function setFaturaAutoReference(reference, invoiceID) {
             window.__contabaseFaturaAutoReference = reference || '';
             window.__contabaseFaturaAutoID = invoiceID || '';
         }
 
-        function applyManualInvoice(invoiceID, label, isSensitive) {
+        function applyManualInvoice(invoiceID, label, isSensitive, status, manualEligible) {
             var select = document.getElementById('faturaSelect');
             var sensitive = document.getElementById('faturaSensitiveAviso');
+			var paidWarning = document.getElementById('faturaPaidAviso');
             var quickState = document.getElementById('faturaQuickState');
             var resetBtn = document.getElementById('faturaResetAuto');
             var prevBtn = document.getElementById('faturaPrevBtn');
             var nextBtn = document.getElementById('faturaNextBtn');
             var advancedBox = document.getElementById('faturaAdvancedBox');
 
-            if (select) select.value = invoiceID || '';
-            syncFaturaOffset('auto');
+			if (manualEligible === false || status === 'PAID') {
+				if (paidWarning) paidWarning.classList.remove('hidden');
+				if (sensitive) sensitive.classList.add('hidden');
+				return false;
+			}
+
+			if (select) select.value = invoiceID || '';
+			syncFaturaOffset('manual');
+			syncInvoiceAssignmentMode('manual');
 
             if (quickState) {
                 var muted = quickState.querySelector('.text-\\[var\\(--cb-text-muted\\)\\]');
@@ -1121,24 +1143,28 @@
             if (resetBtn) resetBtn.classList.toggle('hidden', !invoiceID);
             if (prevBtn) prevBtn.classList.remove('is-selected');
             if (nextBtn) nextBtn.classList.remove('is-selected');
-            if (sensitive) sensitive.classList.toggle('hidden', !isSensitive);
+			if (sensitive) sensitive.classList.toggle('hidden', status !== 'CLOSED');
+			if (paidWarning) paidWarning.classList.add('hidden');
             if (advancedBox) advancedBox.classList.add('hidden');
 
             collapseFaturaAdvanced();
             showQuickActions();
+			return true;
         }
 
-        function resetFaturaToAuto() {
+        function resetFaturaToAuto(explicitReset) {
             var select = document.getElementById('faturaSelect');
             var quickState = document.getElementById('faturaQuickState');
             var resetBtn = document.getElementById('faturaResetAuto');
             var prevBtn = document.getElementById('faturaPrevBtn');
             var nextBtn = document.getElementById('faturaNextBtn');
             var sensitive = document.getElementById('faturaSensitiveAviso');
+			var paidWarning = document.getElementById('faturaPaidAviso');
             var advancedBox = document.getElementById('faturaAdvancedBox');
 
-            if (select) select.value = '';
-            syncFaturaOffset('auto');
+			if (select) select.value = '';
+			syncFaturaOffset('auto');
+			if (explicitReset !== false) syncInvoiceAssignmentMode('auto');
 
             if (quickState) {
                 var muted = quickState.querySelector('.text-\\[var\\(--cb-text-muted\\)\\]');
@@ -1148,7 +1174,8 @@
             }
 
             if (resetBtn) resetBtn.classList.add('hidden');
-            if (sensitive) sensitive.classList.add('hidden');
+			if (sensitive) sensitive.classList.add('hidden');
+			if (paidWarning) paidWarning.classList.add('hidden');
             if (advancedBox) advancedBox.classList.add('hidden');
             if (prevBtn) prevBtn.classList.remove('is-selected');
             if (nextBtn) nextBtn.classList.remove('is-selected');
@@ -1267,7 +1294,9 @@
                         var found = invoices.filter(function(o) { return o.ID === invId; })[0];
                         if (found) label = found.ReferenceLabel;
                     }
-                    applyManualInvoice(invId, label, isSens);
+					var foundStatus = found ? found.Status : '';
+					var foundEligible = found ? found.ManualEligible !== false : true;
+					applyManualInvoice(invId, label, isSens, foundStatus, foundEligible);
                 });
             }
 
@@ -1285,7 +1314,9 @@
                         var found = invoices.filter(function(o) { return o.ID === invId; })[0];
                         if (found) label = found.ReferenceLabel;
                     }
-                    applyManualInvoice(invId, label, isSens);
+					var foundStatus = found ? found.Status : '';
+					var foundEligible = found ? found.ManualEligible !== false : true;
+					applyManualInvoice(invId, label, isSens, foundStatus, foundEligible);
                 });
             }
 
@@ -1304,7 +1335,7 @@
 
             if (resetBtn) {
                 resetBtn.addEventListener('click', function() {
-                    resetFaturaToAuto();
+					resetFaturaToAuto(true);
                     updateInvoiceNotice();
                 });
             }
@@ -1316,9 +1347,11 @@
                         var invId = selectedOption.value;
                         var isSens = selectedOption.dataset && selectedOption.dataset.sensitive === 'true';
                         var label = selectedOption.textContent.split(' · ')[0] || '';
-                        applyManualInvoice(invId, label, isSens);
-                    } else {
-                        resetFaturaToAuto();
+						var status = selectedOption.dataset ? selectedOption.dataset.invoiceStatus || '' : '';
+						var eligible = !selectedOption.dataset || selectedOption.dataset.manualEligible !== 'false';
+						applyManualInvoice(invId, label, isSens, status, eligible);
+					} else {
+						resetFaturaToAuto(true);
                     }
                 });
             }
@@ -1359,7 +1392,13 @@
                             var option = document.createElement('option');
                             option.value = opt.ID;
                             option.textContent = opt.ReferenceLabel + ' · ' + opt.CycleLabel + ' · ' + opt.FinLabel + ' · vence ' + opt.DueLabel;
-                            if (opt.IsSensitive) option.dataset.sensitive = 'true';
+							if (opt.IsSensitive) option.dataset.sensitive = 'true';
+							option.dataset.invoiceStatus = opt.Status || '';
+							option.dataset.manualEligible = opt.ManualEligible === false ? 'false' : 'true';
+							if (opt.ManualEligible === false) {
+								option.disabled = true;
+								option.title = opt.ManualBlock || 'Movimentação bloqueada: esta fatura está integralmente paga.';
+							}
                             select.appendChild(option);
                         });
                     }
@@ -1370,9 +1409,9 @@
                     }
                     if (existing && select) {
                         select.value = previousValue;
-                        applyManualInvoice(existing.ID, existing.ReferenceLabel, existing.IsSensitive);
-                    } else {
-                        resetFaturaToAuto();
+						applyManualInvoice(existing.ID, existing.ReferenceLabel, existing.IsSensitive, existing.Status, existing.ManualEligible !== false);
+					} else {
+						resetFaturaToAuto(false);
                     }
                 });
         }

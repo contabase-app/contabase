@@ -29,7 +29,14 @@ HEALTH_URL="http://127.0.0.1:8080/health"
 INSTALL_CHANNEL="${CONTABASE_CHANNEL:-}"
 
 BACKUP_DIR=""
+BACKUP_PATH=""
+BACKUP_ID=""
+CANONICAL_BACKUP_HELPER=""
+CANONICAL_BACKUP_HELPER_TMP=""
 APP_VERSION=""
+PREVIOUS_VERSION=""
+PREVIOUS_VERSION_RESOLVED=false
+TARGET_VERSION=""
 CURRENT_BRANCH=""
 CURRENT_COMMIT=""
 UPSTREAM_REF=""
@@ -38,6 +45,9 @@ SERVICE_STOPPED=false
 BUNDLE_PRESERVED=false
 BUNDLE_SWAP_STARTED=false
 UPDATE_SUCCEEDED=false
+BACKUP_SUCCEEDED=false
+STATE_PRESENT=false
+NEW_RUNTIME_STARTED=false
 
 error_handler() {
   local exit_code=$?
@@ -51,8 +61,14 @@ error_handler() {
     exit 0
   fi
 
-  if [ "$SERVICE_STOPPED" = false ]; then
+  if [ "$NEW_RUNTIME_STARTED" = true ]; then
+    log_error "Falha depois do inicio do novo runtime; a instancia antiga nao sera reativada automaticamente."
+    systemctl stop contabase >/dev/null 2>&1 || true
+    print_post_start_failure
+  elif [ "$SERVICE_STOPPED" = false ]; then
     log_warn "Falha antes de parar o servico. Nenhuma recuperacao operacional foi necessaria."
+  elif [ "$BACKUP_SUCCEEDED" = false ]; then
+    log_warn "Backup canonico falhou; o servico permanecera parado e nenhuma mutacao sera iniciada."
   elif [ "$BUNDLE_SWAP_STARTED" = false ]; then
     log_warn "Falha apos parar o servico, mas antes de trocar o bundle. Tentando religar a instancia anterior."
     start_service || true
@@ -69,6 +85,13 @@ error_handler() {
 }
 trap 'error_handler' ERR
 
+cleanup_update_tmp() {
+  if [ -n "$CANONICAL_BACKUP_HELPER_TMP" ] && [ -f "$CANONICAL_BACKUP_HELPER_TMP" ]; then
+    rm -f "$CANONICAL_BACKUP_HELPER_TMP"
+  fi
+}
+trap cleanup_update_tmp EXIT
+
 usage() {
   cat <<'EOF'
 Uso:
@@ -76,7 +99,9 @@ Uso:
 
 Descricao:
   Atualiza o ContaBase em Linux/systemd sem Docker, criando backup preventivo
-  e fazendo rollback apenas do bundle da aplicacao se o healthcheck falhar.
+  Se o healthcheck do novo runtime falhar, o servico permanece parado e a
+  versao anterior nao e reativada automaticamente. Para retornar a versao
+  anterior, restaure explicitamente o pacote pre-update.
 EOF
 }
 
@@ -130,6 +155,30 @@ detect_app_version() {
     APP_VERSION="$(tr -d '[:space:]' < VERSION)"
   fi
   APP_VERSION="${APP_VERSION:-dev}"
+}
+
+resolve_previous_version() {
+  local installed_version=""
+  PREVIOUS_VERSION=""
+  PREVIOUS_VERSION_RESOLVED=false
+
+  if [ -f VERSION ] && [ ! -L VERSION ] && [ -r VERSION ]; then
+    installed_version="$(tr -d '[:space:]' < VERSION)"
+  fi
+
+  case "$installed_version" in
+    dev)
+      ;;
+    v*)
+      [[ "$installed_version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]] || return 0
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+
+  PREVIOUS_VERSION="$installed_version"
+  PREVIOUS_VERSION_RESOLVED=true
 }
 
 infer_install_channel() {
@@ -219,20 +268,32 @@ require_commands() {
 }
 
 require_node_version() {
-  local node_version major
-  node_version="$(node --version 2>/dev/null | sed 's/^v//')"
-  if [ -z "$node_version" ]; then
-    log_error "Erro: node nao encontrado. Instale Node.js 20 ou superior."
+  local node_full major
+  node_full="$(node --version 2>/dev/null)"
+  if [ -z "$node_full" ]; then
+    log_error "Erro: node nao encontrado. O toolchain CSS do ContaBase exige Node.js 22 ou 24 LTS."
     exit 1
   fi
 
-  major="${node_version%%.*}"
-  if ! [ "$major" -ge 20 ] 2>/dev/null; then
-    log_error "Erro: Node.js ${node_version} detectado, mas o build do CSS (Tailwind 4) exige Node.js 20 ou superior."
-    log_error "O apt do Debian 12 instala Node 18, que faz o npm pular o binario nativo @tailwindcss/oxide e quebra o build."
-    log_error "Instale Node.js 20+ (ex.: via NodeSource) antes de continuar. Veja docs/instalacao-lxc-vps.md."
+  major="$(echo "$node_full" | sed -E 's/^v([0-9]+).*/\1/')"
+  case "$major" in
+  22|24)
+    ;;
+  *)
+    log_error "Erro: Node.js ${node_full} nao e suportado pelo toolchain CSS do ContaBase."
+    log_error "O toolchain CSS do ContaBase foi validado com Node.js 22 e 24 LTS."
+    log_error ""
+    log_error "Versoes suportadas:"
+    log_error "  Node.js 24 LTS — recomendada"
+    log_error "  Node.js 22 LTS — compativel"
+    log_error ""
+    if [ "$major" -lt 22 ] 2>/dev/null; then
+      log_error "O apt do Debian 12 instala Node 18, que faz o npm pular o binario nativo @tailwindcss/oxide e quebra o build."
+    fi
+    log_error "Instale Node.js 24 LTS antes de continuar. Veja docs/instalacao-lxc-vps.md."
     exit 1
-  fi
+    ;;
+  esac
 }
 
 require_go_version() {
@@ -305,11 +366,6 @@ record_current_state() {
   echo "Referencia remota: $UPSTREAM_REF"
 }
 
-create_backup_dir() {
-  BACKUP_DIR="${BACKUPS_DIR}/pre-update-$(date +%Y%m%d-%H%M%S)"
-  install -d -o contabase -g contabase -m 0750 "$BACKUP_DIR"
-}
-
 ensure_storage_dirs() {
   install -d -o contabase -g contabase -m 0750 "$DATA_DIR"
   install -d -o contabase -g contabase -m 0750 "$UPLOADS_DIR"
@@ -318,30 +374,94 @@ ensure_storage_dirs() {
   install -d -o contabase -g contabase -m 0750 "$BACKUPS_DIR"
 }
 
-backup_database() {
-  if [ -f "$DB_FILE" ]; then
-    sqlite3 "$DB_FILE" ".backup '${BACKUP_DIR}/contabase.db'"
+validate_state_paths() {
+  case "$DATA_DIR" in /*) ;; *) log_error "DATA_DIR deve ser absoluto: $DATA_DIR"; return 1 ;; esac
+  case "$DB_FILE" in /*) ;; *) log_error "DB_FILE deve ser absoluto: $DB_FILE"; return 1 ;; esac
+  case "$UPLOADS_DIR" in /*) ;; *) log_error "UPLOADS_DIR deve ser absoluto: $UPLOADS_DIR"; return 1 ;; esac
+
+  STATE_PRESENT=false
+  if [ -e "$DB_FILE" ] || [ -L "$DB_FILE" ]; then
+    [ -f "$DB_FILE" ] && [ ! -L "$DB_FILE" ] && [ -r "$DB_FILE" ] || {
+      log_error "Banco existente e invalido, ambiguo ou ilegivel: $DB_FILE"
+      return 1
+    }
+    STATE_PRESENT=true
+  elif [ -e "$UPLOADS_DIR" ] || [ -L "$UPLOADS_DIR" ]; then
+    log_error "Uploads existem sem o banco esperado; estado persistente inconsistente: $UPLOADS_DIR"
+    return 1
   else
-    log_warn "Aviso: banco nao encontrado em ${DB_FILE}. Backup do banco foi pulado."
+    log_ok "Nenhum estado persistente encontrado; update pode continuar sem pacote de backup."
+    return 0
   fi
 
-  if [ -f "${DB_FILE}-wal" ]; then
-    cp "${DB_FILE}-wal" "${BACKUP_DIR}/contabase.db-wal"
+  if [ -e "$UPLOADS_DIR" ] || [ -L "$UPLOADS_DIR" ]; then
+    [ -d "$UPLOADS_DIR" ] && [ ! -L "$UPLOADS_DIR" ] && [ -r "$UPLOADS_DIR" ] || {
+      log_error "Uploads invalidos, ambiguos ou ilegíveis: $UPLOADS_DIR"
+      return 1
+    }
   fi
-
-  if [ -f "${DB_FILE}-shm" ]; then
-    cp "${DB_FILE}-shm" "${BACKUP_DIR}/contabase.db-shm"
-  fi
+  [ "$PREVIOUS_VERSION_RESOLVED" = true ] || {
+    log_error "Nao foi possivel identificar a versao instalada antes do backup."
+    return 1
+  }
 }
 
-backup_uploads() {
-  if [ -d "$UPLOADS_DIR" ]; then
-    tar -czf "${BACKUP_DIR}/uploads.tar.gz" -C "$DATA_DIR" uploads
-  else
-    log_warn "Aviso: uploads/ nao encontrado; backup de uploads foi pulado."
-  fi
+prepare_canonical_backup_helper() {
+  local target_blob actual_blob ref_version
+  target_blob="$(git rev-parse "${UPSTREAM_REF}:scripts/ops/backup.sh" 2>/dev/null)" || {
+    log_error "O alvo ${UPSTREAM_REF} nao contem scripts/ops/backup.sh."
+    return 1
+  }
+  CANONICAL_BACKUP_HELPER_TMP="$(mktemp "${TMPDIR:-/tmp}/contabase-backup-helper.XXXXXX")"
+  git show "${UPSTREAM_REF}:scripts/ops/backup.sh" > "$CANONICAL_BACKUP_HELPER_TMP" || return 1
+  actual_blob="$(git hash-object "$CANONICAL_BACKUP_HELPER_TMP")"
+  [ "$actual_blob" = "$target_blob" ] || {
+    log_error "Identidade do helper materializado diverge do objeto Git alvo."
+    return 1
+  }
+  chmod 0700 "$CANONICAL_BACKUP_HELPER_TMP"
+  CANONICAL_BACKUP_HELPER="$CANONICAL_BACKUP_HELPER_TMP"
+  ref_version="$(git show "${UPSTREAM_REF}:VERSION" | tr -d '[:space:]')"
+  [ -n "$ref_version" ] || { log_error "VERSION ausente no alvo ${UPSTREAM_REF}."; return 1; }
+  TARGET_VERSION="${CONTABASE_VERSION:-$ref_version}"
+  [ "$TARGET_VERSION" = "$ref_version" ] || {
+    log_error "Versao alvo solicitada (${TARGET_VERSION}) diverge de ${UPSTREAM_REF} (${ref_version})."
+    return 1
+  }
+  log_ok "Helper canonico vinculado a ${UPSTREAM_REF} (blob ${target_blob})."
+}
 
-  chown -R contabase:contabase "$BACKUP_DIR"
+validate_backup_package() {
+  [ -n "$BACKUP_PATH" ] && [ -d "$BACKUP_PATH" ] || return 1
+  [ -f "$BACKUP_PATH/manifest.txt" ] || return 1
+  [ -f "$BACKUP_PATH/checksums.sha256" ] || return 1
+  [ -f "$BACKUP_PATH/database.sqlite" ] || return 1
+  [ -d "$BACKUP_PATH/uploads" ] || return 1
+  BACKUP_ID="$(awk -F= '$1 == "backup_id" { print $2; exit }' "$BACKUP_PATH/manifest.txt")"
+  [ -n "$BACKUP_ID" ] || return 1
+}
+
+create_canonical_backup() {
+  local helper_output
+  [ "$STATE_PRESENT" = true ] || return 0
+  install -d -o contabase -g contabase -m 0750 "$BACKUPS_DIR"
+  if ! helper_output="$(
+    APP_VERSION="$PREVIOUS_VERSION" \
+      DATA_DIR="$DATA_DIR" DB_FILE="$DB_FILE" UPLOADS_DIR="$UPLOADS_DIR" \
+      "$CANONICAL_BACKUP_HELPER" "$BACKUPS_DIR"
+  )"; then
+    log_error "Helper canonico de backup falhou."
+    return 1
+  fi
+  BACKUP_PATH="$(printf '%s\n' "$helper_output" | tail -n1)"
+  validate_backup_package || {
+    log_error "Pacote canonico final ausente ou incompleto."
+    return 1
+  }
+  BACKUP_DIR="$BACKUP_PATH"
+  log_ok "Backup pre-update criado: $BACKUP_PATH"
+  log_ok "Backup ID: $BACKUP_ID; versao anterior: $PREVIOUS_VERSION"
+  log_ok "Pacote confirmado: database.sqlite + uploads/. Preserve-o ate concluir o update."
 }
 
 stop_service() {
@@ -354,7 +474,7 @@ pull_fast_forward() {
 }
 
 run_local_validations() {
-  npm ci
+  npm ci --include=optional
   ./scripts/build-css.sh
   go test ./...
   go build ./...
@@ -402,6 +522,24 @@ install_new_bundle() {
 
 start_service() {
   systemctl start contabase
+}
+
+start_new_runtime() {
+  NEW_RUNTIME_STARTED=true
+  systemctl start contabase
+}
+
+print_post_start_failure() {
+  log_error "A atualizacao NAO foi concluida."
+  log_error "O runtime antigo NAO foi reativado automaticamente."
+  log_error "O novo runtime foi parado; o banco pode ter sido migrado."
+  log_warn "Bundle/checkout que falhou foi preservado para diagnostico."
+  log_warn "Pacote pre-update: ${BACKUP_PATH:-nao aplicavel (instalacao sem estado)}"
+  if [ -n "$BACKUP_PATH" ]; then
+    log_warn "Restore oficial, somente apos decisao explicita do operador:"
+    log_warn "  CONFIRM_APP_STOPPED=yes DATA_DIR=$DATA_DIR DB_FILE=$DB_FILE UPLOADS_DIR=$UPLOADS_DIR $REPO_ROOT/scripts/ops/restore.sh $BACKUP_PATH"
+    log_warn "Aviso: o restore descarta alteracoes feitas depois desse backup."
+  fi
 }
 
 run_healthcheck() {
@@ -457,7 +595,8 @@ print_summary() {
   echo "Branch:              $(git branch --show-current)"
   echo "Commit:              $(git log --oneline -1)"
   echo "Versao:              ${APP_VERSION}"
-  echo "Backup criado:       ${BACKUP_DIR:-nao-criado}"
+  echo "Backup criado:       ${BACKUP_PATH:-nao-aplicavel}"
+  echo "Backup ID:           ${BACKUP_ID:-nao-aplicavel}"
   echo "Status do servico:   $(systemctl is-active contabase 2>/dev/null || echo desconhecido)"
   if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
     echo "Healthcheck:         healthy"
@@ -643,11 +782,16 @@ main() {
     usage
     exit 0
   fi
+  if [ "$#" -gt 0 ]; then
+    log_error "Erro: argumento nao suportado: $1. Backup canonico nao possui bypass."
+    exit 1
+  fi
 
   require_root
   require_repo_root
   detect_branch_and_commit
-  detect_app_version
+  resolve_previous_version
+  APP_VERSION="${PREVIOUS_VERSION:-desconhecida}"
 
   log_step "[1/8] Preflight de branch, sistema e comandos"
   check_linux_systemd
@@ -658,23 +802,33 @@ main() {
   fetch_remote_state
   resolve_upstream
   ensure_fast_forward_possible
+  prepare_canonical_backup_helper
+  validate_state_paths
   record_current_state
+  echo "Versao alvo: $TARGET_VERSION"
   log_ok "Preflight concluido antes de parar o servico."
 
   log_step "[2/8] Parando servico"
   stop_service
   log_ok "Servico contabase parado."
 
-  log_step "[3/8] Criando backup preventivo"
+  log_step "[3/8] Criando pacote canonico pre-update"
+  create_canonical_backup
+  BACKUP_SUCCEEDED=true
   ensure_storage_dirs
-  create_backup_dir
-  backup_database
-  backup_uploads
-  log_ok "Backup criado em ${BACKUP_DIR}."
+  if [ "$STATE_PRESENT" = true ]; then
+    log_ok "Pacote canonico criado em ${BACKUP_PATH}."
+  else
+    log_ok "Backup nao aplicavel: banco e uploads ausentes."
+  fi
 
   log_step "[4/8] Atualizando repositorio com fast-forward"
   pull_fast_forward
   detect_app_version
+  [ "$APP_VERSION" = "$TARGET_VERSION" ] || {
+    log_error "VERSION apos pull (${APP_VERSION}) diverge do alvo validado (${TARGET_VERSION})."
+    return 1
+  }
   log_ok "Repositorio atualizado via git pull --ff-only."
 
   log_step "[5/8] Validacoes locais de build"
@@ -691,7 +845,7 @@ main() {
   log_ok "Novo bundle instalado em ${APP_DIR}."
 
   log_step "[8/8] Iniciando servico e validando healthcheck"
-  start_service
+  start_new_runtime
   if run_healthcheck; then
     UPDATE_SUCCEEDED=true
     log_ok "Healthcheck retornou healthy."
@@ -700,18 +854,8 @@ main() {
     exit 0
   fi
 
-  log_warn "Healthcheck falhou. Iniciando rollback do bundle anterior."
-  rollback_bundle
-
-  if run_healthcheck; then
-    log_warn "Rollback do bundle anterior concluiu com healthcheck healthy."
-  else
-    log_error "Rollback do bundle nao recuperou healthcheck healthy."
-  fi
-
-  print_failure_diagnostics
-  print_summary
-  exit 1
+  log_error "Healthcheck falhou depois do inicio do novo runtime."
+  return 1
 }
 
 main "$@"

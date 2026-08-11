@@ -279,7 +279,12 @@
             <p>
                 &copy; <span id="current-year">2026</span> ContaBase &mdash; AGPL-3.0 &mdash; <a href="https://github.com/contabase-app/contabase" target="_blank" rel="noopener noreferrer" class="font-semibold text-purple-500 hover:text-purple-400 transition-colors">GitHub</a>
             </p>
-            <p class="mt-1.5 opacity-70">
+            {{with appCurrentTime}}
+            <p class="mt-1.5 opacity-60 text-[11px]" title="Data e hora reconhecidas pelo ContaBase na timezone configurada.">
+                Sistema: {{.DateTime}} · {{.Timezone}}
+            </p>
+            {{end}}
+            <p class="mt-1 opacity-[0.55] text-[11px]">
                 Versão {{appVersion}}
             </p>
         </footer>
@@ -428,6 +433,18 @@
                     <input type="date" name="scheduled_payment_date" id="payment-scheduled-date"
                         class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]">
                 </label>
+                <div id="payment-account-readonly-row">
+                    <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]" data-payment-account-label>Conta de pagamento</span>
+                    <p id="payment-account-readonly" class="mt-1 text-xs font-semibold text-[var(--cb-text-main)]">—</p>
+                    <p id="payment-account-readonly-effect" class="mt-1 text-[11px] leading-snug text-[var(--cb-text-muted)]">Será debitado desta conta.</p>
+                    <p id="payment-account-hint" class="mt-1 text-[11px] leading-snug text-[var(--cb-text-muted)]">Para trocar a conta, edite o lançamento antes de pagar.</p>
+                </div>
+                <label class="hidden" id="payment-account-select-row">
+                    <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]" data-payment-account-label>Conta de pagamento</span>
+                    <select name="payment_account_id" id="payment-account-select"
+                        class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs font-semibold text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]"></select>
+                    <p id="payment-account-select-effect" class="mt-1 text-[11px] leading-snug text-[var(--cb-text-muted)]">Será debitado desta conta.</p>
+                </label>
                 <div class="rounded-xl px-3 py-2 text-xs font-semibold" style="background: color-mix(in srgb, var(--cb-accent) 10%, transparent); color: color-mix(in srgb, var(--cb-accent) 75%, var(--cb-text-main));">
                     <span id="payment-confirm-summary">Será marcado como pago em --/--/----</span>
                 </div>
@@ -470,21 +487,21 @@
                     <input type="radio" name="gdel_choice" value="single" checked class="mt-0.5 h-4 w-4 border-[var(--cb-border-strong)] text-[var(--cb-danger)] focus:ring-[var(--cb-danger)] bg-[var(--cb-surface-1)]">
                     <div>
                         <span class="block text-xs font-medium text-[var(--cb-text-main)]">Apenas este lançamento</span>
-                        <span class="text-[0.65rem] text-[var(--cb-text-subtle)]">Remove somente a ocorrência atual</span>
+                        <span class="text-[0.65rem] text-[var(--cb-text-subtle)]">Remove definitivamente esta ocorrência; ela não será recriada</span>
                     </div>
                 </label>
                 <label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3">
                     <input type="radio" name="gdel_choice" value="future" class="mt-0.5 h-4 w-4 border-[var(--cb-border-strong)] text-[var(--cb-danger)] focus:ring-[var(--cb-danger)] bg-[var(--cb-surface-1)]">
                     <div>
                         <span class="block text-xs font-medium text-[var(--cb-text-main)]">Este e os próximos</span>
-                        <span class="text-[0.65rem] text-[var(--cb-text-subtle)]">Remove a partir desta ocorrência</span>
+                        <span class="text-[0.65rem] text-[var(--cb-text-subtle)]">Remove esta e as futuras elegíveis</span>
                     </div>
                 </label>
                 <label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3">
                     <input type="radio" name="gdel_choice" value="all" class="mt-0.5 h-4 w-4 border-[var(--cb-border-strong)] text-[var(--cb-danger)] focus:ring-[var(--cb-danger)] bg-[var(--cb-surface-1)]">
                     <div>
                         <span class="block text-xs font-medium text-[var(--cb-text-main)]">Toda a série</span>
-                        <span class="text-[0.65rem] text-[var(--cb-text-subtle)]">Remove todos os lançamentos da série</span>
+                        <span class="text-[0.65rem] text-[var(--cb-text-subtle)]">Encerra a recorrência e remove ocorrências elegíveis, preservando o histórico protegido</span>
                     </div>
                 </label>
             </div>

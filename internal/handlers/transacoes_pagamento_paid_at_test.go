@@ -88,7 +88,9 @@ func TestTogglePagamentoBackToPendingClearsPaidAt(t *testing.T) {
 
 	handler := testPaidInvoiceMutationHandler(db)
 	rr := httptest.NewRecorder()
-	handler.HandleTogglePagamento(rr, formPost("/transacoes/tx-clear-paid-at/status-pagamento", nil), "tx-clear-paid-at")
+	handler.HandleTogglePagamento(rr, formPost("/transacoes/tx-clear-paid-at/status-pagamento", url.Values{
+		"payment_action": {"pending"},
+	}), "tx-clear-paid-at")
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())

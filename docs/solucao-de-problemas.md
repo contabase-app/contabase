@@ -20,9 +20,66 @@ curl -i http://localhost:8080/health
 docker compose logs --tail 100 contabase
 ```
 
+Possiveis respostas do endpoint `/health`:
+
+| Resultado        | Significado                                          |
+| ---------------- | ---------------------------------------------------- |
+| 200 `healthy`    | HTTP e SQLite básico disponíveis                     |
+| 503 `unhealthy`  | processo responde, mas o banco não está acessível    |
+| conexão recusada | servidor não está escutando ou container está parado |
+| 426              | acesso HTTP remoto recusado; usar HTTPS canônico     |
+| 405              | método incorreto; usar GET                           |
+
+O endpoint `/health` nao diagnostica migrations específicas, jobs, backup ou integridade financeira. Ele valida apenas a disponibilidade do servidor HTTP e do banco de dados.
+
 Se o app usa proxy, confira tambem `TRUSTED_PROXIES` e `CONTABASE_ACCESS_MODE=proxy`.
 
 Se o app roda em Docker local e `http://localhost:8080` mostra bloqueio remoto, use `CONTABASE_ACCESS_MODE=local-docker`, `APP_BASE_URL=http://localhost:8080` e `ALLOWED_HOSTS=localhost,127.0.0.1,::1`.
+
+## Monitoramento com Uptime Kuma
+
+### Monitor interno
+
+Para instalar o Uptime Kuma no mesmo servidor ou na mesma rede Docker, configure um monitor:
+
+```text
+Tipo: HTTP(s)
+Método: GET
+URL: endereço privado alcançável pelo Uptime Kuma
+Status esperado: 200
+Palavra-chave: "status":"healthy"
+Intervalo: 60 segundos
+Timeout: 5 segundos
+Tentativas: 3
+Intervalo entre tentativas: 20 segundos
+Autenticação: nenhuma
+```
+
+Se o Uptime Kuma estiver em outro container, não use `127.0.0.1`. Use o nome do serviço na rede Docker apropriada, o IP privado do servidor ou o proxy interno.
+
+Exemplo de URL para containers na mesma rede Docker:
+
+```text
+http://contabase:8080/health
+```
+
+### Monitor externo
+
+Para instalações com domínio, aponte para a URL HTTPS canônica:
+
+```text
+https://dominio-configurado/health
+```
+
+Configuração recomendada:
+
+- Método: GET;
+- Status esperado: 200;
+- Palavra-chave: `"status":"healthy"`;
+- Verificação de certificado TLS ativada;
+- Não depender de redirecionamento HTTP → HTTPS; use a URL HTTPS final diretamente.
+
+O monitor externo valida também DNS, proxy reverso, TLS, certificado e o alcance completo da aplicação.
 
 ## Imagem ou upload nao aparece
 

@@ -1,8 +1,10 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -19,6 +22,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 	"modernc.org/sqlite"
 
+	"github.com/contabase-app/contabase/internal/boxcontribution"
 	"github.com/contabase-app/contabase/internal/paths"
 )
 
@@ -92,6 +96,9 @@ CREATE TABLE IF NOT EXISTS workspaces (
     smtp_pass      TEXT,
     notification_email TEXT,
     email_preferences TEXT NOT NULL DEFAULT '[]',
+	monthly_income_reference INTEGER CHECK (monthly_income_reference IS NULL OR monthly_income_reference >= 0),
+	monthly_total_cost_reference INTEGER CHECK (monthly_total_cost_reference IS NULL OR monthly_total_cost_reference >= 0),
+	monthly_essential_cost_reference INTEGER CHECK (monthly_essential_cost_reference IS NULL OR monthly_essential_cost_reference >= 0),
     created_at     INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at     INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -310,6 +317,17 @@ CREATE TABLE IF NOT EXISTS recurring_materialization_state (
     FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS recurring_occurrence_skips (
+    workspace_id          TEXT    NOT NULL,
+    series_id             TEXT    NOT NULL,
+    recurrence_sequence   INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+    original_transaction_id TEXT,
+    reason                TEXT    NOT NULL CHECK (reason IN ('single_delete')),
+    deleted_by            TEXT,
+    deleted_at            INTEGER NOT NULL,
+    PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+);
+
 CREATE TABLE IF NOT EXISTS contacts (
     id           TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
@@ -390,8 +408,19 @@ CREATE TABLE IF NOT EXISTS boxes (
     category_id      TEXT,
     target_amount    INTEGER NOT NULL DEFAULT 0,
     monthly_recharge INTEGER NOT NULL DEFAULT 0,
+	continue_after_target INTEGER NOT NULL DEFAULT 1 CHECK (continue_after_target IN (0, 1)),
+	automatic_contribution_state TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (automatic_contribution_state IN ('ACTIVE', 'BLOCKED')),
     target_date      INTEGER,
     monthly_yield_rate REAL  NOT NULL DEFAULT 0.0,
+	monthly_recharge_anchor_month TEXT CHECK (
+		monthly_recharge_anchor_month IS NULL OR (
+			length(monthly_recharge_anchor_month) = 7 AND
+			substr(monthly_recharge_anchor_month, 5, 1) = '-' AND
+			substr(monthly_recharge_anchor_month, 1, 4) NOT GLOB '*[^0-9]*' AND
+			substr(monthly_recharge_anchor_month, 6, 2) NOT GLOB '*[^0-9]*' AND
+			CAST(substr(monthly_recharge_anchor_month, 6, 2) AS INTEGER) BETWEEN 1 AND 12
+		)
+	),
     created_at       INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at       INTEGER NOT NULL DEFAULT (unixepoch()),
     FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -409,10 +438,35 @@ CREATE TABLE IF NOT EXISTS box_virtual_ledger (
     description    TEXT    NOT NULL DEFAULT '',
     source_transaction_id TEXT,
     reversal_of_ledger_id TEXT,
+	automatic_recharge_month TEXT CHECK (
+		automatic_recharge_month IS NULL OR (
+			type = 'RECHARGE' AND
+			length(automatic_recharge_month) = 7 AND
+			substr(automatic_recharge_month, 5, 1) = '-' AND
+			substr(automatic_recharge_month, 1, 4) NOT GLOB '*[^0-9]*' AND
+			substr(automatic_recharge_month, 6, 2) NOT GLOB '*[^0-9]*' AND
+			CAST(substr(automatic_recharge_month, 6, 2) AS INTEGER) BETWEEN 1 AND 12
+		)
+	),
     reference_date INTEGER NOT NULL,
     created_at     INTEGER NOT NULL DEFAULT (unixepoch()),
     FOREIGN KEY (box_id) REFERENCES boxes(id) ON DELETE CASCADE,
     FOREIGN KEY (reversal_of_ledger_id) REFERENCES box_virtual_ledger(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS box_contribution_lifecycle_events (
+	id             TEXT PRIMARY KEY,
+	box_id         TEXT    NOT NULL,
+	event_type     TEXT    NOT NULL CHECK (event_type IN ('GOAL_REACHED', 'CONTRIBUTION_BLOCKED', 'CONTRIBUTION_REACTIVATED')),
+	previous_state TEXT CHECK (previous_state IS NULL OR previous_state IN ('ACTIVE', 'BLOCKED')),
+	new_state      TEXT CHECK (new_state IS NULL OR new_state IN ('ACTIVE', 'BLOCKED')),
+	occurred_at    INTEGER NOT NULL,
+	CHECK (
+		(event_type = 'GOAL_REACHED' AND previous_state IS NULL AND new_state IS NULL) OR
+		(event_type = 'CONTRIBUTION_BLOCKED' AND previous_state = 'ACTIVE' AND new_state = 'BLOCKED') OR
+		(event_type = 'CONTRIBUTION_REACTIVATED' AND previous_state = 'BLOCKED' AND new_state = 'ACTIVE')
+	),
+	FOREIGN KEY (box_id) REFERENCES boxes(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS transaction_status_history (
@@ -470,6 +524,7 @@ CREATE INDEX IF NOT EXISTS idx_boxes_workspace             ON boxes(workspace_id
 CREATE INDEX IF NOT EXISTS idx_boxes_workspace_category    ON boxes(workspace_id, category_id);
 CREATE INDEX IF NOT EXISTS idx_box_virtual_ledger_box      ON box_virtual_ledger(box_id);
 CREATE INDEX IF NOT EXISTS idx_box_virtual_ledger_box_reference_date ON box_virtual_ledger(box_id, reference_date);
+CREATE INDEX IF NOT EXISTS idx_box_contribution_lifecycle_events_box_occurred ON box_contribution_lifecycle_events(box_id, occurred_at, id);
 `
 
 func normalizeSQLiteDSN(dbURL string) string {
@@ -524,55 +579,391 @@ func normalizeSQLiteDSN(dbURL string) string {
 	return sb.String()
 }
 
-func Open(dbURL string) (*sql.DB, error) {
+type sqliteOpenConfig struct {
+	normalDSN      string
+	immediateDSN   string
+	dbPath         string
+	existedAtStart bool
+}
+
+type sqliteRuntimeJobHooks struct {
+	onStart func(string)
+	onStop  func(string)
+}
+
+type sqliteRuntimeOpenTestHooks struct {
+	beforeNormalOpen    func() error
+	afterNormalOpen     func(*sql.DB)
+	beforeImmediateOpen func() error
+	afterImmediateOpen  func(*sql.DB)
+	beforeInitialize    func() error
+	afterInitialize     func()
+	beforeJobsStart     func() error
+	jobs                *sqliteRuntimeJobHooks
+}
+
+type sqliteRuntimeJobs struct {
+	cancel context.CancelFunc
+	wait   sync.WaitGroup
+}
+
+var (
+	errRuntimeDBsClosed  = errors.New("runtime databases already closed")
+	errRuntimeDBsInvalid = errors.New("invalid runtime database owner")
+)
+
+// RuntimeDBs owns the server's normal/deferred pool, its dedicated immediate
+// writer pool, and the database runtime jobs. Immediate is intentionally
+// reserved for financial flows that must acquire the SQLite writer before
+// reading decision-making state.
+type RuntimeDBs struct {
+	DB        *sql.DB
+	Immediate *sql.DB
+
+	dbPath          string
+	beforeJobsStart func() error
+	jobHooks        *sqliteRuntimeJobHooks
+	stateMu         sync.Mutex
+	jobs            *sqliteRuntimeJobs
+	closed          bool
+	closeOnce       sync.Once
+	closeErr        error
+}
+
+func prepareSQLiteOpenConfig(dbURL string, withImmediate bool) (sqliteOpenConfig, error) {
 	if dbURL == "" {
 		dbURL = paths.DefaultDatabaseURL()
 	}
-
-	dbURL = normalizeSQLiteDSN(dbURL)
-
-	dbPath := sqliteFilePath(dbURL)
-	dbExistedBeforeOpen := sqliteDatabaseFileExists(dbPath)
+	normalized := normalizeSQLiteDSN(dbURL)
+	dbPath := sqliteFilePath(normalized)
+	if withImmediate && isSQLiteMemoryDSN(normalized) {
+		return sqliteOpenConfig{}, fmt.Errorf("sqlite runtime pools require a disk-backed database")
+	}
 	if isSQLiteDiskPath(dbPath) {
 		dir := filepath.Dir(dbPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create database directory %s: %w", dir, err)
+			return sqliteOpenConfig{}, fmt.Errorf("failed to create database directory %s: %w", dir, err)
 		}
 	}
+	config := sqliteOpenConfig{
+		normalDSN:      normalized,
+		dbPath:         dbPath,
+		existedAtStart: sqliteDatabaseFileExists(dbPath),
+	}
+	if withImmediate {
+		config.normalDSN = sqliteDSNWithTxLock(normalized, "deferred")
+		config.immediateDSN = sqliteDSNWithTxLock(normalized, "immediate")
+	}
+	return config, nil
+}
 
+func sqliteDSNWithTxLock(dbURL, mode string) string {
+	base, query, hasQuery := strings.Cut(dbURL, "?")
+	parts := make([]string, 0)
+	if hasQuery {
+		for _, part := range strings.Split(query, "&") {
+			if part == "" || strings.HasPrefix(strings.ToLower(part), "_txlock=") {
+				continue
+			}
+			parts = append(parts, part)
+		}
+	}
+	parts = append(parts, "_txlock="+mode)
+	return base + "?" + strings.Join(parts, "&")
+}
+
+func isSQLiteMemoryDSN(dbURL string) bool {
+	lower := strings.ToLower(strings.TrimSpace(dbURL))
+	return sqliteFilePath(lower) == ":memory:" || strings.Contains(lower, "mode=memory")
+}
+
+func openSQLitePool(dbURL string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", dbURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
-
 	db.SetMaxOpenConns(1)
-
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
+	return db, nil
+}
 
-	if dbExistedBeforeOpen {
-		if _, err := createPreMigrationBackup(db, dbPath); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("failed to create pre-migration backup: %w", err)
+func initializeSQLiteDatabase(db *sql.DB, config sqliteOpenConfig) error {
+	if config.existedAtStart {
+		if _, err := createPreMigrationBackup(db, config.dbPath); err != nil {
+			return fmt.Errorf("failed to create pre-migration backup: %w", err)
+		}
+	}
+	if _, err := db.Exec(ddl); err != nil {
+		return fmt.Errorf("failed to execute DDL: %w", err)
+	}
+	if err := runMigrations(db); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+	return nil
+}
+
+// Open preserves the historical single-pool contract used by CLI commands,
+// maintenance paths and tests. Runtime jobs intentionally remain attached to
+// a background context in this compatibility mode.
+func Open(dbURL string) (*sql.DB, error) {
+	db, _, err := openSinglePool(dbURL, nil)
+	return db, err
+}
+
+func openSinglePool(dbURL string, jobHooks *sqliteRuntimeJobHooks) (*sql.DB, *sqliteRuntimeJobs, error) {
+	config, err := prepareSQLiteOpenConfig(dbURL, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	db, err := openSQLitePool(config.normalDSN)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := initializeSQLiteDatabase(db, config); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	jobs := startSQLiteRuntimeJobs(context.Background(), db, config.dbPath, jobHooks)
+	return db, jobs, nil
+}
+
+// OpenRuntimeDBs opens the server's two pools without calling Open. Schema
+// initialization runs exactly once on DB. The returned owner is dormant: its
+// runtime jobs do not start until Activate is called at the publication
+// boundary of a fully prepared server generation.
+func OpenRuntimeDBs(dbURL string) (*RuntimeDBs, error) {
+	return openRuntimeDBs(dbURL, nil)
+}
+
+func openRuntimeDBs(dbURL string, hooks *sqliteRuntimeOpenTestHooks) (*RuntimeDBs, error) {
+	config, err := prepareSQLiteOpenConfig(dbURL, true)
+	if err != nil {
+		return nil, err
+	}
+	if hooks != nil && hooks.beforeNormalOpen != nil {
+		if err := hooks.beforeNormalOpen(); err != nil {
+			return nil, err
+		}
+	}
+	normalDB, err := openSQLitePool(config.normalDSN)
+	if err != nil {
+		return nil, err
+	}
+	if hooks != nil && hooks.afterNormalOpen != nil {
+		hooks.afterNormalOpen(normalDB)
+	}
+	closeNormal := true
+	defer func() {
+		if closeNormal {
+			_ = normalDB.Close()
+		}
+	}()
+
+	if hooks != nil && hooks.beforeImmediateOpen != nil {
+		if err := hooks.beforeImmediateOpen(); err != nil {
+			return nil, err
+		}
+	}
+	immediateDB, err := openSQLitePool(config.immediateDSN)
+	if err != nil {
+		return nil, err
+	}
+	if hooks != nil && hooks.afterImmediateOpen != nil {
+		hooks.afterImmediateOpen(immediateDB)
+	}
+	closeImmediate := true
+	defer func() {
+		if closeImmediate {
+			_ = immediateDB.Close()
+		}
+	}()
+
+	if hooks != nil && hooks.beforeInitialize != nil {
+		if err := hooks.beforeInitialize(); err != nil {
+			return nil, err
+		}
+	}
+	if err := initializeSQLiteDatabase(normalDB, config); err != nil {
+		return nil, err
+	}
+	if hooks != nil && hooks.afterInitialize != nil {
+		hooks.afterInitialize()
+	}
+	var beforeJobsStart func() error
+	var jobHooks *sqliteRuntimeJobHooks
+	if hooks != nil {
+		beforeJobsStart = hooks.beforeJobsStart
+		jobHooks = hooks.jobs
+	}
+	owner := &RuntimeDBs{
+		DB:              normalDB,
+		Immediate:       immediateDB,
+		dbPath:          config.dbPath,
+		beforeJobsStart: beforeJobsStart,
+		jobHooks:        jobHooks,
+	}
+	closeNormal = false
+	closeImmediate = false
+	return owner, nil
+}
+
+// Activate starts the database-owned runtime jobs exactly once. OpenRuntimeDBs
+// deliberately leaves the owner dormant so callers can complete every
+// fallible validation and construction step before crossing the generation's
+// publication boundary.
+func (r *RuntimeDBs) Activate() error {
+	if r == nil {
+		return errRuntimeDBsInvalid
+	}
+	r.stateMu.Lock()
+	defer r.stateMu.Unlock()
+	if r.closed {
+		return errRuntimeDBsClosed
+	}
+	if r.DB == nil || r.Immediate == nil {
+		return errRuntimeDBsInvalid
+	}
+	if r.jobs != nil {
+		return nil
+	}
+	if r.beforeJobsStart != nil {
+		if err := r.beforeJobsStart(); err != nil {
+			return err
+		}
+	}
+	r.jobs = startSQLiteRuntimeJobs(context.Background(), r.DB, r.dbPath, r.jobHooks)
+	return nil
+}
+
+func (r *RuntimeDBs) Close() error {
+	if r == nil {
+		return nil
+	}
+	r.closeOnce.Do(func() {
+		r.stateMu.Lock()
+		r.closed = true
+		jobs := r.jobs
+		r.stateMu.Unlock()
+		if jobs != nil {
+			jobs.cancel()
+			jobs.wait.Wait()
+		}
+		var errs []error
+		if r.Immediate != nil {
+			if err := r.Immediate.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		if r.DB != nil {
+			if err := r.DB.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		r.closeErr = errors.Join(errs...)
+	})
+	return r.closeErr
+}
+
+// OpenExistingForMaintenance opens an existing on-disk SQLite database without
+// executing DDL, migrations, automatic backups or background jobs. It exists
+// for explicit, offline maintenance commands whose scope must stay narrower
+// than normal application boot.
+//
+// DEPRECATED: use OpenExistingForMaintenanceReadOnly or OpenExistingForMaintenanceReadWrite.
+// This function remains for backward compatibility only and applies mode=ro.
+func OpenExistingForMaintenance(dbURL string) (*sql.DB, error) {
+	db, _, err := OpenExistingForMaintenanceReadOnly(dbURL)
+	return db, err
+}
+
+// OpenExistingForMaintenanceReadOnly opens an existing database with mode=ro
+// and immediately sets query_only=ON. Returns (*sql.DB, canonicalDBPath, error).
+// It rejects empty URLs, :memory:, non-existent files, and any user-supplied
+// mode that conflicts with ro.
+func OpenExistingForMaintenanceReadOnly(dbURL string) (*sql.DB, string, error) {
+	return openExistingForMaintenance(dbURL, false)
+}
+
+// OpenExistingForMaintenanceReadWrite opens an existing database with mode=rw
+// and BEGIN IMMEDIATE transaction locking. Returns (*sql.DB, canonicalDBPath, error).
+// It rejects empty URLs, :memory:, non-existent files, and any user-supplied
+// mode that would allow creation (rwc).
+func OpenExistingForMaintenanceReadWrite(dbURL string) (*sql.DB, string, error) {
+	return openExistingForMaintenance(dbURL, true)
+}
+
+func openExistingForMaintenance(dbURL string, readWrite bool) (*sql.DB, string, error) {
+	if strings.TrimSpace(dbURL) == "" {
+		return nil, "", fmt.Errorf("maintenance database URL is required")
+	}
+
+	userMode := extractSQLiteMode(dbURL)
+	canonicalPath := sqliteFilePath(dbURL)
+
+	if canonicalPath == ":memory:" || canonicalPath == "" {
+		return nil, "", fmt.Errorf("maintenance database must be an existing on-disk SQLite file; :memory: and empty path are not permitted")
+	}
+	if !isSQLiteDiskPath(canonicalPath) {
+		return nil, "", fmt.Errorf("maintenance database must be an existing on-disk SQLite file")
+	}
+	if !sqliteDatabaseFileExists(canonicalPath) {
+		return nil, "", fmt.Errorf("maintenance database file does not exist")
+	}
+	if userMode != "" {
+		switch strings.ToLower(userMode) {
+		case "rwc":
+			return nil, "", fmt.Errorf("maintenance database: mode=rwc is rejected (would allow implicit file creation)")
+		case "memory":
+			return nil, "", fmt.Errorf("maintenance database: mode=memory is rejected")
+		default:
+			return nil, "", fmt.Errorf("maintenance database: user-supplied mode=%q is rejected; the maintenance opener enforces its own safe mode", userMode)
 		}
 	}
 
-	if _, err := db.Exec(ddl); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to execute DDL: %w", err)
+	var safeDSN string
+	if readWrite {
+		safeDSN = fmt.Sprintf("file:%s?mode=rw&_txlock=immediate", canonicalPath)
+	} else {
+		safeDSN = fmt.Sprintf("file:%s?mode=ro", canonicalPath)
 	}
 
-	if err := runMigrations(db); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to run migrations: %w", err)
+	db, err := sql.Open("sqlite", safeDSN)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to open maintenance database: %w", err)
 	}
-	startAutoBackup(db, dbPath)
-	startSecurityLogPruner(db, dbPath)
-	startMonthlyEngine(db, dbPath)
+	db.SetMaxOpenConns(1)
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, "", fmt.Errorf("failed to ping maintenance database: %w", err)
+	}
 
-	return db, nil
+	if !readWrite {
+		if _, err := db.Exec(`PRAGMA query_only = ON`); err != nil {
+			db.Close()
+			return nil, "", fmt.Errorf("failed to enforce read-only: %w", err)
+		}
+	}
+
+	return db, canonicalPath, nil
+}
+
+// extractSQLiteMode returns the mode= URI parameter value or empty string.
+func extractSQLiteMode(dbURL string) string {
+	lower := strings.ToLower(dbURL)
+	const prefix = "mode="
+	idx := strings.Index(lower, prefix)
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(prefix)
+	end := start
+	for end < len(lower) && lower[end] != '&' && lower[end] != '?' && lower[end] != '#' {
+		end++
+	}
+	return lower[start:end]
 }
 
 func sqliteFilePath(dbURL string) string {
@@ -720,22 +1111,6 @@ func HasAnyUser(db *sql.DB) bool {
 	return count > 0
 }
 
-func startAutoBackup(db *sql.DB, dbPath string) {
-	if db == nil || !isSQLiteDiskPath(dbPath) {
-		return
-	}
-	go func() {
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
-		for {
-			if err := createRotatingBackup(db, dbPath, 5); err != nil {
-				log.Printf("auto backup failed: %v", err)
-			}
-			<-ticker.C
-		}
-	}()
-}
-
 func PruneSecurityLogs(db *sql.DB) error {
 	if db == nil {
 		return fmt.Errorf("nil database")
@@ -744,65 +1119,288 @@ func PruneSecurityLogs(db *sql.DB) error {
 	return err
 }
 
-func startSecurityLogPruner(db *sql.DB, dbPath string) {
+func startSQLiteRuntimeJobs(parent context.Context, db *sql.DB, dbPath string, hooks *sqliteRuntimeJobHooks) *sqliteRuntimeJobs {
+	ctx, cancel := context.WithCancel(parent)
+	jobs := &sqliteRuntimeJobs{cancel: cancel}
 	if db == nil || !isSQLiteDiskPath(dbPath) {
-		return
+		return jobs
 	}
-	go func() {
+
+	start := func(name string, interval time.Duration, run func(context.Context)) {
+		jobs.wait.Add(1)
+		go func() {
+			defer jobs.wait.Done()
+			if hooks != nil && hooks.onStart != nil {
+				hooks.onStart(name)
+			}
+			defer func() {
+				if hooks != nil && hooks.onStop != nil {
+					hooks.onStop(name)
+				}
+			}()
+
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			for {
+				run(ctx)
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
+	}
+
+	start("auto_backup", 24*time.Hour, func(context.Context) {
+		if err := createRotatingBackup(db, dbPath, 5); err != nil {
+			log.Printf("auto backup failed: %v", err)
+		}
+	})
+	start("security_log_pruner", 24*time.Hour, func(context.Context) {
 		if err := PruneSecurityLogs(db); err != nil {
 			log.Printf("security logs prune failed: %v", err)
 		}
-		ticker := time.NewTicker(24 * time.Hour)
-		defer ticker.Stop()
-		for range ticker.C {
-			if err := PruneSecurityLogs(db); err != nil {
-				log.Printf("security logs prune failed: %v", err)
-			}
+	})
+	start("monthly_engine", 6*time.Hour, func(jobContext context.Context) {
+		loc, err := resolveCivilRepairTimezone()
+		if err != nil {
+			log.Printf("monthly box recharge timezone failed: %v", err)
+		} else if err := materializeMonthlyBoxRecharges(jobContext, db, time.Now().In(loc)); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("monthly box recharge failed: %v", err)
 		}
-	}()
+	})
+	return jobs
 }
 
-func startMonthlyEngine(db *sql.DB, dbPath string) {
-	if db == nil || !isSQLiteDiskPath(dbPath) {
-		return
+// materializeMonthlyBoxRecharges creates at most one automatic recharge for
+// each eligible box in civilNow's month. The caller supplies civilNow in the
+// configured financial timezone so the financial core does not read a global
+// clock. A BEGIN IMMEDIATE transaction serializes balance, lifecycle and
+// ledger decisions; the partial unique index remains the final database
+// invariant for (box_id, automatic_recharge_month).
+func materializeMonthlyBoxRecharges(ctx context.Context, db *sql.DB, civilNow time.Time) (err error) {
+	if db == nil {
+		return fmt.Errorf("monthly box recharge: nil database")
 	}
-	go func() {
-		ticker := time.NewTicker(6 * time.Hour)
-		defer ticker.Stop()
-		for {
-			now := time.Now()
-			if now.Day() == 1 {
-				monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Unix()
-				rows, err := db.Query(`SELECT id, monthly_recharge FROM boxes WHERE monthly_recharge > 0`)
-				if err == nil {
-					type monthlyBox struct {
-						id       string
-						recharge int64
-					}
-					var boxes []monthlyBox
-					for rows.Next() {
-						var box monthlyBox
-						if err := rows.Scan(&box.id, &box.recharge); err == nil {
-							boxes = append(boxes, box)
-						}
-					}
-					rowsErr := rows.Err()
-					closeErr := rows.Close()
-					if rowsErr == nil && closeErr == nil {
-						for _, box := range boxes {
-							var count int
-							_ = db.QueryRow(`SELECT COUNT(1) FROM box_virtual_ledger WHERE box_id = ? AND type = 'RECHARGE' AND reference_date >= ? AND description = 'Aporte Automático'`, box.id, monthStart).Scan(&count)
-							if count == 0 {
-								_, _ = db.Exec(`INSERT INTO box_virtual_ledger (id, box_id, reference_date, amount, type, description, created_at) VALUES (?, ?, ?, ?, 'RECHARGE', 'Aporte Automático', ?)`,
-									uuid.NewString(), box.id, now.Unix(), box.recharge, now.Unix())
-							}
-						}
-					}
-				}
-			}
-			<-ticker.C
+	if civilNow.IsZero() {
+		return fmt.Errorf("monthly box recharge: zero civil time")
+	}
+
+	civilMonth := civilNow.Format("2006-01")
+	materializedAt := civilNow.Unix()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("monthly box recharge acquire connection: %w", err)
+	}
+	defer conn.Close()
+
+	if _, err = conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		return fmt.Errorf("monthly box recharge begin immediate: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = conn.ExecContext(context.Background(), `ROLLBACK`)
 		}
 	}()
+
+	rows, err := conn.QueryContext(ctx, `
+		SELECT id, target_amount, monthly_recharge,
+			continue_after_target, automatic_contribution_state,
+			monthly_recharge_anchor_month, created_at
+		FROM boxes
+		WHERE monthly_recharge > 0
+		ORDER BY id
+	`)
+	if err != nil {
+		return fmt.Errorf("monthly box recharge select eligible boxes: %w", err)
+	}
+	type monthlyBox struct {
+		id                  string
+		target              int64
+		recharge            int64
+		continueAfterTarget int64
+		state               BoxAutomaticContributionState
+		anchor              sql.NullString
+		createdAt           int64
+	}
+	var boxes []monthlyBox
+	for rows.Next() {
+		var box monthlyBox
+		var stateRaw string
+		if err := rows.Scan(
+			&box.id,
+			&box.target,
+			&box.recharge,
+			&box.continueAfterTarget,
+			&stateRaw,
+			&box.anchor,
+			&box.createdAt,
+		); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("monthly box recharge scan eligible box: %w", err)
+		}
+		box.state = BoxAutomaticContributionState(stateRaw)
+		if !box.state.valid() {
+			_ = rows.Close()
+			return fmt.Errorf("monthly box recharge box %q has invalid contribution state %q", box.id, stateRaw)
+		}
+		if box.continueAfterTarget != 0 && box.continueAfterTarget != 1 {
+			_ = rows.Close()
+			return fmt.Errorf("monthly box recharge box %q has invalid continue-after-target value %d", box.id, box.continueAfterTarget)
+		}
+		boxes = append(boxes, box)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("monthly box recharge eligible boxes: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("monthly box recharge close eligible boxes: %w", err)
+	}
+
+	for _, box := range boxes {
+		anchorMonth := box.anchor.String
+		if !box.anchor.Valid || anchorMonth == "" {
+			anchorMonth = time.Unix(box.createdAt, 0).In(civilNow.Location()).Format("2006-01")
+			if _, err := conn.ExecContext(ctx, `
+				UPDATE boxes
+				SET monthly_recharge_anchor_month = ?
+				WHERE id = ? AND monthly_recharge_anchor_month IS NULL
+			`, anchorMonth, box.id); err != nil {
+				return fmt.Errorf("monthly box recharge set anchor for box %q: %w", box.id, err)
+			}
+		}
+		if civilMonth < anchorMonth {
+			continue
+		}
+
+		var balance int64
+		if err := conn.QueryRowContext(ctx, `
+			SELECT COALESCE(SUM(amount), 0)
+			FROM box_virtual_ledger
+			WHERE box_id = ?
+		`, box.id).Scan(&balance); err != nil {
+			return fmt.Errorf("monthly box recharge calculate balance for box %q: %w", box.id, err)
+		}
+
+		if box.state == BoxAutomaticContributionStateBlocked {
+			if balance >= box.recharge {
+				continue
+			}
+			changed, err := transitionBoxAutomaticContributionState(
+				ctx,
+				conn,
+				box.id,
+				BoxAutomaticContributionStateActive,
+				materializedAt,
+			)
+			if err != nil {
+				return fmt.Errorf("monthly box recharge reactivate box %q: %w", box.id, err)
+			}
+			if !changed {
+				return fmt.Errorf("monthly box recharge box %q was not reactivated", box.id)
+			}
+			box.state = BoxAutomaticContributionStateActive
+		}
+
+		decision := boxcontribution.NextAutomaticContribution(boxcontribution.NextAutomaticContributionInput{
+			BalanceCents:        balance,
+			TargetCents:         box.target,
+			MonthlyCents:        box.recharge,
+			TargetDefined:       box.target > 0,
+			ContinueAfterTarget: box.continueAfterTarget == 1,
+			Active:              true,
+		})
+		if decision.TargetReached && decision.AmountCents == 0 {
+			if err := recordBoxContributionGoalReached(ctx, conn, box.id, materializedAt); err != nil {
+				return fmt.Errorf("monthly box recharge recognize reached target for box %q: %w", box.id, err)
+			}
+			changed, err := transitionBoxAutomaticContributionState(
+				ctx,
+				conn,
+				box.id,
+				BoxAutomaticContributionStateBlocked,
+				materializedAt,
+			)
+			if err != nil {
+				return fmt.Errorf("monthly box recharge block reached box %q: %w", box.id, err)
+			}
+			if !changed {
+				return fmt.Errorf("monthly box recharge reached box %q was not blocked", box.id)
+			}
+			continue
+		}
+
+		var alreadyMaterialized int
+		if err := conn.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM box_virtual_ledger
+				WHERE box_id = ? AND automatic_recharge_month = ?
+			)
+		`, box.id, civilMonth).Scan(&alreadyMaterialized); err != nil {
+			return fmt.Errorf("monthly box recharge read identity for box %q month %s: %w", box.id, civilMonth, err)
+		}
+		if alreadyMaterialized != 0 {
+			continue
+		}
+
+		automaticAmount := decision.AmountCents
+		blocksAfterRecharge := decision.TargetReached
+		if automaticAmount <= 0 {
+			return fmt.Errorf("monthly box recharge calculated non-positive amount %d for box %q", automaticAmount, box.id)
+		}
+
+		result, err := conn.ExecContext(ctx, `
+			INSERT INTO box_virtual_ledger (
+				id, box_id, reference_date, amount, type, description,
+				automatic_recharge_month, created_at
+			) VALUES (?, ?, ?, ?, 'RECHARGE', 'Aporte Automático', ?, ?)
+			ON CONFLICT(box_id, automatic_recharge_month)
+			WHERE automatic_recharge_month IS NOT NULL
+			DO NOTHING
+		`, uuid.NewString(), box.id, materializedAt, automaticAmount, civilMonth, materializedAt)
+		if err != nil {
+			return fmt.Errorf("monthly box recharge materialize box %q month %s: %w", box.id, civilMonth, err)
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("monthly box recharge result box %q month %s: %w", box.id, civilMonth, err)
+		}
+		if rowsAffected == 0 {
+			continue
+		}
+		if rowsAffected != 1 {
+			return fmt.Errorf("monthly box recharge box %q month %s affected %d rows", box.id, civilMonth, rowsAffected)
+		}
+
+		if blocksAfterRecharge {
+			if err := recordBoxContributionGoalReached(ctx, conn, box.id, materializedAt); err != nil {
+				return fmt.Errorf("monthly box recharge record reached target for box %q: %w", box.id, err)
+			}
+			changed, err := transitionBoxAutomaticContributionState(
+				ctx,
+				conn,
+				box.id,
+				BoxAutomaticContributionStateBlocked,
+				materializedAt,
+			)
+			if err != nil {
+				return fmt.Errorf("monthly box recharge block box %q after reaching target: %w", box.id, err)
+			}
+			if !changed {
+				return fmt.Errorf("monthly box recharge box %q was not blocked after reaching target", box.id)
+			}
+		}
+	}
+
+	if _, err = conn.ExecContext(ctx, `COMMIT`); err != nil {
+		return fmt.Errorf("monthly box recharge commit: %w", err)
+	}
+	committed = true
+	return nil
 }
 
 func createRotatingBackup(db *sql.DB, dbPath string, retain int) error {

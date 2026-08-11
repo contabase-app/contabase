@@ -11,75 +11,71 @@ O ContaBase usa SemVer. A tag pública, o arquivo `VERSION`, o changelog e a not
 ## Versões publicadas
 
 - `v0.1.0-beta.1` — primeira Beta pública. Tag, GitHub Release, GHCR e assets disponíveis nos canais públicos.
-- `v0.1.0-beta.6` — Beta pública atual/preparada para publicação.
+- `v0.1.0-beta.7` — Beta pública mais recente.
 
-## Fluxo de publicação
+## Em preparação
 
-### Beta pública
+- `v0.1.0-beta.8` — rascunho local. Não representa uma tag, release, imagem ou canal disponível.
 
-1. desenvolvimento e validação na branch de desenvolvimento (ambiente privado);
-2. atualização de `VERSION`, `CHANGELOG.md` e `RELEASE_NOTES.md`;
-3. criação de `docs/releases/vX.Y.Z-beta.N.md` com nota da release;
-4. validações Go, diff check e export público limpo;
-5. export e sync para a branch `beta` do repositório público (`contabase`);
-6. criação da tag beta pública (ex: `v0.1.0-beta.6`);
-7. push da branch `beta` e da tag para o repositório público;
-8. execução do workflow de artifacts e GHCR;
-9. criação da GitHub Release beta (`prerelease=true`);
-10. smoke da imagem GHCR e dos artifacts em ambiente descartável;
-11. atualização do canal `contabase-canal` para apontar para a nova tag, somente depois de release, assets e checksums validados.
+## Processo de publicação
 
-### Comandos de referência (Beta pública)
+As releases públicas são preparadas e revisadas pelos mantenedores antes de
+serem disponibilizadas. Cada snapshot passa por validações de versão,
+documentação, artifacts, checksums e instalação em ambiente descartável.
 
-```bash
-# 1. Sync do export limpo para repo público local
-.docs/scripts/publish-public.sh sync vX.Y.Z-beta.N
+Uma Beta só é considerada publicada depois que a tag, a GitHub Release, os
+artifacts e a imagem correspondente estiverem disponíveis e validados. O canal
+de instalação é atualizado por último e aponta somente para uma versão pública
+existente.
 
-# 2. Commit no repo público (branch beta)
-.docs/scripts/publish-public.sh commit vX.Y.Z-beta.N
+### Preparação pública
 
-# 3. Tag local
-.docs/scripts/publish-public.sh tag vX.Y.Z-beta.N
+Os gates `check`, `export`, `diff` e `sync` preparam o snapshot público.
+Eles não dependem do canal de instalação — a preparação pode ocorrer enquanto
+o canal Beta ainda aponta para a versão anterior.
 
-# 4. Push branch beta pública
-.docs/scripts/publish-public.sh push-beta vX.Y.Z-beta.N
+A validação do canal é feita separadamente com a ferramenta interna de
+publicação, que verifica se o manifest do canal está coerente com a versão alvo.
+Ela é usada como gate pós-release, não durante a preparação do snapshot.
 
-# 5. Push tag (aciona workflow + GHCR + artifacts)
-.docs/scripts/publish-public.sh push-tag vX.Y.Z-beta.N
-```
+### Ordem final de publicação
 
-Os comandos exigem terminal interativo com as variáveis de ambiente:
-- `CONTABASE_PUBLIC_REPO_DIR` — caminho do checkout do repositório público
-- `CONTABASE_CHANNEL_REPO_DIR` — caminho do checkout do canal de instalação
+1. preparar e revisar o snapshot público (`check`, `export`, `diff`, `sync`);
+2. enviar a branch pública com autorização explícita;
+3. criar e enviar uma nova tag imutável (somente `git push origin <tag>`);
+4. o workflow é disparado exclusivamente por push de tag Beta válida;
+5. o workflow cria ou reutiliza um **draft prerelease** — nunca publica;
+6. validar draft, assets e checksums (SHA-256);
+7. validar a imagem GHCR com tag fixa;
+8. executar smokes de instalação e atualização;
+9. publicar o draft manualmente com autorização específica;
+10. validar o canal com `validate-channel`;
+11. avançar o canal Beta por commit forward e autorização própria.
 
-O runbook canônico privado com detalhes completos está em `.docs/runbooks/release-publica.md`.
+Enquanto isso, o canal Beta permanece na última versão publicada e o canal
+stable permanece `null`. Nenhuma etapa anterior antecipa o canal.
 
-### Verificação pós-publicação
+### Disparo do workflow
 
-```bash
-# Validar tag e release
-gh release view vX.Y.Z-beta.N --repo contabase-app/contabase
+Somente push de tag Beta válida (`v*`). O workflow não aceita
+`workflow_dispatch`. Reruns para a mesma tag ocorrem pelo mecanismo nativo do
+GitHub Actions. Tags são imutáveis — nunca retaggear ou usar force push.
 
-# Validar GHCR
-docker pull ghcr.io/contabase-app/contabase:vX.Y.Z-beta.N
+Antes de anexar assets, o workflow classifica o estado da release:
 
-# Validar canal
-curl -fsS https://get-contabase.pages.dev/channels/beta.json
-```
+- `missing`: cria draft prerelease;
+- `draft-compatible`: reutiliza draft existente;
+- `published`: bloqueia (skip upload);
+- `incompatible`: bloqueia com erro.
+
+A release permanece como **draft** e **prerelease** durante todo o pipeline.
+A publicação final exige autorização humana separada.
 
 ### Stable pública
 
-1. Beta pública validada em produção controlada;
-2. export e sync para a branch `main` do repositório público;
-3. criação da tag stable (ex: `v0.1.0`);
-4. push da branch `main` e da tag para o repositório público;
-5. execução do workflow de artifacts e GHCR;
-6. criação da GitHub Release stable (`prerelease=false`);
-7. atualização do canal `contabase-canal` (stable/recommended).
-
-- `contabase/beta` é o destino de releases beta.
-- `contabase/main` é o destino de releases stable.
-- O repositório público **nunca** é fonte da verdade para desenvolvimento.
+Uma Stable é promovida somente depois da validação controlada de uma Beta.
+Assim como na Beta, a publicação exige artifacts e checksums válidos, smoke de
+instalação e atualização do canal apenas após a existência da release pública.
 
 Cada etapa exige validação. A criação dos artifacts não publica automaticamente uma GitHub Release.
 
@@ -92,6 +88,8 @@ A release contém:
 - `checksums.txt`.
 
 O workflow compila CSS, executa testes e `go vet`, gera os binários Linux, valida a estrutura dos bundles e confere SHA-256.
+
+Assets são comparados por checksum antes do upload. Assets idênticos são preservados; apenas assets ausentes são enviados. Assets divergentes, inesperados ou incompletos bloqueiam o pipeline. Nenhum asset é apagado ou sobrescrito automaticamente.
 
 ## Instalação por método
 
@@ -109,7 +107,7 @@ curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
 
 O update Docker possui backup, healthcheck e rollback de runtime.
 O update source possui script próprio.
-O update automático por release artifact ainda não existe; até lá, a troca de versão deve ser uma reinstalação controlada.
+O update por release artifact segue o mesmo contrato de segurança (backup canônico obrigatório, healthcheck e rollback por restore explícito).
 
 ## Onde acompanhar
 
@@ -117,5 +115,6 @@ O update automático por release artifact ainda não existe; até lá, a troca d
 - [Release Notes](../RELEASE_NOTES.md)
 - [GitHub Releases](https://github.com/contabase-app/contabase/releases)
 - [GHCR](https://github.com/contabase-app/contabase/pkgs/container/contabase)
-- [Nota da v0.1.0-beta.6](releases/v0.1.0-beta.6.md)
+- [Nota da v0.1.0-beta.8 (rascunho)](releases/v0.1.0-beta.8.md)
+- [Nota da v0.1.0-beta.7](releases/v0.1.0-beta.7.md)
 - [Canal de instalação](https://get-contabase.pages.dev)

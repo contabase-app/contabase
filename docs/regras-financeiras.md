@@ -157,8 +157,16 @@ Recorrencias versionadas:
 - cada lancamento fixo pertence a uma serie (`recurring_series`). As regras da serie ficam em `recurring_rules`, ligadas pelo `series_id`;
 - editar **apenas esta** marca a ocorrencia como excecao manual (`is_recurring_exception = 1`). As demais ocorrencias nao mudam e a excecao nao e sobrescrita pela materializacao;
 - editar **esta e futuras** cria uma nova regra da mesma serie a partir do ponto do corte. A regra anterior recebe `effective_end_sequence`; a nova regra recebe `parent_rule_id` e um novo `effective_start_sequence`, mantendo o mesmo `series_id`;
-- editar **toda a serie** atualiza as ocorrencias mutaveis de uma vez, sem tocar em excecoes manuais, lancamentos pagos ou itens em faturas fechadas/pagas;
+- editar **toda a serie** atualiza a unica regra ativa e as ocorrencias materializadas mutaveis da serie. Regras historicas, identidades, faixas, excecoes e lancamentos protegidos permanecem intactos;
+- mudancas incompatíveis com um lancamento protegido comum retornam conflito (`409`) antes de qualquer escrita. Excecoes manuais podem divergir do calendario da regra;
+- competencia, frequencia e vencimento so podem ser recalculados em uma serie simples selecionada pela sequencia 1. Cadeias versionadas preservam seus calendarios historicos;
+- vencimento empresarial usa a relacao civil com a competencia: campo ausente preserva, vazio limpa e uma nova data define o deslocamento em dias para cada ocorrencia;
+- notas e anexos nao sao globais e devem ser alterados com **apenas esta**;
+- marcar **toda a serie** como paga atualiza regra e mutaveis, limpa vencimentos e aplica saldo uma vez, sem fabricar `paid_at`, data civil de pagamento ou historico;
+- excluir **apenas esta** registra uma ausencia persistente por workspace, serie e sequencia antes de apagar a ocorrencia. O materializador respeita esse registro e nao recria o lancamento;
+- uma exclusao individual ligada a fatura `CLOSED` ou `PAID` retorna conflito (`409`) sem criar ausencia persistente, apagar o lancamento ou alterar saldo e fatura;
 - excluir **esta e futuras** encerra a serie no ponto escolhido e remove apenas as ocorrencias futuras eliminaveis. As ocorrencias apagadas nao sao regeneradas.
+- excluir **toda a serie** desativa a serie e suas regras ativas, preserva as regras historicas e mantem pagos, excecoes manuais e itens de faturas `CLOSED` ou `PAID` como historico protegido;
 
 Materializacao automatica:
 
@@ -166,7 +174,20 @@ Materializacao automatica:
 - o estado por workspace fica em `recurring_materialization_state` (horizonte materializado, lock e throttle);
 - a projecao e mantida por um job diario, uma varredura assincrona no boot e um fallback leve por acesso, restrito a Dashboard e Lancamentos. Faturas e Relatorios nao disparam a materializacao;
 - o motor e idempotente: rodar a projecao mais de uma vez nao duplica ocorrencias por serie/sequencia nem por regra/sequencia.
+- uma sequencia registrada em `recurring_occurrence_skips` e tratada como intencionalmente ausente; o horizonte continua avancando e as demais sequencias continuam sendo materializadas.
 
 ## Valores nulos
 
 Campos nulos sao tratados com `COALESCE` ou `sql.NullString`, conforme o caso.
+
+## Rollback de binário e migration 54
+
+A migration 54 (`recurring_occurrence_skips`) é aditiva e sua tabela permanece no banco após executada.
+
+Skips são fatos persistentes de exclusão — uma vez registrados, representam a intenção de manter uma ocorrência ausente, mesmo que o lançamento original tenha sido removido.
+
+Binários anteriores à correção ignoram essa tabela. Depois que existir qualquer skip real, um downgrade para binário antigo que desconhece `recurring_occurrence_skips` pode recriar lançamentos que foram intencionalmente excluídos, porque o materializador não enxergará os skips e preencherá a sequência novamente.
+
+Rollback operacional seguro mantém o schema (incluindo `recurring_occurrence_skips`) e restaura ou reaplica uma versão corrigida que honre a tabela de skips.
+
+Backup WAL-consistente do banco (`sqlite3` com `VACUUM INTO` ou cópia com `PRAGMA wal_checkpoint(TRUNCATE)` seguida de cópia atômica) continua obrigatório antes de qualquer operação de atualização ou rollback.

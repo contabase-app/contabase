@@ -1,21 +1,29 @@
-FROM golang:1.26-bookworm AS builder
+FROM node:24-bookworm-slim AS css-builder
 
 WORKDIR /app
 
-ARG TAILWIND_VERSION=v4.3.0
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "x86_64" ]; then TAILWIND_ARCH="x64"; \
-    elif [ "$ARCH" = "aarch64" ]; then TAILWIND_ARCH="arm64"; \
-    else echo "Unsupported architecture: $ARCH"; exit 1; fi && \
-    curl -fsSL "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-${TAILWIND_ARCH}" -o /usr/local/bin/tailwindcss && \
-    chmod +x /usr/local/bin/tailwindcss
+COPY package.json package-lock.json ./
+RUN npm ci --include=optional
+
+COPY assets/css/input.css assets/css/input.css
+COPY templates templates
+COPY internal/handlers internal/handlers
+COPY cmd/server cmd/server
+COPY assets/js assets/js
+COPY scripts/build-css.sh scripts/build-css.sh
+
+RUN bash scripts/build-css.sh
+
+FROM golang:1.26-bookworm AS builder
+
+WORKDIR /app
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 
-RUN tailwindcss -i assets/css/input.css -o assets/css/style.css --minify
+COPY --from=css-builder /app/assets/css/style.css /app/assets/css/style.css
 
 ARG VERSION
 
@@ -35,7 +43,9 @@ WORKDIR /app
 COPY --from=builder /app/server .
 COPY --from=builder /app/admin .
 COPY --from=builder /app/templates ./templates
-COPY --from=builder /app/assets ./assets
+COPY --from=builder /app/assets/js ./assets/js
+COPY --from=builder /app/assets/css ./assets/css
+COPY --from=builder /app/assets/fonts ./assets/fonts
 COPY --from=builder /app/VERSION /app/VERSION
 
 RUN addgroup -g 1000 appgroup && \

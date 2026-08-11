@@ -11,6 +11,48 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
+## [v0.1.0-beta.8] — Unreleased
+
+### Adicionado
+- **Datas civis:** novas colunas de data civil e escrita dupla nos fluxos de lançamentos, recorrências, pagamentos e agendamentos, preservando a data de calendário independentemente do fuso horário do servidor.
+- **Administração de datas:** auditorias somente leitura para identificar dados legados de data civil e um carregador de plano de reparo com validação estrita. Nenhuma dessas ferramentas aplica reparos automaticamente.
+- **Recorrências — exclusão durável de uma ocorrência:** uma exclusão em "Apenas este lançamento" passa a registrar uma ausência persistente por série e sequência.
+- **Faturas — movimentação manual entre faturas:** lançamentos individuais de cartão de crédito podem ser movidos manualmente para outra fatura aberta ou fechada financeiramente elegível, com persistência do `invoice_override_id`. Pagamentos modernos e legados são preservados; faturas quitadas ou liquidadas permanecem protegidas; e o lançamento pode retornar ao vínculo automático mantendo competência, data e valor originais.
+- **Faturas — reversão de pagamento:** pagamentos de fatura podem ser revertidos por usuário autenticado, com motivo, responsável, data e lançamento de reversão registrados no histórico.
+- **Reservas — planejamento mensal:** adicionado o resumo de planejamento de reservas, com projeção determinística de aporte necessário, rendimento composto, estimativa de prazo, saldo projetado e indicadores de suficiência.
+
+### Alterado
+- **Interface — rodapé autenticado:** o ContaBase agora mostra a data, a hora e a timezone reconhecidas pela aplicação, facilitando a confirmação visual da configuração temporal em instalações self-hosted. O indicador reutiliza a configuração temporal canônica e não altera o cálculo ou a persistência das datas financeiras.
+- **Recorrências versionadas:** alterações em "Este e futuros" passam a validar a cadeia da série antes da escrita e a usar datas civis no corte e na materialização; "Toda a série" executa a atualização de forma atômica.
+- **Build de CSS:** o projeto passa a usar o toolchain travado do Tailwind CSS 4.3.3, com Node.js 24 LTS recomendado e Node.js 22 LTS compatível. O scanner do Tailwind fica limitado aos diretórios de interface.
+- **Atualização self-hosted:** o fluxo source valida a versão do Node antes de interromper o serviço; os builds Docker e de artifacts foram alinhados ao mesmo toolchain. Os assets de autenticação passam a usar versões para evitar CSS desatualizado.
+
+### Corrigido
+- **Pagamento de lançamentos:** repetir a confirmação de pagamento não volta a movimentar saldo, trocar a conta ou duplicar histórico. A troca de conta fica disponível apenas para receitas e despesas pendentes simples e continua bloqueada para transferências, faturas, cartões e recorrências.
+- **Faturas e cartões — histórico financeiro:** estados, totais pagos e saldo pendente passam a usar os pagamentos efetivos de forma consistente. Faturas fechadas ou pagas, seus pagamentos e lançamentos vinculados ficam protegidos contra reabertura, alteração ou materialização automática indevida; uma reversão preserva o histórico para relatórios.
+- **Recorrências — escopos de exclusão:** "Apenas este lançamento" não é recriado pela projeção; "Este e futuros" encerra somente o intervalo elegível; e "Toda a série" encerra a série completa sem alterar exceções, lançamentos pagos ou itens protegidos por fatura.
+- **Healthcheck e monitoramento:** o contrato público de `GET /health` foi reforçado com respostas não armazenáveis em cache e rejeição explícita de métodos não suportados. As respostas de disponibilidade permanecem mínimas, sem exposição de erros internos. A rota e a fronteira HTTPS foram testadas com o registro produtivo real.
+
+### Banco de dados
+- **Migration 52 — `civil_date_columns`:** adiciona as colunas de data civil usadas pelos novos fluxos. O preenchimento de dados legados é uma operação controlada e separada, nunca executada automaticamente pela migration ou pelo boot da aplicação.
+- **Migration 53 — `recurring_rules_active_leaf_invariant`:** protege a cadeia de versões de recorrência contra regra ativa com descendentes e interrompe o upgrade com diagnóstico se o banco já violar essa regra.
+- **Migration 54 — `recurring_occurrence_skips`:** adiciona tombstones persistentes para exclusões unitárias de recorrências.
+- **Migration 55 — `box_monthly_recharge_identity`:** registra uma identidade por reserva e mês para tornar os aportes automáticos mensais idempotentes.
+- **Migration 56 — `box_contribution_lifecycle`:** registra o ciclo de vida de aportes automáticos de reservas.
+- **Migration 57 — `workspace_monthly_planning_references`:** adiciona referências mensais de planejamento por workspace.
+- **Migration 58 — `invoice_payment_reversal_identity`:** adiciona a identidade e a proveniência da reversão de pagamentos de fatura, com unicidade por workspace.
+- **Migration 59 — `recurring_occurrence_blocks`:** impede que uma mesma ocorrência recorrente fique ao mesmo tempo materializada e marcada como excluída.
+
+### Self-hosted
+- **Backup canônico obrigatório:** os updaters Docker, source e release exigem backup canônico completo (banco SQLite + uploads) antes de qualquer mutação. Falha no backup interrompe o update; `--no-backup` é rejeitado; e não há fallback em cópias cruas de DB/WAL/SHM.
+- **Rollback e restore explícito:** se o healthcheck do novo runtime falhar, o serviço permanece parado e o runtime antigo não é reativado automaticamente. O retorno à versão anterior exige restore explícito do pacote pré-update.
+- **Compatibilidade e rollback:** a evolução de schema preserva os dados existentes, mas valida conflitos antes de concluir o upgrade. Após registrar uma exclusão unitária, não faça downgrade para um binário que não reconheça `recurring_occurrence_skips`, pois ele pode recriar a ocorrência removida.
+- **Backup:** mantenha backup WAL-consistente antes da atualização ou de qualquer operação controlada sobre datas civis.
+- **Monitoramento:** documentada a monitoração de instalações self-hosted com Docker e Uptime Kuma, incluindo o uso do endpoint `/health` para verificação de disponibilidade do processo HTTP e do acesso básico ao SQLite.
+
+### Documentação
+- **Regras financeiras:** documentados o contrato de materialização, a persistência das exclusões unitárias e a cautela de rollback após a migration 54.
+
 ## [v0.1.0-beta.7]
 
 ### Adicionado

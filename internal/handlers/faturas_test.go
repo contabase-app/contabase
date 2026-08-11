@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,6 +35,7 @@ func TestHandlePagarFaturaLiquidaFaturaDebitaContaECriaProxima(t *testing.T) {
 
 	handler := FaturasHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   templates,
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
@@ -170,6 +172,7 @@ func TestHandlePagarFaturaQuitarSemConfirmacaoNaoCriaPagamento(t *testing.T) {
 
 	handler := FaturasHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   testInvoicePaymentTemplates(t),
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
@@ -229,6 +232,7 @@ func TestHandlePagarFaturaContaVaziaBloqueiaSemPagamento(t *testing.T) {
 
 	handler := FaturasHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   testInvoicePaymentTemplates(t),
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
@@ -274,6 +278,7 @@ func TestHandlePagarFaturaJaPagaNaoCriaNovoInvoicePayment(t *testing.T) {
 
 	handler := FaturasHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   templates,
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
@@ -406,6 +411,7 @@ func TestHandlePagarFaturaComPagamentoParcialQuitaApenasSaldoPendente(t *testing
 
 	handler := FaturasHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   templates,
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
@@ -514,6 +520,7 @@ func TestHandlePagarFaturaPagamentoParcialMenorQueSaldoMantemAberta(t *testing.T
 
 	handler := FaturasHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   testInvoicePaymentTemplates(t),
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
@@ -613,6 +620,48 @@ func TestHandlePagarFaturaPagamentoParcialMenorQueSaldoMantemAberta(t *testing.T
 	}
 }
 
+func TestHandlePagarFaturaClosedPartialAndExact(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		amount     string
+		wantStatus string
+		wantPaid   int64
+	}{
+		{name: "partial remains closed", amount: "100,00", wantStatus: "CLOSED", wantPaid: 10000},
+		{name: "exact becomes paid", amount: "250,00", wantStatus: "PAID", wantPaid: 25000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestDB(t)
+			defer db.Close()
+			seedInvoicePaymentScenario(t, db)
+			execTestSQL(t, db, `UPDATE invoices SET status = 'CLOSED', paid_at = NULL WHERE id = 'invoice-2026-08'`)
+			handler := FaturasHandler{DB: db, WriterDB: db, Templates: testInvoicePaymentTemplates(t), WorkspaceID: "ws-test", UserID: "user-test"}
+			form := url.Values{}
+			form.Set("invoice_id", "invoice-2026-08")
+			form.Set("payment_account_id", "checking-test")
+			form.Set("payment_mode", "partial")
+			form.Set("payment_amount", tc.amount)
+			form.Set("payment_date", "2026-08-10")
+			req := httptest.NewRequest(http.MethodPost, "/cartoes/faturas/pagar", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rr := httptest.NewRecorder()
+			handler.HandlePagarFatura(rr, req)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+			}
+			var status string
+			var paidAmount int64
+			var paidAt sql.NullInt64
+			if err := db.QueryRow(`SELECT status, paid_amount, paid_at FROM invoices WHERE id = 'invoice-2026-08'`).Scan(&status, &paidAmount, &paidAt); err != nil {
+				t.Fatal(err)
+			}
+			if status != tc.wantStatus || paidAmount != tc.wantPaid || (status == "PAID") != paidAt.Valid {
+				t.Fatalf("invoice = %q/%d/%v", status, paidAmount, paidAt)
+			}
+		})
+	}
+}
+
 func TestHandlePagarFaturaPagamentoParcialIgualSaldoQuitaFatura(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
@@ -621,6 +670,7 @@ func TestHandlePagarFaturaPagamentoParcialIgualSaldoQuitaFatura(t *testing.T) {
 
 	handler := FaturasHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   testInvoicePaymentTemplates(t),
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
@@ -659,6 +709,162 @@ func TestHandlePagarFaturaPagamentoParcialIgualSaldoQuitaFatura(t *testing.T) {
 	}
 }
 
+func TestHandlePagarFaturaPaymentTimelineDeterminesPaidAt(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedInvoicePaymentScenario(t, db)
+
+	const priorPaymentAt = int64(1769947200) // 2026-02-01 noon UTC
+	execTestSQL(t, db, `
+		INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, amount_cents, paid_at, source, created_by, created_at)
+		VALUES ('payment-later', 'ws-test', 'invoice-2026-08', 'checking-test', 10000, ?, 'manual', 'user-test', ?)
+	`, priorPaymentAt, priorPaymentAt)
+	execTestSQL(t, db, `UPDATE invoices SET paid_amount = 10000 WHERE id = 'invoice-2026-08'`)
+
+	handler := FaturasHandler{DB: db, WriterDB: db, Templates: testInvoicePaymentTemplates(t), WorkspaceID: "ws-test", UserID: "user-test"}
+	form := url.Values{}
+	form.Set("invoice_id", "invoice-2026-08")
+	form.Set("payment_account_id", "checking-test")
+	form.Set("payment_mode", "partial")
+	form.Set("payment_amount", "150,00")
+	form.Set("payment_date", "2026-01-01")
+	req := httptest.NewRequest(http.MethodPost, "/cartoes/faturas/pagar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	handler.HandlePagarFatura(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	}
+
+	var status string
+	var paidAmount int64
+	var paidAt sql.NullInt64
+	if err := db.QueryRow(`SELECT status, paid_amount, paid_at FROM invoices WHERE id = 'invoice-2026-08'`).Scan(&status, &paidAmount, &paidAt); err != nil {
+		t.Fatal(err)
+	}
+	if status != "PAID" || paidAmount != 25000 || !paidAt.Valid || paidAt.Int64 != priorPaymentAt {
+		t.Fatalf("invoice = %q/%d/%v, want PAID/25000/%d", status, paidAmount, paidAt, priorPaymentAt)
+	}
+}
+
+func TestHandlePagarFaturaLegacyPartialFailsClosed(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedInvoicePaymentScenario(t, db)
+	execTestSQL(t, db, `UPDATE invoices SET paid_amount = 10000 WHERE id = 'invoice-2026-08'`)
+
+	handler := FaturasHandler{DB: db, WriterDB: db, Templates: testInvoicePaymentTemplates(t), WorkspaceID: "ws-test", UserID: "user-test"}
+	form := url.Values{}
+	form.Set("invoice_id", "invoice-2026-08")
+	form.Set("payment_account_id", "checking-test")
+	form.Set("payment_mode", "settle")
+	form.Set("confirm_settle", "1")
+	req := httptest.NewRequest(http.MethodPost, "/cartoes/faturas/pagar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	handler.HandlePagarFatura(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body = %q", rr.Code, rr.Body.String())
+	}
+	var payments, paymentTransactions int
+	_ = db.QueryRow(`SELECT COUNT(1) FROM invoice_payments WHERE invoice_id = 'invoice-2026-08'`).Scan(&payments)
+	_ = db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE description = 'Pagamento de Fatura - Cartao Teste'`).Scan(&paymentTransactions)
+	if payments != 0 || paymentTransactions != 0 {
+		t.Fatalf("writes after legacy conflict = payments %d transactions %d", payments, paymentTransactions)
+	}
+}
+
+func TestHandlePagarFaturaZeroTotalCreatesNoWrites(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedInvoicePaymentScenario(t, db)
+	execTestSQL(t, db, `DELETE FROM transactions WHERE id = 'purchase-test'`)
+	handler := FaturasHandler{DB: db, WriterDB: db, Templates: testInvoicePaymentTemplates(t), WorkspaceID: "ws-test", UserID: "user-test"}
+	form := url.Values{}
+	form.Set("invoice_id", "invoice-2026-08")
+	form.Set("payment_account_id", "checking-test")
+	form.Set("payment_mode", "settle")
+	form.Set("confirm_settle", "1")
+	req := httptest.NewRequest(http.MethodPost, "/cartoes/faturas/pagar", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	handler.HandlePagarFatura(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+	var payments int
+	_ = db.QueryRow(`SELECT COUNT(1) FROM invoice_payments WHERE invoice_id = 'invoice-2026-08'`).Scan(&payments)
+	if payments != 0 {
+		t.Fatalf("payments = %d, want 0", payments)
+	}
+}
+
+func TestConcurrentInvoicePaymentsDoNotOverpay(t *testing.T) {
+	db, writerDB := openInvoicePaymentReversalFileDBs(t)
+	seedInvoicePaymentReversalFixture(t, db, reversalFixtureOptions{
+		InvoiceTotal:   100000,
+		ClosingCivil:   "2026-08-20",
+		InvoiceStatus:  "OPEN",
+		InitialBalance: 200000,
+	})
+	handler := FaturasHandler{
+		DB:          db,
+		WriterDB:    writerDB,
+		Templates:   testInvoicePaymentTemplates(t),
+		WorkspaceID: reversalWorkspaceID,
+		UserID:      reversalUserID,
+	}
+
+	start := make(chan struct{})
+	results := make(chan int, 2)
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			form := url.Values{}
+			form.Set("invoice_id", reversalInvoiceID)
+			form.Set("payment_account_id", reversalPaymentAccountID)
+			form.Set("payment_mode", "settle")
+			form.Set("confirm_settle", "1")
+			req := httptest.NewRequest(http.MethodPost, "/cartoes/faturas/pagar", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rr := httptest.NewRecorder()
+			handler.HandlePagarFatura(rr, req)
+			results <- rr.Code
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	statusCounts := map[int]int{}
+	for status := range results {
+		statusCounts[status]++
+	}
+	if statusCounts[http.StatusOK] != 1 || statusCounts[http.StatusConflict] != 1 {
+		t.Fatalf("statuses = %v, want one 200 and one 409", statusCounts)
+	}
+
+	var status string
+	var paidAmount, activeSum int64
+	var activeCount, paymentTransactions int
+	if err := db.QueryRow(`SELECT status, paid_amount FROM invoices WHERE id = ?`, reversalInvoiceID).Scan(&status, &paidAmount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COALESCE(SUM(amount_cents), 0), COUNT(1) FROM invoice_payments WHERE invoice_id = ? AND reversed_at IS NULL`, reversalInvoiceID).Scan(&activeSum, &activeCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE description LIKE ?`, invoicePaymentDescriptionPrefix+"%").Scan(&paymentTransactions); err != nil {
+		t.Fatal(err)
+	}
+	var balance int64
+	_ = db.QueryRow(`SELECT current_balance FROM accounts WHERE id = ?`, reversalPaymentAccountID).Scan(&balance)
+	if status != "PAID" || paidAmount != 100000 || activeSum != 100000 || activeCount != 1 || paymentTransactions != 1 || balance != 100000 {
+		t.Fatalf("final state = status %q paid %d active %d/%d tx %d balance %d", status, paidAmount, activeSum, activeCount, paymentTransactions, balance)
+	}
+}
+
 func TestHandlePagarFaturaPagamentoParcialValorInvalidoRejeita(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -679,6 +885,7 @@ func TestHandlePagarFaturaPagamentoParcialValorInvalidoRejeita(t *testing.T) {
 
 			handler := FaturasHandler{
 				DB:          db,
+				WriterDB:    db,
 				Templates:   testInvoicePaymentTemplates(t),
 				WorkspaceID: "ws-test",
 				UserID:      "user-test",
@@ -732,7 +939,7 @@ func TestHandleMoverFaturaAvulsaMoveParaProximaFatura(t *testing.T) {
 		UserID:      "user-test",
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/transacoes/purchase-test/mover-fatura", nil)
+	req := quickInvoiceMoveRequestForTest(t, db, "purchase-test")
 	rr := httptest.NewRecorder()
 
 	handler.HandleMoverFatura(rr, req, "purchase-test")
@@ -761,7 +968,7 @@ func TestHandleMoverFaturaParceladaMoveCadeiaFuturaEmCascata(t *testing.T) {
 		UserID:      "user-test",
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/transacoes/installment-2/mover-fatura", nil)
+	req := quickInvoiceMoveRequestForTest(t, db, "installment-2")
 	rr := httptest.NewRecorder()
 
 	handler.HandleMoverFatura(rr, req, "installment-2")
@@ -773,6 +980,38 @@ func TestHandleMoverFaturaParceladaMoveCadeiaFuturaEmCascata(t *testing.T) {
 	assertTransactionInvoiceReference(t, db, "installment-2", "2026-10")
 	assertTransactionInvoiceReference(t, db, "installment-3", "2026-11")
 	assertInvoiceExists(t, db, "card-test", "2026-11", "OPEN")
+}
+
+func quickInvoiceMoveRequestForTest(t *testing.T, db *sql.DB, transactionID string) *http.Request {
+	t.Helper()
+	var invoiceID string
+	var invoiceReference string
+	var updatedAt int64
+	var parentID, recurringRuleID sql.NullString
+	var totalInstallments int64
+	if err := db.QueryRow(`
+		SELECT t.invoice_id, i.reference, t.updated_at, t.parent_id, t.recurring_rule_id, t.total_installments
+		FROM transactions t JOIN invoices i ON i.id = t.invoice_id
+		WHERE t.id = ?
+	`, transactionID).Scan(&invoiceID, &invoiceReference, &updatedAt, &parentID, &recurringRuleID, &totalInstallments); err != nil {
+		t.Fatalf("quick move source: %v", err)
+	}
+	destinationReference, err := nextInvoiceReference(invoiceReference)
+	if err != nil {
+		t.Fatalf("quick move destination: %v", err)
+	}
+	moveScope := "single"
+	if parentID.Valid || recurringRuleID.Valid || totalInstallments > 1 {
+		moveScope = "chain"
+	}
+	form := url.Values{}
+	form.Set("expected_invoice_id", invoiceID)
+	form.Set("expected_destination_reference", destinationReference)
+	form.Set("expected_updated_at", fmt.Sprintf("%d", updatedAt))
+	form.Set("expected_move_scope", moveScope)
+	req := httptest.NewRequest(http.MethodPost, "/transacoes/"+transactionID+"/mover-fatura", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return req
 }
 
 func TestInsertTransactionCriaNovaFaturaQuandoCompetenciaAtualJaFoiPaga(t *testing.T) {
@@ -804,19 +1043,14 @@ func TestInsertTransactionCriaNovaFaturaQuandoCompetenciaAtualJaFoiPaga(t *testi
 		12000,
 		"Compra pos pagamento",
 		"",
-		"",
-		txDate,
-		"card-test",
+		"", civilWriteDateFromLegacyUnix(txDate), "card-test",
 		"",
 		"cat-expense",
 		1,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"",
 		false,
 	)
@@ -1025,6 +1259,55 @@ func TestBuildLancamentosDataInvoiceStatusFilters(t *testing.T) {
 	}
 	if len(pendingData.Invoices) != 1 {
 		t.Fatalf("pending invoice count = %d, want 1", len(pendingData.Invoices))
+	}
+}
+
+func TestLancamentosInvoiceStatusAndCoverageRemainIndependent(t *testing.T) {
+	todayUnix := testUnixDate("2026-08-10")
+	tests := []struct {
+		name            string
+		status          string
+		total           int64
+		effectivePaid   int64
+		wantRemaining   int64
+		wantBadge       string
+		wantPaidFilter  bool
+		wantPendingView bool
+	}{
+		{"open zero", models.InvoiceStatusOpen, 0, 0, 0, "Aberta", false, false},
+		{"closed zero", models.InvoiceStatusClosed, 0, 0, 0, "Fechada", false, false},
+		{"paid zero", models.InvoiceStatusPaid, 0, 0, 0, "Paga", true, false},
+		{"open overpaid", models.InvoiceStatusOpen, 100, 120, 0, "Aberta", false, false},
+		{"closed overpaid", models.InvoiceStatusClosed, 100, 120, 0, "Fechada", false, false},
+		{"open partial", models.InvoiceStatusOpen, 100, 40, 60, "Parcial", false, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inv := InvoiceRow{Status: tt.status, Total: tt.total, DueDate: testUnixDate("2026-08-20")}
+			prepareLancamentosInvoiceRow(&inv, tt.effectivePaid, todayUnix)
+
+			if inv.Status != tt.status {
+				t.Fatalf("status = %q, want persisted %q", inv.Status, tt.status)
+			}
+			if inv.Paid != tt.effectivePaid || inv.Pending != tt.wantRemaining {
+				t.Fatalf("paid/remaining = %d/%d, want %d/%d", inv.Paid, inv.Pending, tt.effectivePaid, tt.wantRemaining)
+			}
+			if inv.BadgeLabel != tt.wantBadge {
+				t.Fatalf("badge = %q, want %q", inv.BadgeLabel, tt.wantBadge)
+			}
+			paidFilter := lancamentosInvoiceMatchesStatus(inv, LancamentosFilters{Situacoes: []string{"pago"}}, todayUnix)
+			if paidFilter != tt.wantPaidFilter {
+				t.Fatalf("paid filter = %v, want %v", paidFilter, tt.wantPaidFilter)
+			}
+			pendingFilter := lancamentosInvoiceMatchesStatus(inv, LancamentosFilters{Situacoes: []string{"pendente"}}, todayUnix)
+			if pendingFilter != tt.wantPendingView {
+				t.Fatalf("pending filter = %v, want %v", pendingFilter, tt.wantPendingView)
+			}
+			if tt.effectivePaid > tt.total && tt.effectivePaid-tt.total != 20 {
+				t.Fatalf("overpaid = %d, want 20", tt.effectivePaid-tt.total)
+			}
+		})
 	}
 }
 
@@ -1396,19 +1679,14 @@ func TestInsertTransactionParceladaComFaturaManualDistribuiParcelas(t *testing.T
 		30000,
 		"Compra Parcelada Override",
 		"",
-		"",
-		testUnixDate("2026-07-05"),
-		"card-test",
+		"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-05")), "card-test",
 		"",
 		"cat-installment",
 		3,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"invoice-2026-08",
 		false,
 	)
@@ -1599,9 +1877,10 @@ func testInvoicePaymentTemplates(t *testing.T) *template.Template {
 func seedInvoicePaymentScenario(t *testing.T, db *sql.DB) {
 	t.Helper()
 
-	now := time.Now().Unix()
-	futureClosing := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC).Unix()
-	futureDue := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC).Unix()
+	ref := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	now := ref.Unix()
+	closingDate := ref.AddDate(0, 1, 0).Unix()
+	dueDate := ref.AddDate(0, 1, 10).Unix()
 	execTestSQL(t, db, `
 		INSERT INTO users (id, name, email, password_hash, created_at, updated_at)
 		VALUES ('user-test', 'User Test', 'user-test@example.com', 'hash', ?, ?)
@@ -1629,7 +1908,7 @@ func seedInvoicePaymentScenario(t *testing.T, db *sql.DB) {
 	execTestSQL(t, db, `
 		INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, created_at)
 		VALUES ('invoice-2026-08', 'card-test', '2026-08', ?, ?, 'OPEN', ?)
-	`, futureClosing, futureDue, now)
+	`, closingDate, dueDate, now)
 	execTestSQL(t, db, `
 		INSERT INTO transactions (id, workspace_id, user_id, account_id, invoice_id, type, amount, date, description, status, installment_number, total_installments, created_at, updated_at)
 		VALUES ('purchase-test', 'ws-test', 'user-test', 'card-test', 'invoice-2026-08', 'EXPENSE', 25000, ?, 'Compra Teste', 'paid', 1, 1, ?, ?)
@@ -2076,6 +2355,7 @@ func TestHandlePagarFaturaRenderContemSecaoPagamentos(t *testing.T) {
 
 	handler := FaturasHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   templates,
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
@@ -2196,6 +2476,72 @@ func TestBuildFaturaDataPaidZeroSemPaymentsMostraFallbackZero(t *testing.T) {
 	}
 	if data.TotalPaid.Reais != "0" || data.TotalPaid.Cents != ",00" {
 		t.Fatalf("TotalPaid = R$ %s%s, want R$ 0,00", data.TotalPaid.Reais, data.TotalPaid.Cents)
+	}
+}
+
+func TestBuildFaturaDataCanonicalEffectivePaidMatrix(t *testing.T) {
+	tests := []struct {
+		name              string
+		status            string
+		legacyPaid        int64
+		modernPaid        int64
+		modernReversed    bool
+		wantPaidReais     string
+		wantPendingReais  string
+		wantLegacySummary bool
+	}{
+		{"legacy partial open", "OPEN", 10000, 0, false, "100", "150", true},
+		{"legacy partial closed", "CLOSED", 10000, 0, false, "100", "150", true},
+		{"modern partial overrides legacy", "OPEN", 25000, 10000, false, "100", "150", false},
+		{"all reversed does not resurrect legacy", "CLOSED", 25000, 25000, true, "0", "250", false},
+		{"overpayment is not clamped", "OPEN", 25000, 30000, false, "300", "0", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := openTestDB(t)
+			defer db.Close()
+			seedInvoicePaymentScenario(t, db)
+
+			futureClosing := testUnixDate("2099-08-20")
+			futureDue := testUnixDate("2099-09-10")
+			execTestSQL(t, db, `
+				UPDATE invoices
+				SET status = ?, closing_date = ?, due_date = ?, paid_at = NULL, paid_amount = ?
+				WHERE id = 'invoice-2026-08'
+			`, tt.status, futureClosing, futureDue, tt.legacyPaid)
+			if tt.modernPaid > 0 {
+				now := time.Now().Unix()
+				var reversedAt any
+				if tt.modernReversed {
+					reversedAt = now
+				}
+				execTestSQL(t, db, `
+					INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, amount_cents, paid_at, source, reversed_at, created_by, created_at)
+					VALUES ('ip-effective-matrix', 'ws-test', 'invoice-2026-08', 'checking-test', ?, ?, 'manual', ?, 'user-test', ?)
+				`, tt.modernPaid, now, reversedAt, now)
+			}
+
+			data, err := buildFaturaDataForInvoice(db, "ws-test", "invoice-2026-08", "desc")
+			if err != nil {
+				t.Fatalf("buildFaturaDataForInvoice: %v", err)
+			}
+			if data.Status != tt.status {
+				t.Fatalf("status = %q, want persisted %q", data.Status, tt.status)
+			}
+			if data.TotalPaid.Reais != tt.wantPaidReais || data.TotalPaid.Cents != ",00" {
+				t.Fatalf("TotalPaid = R$ %s%s, want R$ %s,00", data.TotalPaid.Reais, data.TotalPaid.Cents, tt.wantPaidReais)
+			}
+			if data.PendingAmount.Reais != tt.wantPendingReais || data.PendingAmount.Cents != ",00" {
+				t.Fatalf("PendingAmount = R$ %s%s, want R$ %s,00", data.PendingAmount.Reais, data.PendingAmount.Cents, tt.wantPendingReais)
+			}
+			if data.HasLegacyPaymentSummary != tt.wantLegacySummary {
+				t.Fatalf("HasLegacyPaymentSummary = %v, want %v", data.HasLegacyPaymentSummary, tt.wantLegacySummary)
+			}
+			if tt.modernReversed && data.HasPayments {
+				t.Fatal("all-reversed lineage must not appear as an active payment list")
+			}
+		})
 	}
 }
 

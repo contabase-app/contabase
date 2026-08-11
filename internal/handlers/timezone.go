@@ -58,3 +58,17 @@ func formatAppDateLabelFromUnix(unix int64) string {
 	}
 	return time.Unix(unix, 0).In(appTimeLocation()).Format("02/01/2006")
 }
+
+type AppTimeDisplay struct {
+	DateTime string
+	Timezone string
+}
+
+func FormatAppTime(now time.Time) AppTimeDisplay {
+	loc := appTimeLocation()
+	t := now.In(loc)
+	return AppTimeDisplay{
+		DateTime: t.Format("02/01/2006 15:04"),
+		Timezone: loc.String(),
+	}
+}

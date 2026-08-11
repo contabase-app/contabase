@@ -283,8 +283,16 @@ sudo systemctl status contabase --no-pager
 Healthcheck:
 
 ```bash
-curl http://127.0.0.1:8080/health
+curl -fsS http://127.0.0.1:8080/health
 ```
+
+Resposta esperada:
+
+```json
+{"status":"healthy"}
+```
+
+Quando HTTPS for obrigatório no proxy reverso, o monitor externo deve chamar diretamente a URL HTTPS canônica. Não desabilite a validação TLS para contornar o healthcheck.
 
 Logs recentes:
 

@@ -1,9 +1,9 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
 
 @source "../../templates/**/*.html";
-@source "../../templates/*.html";
-@source "../../internal/**/*.go";
-@source "../../cmd/**/*.go";
+@source "../../internal/handlers/**/*.go";
+@source "../../cmd/server/**/*.go";
+@source "../../assets/js/**/*.js";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

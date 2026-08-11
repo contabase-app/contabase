@@ -33,6 +33,7 @@
             <input id="origemTipo" type="hidden" name="origem_tipo" value="{{if .OrigemTipo}}{{.OrigemTipo}}{{else}}conta{{end}}">
             <input id="destinoContaId" type="hidden" name="destino_conta_id" value="{{.DestinoContaID}}">
             <input id="escopoEdicao" type="hidden" name="escopo_edicao" value="single">
+			<input id="invoiceAssignmentMode" type="hidden" name="invoice_assignment_mode" value="{{if .IsEdit}}{{if .InvoiceAssignmentMode}}{{.InvoiceAssignmentMode}}{{else}}preserve{{end}}{{else}}auto{{end}}">
             <input id="permitirExcedenteCaixinha" type="hidden" name="permitir_excedente_caixinha" value="0">
             <input id="csrfToken" type="hidden" name="csrf_token" value="">
             <div id="lancamento-form-error" class="hidden"></div>
@@ -203,7 +204,7 @@
                             class="sheet-select h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none">
                             <option value="">Automático (fatura do ciclo)</option>
                             {{range .FaturaOptions}}
-                            <option value="{{.ID}}" class="text-xs" {{if .IsSensitive}}data-sensitive="true"{{end}} {{if eq .ID $.ReturnInvoiceID}}selected{{end}}>
+							<option value="{{.ID}}" class="text-xs" data-invoice-status="{{.Status}}" data-manual-eligible="{{if .ManualBlock}}false{{else}}true{{end}}" {{if .IsSensitive}}data-sensitive="true"{{end}} {{if .ManualBlock}}disabled title="{{.ManualBlock}}"{{end}} {{if eq .ID $.ManualInvoiceID}}selected{{end}}>
                                 {{.ReferenceLabel}} · {{.CycleLabel}} · {{.FinLabel}} · vence {{.DueLabel}}
                             </option>
                             {{end}}
@@ -211,8 +212,11 @@
                     </div>
                     <input type="hidden" id="faturaOffset" name="fatura_offset" value="auto">
                     <p id="faturaSensitiveAviso" class="hidden rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300 font-medium">
-                        Correção manual em fatura fechada/paga. O lançamento pode reabrir saldo pendente e alterar o limite disponível.
+						Esta fatura está fechada. O lançamento será tratado como correção manual e o saldo pendente será recalculado.
                     </p>
+					<p id="faturaPaidAviso" class="hidden rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300 font-medium">
+						Movimentação bloqueada: esta fatura está integralmente paga.
+					</p>
                 </div>
             </div>
 
@@ -453,6 +457,7 @@
                 {{if .ReturnInvoiceID}}
                 <button type="button"
                     hx-post="/transacoes/{{.EditID}}/mover-fatura"
+					hx-vals='{"expected_invoice_id":"{{.ReturnInvoiceID}}","expected_destination_reference":"{{.QuickMoveDestinationRef}}","expected_updated_at":"{{.TransactionUpdatedAt}}","expected_move_scope":"{{.QuickMoveScope}}"}'
                     hx-swap="none"
                     hx-indicator="#htmx-indicator"
                     hx-confirm="Mover este lançamento para a próxima fatura?"
@@ -500,21 +505,21 @@
                         <input type="radio" name="delete_choice" value="single" checked class="sheet-series-radio-danger mt-0.5 h-4 w-4">
                         <div>
                             <span class="block text-xs font-medium text-[var(--cb-text-main)]">Apenas este lançamento</span>
-                            <span class="text-[0.65rem] text-[var(--cb-text-muted)]">Remove somente a ocorrência atual</span>
+                            <span class="text-[0.65rem] text-[var(--cb-text-muted)]">Remove definitivamente esta ocorrência; ela não será recriada</span>
                         </div>
                     </label>
                     <label class="sheet-series-option flex cursor-pointer items-start gap-2 p-3">
                         <input type="radio" name="delete_choice" value="future" class="sheet-series-radio-danger mt-0.5 h-4 w-4">
                         <div>
                             <span class="block text-xs font-medium text-[var(--cb-text-main)]">Este e os próximos</span>
-                            <span class="text-[0.65rem] text-[var(--cb-text-muted)]">Remove a partir desta ocorrência</span>
+                            <span class="text-[0.65rem] text-[var(--cb-text-muted)]">Remove esta e as futuras elegíveis</span>
                         </div>
                     </label>
                     <label class="sheet-series-option flex cursor-pointer items-start gap-2 p-3">
                         <input type="radio" name="delete_choice" value="all" class="sheet-series-radio-danger mt-0.5 h-4 w-4">
                         <div>
                             <span class="block text-xs font-medium text-[var(--cb-text-main)]">Toda a série</span>
-                            <span class="text-[0.65rem] text-[var(--cb-text-muted)]">Remove todos os lançamentos da série</span>
+                            <span class="text-[0.65rem] text-[var(--cb-text-muted)]">Encerra a recorrência e remove ocorrências elegíveis, preservando o histórico protegido</span>
                         </div>
                     </label>
                 </div>

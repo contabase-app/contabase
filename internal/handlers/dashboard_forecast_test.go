@@ -29,6 +29,44 @@ func TestDashboardMonthlyForecastRules(t *testing.T) {
 	assertMoneyDisplay(t, "7d payable total unchanged", payableTotal, "200", ",00")
 }
 
+func TestDashboardMonthlyForecastUsesCanonicalEffectivePaid(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name        string
+		legacyPaid  int64
+		modernPaid  int64
+		reversed    bool
+		wantExpense int64
+	}{
+		{"legacy partial", 10000, 0, false, 80000},
+		{"all reversed ignores legacy full", 40000, 10000, true, 90000},
+		{"modern overpayment", 40000, 50000, false, 50000},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := openTestDB(t)
+			defer db.Close()
+			seedDashboardMonthlyForecastScenario(t, db, now)
+			execTestSQL(t, db, `UPDATE invoices SET paid_amount = ? WHERE id = 'forecast-invoice-closed'`, tt.legacyPaid)
+			if tt.modernPaid == 0 {
+				execTestSQL(t, db, `DELETE FROM invoice_payments WHERE id = 'forecast-partial-payment'`)
+			} else {
+				var reversedAt any
+				if tt.reversed {
+					reversedAt = time.Now().Unix()
+				}
+				execTestSQL(t, db, `UPDATE invoice_payments SET amount_cents = ?, reversed_at = ? WHERE id = 'forecast-partial-payment'`, tt.modernPaid, reversedAt)
+			}
+
+			income, expense := queryDashboardMonthlyForecast(db, "ws-forecast", now)
+			if income != 10000 || expense != tt.wantExpense {
+				t.Fatalf("forecast income/expense = %d/%d, want 10000/%d", income, expense, tt.wantExpense)
+			}
+		})
+	}
+}
+
 func seedDashboardMonthlyForecastScenario(t *testing.T, db *sql.DB, now time.Time) {
 	t.Helper()
 

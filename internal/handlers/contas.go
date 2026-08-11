@@ -51,24 +51,27 @@ type ContasData struct {
 	TotalOverdueReceivabs     MoneyDisplay
 	IsBusiness                bool
 	ActiveWorkspaceName       string
+	PaymentAccounts           []PaymentAccountOption
 }
 
 type PendingItemRow struct {
-	ID                        string
-	Description               string
-	Amount                    int64
-	AmountMoney               MoneyDisplay
-	DueDateUnix               int64
-	DueDate                   string
-	AccountName               string
-	ContactName               string
-	IsOverdue                 bool
-	IsScheduled               bool
-	StatusIcon                string
-	StatusTone                string
-	StatusTitle               string
-	ScheduledPaymentAtDisplay string
-	IsInvoice                 bool
+	ID                          string
+	Description                 string
+	Amount                      int64
+	AmountMoney                 MoneyDisplay
+	DueDateUnix                 int64
+	DueDate                     string
+	AccountName                 string
+	ContactName                 string
+	IsOverdue                   bool
+	IsScheduled                 bool
+	StatusIcon                  string
+	StatusTone                  string
+	StatusTitle                 string
+	ScheduledPaymentAtDisplay   string
+	IsInvoice                   bool
+	PaymentAccountID            string
+	PaymentAccountChangeAllowed bool
 }
 
 func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +191,7 @@ func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	perfStep(reqID, "Contas", "buildData", time.Since(t0))
+	data.PaymentAccounts, _ = queryPaymentAccountOptions(h.DB, h.WorkspaceID)
 
 	tR := time.Now()
 	var buf bytes.Buffer
@@ -224,21 +228,17 @@ func queryPendingItems(db *sql.DB, workspaceID, itemType string, onlyOverdue boo
 }
 
 func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOverdue bool, mes, ano int, search string) ([]PendingItemRow, error) {
-	const invoicePendingSubquery = `(
+	invoicePendingSubquery := `(
 			COALESCE((
 				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END)
 				FROM transactions t
 				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
 			), 0)
-			- COALESCE((
-				SELECT SUM(ip.amount_cents)
-				FROM invoice_payments ip
-				WHERE ip.workspace_id = a.workspace_id AND ip.invoice_id = i.id AND ip.reversed_at IS NULL
-			), 0)
+			- ` + invoiceEffectivePaidSQLExpr + `
 		)`
 
 	sqlQuery := `
-		SELECT id, description, amount, due_ref, account_name, contact_name, scheduled_payment_at, is_invoice FROM (
+		SELECT id, description, amount, due_ref, account_name, contact_name, scheduled_payment_at, is_invoice, account_id, account_type, has_recurring_rule FROM (
 			SELECT
 				t.id AS id,
 				COALESCE(t.description, '') AS description,
@@ -247,7 +247,10 @@ func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOve
 				COALESCE(a.name, '') AS account_name,
 				COALESCE(c.name, '') AS contact_name,
 				t.scheduled_payment_at AS scheduled_payment_at,
-				0 AS is_invoice
+				0 AS is_invoice,
+				t.account_id AS account_id,
+				a.type AS account_type,
+				CASE WHEN t.recurring_rule_id IS NOT NULL THEN 1 ELSE 0 END AS has_recurring_rule
 			FROM transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN contacts c ON c.id = t.contact_id AND c.workspace_id = t.workspace_id
@@ -283,20 +286,26 @@ func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOve
 		sqlQuery += `
 			UNION ALL
 			SELECT
-				i.id AS id,
-				'Fatura ' || a.name || ' - ' || i.reference AS description,
-				` + invoicePendingSubquery + ` AS amount,
-				i.due_date AS due_ref,
-				a.name AS account_name,
-				'' AS contact_name,
-				NULL AS scheduled_payment_at,
-				1 AS is_invoice
-			FROM invoices i
-			JOIN accounts a ON a.id = i.account_id
-			WHERE a.workspace_id = ?
-			  AND a.type = ?
-			  AND i.status IN (?, ?)
-			  AND ` + invoicePendingSubquery + ` > 0
+				id, description, amount, due_ref, account_name, contact_name,
+				scheduled_payment_at, is_invoice, account_id, account_type, has_recurring_rule
+			FROM (
+				SELECT
+					i.id AS id,
+					'Fatura ' || a.name || ' - ' || i.reference AS description,
+					` + invoicePendingSubquery + ` AS amount,
+					i.due_date AS due_ref,
+					a.name AS account_name,
+					'' AS contact_name,
+					NULL AS scheduled_payment_at,
+					1 AS is_invoice,
+					a.id AS account_id,
+					a.type AS account_type,
+					0 AS has_recurring_rule
+				FROM invoices i
+				JOIN accounts a ON a.id = i.account_id
+				WHERE a.workspace_id = ?
+				  AND a.type = ?
+				  AND i.status IN (?, ?)
 		`
 		args = append(args, workspaceID, models.AccountTypeCreditCard, models.InvoiceStatusOpen, models.InvoiceStatusClosed)
 		if mes > 0 && ano > 0 {
@@ -320,6 +329,10 @@ func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOve
 			sqlQuery += ` AND i.due_date IS NOT NULL AND i.due_date < ?`
 			args = append(args, businessDayStartUnix(time.Now()))
 		}
+		sqlQuery += `
+			) invoice_current
+			WHERE amount > 0
+		`
 	}
 
 	sqlQuery += `
@@ -338,10 +351,13 @@ func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOve
 		var row PendingItemRow
 		var isInvoice int
 		var scheduledPaymentAt sql.NullInt64
-		if err := rows.Scan(&row.ID, &row.Description, &row.Amount, &row.DueDateUnix, &row.AccountName, &row.ContactName, &scheduledPaymentAt, &isInvoice); err != nil {
+		var accountType string
+		var hasRecurringRule int
+		if err := rows.Scan(&row.ID, &row.Description, &row.Amount, &row.DueDateUnix, &row.AccountName, &row.ContactName, &scheduledPaymentAt, &isInvoice, &row.PaymentAccountID, &accountType, &hasRecurringRule); err != nil {
 			return nil, err
 		}
 		row.IsInvoice = isInvoice == 1
+		row.PaymentAccountChangeAllowed = !row.IsInvoice && paymentAccountChangeAllowed(itemType, accountType, row.PaymentAccountID, sql.NullString{}, sql.NullString{}, hasRecurringRule == 1)
 		row.AmountMoney = MoneyMinor(row.Amount)
 		row.DueDate = formatDateLabelFromUnix(row.DueDateUnix)
 		due := time.Unix(row.DueDateUnix, 0).UTC()

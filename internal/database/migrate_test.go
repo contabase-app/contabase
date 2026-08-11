@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
@@ -28,6 +29,389 @@ func TestOpenRegistersSchemaMigrationsOnFreshMemory(t *testing.T) {
 	}
 	if count != len(migrations) {
 		t.Fatalf("expected %d applied migrations, got %d", len(migrations), count)
+	}
+}
+
+func TestMigration59FreshSchemaCreatesRecurringOccurrenceBlocksOnlyThroughMigration(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open memory database: %v", err)
+	}
+	defer db.Close()
+
+	assertMigrationApplied(t, db, 59)
+	assertSchemaObjectExists(t, db, "table", "recurring_occurrence_blocks")
+	for _, trigger := range []string{
+		"trg_recurring_occurrence_blocks_no_transaction",
+		"trg_recurring_occurrence_blocks_no_skip",
+		"trg_transactions_no_recurring_terminal_insert",
+		"trg_transactions_no_recurring_terminal_update",
+		"trg_recurring_occurrence_skips_no_block_insert",
+		"trg_recurring_occurrence_skips_no_block_update",
+		"trg_recurring_occurrence_blocks_immutable_update",
+		"trg_recurring_occurrence_blocks_immutable_delete",
+	} {
+		assertSchemaObjectExists(t, db, "trigger", trigger)
+	}
+
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open raw memory database: %v", err)
+	}
+	defer raw.Close()
+	if _, err := raw.Exec(ddl); err != nil {
+		t.Fatalf("execute base DDL: %v", err)
+	}
+	var baseCount int
+	if err := raw.QueryRow(`SELECT COUNT(1) FROM sqlite_schema WHERE type='table' AND name='recurring_occurrence_blocks'`).Scan(&baseCount); err != nil {
+		t.Fatalf("inspect base DDL: %v", err)
+	}
+	if baseCount != 0 {
+		t.Fatal("recurring_occurrence_blocks leaked into base DDL")
+	}
+	assertMigration59SchemaCanonical(t, db)
+}
+
+func TestMigration59RejectsPreexistingTransactionSkipConflictAtomically(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration59-terminal-conflict.db")
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("open raw database: %v", err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+
+	if _, err := db.Exec(ddl); err != nil {
+		t.Fatalf("execute base DDL: %v", err)
+	}
+	seedAppliedMigrationsBefore(t, db, 59)
+	if _, err := db.Exec(`
+		INSERT INTO users (id, name, email, password_hash)
+		VALUES ('user-m59', 'Migration 59', 'migration59@example.test', 'hash');
+		INSERT INTO workspaces (id, name, type)
+		VALUES ('ws-m59', 'Migration 59', 'personal');
+		INSERT INTO accounts (id, workspace_id, name, type)
+		VALUES ('account-m59', 'ws-m59', 'Migration 59', 'CHECKING');
+		INSERT INTO recurring_series (id, workspace_id, user_id)
+		VALUES ('series-m59', 'ws-m59', 'user-m59');
+		INSERT INTO recurring_rules (
+			id, workspace_id, user_id, account_id, type, amount, description,
+			start_date, frequency, series_id
+		) VALUES (
+			'rule-m59', 'ws-m59', 'user-m59', 'account-m59', 'EXPENSE', 1000,
+			'fixture', 1772323200, 'MONTHLY', 'series-m59'
+		);
+		INSERT INTO transactions (
+			id, workspace_id, user_id, account_id, type, amount, date,
+			description, recurring_rule_id, recurrence_sequence, series_id
+		) VALUES (
+			'tx-m59-conflict', 'ws-m59', 'user-m59', 'account-m59',
+			'EXPENSE', 1000, 1772323200, 'fixture', 'rule-m59', 7, 'series-m59'
+		);
+		INSERT INTO recurring_occurrence_skips (
+			workspace_id, series_id, recurrence_sequence,
+			original_transaction_id, reason, deleted_at
+		) VALUES (
+			'ws-m59', 'series-m59', 7, 'tx-m59-conflict', 'single_delete', 1772323200
+		)
+	`); err != nil {
+		t.Fatalf("seed contradictory terminal fixture: %v", err)
+	}
+
+	err = runMigrations(db)
+	if err == nil {
+		t.Fatal("migration 59 accepted a committed transaction+skip conflict")
+	}
+	want := `apply migration 59 (recurring_occurrence_blocks): migration 59 recurring occurrence blocks: migration 59 aborted: found 1 committed recurring terminal occurrence conflict(s) between transactions and recurring_occurrence_skips; example workspace_id="ws-m59" series_id="series-m59" recurrence_sequence=7 transaction_id="tx-m59-conflict"; resolve the integrity conflict explicitly before upgrading`
+	if err.Error() != want {
+		t.Fatalf("migration error = %q, want deterministic %q", err, want)
+	}
+
+	var maxVersion, version59, blockTable, triggerCount, transactionCount, skipCount int
+	checks := []struct {
+		query string
+		dest  *int
+	}{
+		{`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`, &maxVersion},
+		{`SELECT COUNT(1) FROM schema_migrations WHERE version=59`, &version59},
+		{`SELECT COUNT(1) FROM sqlite_schema WHERE type='table' AND name='recurring_occurrence_blocks'`, &blockTable},
+		{`SELECT COUNT(1) FROM sqlite_schema WHERE type='trigger' AND name LIKE '%recurring_occurrence_blocks%'`, &triggerCount},
+		{`SELECT COUNT(1) FROM transactions WHERE id='tx-m59-conflict' AND recurring_rule_id='rule-m59' AND series_id='series-m59' AND recurrence_sequence=7`, &transactionCount},
+		{`SELECT COUNT(1) FROM recurring_occurrence_skips WHERE workspace_id='ws-m59' AND series_id='series-m59' AND recurrence_sequence=7 AND reason='single_delete'`, &skipCount},
+	}
+	for _, check := range checks {
+		if err := db.QueryRow(check.query).Scan(check.dest); err != nil {
+			t.Fatalf("verify failed migration state: %v", err)
+		}
+	}
+	if maxVersion != 58 || version59 != 0 || blockTable != 0 || triggerCount != 0 || transactionCount != 1 || skipCount != 1 {
+		t.Fatalf("failed migration mutated state: max=%d v59=%d table=%d triggers=%d tx=%d skip=%d", maxVersion, version59, blockTable, triggerCount, transactionCount, skipCount)
+	}
+}
+
+func TestMigration59CanonicalUpgradeZeroBackfillAndReopen(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "migration59-canonical-v58.db")
+	db := openCanonicalMigration58Fixture(t, dbPath)
+	if _, err := db.Exec(`
+		INSERT INTO recurring_occurrence_skips (
+			workspace_id, series_id, recurrence_sequence, reason, deleted_at
+		) VALUES ('ws-m59-preserved', 'series-m59-preserved', 4, 'single_delete', 1772323200)
+	`); err != nil {
+		t.Fatalf("seed canonical v58 data: %v", err)
+	}
+
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("upgrade canonical v58 to v59: %v", err)
+	}
+	assertMigrationApplied(t, db, 59)
+	assertMigration59SchemaCanonical(t, db)
+	assertTableRowCount(t, db, "recurring_occurrence_blocks", 0)
+	var preserved int
+	if err := db.QueryRow(`
+		SELECT COUNT(1) FROM recurring_occurrence_skips
+		WHERE workspace_id='ws-m59-preserved' AND series_id='series-m59-preserved'
+		  AND recurrence_sequence=4 AND reason='single_delete'
+	`).Scan(&preserved); err != nil {
+		t.Fatalf("read preserved v58 data: %v", err)
+	}
+	if preserved != 1 {
+		t.Fatalf("preserved v58 rows = %d, want 1", preserved)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close migrated v59 database: %v", err)
+	}
+
+	reopened, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("reopen v59 database: %v", err)
+	}
+	defer reopened.Close()
+	reopened.SetMaxOpenConns(1)
+	if err := runMigrations(reopened); err != nil {
+		t.Fatalf("rerun migrations on v59 database: %v", err)
+	}
+	assertMigration59SchemaCanonical(t, reopened)
+	assertTableRowCount(t, reopened, "recurring_occurrence_blocks", 0)
+	if err := reopened.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_skips WHERE workspace_id='ws-m59-preserved'`).Scan(&preserved); err != nil {
+		t.Fatalf("read preserved data after reopen: %v", err)
+	}
+	if preserved != 1 {
+		t.Fatalf("preserved rows after reopen = %d, want 1", preserved)
+	}
+}
+
+func TestMigration59PreflightIsWorkspaceScoped(t *testing.T) {
+	db := openCanonicalMigration58Fixture(t, filepath.Join(t.TempDir(), "migration59-workspace.db"))
+	defer db.Close()
+	if _, err := db.Exec(`
+		INSERT INTO users (id, name, email, password_hash)
+		VALUES ('user-a', 'User A', 'user-a@example.test', 'hash');
+		INSERT INTO workspaces (id, name, type)
+		VALUES ('ws-m59-a', 'Workspace A', 'personal'), ('ws-m59-b', 'Workspace B', 'personal');
+		INSERT INTO accounts (id, workspace_id, name, type)
+		VALUES ('account-a', 'ws-m59-a', 'Account A', 'CHECKING');
+		INSERT INTO recurring_series (id, workspace_id, user_id)
+		VALUES ('series-shared', 'ws-m59-a', 'user-a');
+		INSERT INTO recurring_rules (
+			id, workspace_id, user_id, account_id, type, amount, description,
+			start_date, frequency, series_id
+		) VALUES (
+			'rule-shared', 'ws-m59-a', 'user-a', 'account-a', 'EXPENSE', 1000,
+			'fixture', 1772323200, 'MONTHLY', 'series-shared'
+		);
+		INSERT INTO transactions (
+			id, workspace_id, user_id, account_id, type, amount, date,
+			description, recurring_rule_id, recurrence_sequence, series_id
+		) VALUES (
+			'tx-m59-ws-a', 'ws-m59-a', 'user-a', 'account-a', 'EXPENSE', 1000,
+			1772323200, 'fixture', 'rule-shared', 7, 'series-shared'
+		);
+		INSERT INTO recurring_occurrence_skips (
+			workspace_id, series_id, recurrence_sequence, reason, deleted_at
+		) VALUES ('ws-m59-b', 'series-shared', 7, 'single_delete', 1772323200)
+	`); err != nil {
+		t.Fatalf("seed cross-workspace terminal identities: %v", err)
+	}
+
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("workspace-isolated v59 upgrade: %v", err)
+	}
+	assertMigrationApplied(t, db, 59)
+	assertMigration59SchemaCanonical(t, db)
+	var transactions, skips int
+	_ = db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE id='tx-m59-ws-a'`).Scan(&transactions)
+	_ = db.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_skips WHERE workspace_id='ws-m59-b'`).Scan(&skips)
+	if transactions != 1 || skips != 1 {
+		t.Fatalf("cross-workspace data changed: transactions=%d skips=%d", transactions, skips)
+	}
+}
+
+func TestMigration59RejectsPreexistingIncompatibleTable(t *testing.T) {
+	db := openCanonicalMigration58Fixture(t, filepath.Join(t.TempDir(), "migration59-incompatible.db"))
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE recurring_occurrence_blocks (
+			workspace_id TEXT PRIMARY KEY,
+			legacy_marker TEXT NOT NULL
+		);
+		INSERT INTO recurring_occurrence_blocks(workspace_id, legacy_marker)
+		VALUES ('ws-legacy', 'preserve-me')
+	`); err != nil {
+		t.Fatalf("seed incompatible v59 table: %v", err)
+	}
+
+	err := runMigrations(db)
+	if err == nil || !strings.Contains(err.Error(), "table recurring_occurrence_blocks already exists") {
+		t.Fatalf("incompatible table migration error = %v", err)
+	}
+	var version59, legacyRows, triggerCount int
+	_ = db.QueryRow(`SELECT COUNT(1) FROM schema_migrations WHERE version=59`).Scan(&version59)
+	_ = db.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_blocks WHERE workspace_id='ws-legacy' AND legacy_marker='preserve-me'`).Scan(&legacyRows)
+	_ = db.QueryRow(`SELECT COUNT(1) FROM sqlite_schema WHERE type='trigger' AND name IN (
+		'trg_recurring_occurrence_blocks_no_transaction',
+		'trg_recurring_occurrence_blocks_no_skip',
+		'trg_transactions_no_recurring_terminal_insert',
+		'trg_transactions_no_recurring_terminal_update',
+		'trg_recurring_occurrence_skips_no_block_insert',
+		'trg_recurring_occurrence_skips_no_block_update',
+		'trg_recurring_occurrence_blocks_immutable_update',
+		'trg_recurring_occurrence_blocks_immutable_delete'
+	)`).Scan(&triggerCount)
+	if version59 != 0 || legacyRows != 1 || triggerCount != 0 {
+		t.Fatalf("incompatible object state changed: v59=%d legacy=%d triggers=%d", version59, legacyRows, triggerCount)
+	}
+}
+
+func TestMigration59ValidatorRejectsSchemaClassesAndRollsBackObjects(t *testing.T) {
+	tests := []struct {
+		name string
+		ddl  string
+	}{
+		{
+			name: "missing column",
+			ddl: `CREATE TABLE recurring_occurrence_blocks (
+				workspace_id TEXT NOT NULL,
+				series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`,
+		},
+		{
+			name: "wrong primary and unique",
+			ddl: `CREATE TABLE recurring_occurrence_blocks (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurring_rule_id TEXT NOT NULL, recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				occurrence_date_civil TEXT NOT NULL, invoice_id TEXT NOT NULL,
+				invoice_reference TEXT NOT NULL, invoice_status TEXT NOT NULL CHECK (invoice_status IN ('CLOSED', 'PAID')),
+				reason TEXT NOT NULL CHECK (reason = 'frozen_invoice'), created_at INTEGER NOT NULL,
+				PRIMARY KEY (series_id, workspace_id, recurrence_sequence),
+				UNIQUE (workspace_id, recurrence_sequence, recurring_rule_id)
+			)`,
+		},
+		{
+			name: "wrong checks",
+			ddl: `CREATE TABLE recurring_occurrence_blocks (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurring_rule_id TEXT NOT NULL, recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence >= 0),
+				occurrence_date_civil TEXT NOT NULL, invoice_id TEXT NOT NULL,
+				invoice_reference TEXT NOT NULL, invoice_status TEXT NOT NULL CHECK (invoice_status IN ('OPEN', 'CLOSED', 'PAID')),
+				reason TEXT NOT NULL CHECK (reason IN ('frozen_invoice', 'other')), created_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence),
+				UNIQUE (workspace_id, recurring_rule_id, recurrence_sequence)
+			)`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openCanonicalMigration58Fixture(t, filepath.Join(t.TempDir(), "validator.db"))
+			defer db.Close()
+			tx, err := db.Begin()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback()
+			if _, err := tx.Exec(tc.ddl); err != nil {
+				t.Fatalf("create incompatible table: %v", err)
+			}
+			if err := validateRecurringOccurrenceBlocksSchema(tx); err == nil {
+				t.Fatal("validator accepted incompatible table")
+			}
+		})
+	}
+
+	t.Run("mutated trigger rolls back all v59 objects", func(t *testing.T) {
+		db := openCanonicalMigration58Fixture(t, filepath.Join(t.TempDir(), "validator-trigger.db"))
+		defer db.Close()
+		if _, err := db.Exec(`
+			INSERT INTO recurring_occurrence_skips (
+				workspace_id, series_id, recurrence_sequence, reason, deleted_at
+			) VALUES ('ws-validator', 'series-validator', 2, 'single_delete', 1772323200)
+		`); err != nil {
+			t.Fatal(err)
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(recurringOccurrenceBlocksDDL); err != nil {
+			t.Fatal(err)
+		}
+		for _, trigger := range recurringOccurrenceBlocksTriggerContract {
+			if _, err := tx.Exec(trigger.ddl); err != nil {
+				_ = tx.Rollback()
+				t.Fatalf("create canonical trigger %s: %v", trigger.name, err)
+			}
+		}
+		if _, err := tx.Exec(`
+			DROP TRIGGER trg_recurring_occurrence_blocks_immutable_delete;
+			CREATE TRIGGER trg_recurring_occurrence_blocks_immutable_delete
+			BEFORE DELETE ON recurring_occurrence_blocks BEGIN SELECT 1; END
+		`); err != nil {
+			_ = tx.Rollback()
+			t.Fatalf("mutate trigger: %v", err)
+		}
+		if err := validateRecurringOccurrenceBlocksSchema(tx); err == nil {
+			_ = tx.Rollback()
+			t.Fatal("validator accepted mutated trigger")
+		}
+		if err := tx.Rollback(); err != nil {
+			t.Fatalf("rollback invalid v59 objects: %v", err)
+		}
+		assertSchemaObjectMissing(t, db, "table", "recurring_occurrence_blocks")
+		var version59, triggerCount, preserved int
+		_ = db.QueryRow(`SELECT COUNT(1) FROM schema_migrations WHERE version=59`).Scan(&version59)
+		_ = db.QueryRow(`SELECT COUNT(1) FROM sqlite_schema WHERE type='trigger' AND name LIKE 'trg_recurring_occurrence_blocks%'`).Scan(&triggerCount)
+		_ = db.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_skips WHERE workspace_id='ws-validator'`).Scan(&preserved)
+		if version59 != 0 || triggerCount != 0 || preserved != 1 {
+			t.Fatalf("rollback state: v59=%d triggers=%d preserved=%d", version59, triggerCount, preserved)
+		}
+	})
+}
+
+func openCanonicalMigration58Fixture(t *testing.T, dbPath string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("open canonical v58 fixture: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(ddl); err != nil {
+		db.Close()
+		t.Fatalf("execute canonical base DDL: %v", err)
+	}
+	seedAppliedMigrationsBefore(t, db, 59)
+	return db
+}
+
+func assertMigration59SchemaCanonical(t *testing.T, db *sql.DB) {
+	t.Helper()
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("begin migration 59 schema validation: %v", err)
+	}
+	defer tx.Rollback()
+	if err := validateRecurringOccurrenceBlocksSchema(tx); err != nil {
+		t.Fatalf("validate migration 59 schema: %v", err)
 	}
 }
 
@@ -355,16 +739,18 @@ func TestDestructiveMigrationsRequireExplicitReview(t *testing.T) {
 		}
 	}
 
-	docPath := filepath.Join("..", "..", ".docs", "migrations-destrutivas.md")
-	if _, err := os.Stat(docPath); err != nil {
-		if os.IsNotExist(err) {
-			// O runbook é documentação interna; no checkout público ele é propositalmente
-			// omitido pelo export-ignore. Nesse ambiente, a verificação de existência é
-			// desnecessária; o allowlist acima já garante revisão explícita.
-			t.Logf("destructive migration runbook nao encontrado em %s (checkout publico?); pulando verificacao de existencia", docPath)
-			return
+	// The destructive-migration runbook is private documentation, intentionally
+	// excluded from public checkouts by export-ignore. The hardcoded allowlist
+	// above provides the authoritative enforcement; file existence is optional.
+	{
+		docPath := filepath.Join("..", "..", "internal", "database", "migrations-destrutivas.md")
+		if _, err := os.Stat(docPath); err != nil {
+			if os.IsNotExist(err) {
+				t.Logf("destructive migration runbook nao encontrado; allowlist acima cobre a revisao explicita")
+				return
+			}
+			t.Fatalf("cannot stat destructive migration runbook: %v", err)
 		}
-		t.Fatalf("cannot stat destructive migration runbook at %s: %v", docPath, err)
 	}
 }
 
@@ -726,14 +1112,14 @@ func TestMigration28AddsCustomPermissionsWhenPreviousMigrationsAreMarkedApplied(
 		t.Fatalf("close raw legacy workspace members database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 28)
 	assertColumnExists(t, db, "workspace_members", "custom_permissions")
 	assertMigrationApplied(t, db, 28)
 	if err := db.Close(); err != nil {
 		t.Fatalf("close migrated legacy workspace members database: %v", err)
 	}
 
-	db2 := openMigratedRawDB(t, dbPath)
+	db2 := openMigratedRawDBThroughVersionForTest(t, dbPath, 28)
 	defer db2.Close()
 	assertColumnExists(t, db2, "workspace_members", "custom_permissions")
 	assertMigrationApplied(t, db2, 28)
@@ -754,7 +1140,7 @@ func TestMigration28RegistersWhenCustomPermissionsAlreadyExists(t *testing.T) {
 		t.Fatalf("close raw patched workspace members database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 28)
 	defer db.Close()
 
 	assertColumnExists(t, db, "workspace_members", "custom_permissions")
@@ -823,7 +1209,7 @@ func TestMigration29AddsBoxesTargetDateWhenPreviousMigrationsAreMarkedApplied(t 
 		t.Fatalf("close raw legacy boxes database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 29)
 	defer db.Close()
 
 	assertColumnExists(t, db, "boxes", "target_date")
@@ -845,7 +1231,7 @@ func TestMigration29RegistersWhenTargetDateAlreadyExists(t *testing.T) {
 		t.Fatalf("close raw patched boxes database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 29)
 	defer db.Close()
 
 	assertColumnExists(t, db, "boxes", "target_date")
@@ -872,7 +1258,7 @@ func TestMigration30AllowsReleaseEventsWhenPreviousMigrationsAreMarkedApplied(t 
 		t.Fatalf("close raw legacy ledger database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 30)
 	defer db.Close()
 
 	assertMigrationApplied(t, db, 30)
@@ -903,7 +1289,7 @@ func TestMigration31SupportsConsumeAndReversalEventsWhenPreviousMigrationsAreMar
 		t.Fatalf("close raw v30 ledger database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 31)
 	defer db.Close()
 
 	assertMigrationApplied(t, db, 31)
@@ -961,7 +1347,7 @@ func TestMigration32AddsMonthlyYieldRateToBoxes(t *testing.T) {
 		t.Fatalf("close raw pre-yield database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 32)
 	defer db.Close()
 
 	assertMigrationApplied(t, db, 32)
@@ -1020,7 +1406,7 @@ func TestMigration41AllowsBoxesWithoutCategory(t *testing.T) {
 		t.Fatalf("close raw boxes-category-nullable database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 41)
 	defer db.Close()
 
 	assertMigrationApplied(t, db, 41)
@@ -1140,7 +1526,7 @@ func TestMigration35BackfillsLegacyAccountsRepairsWorkspaceFKAndReopenIsIdempote
 		t.Fatalf("close raw pre-migration-35 database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 35)
 	assertMigrationApplied(t, db, 35)
 	assertColumnExists(t, db, "accounts", "icon")
 	assertNoForeignKeyCheckRows(t, db)
@@ -1179,7 +1565,7 @@ func TestMigration35BackfillsLegacyAccountsRepairsWorkspaceFKAndReopenIsIdempote
 		t.Fatalf("close migrated pre-migration-35 database: %v", err)
 	}
 
-	db2 := openMigratedRawDB(t, dbPath)
+	db2 := openMigratedRawDBThroughVersionForTest(t, dbPath, 35)
 	defer db2.Close()
 	assertMigrationApplied(t, db2, 35)
 	assertNoForeignKeyCheckRows(t, db2)
@@ -1226,7 +1612,7 @@ func TestMigration36AddsArchivedAtColumnAndIndex(t *testing.T) {
 		t.Fatalf("close raw legacy database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 36)
 	defer db.Close()
 
 	assertMigrationApplied(t, db, 36)
@@ -1252,7 +1638,7 @@ func TestMigration39CreatesInvoicePaymentsSchema(t *testing.T) {
 		t.Fatalf("close raw database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 39)
 	defer db.Close()
 
 	assertMigrationApplied(t, db, 39)
@@ -1286,7 +1672,7 @@ func TestMigration51CreatesRecurringMaterializationStateSchema(t *testing.T) {
 		t.Fatalf("close raw database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 51)
 	defer db.Close()
 
 	assertMigrationApplied(t, db, 51)
@@ -1306,6 +1692,514 @@ func TestMigration51CreatesRecurringMaterializationStateSchema(t *testing.T) {
 	}
 	if indexCount != 1 {
 		t.Fatalf("expected idx_recurring_materialization_state_locked_until to exist")
+	}
+}
+
+func TestMigration52AddsCivilDateColumnsOnFreshDatabase(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open memory database: %v", err)
+	}
+	defer db.Close()
+
+	assertMigrationApplied(t, db, 52)
+
+	civilColumns := map[string][]string{
+		"transactions":                    {"date_civil", "due_date_civil", "paid_date_civil", "scheduled_payment_date_civil"},
+		"recurring_rules":                 {"start_date_civil", "starts_at_civil", "end_date_civil", "generated_until_civil"},
+		"recurring_materialization_state": {"materialized_until_civil"},
+		"invoice_payments":                {"paid_date_civil"},
+		"invoices":                        {"closing_date_civil", "due_date_civil"},
+	}
+	for table, columns := range civilColumns {
+		for _, column := range columns {
+			assertColumnExists(t, db, table, column)
+			assertColumnNullable(t, db, table, column)
+		}
+	}
+
+	// Legacy INTEGER columns must remain untouched next to the new civil columns.
+	assertColumnExists(t, db, "transactions", "date")
+	assertColumnExists(t, db, "transactions", "due_date")
+	assertColumnExists(t, db, "transactions", "paid_at")
+	assertColumnExists(t, db, "transactions", "scheduled_payment_at")
+	assertColumnExists(t, db, "recurring_rules", "start_date")
+	assertColumnExists(t, db, "recurring_rules", "starts_at")
+	assertColumnExists(t, db, "recurring_rules", "end_date")
+	assertColumnExists(t, db, "recurring_rules", "generated_until")
+	assertColumnExists(t, db, "recurring_materialization_state", "materialized_until")
+	assertColumnExists(t, db, "invoice_payments", "paid_at")
+	assertColumnExists(t, db, "invoices", "closing_date")
+	assertColumnExists(t, db, "invoices", "due_date")
+
+	for _, index := range []string{
+		"idx_transactions_workspace_date_civil",
+		"idx_transactions_workspace_due_date_civil",
+		"idx_transactions_workspace_paid_date_civil",
+		"idx_transactions_workspace_scheduled_payment_date_civil",
+		"idx_recurring_rules_workspace_start_date_civil",
+		"idx_recurring_rules_workspace_starts_at_civil",
+		"idx_recurring_rules_workspace_end_date_civil",
+		"idx_recurring_materialization_state_workspace_materialized_until_civil",
+		"idx_invoice_payments_workspace_paid_date_civil",
+		"idx_invoices_closing_date_civil",
+		"idx_invoices_due_date_civil",
+	} {
+		assertSchemaObjectExists(t, db, "index", index)
+	}
+}
+
+func TestMigration52AddsCivilDateColumnsToExistingDatabaseWithoutTouchingData(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "civil-date-columns.db")
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("open raw database: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	defer db.Close()
+
+	if _, err := db.Exec(ddl); err != nil {
+		t.Fatalf("execute ddl fixture: %v", err)
+	}
+	seedAppliedMigrationsBefore(t, db, 52)
+
+	const (
+		txDate            = int64(1714521600)
+		invoiceClosing    = int64(1717200000)
+		invoiceDue        = int64(1719792000)
+		paymentPaidAt     = int64(1719878400)
+		ruleStart         = int64(1711929600)
+		materializedUntil = int64(1722470400)
+	)
+	seed := []string{
+		`INSERT INTO users (id, name, email, password_hash) VALUES ('u-1', 'User 1', 'u1@example.test', 'hash')`,
+		`INSERT INTO workspaces (id, name, type) VALUES ('ws-1', 'Workspace 1', 'personal')`,
+		`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ('ws-1', 'u-1', 'ADMIN')`,
+		`INSERT INTO accounts (id, workspace_id, name, type) VALUES ('acc-1', 'ws-1', 'Conta', 'CHECKING')`,
+		`INSERT INTO transactions (id, workspace_id, user_id, account_id, type, amount, date, due_date, paid_at, scheduled_payment_at)
+			VALUES ('tx-1', 'ws-1', 'u-1', 'acc-1', 'EXPENSE', 1000, 1714521600, 1714521600, 1714521600, 1714521600)`,
+		`INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status)
+			VALUES ('inv-1', 'acc-1', '2024-06', 1717200000, 1719792000, 'OPEN')`,
+		`CREATE TABLE IF NOT EXISTS invoice_payments (
+			id             TEXT PRIMARY KEY,
+			workspace_id   TEXT NOT NULL,
+			invoice_id     TEXT NOT NULL,
+			account_id     TEXT NOT NULL,
+			transaction_id TEXT,
+			amount_cents   INTEGER NOT NULL CHECK(amount_cents > 0),
+			paid_at        INTEGER NOT NULL,
+			note           TEXT,
+			source         TEXT NOT NULL DEFAULT 'manual',
+			reversed_at    INTEGER,
+			created_by     TEXT,
+			created_at     INTEGER NOT NULL,
+			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+			FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+			FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+		)`,
+		`INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, amount_cents, paid_at, created_at)
+			VALUES ('ip-1', 'ws-1', 'inv-1', 'acc-1', 1000, 1719878400, 1719878400)`,
+		`INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, type, amount, start_date, frequency, generated_until, starts_at, end_date)
+			VALUES ('rr-1', 'ws-1', 'u-1', 'acc-1', 'EXPENSE', 1000, 1711929600, 'MONTHLY', 1722470400, 1711929600, NULL)`,
+		`INSERT INTO recurring_materialization_state (workspace_id, materialized_until) VALUES ('ws-1', 1722470400)`,
+	}
+	for _, stmt := range seed {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed civil date fixture %q: %v", stmt, err)
+		}
+	}
+
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("run migrations: %v", err)
+	}
+	assertMigrationApplied(t, db, 52)
+
+	// New civil columns exist and stay NULL: the migration performs no backfill.
+	assertCivilColumnNull(t, db, "transactions", "date_civil", "id = 'tx-1'")
+	assertCivilColumnNull(t, db, "transactions", "due_date_civil", "id = 'tx-1'")
+	assertCivilColumnNull(t, db, "transactions", "paid_date_civil", "id = 'tx-1'")
+	assertCivilColumnNull(t, db, "transactions", "scheduled_payment_date_civil", "id = 'tx-1'")
+	assertCivilColumnNull(t, db, "recurring_rules", "start_date_civil", "id = 'rr-1'")
+	assertCivilColumnNull(t, db, "recurring_rules", "starts_at_civil", "id = 'rr-1'")
+	assertCivilColumnNull(t, db, "recurring_rules", "end_date_civil", "id = 'rr-1'")
+	assertCivilColumnNull(t, db, "recurring_rules", "generated_until_civil", "id = 'rr-1'")
+	assertCivilColumnNull(t, db, "recurring_materialization_state", "materialized_until_civil", "workspace_id = 'ws-1'")
+	assertCivilColumnNull(t, db, "invoice_payments", "paid_date_civil", "id = 'ip-1'")
+	assertCivilColumnNull(t, db, "invoices", "closing_date_civil", "id = 'inv-1'")
+	assertCivilColumnNull(t, db, "invoices", "due_date_civil", "id = 'inv-1'")
+
+	// Legacy INTEGER data is preserved byte-for-byte.
+	assertIntColumnValue(t, db, "transactions", "date", "id = 'tx-1'", txDate)
+	assertIntColumnValue(t, db, "transactions", "due_date", "id = 'tx-1'", txDate)
+	assertIntColumnValue(t, db, "transactions", "paid_at", "id = 'tx-1'", txDate)
+	assertIntColumnValue(t, db, "transactions", "scheduled_payment_at", "id = 'tx-1'", txDate)
+	assertIntColumnValue(t, db, "invoices", "closing_date", "id = 'inv-1'", invoiceClosing)
+	assertIntColumnValue(t, db, "invoices", "due_date", "id = 'inv-1'", invoiceDue)
+	assertIntColumnValue(t, db, "invoice_payments", "paid_at", "id = 'ip-1'", paymentPaidAt)
+	assertIntColumnValue(t, db, "recurring_rules", "start_date", "id = 'rr-1'", ruleStart)
+	assertIntColumnValue(t, db, "recurring_materialization_state", "materialized_until", "workspace_id = 'ws-1'", materializedUntil)
+
+	for _, index := range []string{
+		"idx_transactions_workspace_date_civil",
+		"idx_transactions_workspace_due_date_civil",
+		"idx_transactions_workspace_paid_date_civil",
+		"idx_transactions_workspace_scheduled_payment_date_civil",
+		"idx_recurring_rules_workspace_start_date_civil",
+		"idx_recurring_rules_workspace_starts_at_civil",
+		"idx_recurring_rules_workspace_end_date_civil",
+		"idx_recurring_materialization_state_workspace_materialized_until_civil",
+		"idx_invoice_payments_workspace_paid_date_civil",
+		"idx_invoices_closing_date_civil",
+		"idx_invoices_due_date_civil",
+	} {
+		assertSchemaObjectExists(t, db, "index", index)
+	}
+
+	// Re-running the migration must be idempotent.
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("rerun migrations: %v", err)
+	}
+}
+
+func TestMigration58AddsInvoicePaymentReversalIdentityOnFreshDatabase(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open memory database: %v", err)
+	}
+	defer db.Close()
+
+	assertMigrationApplied(t, db, 58)
+	for _, column := range []string{
+		"reversed_by",
+		"reversal_reason",
+		"reversal_transaction_id",
+		"reversed_date_civil",
+	} {
+		assertColumnExists(t, db, "invoice_payments", column)
+		assertColumnNullable(t, db, "invoice_payments", column)
+	}
+	assertSchemaObjectExists(t, db, "index", "uq_invoice_payments_workspace_transaction")
+	assertSchemaObjectExists(t, db, "index", "uq_invoice_payments_workspace_reversal_transaction")
+	assertIndexColumnsAndPredicate(t, db, "uq_invoice_payments_workspace_transaction", "(workspace_id, transaction_id)", "WHERE transaction_id IS NOT NULL")
+	assertIndexColumnsAndPredicate(t, db, "uq_invoice_payments_workspace_reversal_transaction", "(workspace_id, reversal_transaction_id)", "WHERE reversal_transaction_id IS NOT NULL")
+
+	foreignKeys := invoicePaymentForeignKeys(t, db)
+	reversalFK, ok := foreignKeys["reversal_transaction_id"]
+	if !ok {
+		t.Fatal("invoice_payments.reversal_transaction_id foreign key not found")
+	}
+	if reversalFK.table != "transactions" || reversalFK.to != "id" || reversalFK.onDelete != "RESTRICT" {
+		t.Fatalf("reversal_transaction_id foreign key = %+v, want transactions(id) ON DELETE RESTRICT", reversalFK)
+	}
+	if _, ok := foreignKeys["reversed_by"]; ok {
+		t.Fatal("invoice_payments.reversed_by unexpectedly has a foreign key")
+	}
+}
+
+func TestMigration58PreservesExistingInvoicePaymentAndIsIdempotent(t *testing.T) {
+	db := openPreMigration58InvoicePaymentsDB(t)
+	defer db.Close()
+	seedMigration58Workspace(t, db, "ws-a", "account-a", "invoice-a", "user-a")
+	if _, err := db.Exec(`
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, type, amount, date, description)
+		VALUES ('tx-original', 'ws-a', 'user-a', 'account-a', 'EXPENSE', 4321, 1719878400, 'original')
+	`); err != nil {
+		t.Fatalf("seed original transaction: %v", err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO invoice_payments (
+			id, workspace_id, invoice_id, account_id, transaction_id,
+			amount_cents, paid_at, paid_date_civil, note, source,
+			reversed_at, created_by, created_at
+		) VALUES (
+			'payment-a', 'ws-a', 'invoice-a', 'account-a', 'tx-original',
+			4321, 1719878400, '2024-07-02', 'legacy note', 'manual',
+			1719964800, 'user-a', 1719878401
+		)
+	`); err != nil {
+		t.Fatalf("seed existing invoice payment: %v", err)
+	}
+
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("run migration 58: %v", err)
+	}
+	assertMigrationApplied(t, db, 58)
+
+	var (
+		workspaceID, invoiceID, accountID, transactionID  string
+		amountCents, paidAt, reversedAt, createdAt        int64
+		paidDateCivil, note, source, createdBy            string
+		reversedBy, reversalReason, reversalTransactionID sql.NullString
+		reversedDateCivil                                 sql.NullString
+	)
+	if err := db.QueryRow(`
+		SELECT workspace_id, invoice_id, account_id, transaction_id,
+		       amount_cents, paid_at, paid_date_civil, note, source,
+		       reversed_at, created_by, created_at,
+		       reversed_by, reversal_reason, reversal_transaction_id, reversed_date_civil
+		FROM invoice_payments
+		WHERE id = 'payment-a'
+	`).Scan(
+		&workspaceID, &invoiceID, &accountID, &transactionID,
+		&amountCents, &paidAt, &paidDateCivil, &note, &source,
+		&reversedAt, &createdBy, &createdAt,
+		&reversedBy, &reversalReason, &reversalTransactionID, &reversedDateCivil,
+	); err != nil {
+		t.Fatalf("query migrated invoice payment: %v", err)
+	}
+	if workspaceID != "ws-a" || invoiceID != "invoice-a" || accountID != "account-a" || transactionID != "tx-original" ||
+		amountCents != 4321 || paidAt != 1719878400 || paidDateCivil != "2024-07-02" || note != "legacy note" ||
+		source != "manual" || reversedAt != 1719964800 || createdBy != "user-a" || createdAt != 1719878401 {
+		t.Fatalf("existing invoice payment changed during migration")
+	}
+	if reversedBy.Valid || reversalReason.Valid || reversalTransactionID.Valid || reversedDateCivil.Valid {
+		t.Fatalf("new reversal fields = reversed_by:%v reason:%v transaction:%v civil:%v, want all NULL", reversedBy, reversalReason, reversalTransactionID, reversedDateCivil)
+	}
+	assertIntColumnValue(t, db, "invoices", "paid_amount", "id = 'invoice-a'", 4321)
+
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("rerun migrations: %v", err)
+	}
+	assertMigrationApplied(t, db, 58)
+}
+
+func TestMigration58EnforcesWorkspacePaymentIdentities(t *testing.T) {
+	db := openPreMigration58InvoicePaymentsDB(t)
+	defer db.Close()
+	seedMigration58Workspace(t, db, "ws-a", "account-a", "invoice-a", "user-a")
+	seedMigration58Workspace(t, db, "ws-b", "account-b", "invoice-b", "user-b")
+
+	for _, stmt := range []string{
+		`INSERT INTO transactions (id, workspace_id, user_id, account_id, type, amount, date)
+		 VALUES ('tx-reversal-a', 'ws-a', 'user-a', 'account-a', 'EXPENSE', 100, 1719878400)`,
+		`INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, transaction_id, amount_cents, paid_at, created_at)
+		 VALUES ('payment-a-1', 'ws-a', 'invoice-a', 'account-a', 'shared-original', 100, 1719878400, 1719878400)`,
+		`INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, transaction_id, amount_cents, paid_at, created_at)
+		 VALUES ('payment-b-1', 'ws-b', 'invoice-b', 'account-b', 'shared-original', 100, 1719878400, 1719878400)`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed identity fixture: %v", err)
+		}
+	}
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("run migration 58: %v", err)
+	}
+
+	if _, err := db.Exec(`
+		INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, transaction_id, amount_cents, paid_at, created_at)
+		VALUES ('payment-a-duplicate', 'ws-a', 'invoice-a', 'account-a', 'shared-original', 100, 1719878400, 1719878400)
+	`); err == nil {
+		t.Fatal("duplicate original payment identity in one workspace was accepted")
+	}
+	if _, err := db.Exec(`UPDATE invoice_payments SET reversal_transaction_id = 'tx-reversal-a' WHERE id = 'payment-a-1'`); err != nil {
+		t.Fatalf("set first reversal identity: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM transactions WHERE id = 'tx-reversal-a'`); err == nil {
+		t.Fatal("ON DELETE RESTRICT accepted deletion of a referenced reversal transaction")
+	}
+	if _, err := db.Exec(`
+		INSERT INTO invoice_payments (
+			id, workspace_id, invoice_id, account_id, amount_cents, paid_at,
+			reversal_transaction_id, created_at
+		) VALUES (
+			'payment-a-reversal-duplicate', 'ws-a', 'invoice-a', 'account-a', 100, 1719878400,
+			'tx-reversal-a', 1719878400
+		)
+	`); err == nil {
+		t.Fatal("duplicate reversal payment identity in one workspace was accepted")
+	}
+}
+
+func TestMigration58DuplicateHistoricalIdentityRollsBackAtomically(t *testing.T) {
+	db := openPreMigration58InvoicePaymentsDB(t)
+	defer db.Close()
+	seedMigration58Workspace(t, db, "ws-a", "account-a", "invoice-a", "user-a")
+	for _, paymentID := range []string{"payment-a-1", "payment-a-2"} {
+		if _, err := db.Exec(`
+			INSERT INTO invoice_payments (
+				id, workspace_id, invoice_id, account_id, transaction_id,
+				amount_cents, paid_at, created_at
+			) VALUES (?, 'ws-a', 'invoice-a', 'account-a', 'duplicate-original', 100, 1719878400, 1719878400)
+		`, paymentID); err != nil {
+			t.Fatalf("seed duplicate historical identity: %v", err)
+		}
+	}
+
+	err := runMigrations(db)
+	if err == nil {
+		t.Fatal("migration 58 accepted duplicate historical original payment identity")
+	}
+	if !strings.Contains(err.Error(), `workspace_id="ws-a" transaction_id="duplicate-original" count=2`) {
+		t.Fatalf("migration error = %q, want deterministic duplicate identity evidence", err)
+	}
+
+	for _, column := range []string{"reversed_by", "reversal_reason", "reversal_transaction_id", "reversed_date_civil"} {
+		assertColumnMissing(t, db, "invoice_payments", column)
+	}
+	assertSchemaObjectMissing(t, db, "index", "uq_invoice_payments_workspace_transaction")
+	assertSchemaObjectMissing(t, db, "index", "uq_invoice_payments_workspace_reversal_transaction")
+	var applied int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM schema_migrations WHERE version = 58`).Scan(&applied); err != nil {
+		t.Fatalf("query migration 58 registration: %v", err)
+	}
+	if applied != 0 {
+		t.Fatalf("migration 58 registration count = %d, want 0 after rollback", applied)
+	}
+	assertTableRowCount(t, db, "invoice_payments", 2)
+}
+
+func openPreMigration58InvoicePaymentsDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open pre-migration 58 database: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(ddl); err != nil {
+		db.Close()
+		t.Fatalf("execute ddl for pre-migration 58 fixture: %v", err)
+	}
+	if _, err := db.Exec(`CREATE TABLE invoice_payments (
+		id             TEXT PRIMARY KEY,
+		workspace_id   TEXT NOT NULL,
+		invoice_id     TEXT NOT NULL,
+		account_id     TEXT NOT NULL,
+		transaction_id TEXT,
+		amount_cents   INTEGER NOT NULL CHECK(amount_cents > 0),
+		paid_at        INTEGER NOT NULL,
+		paid_date_civil TEXT,
+		note           TEXT,
+		source         TEXT NOT NULL DEFAULT 'manual',
+		reversed_at    INTEGER,
+		created_by     TEXT,
+		created_at     INTEGER NOT NULL,
+		FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+		FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+		FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+	)`); err != nil {
+		db.Close()
+		t.Fatalf("create pre-migration 58 invoice_payments: %v", err)
+	}
+	seedAppliedMigrationsBefore(t, db, 58)
+	return db
+}
+
+func seedMigration58Workspace(t *testing.T, db *sql.DB, workspaceID, accountID, invoiceID, userID string) {
+	t.Helper()
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, 'hash')`, []any{userID, userID, userID + "@example.test"}},
+		{`INSERT INTO workspaces (id, name, type) VALUES (?, ?, 'personal')`, []any{workspaceID, workspaceID}},
+		{`INSERT INTO accounts (id, workspace_id, name, type) VALUES (?, ?, ?, 'CHECKING')`, []any{accountID, workspaceID, accountID}},
+		{`INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, paid_amount) VALUES (?, ?, '2024-07', 1719878400, 1720483200, 'PAID', 4321)`, []any{invoiceID, accountID}},
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement.query, statement.args...); err != nil {
+			t.Fatalf("seed migration 58 workspace fixture: %v", err)
+		}
+	}
+}
+
+type invoicePaymentForeignKey struct {
+	table    string
+	to       string
+	onDelete string
+}
+
+func invoicePaymentForeignKeys(t *testing.T, db *sql.DB) map[string]invoicePaymentForeignKey {
+	t.Helper()
+	rows, err := db.Query(`PRAGMA foreign_key_list(invoice_payments)`)
+	if err != nil {
+		t.Fatalf("query invoice_payments foreign keys: %v", err)
+	}
+	defer rows.Close()
+
+	foreignKeys := make(map[string]invoicePaymentForeignKey)
+	for rows.Next() {
+		var id, seq int
+		var table, from, to, onUpdate, onDelete, match string
+		if err := rows.Scan(&id, &seq, &table, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+			t.Fatalf("scan invoice_payments foreign key: %v", err)
+		}
+		foreignKeys[from] = invoicePaymentForeignKey{table: table, to: to, onDelete: onDelete}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate invoice_payments foreign keys: %v", err)
+	}
+	return foreignKeys
+}
+
+func assertColumnMissing(t *testing.T, db *sql.DB, table, column string) {
+	t.Helper()
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		t.Fatalf("table_info %s: %v", table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, columnType string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatalf("scan table_info %s: %v", table, err)
+		}
+		if name == column {
+			t.Fatalf("column %s.%s exists, want rollback to remove it", table, column)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("table_info %s rows: %v", table, err)
+	}
+}
+
+func assertSchemaObjectMissing(t *testing.T, db *sql.DB, objectType, name string) {
+	t.Helper()
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type = ? AND name = ?`, objectType, name).Scan(&count); err != nil {
+		t.Fatalf("query sqlite_master for absent %s %s: %v", objectType, name, err)
+	}
+	if count != 0 {
+		t.Fatalf("schema object %s %s count = %d, want 0", objectType, name, count)
+	}
+}
+
+func assertIndexColumnsAndPredicate(t *testing.T, db *sql.DB, name, columns, predicate string) {
+	t.Helper()
+	var definition string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?`, name).Scan(&definition); err != nil {
+		t.Fatalf("query index %s definition: %v", name, err)
+	}
+	normalized := strings.Join(strings.Fields(definition), " ")
+	if !strings.Contains(normalized, columns) || !strings.Contains(normalized, predicate) {
+		t.Fatalf("index %s definition = %q, want columns %q and predicate %q", name, normalized, columns, predicate)
+	}
+}
+
+func assertCivilColumnNull(t *testing.T, db *sql.DB, table, column, where string) {
+	t.Helper()
+
+	var value sql.NullString
+	query := fmt.Sprintf(`SELECT %s FROM %s WHERE %s`, column, table, where)
+	if err := db.QueryRow(query).Scan(&value); err != nil {
+		t.Fatalf("query %s.%s: %v", table, column, err)
+	}
+	if value.Valid {
+		t.Fatalf("%s.%s = %q, want NULL after additive migration", table, column, value.String)
+	}
+}
+
+func assertIntColumnValue(t *testing.T, db *sql.DB, table, column, where string, want int64) {
+	t.Helper()
+
+	var value sql.NullInt64
+	query := fmt.Sprintf(`SELECT %s FROM %s WHERE %s`, column, table, where)
+	if err := db.QueryRow(query).Scan(&value); err != nil {
+		t.Fatalf("query %s.%s: %v", table, column, err)
+	}
+	if !value.Valid || value.Int64 != want {
+		t.Fatalf("%s.%s = valid=%v value=%d, want %d", table, column, value.Valid, value.Int64, want)
 	}
 }
 
@@ -1650,6 +2544,63 @@ func openMigratedRawDB(t *testing.T, dbPath string) *sql.DB {
 	return db
 }
 
+func openMigratedRawDBThroughVersionForTest(t *testing.T, dbPath string, maxVersion int) *sql.DB {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", "file:"+dbPath)
+	if err != nil {
+		t.Fatalf("open raw migrated database through version %d: %v", maxVersion, err)
+	}
+	db.SetMaxOpenConns(1)
+	if err := db.Ping(); err != nil {
+		db.Close()
+		t.Fatalf("ping raw migrated database through version %d: %v", maxVersion, err)
+	}
+	if err := runMigrationsThroughVersionForTest(db, maxVersion); err != nil {
+		db.Close()
+		t.Fatalf("run migrations through version %d on raw database: %v", maxVersion, err)
+	}
+	return db
+}
+
+// runMigrationsThroughVersionForTest keeps isolated historical migration tests
+// on their declared target. Temporary applied markers make the production
+// runner skip later migrations; the real migration functions, transactions,
+// registration, foreign-key handling, and final integrity check remain in use.
+func runMigrationsThroughVersionForTest(db *sql.DB, maxVersion int) error {
+	var temporaryVersions []int
+	for _, m := range migrations {
+		if m.version <= maxVersion {
+			continue
+		}
+		result, err := db.Exec(`
+			INSERT OR IGNORE INTO schema_migrations(version, name, applied_at)
+			VALUES (?, ?, unixepoch())
+		`, m.version, "test-only excluded: "+m.name)
+		if err != nil {
+			return fmt.Errorf("mark migration %d excluded for isolated test: %w", m.version, err)
+		}
+		inserted, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("read excluded marker %d result: %w", m.version, err)
+		}
+		if inserted == 1 {
+			temporaryVersions = append(temporaryVersions, m.version)
+		}
+	}
+
+	runErr := runMigrations(db)
+	for _, version := range temporaryVersions {
+		if _, err := db.Exec(`DELETE FROM schema_migrations WHERE version = ?`, version); err != nil {
+			if runErr != nil {
+				return fmt.Errorf("migration run failed: %v; remove test-only marker %d: %w", runErr, version, err)
+			}
+			return fmt.Errorf("remove test-only marker %d: %w", version, err)
+		}
+	}
+	return runErr
+}
+
 func assertMigrationApplied(t *testing.T, db *sql.DB, version int) {
 	t.Helper()
 
@@ -1895,7 +2846,7 @@ func TestMigration42AddsUsersDeletedColumns(t *testing.T) {
 		t.Fatalf("close raw database: %v", err)
 	}
 
-	db := openMigratedRawDB(t, dbPath)
+	db := openMigratedRawDBThroughVersionForTest(t, dbPath, 42)
 	defer db.Close()
 
 	assertMigrationApplied(t, db, 42)
@@ -1940,4 +2891,1567 @@ func migrationByVersion(t *testing.T, version int) migration {
 	}
 	t.Fatalf("migration version %d not found", version)
 	return migration{}
+}
+
+func civilTimestamp(s string) int64 {
+	parsed, _ := time.Parse("2006-01-02", s)
+	return parsed.Unix()
+}
+
+func snapshotRecurringRows(t *testing.T, db *sql.DB, workspaceID string) string {
+	t.Helper()
+	var b strings.Builder
+	rows, err := db.Query(`SELECT * FROM recurring_series WHERE workspace_id=? ORDER BY id`, workspaceID)
+	if err != nil {
+		t.Fatalf("snapshot series: %v", err)
+	}
+	defer rows.Close()
+	cols, _ := rows.Columns()
+	fmt.Fprintf(&b, "series|%s", strings.Join(cols, ","))
+	for rows.Next() {
+		vals := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		rows.Scan(ptrs...)
+		b.WriteByte('\n')
+		for i, v := range vals {
+			if i > 0 {
+				b.WriteByte('|')
+			}
+			fmt.Fprintf(&b, "%v", v)
+		}
+	}
+	rows.Close()
+
+	rows, err = db.Query(`SELECT * FROM recurring_rules WHERE workspace_id=? ORDER BY id`, workspaceID)
+	if err != nil {
+		t.Fatalf("snapshot rules: %v", err)
+	}
+	defer rows.Close()
+	cols, _ = rows.Columns()
+	fmt.Fprintf(&b, "\nrules|%s", strings.Join(cols, ","))
+	for rows.Next() {
+		vals := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		rows.Scan(ptrs...)
+		b.WriteByte('\n')
+		for i, v := range vals {
+			if i > 0 {
+				b.WriteByte('|')
+			}
+			fmt.Fprintf(&b, "%v", v)
+		}
+	}
+	return b.String()
+}
+
+func TestMigration54RecurringOccurrenceSkips(t *testing.T) {
+	assertSchema := func(t *testing.T, db *sql.DB) {
+		t.Helper()
+		rows, err := db.Query(`PRAGMA table_info(recurring_occurrence_skips)`)
+		if err != nil {
+			t.Fatalf("pragma table_info: %v", err)
+		}
+		defer rows.Close()
+		type column struct {
+			name     string
+			typeName string
+			notNull  int
+			pk       int
+		}
+		var got []column
+		for rows.Next() {
+			var cid int
+			var name, columnType string
+			var notNull, pk int
+			var defaultValue interface{}
+			if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+				t.Fatalf("scan table_info: %v", err)
+			}
+			got = append(got, column{name: name, typeName: strings.ToUpper(columnType), notNull: notNull, pk: pk})
+		}
+		want := []column{
+			{name: "workspace_id", typeName: "TEXT", notNull: 1, pk: 1},
+			{name: "series_id", typeName: "TEXT", notNull: 1, pk: 2},
+			{name: "recurrence_sequence", typeName: "INTEGER", notNull: 1, pk: 3},
+			{name: "original_transaction_id", typeName: "TEXT", notNull: 0, pk: 0},
+			{name: "reason", typeName: "TEXT", notNull: 1, pk: 0},
+			{name: "deleted_by", typeName: "TEXT", notNull: 0, pk: 0},
+			{name: "deleted_at", typeName: "INTEGER", notNull: 1, pk: 0},
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("skip schema = %#v, want %#v", got, want)
+		}
+	}
+
+	t.Run("fresh_schema_and_workspace_primary_key", func(t *testing.T) {
+		db, err := Open(":memory:")
+		if err != nil {
+			t.Fatalf("open fresh: %v", err)
+		}
+		defer db.Close()
+		assertMigrationApplied(t, db, 54)
+		assertSchema(t, db)
+
+		insert := `INSERT INTO recurring_occurrence_skips
+			(workspace_id, series_id, recurrence_sequence, original_transaction_id, reason, deleted_at)
+			VALUES (?, 'same-series', 3, ?, 'single_delete', 123)`
+		if _, err := db.Exec(insert, "ws-a", "tx-a"); err != nil {
+			t.Fatalf("insert workspace A: %v", err)
+		}
+		if _, err := db.Exec(insert, "ws-b", "tx-b"); err != nil {
+			t.Fatalf("same series/sequence in workspace B must be isolated: %v", err)
+		}
+		if _, err := db.Exec(insert, "ws-a", "tx-a-retry"); err == nil {
+			t.Fatal("duplicate workspace/series/sequence should fail")
+		}
+		if _, err := db.Exec(`INSERT INTO recurring_occurrence_skips
+			(workspace_id, series_id, recurrence_sequence, reason, deleted_at)
+			VALUES ('ws-a', 'same-series', 4, 'invalid', 123)`); err == nil {
+			t.Fatal("uncontrolled skip reason should fail")
+		}
+	})
+
+	t.Run("upgrade_reopen_idempotent_without_backfill", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "migration54.db")
+		raw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open raw: %v", err)
+		}
+		raw.SetMaxOpenConns(1)
+		if _, err := raw.Exec(ddl); err != nil {
+			t.Fatalf("fresh ddl fixture: %v", err)
+		}
+		if _, err := raw.Exec(`DROP TABLE recurring_occurrence_skips`); err != nil {
+			t.Fatalf("drop post-v53 table from fixture: %v", err)
+		}
+		seedAppliedMigrationsBefore(t, raw, 54)
+		if _, err := raw.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			t.Fatalf("checkpoint v53 fixture: %v", err)
+		}
+		if err := raw.Close(); err != nil {
+			t.Fatalf("close raw: %v", err)
+		}
+
+		opened, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open v53 for migration: %v", err)
+		}
+		opened.SetMaxOpenConns(1)
+		if err := runMigrations(opened); err != nil {
+			t.Fatalf("upgrade v53 to v54: %v", err)
+		}
+		assertMigrationApplied(t, opened, 54)
+		assertSchema(t, opened)
+		var count int
+		if err := opened.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_skips`).Scan(&count); err != nil {
+			t.Fatalf("count skips: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("migration backfilled %d skip(s), want zero", count)
+		}
+		if err := opened.Close(); err != nil {
+			t.Fatalf("close upgraded: %v", err)
+		}
+
+		reopened, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("reopen upgraded: %v", err)
+		}
+		defer reopened.Close()
+		reopened.SetMaxOpenConns(1)
+		if err := runMigrations(reopened); err != nil {
+			t.Fatalf("rerun migrations after reopen: %v", err)
+		}
+		assertMigrationApplied(t, reopened, 54)
+		assertSchema(t, reopened)
+		if err := runMigrations(reopened); err != nil {
+			t.Fatalf("repeat migrations: %v", err)
+		}
+	})
+
+	t.Run("incompatible_existing_table_rolls_back_version", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "migration54-incompatible.db")
+		raw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open raw: %v", err)
+		}
+		raw.SetMaxOpenConns(1)
+		if _, err := raw.Exec(ddl); err != nil {
+			t.Fatalf("fresh ddl fixture: %v", err)
+		}
+		if _, err := raw.Exec(`DROP TABLE recurring_occurrence_skips`); err != nil {
+			t.Fatalf("drop table: %v", err)
+		}
+		if _, err := raw.Exec(`CREATE TABLE recurring_occurrence_skips (workspace_id TEXT PRIMARY KEY)`); err != nil {
+			t.Fatalf("create incompatible table: %v", err)
+		}
+		seedAppliedMigrationsBefore(t, raw, 54)
+		if _, err := raw.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			t.Fatalf("checkpoint incompatible fixture: %v", err)
+		}
+		if err := raw.Close(); err != nil {
+			t.Fatalf("close raw: %v", err)
+		}
+
+		migrationDB, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open incompatible fixture: %v", err)
+		}
+		migrationDB.SetMaxOpenConns(1)
+		if err := runMigrations(migrationDB); err == nil {
+			migrationDB.Close()
+			t.Fatal("migration 54 should reject incompatible table")
+		}
+		migrationDB.Close()
+		inspect, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("inspect failed migration: %v", err)
+		}
+		defer inspect.Close()
+		var version int
+		if err := inspect.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&version); err != nil {
+			t.Fatalf("read migration version: %v", err)
+		}
+		if version != 53 {
+			t.Fatalf("version after failed migration = %d, want 53", version)
+		}
+		var columnCount int
+		if err := inspect.QueryRow(`SELECT COUNT(1) FROM pragma_table_info('recurring_occurrence_skips')`).Scan(&columnCount); err != nil {
+			t.Fatalf("inspect incompatible table: %v", err)
+		}
+		if columnCount != 1 {
+			t.Fatalf("failed migration changed incompatible table: columns=%d", columnCount)
+		}
+	})
+
+	t.Run("reject_extra_column", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL, original_transaction_id TEXT,
+				reason TEXT NOT NULL, deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				extra_col TEXT, PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_missing_column", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL, original_transaction_id TEXT,
+				reason TEXT NOT NULL, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_divergent_nullability", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL, original_transaction_id TEXT,
+				reason TEXT NOT NULL, deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_divergent_pk", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL, original_transaction_id TEXT,
+				reason TEXT NOT NULL, deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id)
+			)`)
+	})
+
+	t.Run("reject_missing_check_sequence", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL, original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_altered_check_sequence", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence >= 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_missing_check_reason", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL, deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_extra_check_deleted_at_P1", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT,
+				deleted_at INTEGER NOT NULL CHECK (deleted_at > 0),
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_default_value", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0) DEFAULT 1,
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_foreign_key", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence),
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id)
+			)`)
+	})
+
+	t.Run("reject_extra_unique_index", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			);
+			CREATE UNIQUE INDEX idx_skips_tx ON recurring_occurrence_skips(original_transaction_id)`)
+	})
+
+	t.Run("reject_trigger", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "migration54-reject-trigger.db")
+		raw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open raw: %v", err)
+		}
+		raw.SetMaxOpenConns(1)
+		if _, err := raw.Exec(ddl); err != nil {
+			t.Fatalf("fresh ddl: %v", err)
+		}
+		if _, err := raw.Exec(`DROP TABLE recurring_occurrence_skips`); err != nil {
+			t.Fatalf("drop table: %v", err)
+		}
+		if _, err := raw.Exec(`CREATE TABLE recurring_occurrence_skips (
+			workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+			recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+			original_transaction_id TEXT,
+			reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+			deleted_by TEXT, deleted_at INTEGER NOT NULL,
+			PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+		)`); err != nil {
+			t.Fatalf("create table: %v", err)
+		}
+		if _, err := raw.Exec(`CREATE TRIGGER trg_skips_audit AFTER INSERT ON recurring_occurrence_skips
+		BEGIN
+			INSERT INTO schema_migrations(version, name) VALUES (-1, 'test');
+		END`); err != nil {
+			t.Fatalf("create trigger: %v", err)
+		}
+		seedAppliedMigrationsBefore(t, raw, 54)
+		if _, err := raw.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			t.Fatalf("checkpoint: %v", err)
+		}
+		raw.Close()
+
+		opened, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("reopen: %v", err)
+		}
+		opened.SetMaxOpenConns(1)
+		migrationErr := runMigrations(opened)
+		opened.Close()
+		if migrationErr == nil {
+			t.Fatal("migration 54 should reject table with trigger")
+		}
+	})
+
+	t.Run("reject_strict", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			) STRICT`)
+	})
+
+	t.Run("reject_without_rowid", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			) WITHOUT ROWID`)
+	})
+
+	t.Run("version_not_registered_after_rejection", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "migration54-version-rollback.db")
+		raw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open raw: %v", err)
+		}
+		raw.SetMaxOpenConns(1)
+		if _, err := raw.Exec(ddl); err != nil {
+			t.Fatalf("fresh ddl: %v", err)
+		}
+		if _, err := raw.Exec(`DROP TABLE recurring_occurrence_skips`); err != nil {
+			t.Fatalf("drop table: %v", err)
+		}
+		if _, err := raw.Exec(`CREATE TABLE recurring_occurrence_skips (
+			workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+			recurrence_sequence INTEGER NOT NULL, original_transaction_id TEXT,
+			reason TEXT NOT NULL, deleted_by TEXT, deleted_at INTEGER NOT NULL,
+			extra TEXT, PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+		)`); err != nil {
+			t.Fatalf("create incompatible: %v", err)
+		}
+		if _, err := raw.Exec(`INSERT INTO recurring_occurrence_skips
+			(workspace_id, series_id, recurrence_sequence, reason, deleted_at)
+			VALUES ('ws', 's', 1, 'single_delete', 100)`); err != nil {
+			t.Fatalf("insert existing row: %v", err)
+		}
+		seedAppliedMigrationsBefore(t, raw, 54)
+		if _, err := raw.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			t.Fatalf("checkpoint: %v", err)
+		}
+		raw.Close()
+
+		opened, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open for migration: %v", err)
+		}
+		opened.SetMaxOpenConns(1)
+		if err := runMigrations(opened); err == nil {
+			opened.Close()
+			t.Fatal("migration 54 should reject incompatible pre-existing table")
+		}
+		opened.Close()
+
+		inspect, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("inspect: %v", err)
+		}
+		defer inspect.Close()
+		var version int
+		if err := inspect.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&version); err != nil {
+			t.Fatalf("read version: %v", err)
+		}
+		if version != 53 {
+			t.Fatalf("version after rollback = %d, want 53", version)
+		}
+		var rowCount int
+		if err := inspect.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_skips`).Scan(&rowCount); err != nil {
+			t.Fatalf("count rows: %v", err)
+		}
+		if rowCount != 1 {
+			t.Fatalf("rows after rollback = %d, want 1", rowCount)
+		}
+	})
+
+	t.Run("reject_named_check_constraint_sequence", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CONSTRAINT seq_pos CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_named_check_constraint_reason", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CONSTRAINT reason_check CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_on_conflict_replace", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence) ON CONFLICT REPLACE
+			)`)
+	})
+
+	t.Run("reject_collate", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL COLLATE NOCASE, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_literal_SINGLE_DELETE_uppercase", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('SINGLE_DELETE')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_sequence_ge_1", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence >= 1),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_zero_lt_sequence", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (0 < recurrence_sequence),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_pk_order_different", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (series_id, workspace_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_extra_reason_value", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete', 'future_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("canonical_preexisting_table_accepted_and_preserves_rows", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "migration54-canonical.db")
+		raw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open raw: %v", err)
+		}
+		raw.SetMaxOpenConns(1)
+		if _, err := raw.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL DEFAULT (unixepoch()))`); err != nil {
+			t.Fatalf("create migrations: %v", err)
+		}
+		for _, m := range migrations {
+			if m.version >= 54 {
+				break
+			}
+			if _, err := raw.Exec(`INSERT OR IGNORE INTO schema_migrations(version, name) VALUES(?, ?)`, m.version, m.name); err != nil {
+				t.Fatalf("seed migration %d: %v", m.version, err)
+			}
+		}
+		if _, err := raw.Exec(authorizedSkipsDDL); err != nil {
+			t.Fatalf("create canonical table: %v", err)
+		}
+		if _, err := raw.Exec(`INSERT INTO recurring_occurrence_skips (workspace_id, series_id, recurrence_sequence, reason, deleted_at) VALUES ('ws-pre', 's-pre', 1, 'single_delete', 100)`); err != nil {
+			t.Fatalf("insert pre-existing row: %v", err)
+		}
+		if _, err := raw.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			t.Fatalf("checkpoint: %v", err)
+		}
+		raw.Close()
+
+		opened, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("reopen: %v", err)
+		}
+		opened.SetMaxOpenConns(1)
+		if err := runMigrationsThroughVersionForTest(opened, 54); err != nil {
+			t.Fatalf("migration failed on canonical table: %v", err)
+		}
+		opened.Close()
+
+		inspect, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("inspect: %v", err)
+		}
+		defer inspect.Close()
+
+		var version int
+		if err := inspect.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&version); err != nil {
+			t.Fatalf("read version: %v", err)
+		}
+		if version != 54 {
+			t.Fatalf("version = %d, want 54", version)
+		}
+		var rowCount int
+		if err := inspect.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_skips`).Scan(&rowCount); err != nil {
+			t.Fatalf("count rows: %v", err)
+		}
+		if rowCount != 1 {
+			t.Fatalf("pre-existing rows lost: count=%d, want 1", rowCount)
+		}
+
+		var actualDDL string
+		if err := inspect.QueryRow(`SELECT sql FROM sqlite_schema WHERE type='table' AND name='recurring_occurrence_skips'`).Scan(&actualDDL); err != nil {
+			t.Fatalf("read DDL: %v", err)
+		}
+		if normalizeSkipsDDL(actualDDL) != normalizeSkipsDDL(authorizedSkipsDDL) {
+			t.Fatalf("DDL changed after migration:\ngot:  %q\nwant: %q", normalizeSkipsDDL(actualDDL), normalizeSkipsDDL(authorizedSkipsDDL))
+		}
+
+		if err := inspect.Close(); err != nil {
+			t.Fatalf("close inspect: %v", err)
+		}
+
+		reopened, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("reopen again: %v", err)
+		}
+		defer reopened.Close()
+		reopened.SetMaxOpenConns(1)
+		if err := runMigrationsThroughVersionForTest(reopened, 54); err != nil {
+			t.Fatalf("rerun migrations: %v", err)
+		}
+		var rowCountReopen int
+		if err := reopened.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_skips`).Scan(&rowCountReopen); err != nil {
+			t.Fatalf("count rows after reopen: %v", err)
+		}
+		if rowCountReopen != 1 {
+			t.Fatalf("rows after reopen = %d, want 1", rowCountReopen)
+		}
+	})
+
+	t.Run("reject_column_type_mismatch", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id INTEGER NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_column_order_different", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				series_id TEXT NOT NULL, workspace_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			)`)
+	})
+
+	t.Run("reject_non_unique_extra_index", func(t *testing.T) {
+		testMigration54RejectIncompatible(t, `DROP TABLE recurring_occurrence_skips;
+			CREATE TABLE recurring_occurrence_skips (
+				workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+				recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+				original_transaction_id TEXT,
+				reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+				deleted_by TEXT, deleted_at INTEGER NOT NULL,
+				PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+			);
+			CREATE INDEX idx_skips_deleted ON recurring_occurrence_skips(deleted_at)`)
+	})
+
+	t.Run("reject_trigger_before", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "migration54-reject-trigger-before.db")
+		raw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open raw: %v", err)
+		}
+		raw.SetMaxOpenConns(1)
+		if _, err := raw.Exec(`DROP TABLE IF EXISTS recurring_occurrence_skips`); err != nil {
+			t.Fatalf("drop: %v", err)
+		}
+		if _, err := raw.Exec(authorizedSkipsDDL); err != nil {
+			t.Fatalf("create canonical: %v", err)
+		}
+		if _, err := raw.Exec(`CREATE TRIGGER trg_skips_before BEFORE INSERT ON recurring_occurrence_skips
+		BEGIN INSERT INTO schema_migrations(version, name) VALUES (-1, 'test'); END`); err != nil {
+			t.Fatalf("create BEFORE trigger: %v", err)
+		}
+		seedAppliedMigrationsBefore(t, raw, 54)
+		if _, err := raw.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			t.Fatalf("checkpoint: %v", err)
+		}
+		raw.Close()
+
+		opened, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("reopen: %v", err)
+		}
+		opened.SetMaxOpenConns(1)
+		migrationErr := runMigrations(opened)
+		opened.Close()
+		if migrationErr == nil {
+			t.Fatal("migration 54 should reject table with BEFORE trigger")
+		}
+	})
+
+	t.Run("reject_trigger_after", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "migration54-reject-trigger-after.db")
+		raw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open raw: %v", err)
+		}
+		raw.SetMaxOpenConns(1)
+		if _, err := raw.Exec(`DROP TABLE IF EXISTS recurring_occurrence_skips`); err != nil {
+			t.Fatalf("drop: %v", err)
+		}
+		if _, err := raw.Exec(authorizedSkipsDDL); err != nil {
+			t.Fatalf("create canonical: %v", err)
+		}
+		if _, err := raw.Exec(`CREATE TRIGGER trg_skips_after AFTER INSERT ON recurring_occurrence_skips
+		BEGIN INSERT INTO schema_migrations(version, name) VALUES (-1, 'test'); END`); err != nil {
+			t.Fatalf("create schema_migrations: %v", err)
+		}
+		seedAppliedMigrationsBefore(t, raw, 54)
+		if _, err := raw.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			t.Fatalf("checkpoint: %v", err)
+		}
+		raw.Close()
+
+		opened, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("reopen: %v", err)
+		}
+		opened.SetMaxOpenConns(1)
+		migrationErr := runMigrations(opened)
+		opened.Close()
+		if migrationErr == nil {
+			t.Fatal("migration 54 should reject table with AFTER trigger")
+		}
+	})
+
+	t.Run("reject_partial_index", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "migration54-reject-partial-idx.db")
+		raw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open raw: %v", err)
+		}
+		raw.SetMaxOpenConns(1)
+		if _, err := raw.Exec(`DROP TABLE IF EXISTS recurring_occurrence_skips`); err != nil {
+			t.Fatalf("drop: %v", err)
+		}
+		if _, err := raw.Exec(authorizedSkipsDDL); err != nil {
+			t.Fatalf("create canonical: %v", err)
+		}
+		if _, err := raw.Exec(`CREATE INDEX idx_skips_partial ON recurring_occurrence_skips(deleted_at) WHERE deleted_at > 0`); err != nil {
+			t.Fatalf("create partial index: %v", err)
+		}
+		seedAppliedMigrationsBefore(t, raw, 54)
+		if _, err := raw.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			t.Fatalf("checkpoint: %v", err)
+		}
+		raw.Close()
+
+		opened, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("reopen: %v", err)
+		}
+		opened.SetMaxOpenConns(1)
+		migrationErr := runMigrations(opened)
+		opened.Close()
+		if migrationErr == nil {
+			t.Fatal("migration 54 should reject table with partial index")
+		}
+	})
+
+	t.Run("reject_expression_index", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "migration54-reject-expr-idx.db")
+		raw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open raw: %v", err)
+		}
+		raw.SetMaxOpenConns(1)
+		if _, err := raw.Exec(`DROP TABLE IF EXISTS recurring_occurrence_skips`); err != nil {
+			t.Fatalf("drop: %v", err)
+		}
+		if _, err := raw.Exec(authorizedSkipsDDL); err != nil {
+			t.Fatalf("create canonical: %v", err)
+		}
+		if _, err := raw.Exec(`CREATE INDEX idx_skips_expr ON recurring_occurrence_skips(ABS(recurrence_sequence))`); err != nil {
+			t.Fatalf("create expression index: %v", err)
+		}
+		seedAppliedMigrationsBefore(t, raw, 54)
+		if _, err := raw.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			t.Fatalf("checkpoint: %v", err)
+		}
+		raw.Close()
+
+		opened, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("reopen: %v", err)
+		}
+		opened.SetMaxOpenConns(1)
+		migrationErr := runMigrations(opened)
+		opened.Close()
+		if migrationErr == nil {
+			t.Fatal("migration 54 should reject table with expression index")
+		}
+	})
+
+	t.Run("reject_table_with_generated_extra_column", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "migration54-reject-generated.db")
+		raw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open raw: %v", err)
+		}
+		raw.SetMaxOpenConns(1)
+		if _, err := raw.Exec(`DROP TABLE IF EXISTS recurring_occurrence_skips`); err != nil {
+			t.Fatalf("drop: %v", err)
+		}
+		if _, err := raw.Exec(`CREATE TABLE recurring_occurrence_skips (
+			workspace_id TEXT NOT NULL, series_id TEXT NOT NULL,
+			recurrence_sequence INTEGER NOT NULL, original_transaction_id TEXT,
+			reason TEXT NOT NULL, deleted_by TEXT, deleted_at INTEGER NOT NULL,
+			generated_col TEXT GENERATED ALWAYS AS (workspace_id || series_id),
+			real_col TEXT NOT NULL,
+			PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+		)`); err != nil {
+			t.Fatalf("create table with generated column: %v", err)
+		}
+		seedAppliedMigrationsBefore(t, raw, 54)
+		if _, err := raw.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			t.Fatalf("checkpoint: %v", err)
+		}
+		raw.Close()
+
+		opened, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("reopen: %v", err)
+		}
+		opened.SetMaxOpenConns(1)
+		migrationErr := runMigrations(opened)
+		opened.Close()
+		if migrationErr == nil {
+			t.Fatal("migration 54 should reject table with extra generated column")
+		}
+	})
+}
+
+func testMigration54RejectIncompatible(t *testing.T, incompatibleDDL string) {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "migration54-reject.db")
+	raw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	raw.SetMaxOpenConns(1)
+	if _, err := raw.Exec(ddl); err != nil {
+		t.Fatalf("fresh ddl: %v", err)
+	}
+	for _, stmt := range strings.Split(incompatibleDDL, ";\n") {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		if _, err := raw.Exec(stmt); err != nil {
+			t.Fatalf("exec incompatible setup %q: %v", stmt, err)
+		}
+	}
+
+	if _, err := raw.Exec(`INSERT OR IGNORE INTO workspaces (id, name, type, created_at, updated_at) VALUES ('ws-sent', 'Sentinel', 'personal', 0, 0)`); err != nil {
+		t.Fatalf("seed sentinel workspace: %v", err)
+	}
+	sentinelInserted := false
+	if _, err := raw.Exec(`INSERT INTO recurring_occurrence_skips
+		(workspace_id, series_id, recurrence_sequence, reason, deleted_at)
+		VALUES ('ws-sent', 's-sent', 1, 'single_delete', 100)`); err != nil {
+		sentinelInserted = false
+	} else {
+		sentinelInserted = true
+	}
+
+	snapshot := captureSchemaSnapshot(t, raw)
+	snapshot.sentinelInserted = sentinelInserted
+
+	var versionBefore int
+	raw.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&versionBefore)
+	_ = versionBefore
+	seedAppliedMigrationsBefore(t, raw, 54)
+	if _, err := raw.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		t.Fatalf("checkpoint: %v", err)
+	}
+	raw.Close()
+
+	opened, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	opened.SetMaxOpenConns(1)
+	migrationErr := runMigrations(opened)
+	opened.Close()
+
+	if migrationErr == nil {
+		t.Fatal("migration 54 should reject incompatible table")
+	}
+
+	inspect, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatalf("inspect after rejection: %v", err)
+	}
+	defer inspect.Close()
+
+	var versionAfter int
+	if err := inspect.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&versionAfter); err != nil {
+		t.Fatalf("version after: %v", err)
+	}
+	if versionAfter == 53 {
+		if versionAfter >= 54 {
+			t.Fatalf("migration 54 registered after rejection: version=%d", versionAfter)
+		}
+	} else if versionAfter != 53 {
+		t.Fatalf("version after rejection = %d, want 53", versionAfter)
+	}
+
+	assertSchemaSnapshotPreserved(t, inspect, snapshot)
+}
+
+func captureSchemaSnapshot(t *testing.T, db *sql.DB) schemaSnapshot {
+	t.Helper()
+	s := schemaSnapshot{}
+	if err := db.QueryRow(`SELECT sql FROM sqlite_schema WHERE type='table' AND name='recurring_occurrence_skips'`).Scan(&s.tableDDL); err != nil {
+		s.tableDDL = ""
+	}
+	s.rowCount = 0
+	if s.tableDDL != "" {
+		db.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_skips`).Scan(&s.rowCount)
+	}
+
+	idxRows, err := db.Query(`PRAGMA index_list(recurring_occurrence_skips)`)
+	if err == nil {
+		defer idxRows.Close()
+		for idxRows.Next() {
+			var seq, unique, partial int
+			var name, origin string
+			if err := idxRows.Scan(&seq, &name, &unique, &origin, &partial); err == nil {
+				s.indexes = append(s.indexes, indexSnap{name: name, unique: unique, origin: origin})
+			}
+		}
+	}
+
+	fkRows, err := db.Query(`PRAGMA foreign_key_list(recurring_occurrence_skips)`)
+	if err == nil {
+		defer fkRows.Close()
+		for fkRows.Next() {
+			var id, seq int
+			var table, from, to, onUpdate, onDelete, match string
+			if err := fkRows.Scan(&id, &seq, &table, &from, &to, &onUpdate, &onDelete, &match); err == nil {
+				s.foreignKeys = append(s.foreignKeys, fkSnap{id: id, seq: seq, table: table, from: from, to: to, onUpdate: onUpdate, onDelete: onDelete, match: match})
+			}
+		}
+	}
+
+	trRows, err := db.Query(`SELECT name, sql FROM sqlite_schema WHERE type='trigger' AND tbl_name='recurring_occurrence_skips'`)
+	if err == nil {
+		defer trRows.Close()
+		for trRows.Next() {
+			var name, sql string
+			if err := trRows.Scan(&name, &sql); err == nil {
+				s.triggers = append(s.triggers, triggerSnap{name: name, sql: sql})
+			}
+		}
+	}
+	return s
+}
+
+type schemaSnapshot struct {
+	tableDDL         string
+	rowCount         int
+	sentinelInserted bool
+	indexes          []indexSnap
+	foreignKeys      []fkSnap
+	triggers         []triggerSnap
+}
+
+type indexSnap struct {
+	name   string
+	unique int
+	origin string
+}
+
+type fkSnap struct {
+	id       int
+	seq      int
+	table    string
+	from     string
+	to       string
+	onUpdate string
+	onDelete string
+	match    string
+}
+
+type triggerSnap struct {
+	name string
+	sql  string
+}
+
+func assertSchemaSnapshotPreserved(t *testing.T, db *sql.DB, s schemaSnapshot) {
+	t.Helper()
+	if s.tableDDL != "" {
+		var currentDDL string
+		if err := db.QueryRow(`SELECT sql FROM sqlite_schema WHERE type='table' AND name='recurring_occurrence_skips'`).Scan(&currentDDL); err != nil {
+			t.Fatalf("read table DDL after rejection: %v", err)
+		}
+		if currentDDL != s.tableDDL {
+			t.Fatalf("table DDL modified after rejection:\nbefore: %s\nafter:  %s", s.tableDDL, currentDDL)
+		}
+		var rowCount int
+		db.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_skips`).Scan(&rowCount)
+		if s.sentinelInserted && rowCount != s.rowCount {
+			t.Fatalf("row count changed after rejection: before=%d after=%d", s.rowCount, rowCount)
+		}
+	}
+
+	idxRows, err := db.Query(`PRAGMA index_list(recurring_occurrence_skips)`)
+	if err != nil {
+		return
+	}
+	defer idxRows.Close()
+	var currentIndexes []indexSnap
+	for idxRows.Next() {
+		var seq, unique, partial int
+		var name, origin string
+		if err := idxRows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+			continue
+		}
+		currentIndexes = append(currentIndexes, indexSnap{name: name, unique: unique, origin: origin})
+	}
+	if len(currentIndexes) != len(s.indexes) {
+		t.Fatalf("index count changed after rejection: before=%d after=%d", len(s.indexes), len(currentIndexes))
+	}
+	for i := range s.indexes {
+		if currentIndexes[i] != s.indexes[i] {
+			t.Fatalf("index diverged after rejection: before=%#v after=%#v", s.indexes[i], currentIndexes[i])
+		}
+	}
+
+	var fkCount int
+	fkRows, err := db.Query(`PRAGMA foreign_key_list(recurring_occurrence_skips)`)
+	if err == nil {
+		defer fkRows.Close()
+		var currentFKs []fkSnap
+		for fkRows.Next() {
+			var id, seq int
+			var table, from, to, onUpdate, onDelete, match string
+			if err := fkRows.Scan(&id, &seq, &table, &from, &to, &onUpdate, &onDelete, &match); err == nil {
+				currentFKs = append(currentFKs, fkSnap{id: id, seq: seq, table: table, from: from, to: to, onUpdate: onUpdate, onDelete: onDelete, match: match})
+			}
+		}
+		if len(currentFKs) != len(s.foreignKeys) {
+			t.Fatalf("FK count changed after rejection: before=%d after=%d", len(s.foreignKeys), len(currentFKs))
+		}
+		for i := range s.foreignKeys {
+			if currentFKs[i] != s.foreignKeys[i] {
+				t.Fatalf("FK diverged: before=%#v after=%#v", s.foreignKeys[i], currentFKs[i])
+			}
+		}
+		fkCount = len(currentFKs)
+	}
+	_ = fkCount
+
+	trRows, err := db.Query(`SELECT name, sql FROM sqlite_schema WHERE type='trigger' AND tbl_name='recurring_occurrence_skips' ORDER BY name`)
+	if err != nil {
+		return
+	}
+	defer trRows.Close()
+	var currentTriggers []triggerSnap
+	for trRows.Next() {
+		var name, sql string
+		if err := trRows.Scan(&name, &sql); err != nil {
+			continue
+		}
+		currentTriggers = append(currentTriggers, triggerSnap{name: name, sql: sql})
+	}
+	if len(currentTriggers) != len(s.triggers) {
+		t.Fatalf("trigger count changed after rejection: before=%d after=%d", len(s.triggers), len(currentTriggers))
+	}
+	for i := range s.triggers {
+		if currentTriggers[i] != s.triggers[i] {
+			t.Fatalf("trigger diverged after rejection: before=%#v after=%#v", s.triggers[i], currentTriggers[i])
+		}
+	}
+}
+
+func TestMigration53ActiveLeafInvariantValidAndIncompatibleChain(t *testing.T) {
+	const jan10 int64 = 1768051200
+	now := time.Now().Unix()
+
+	prepareV52DB := func(t *testing.T, dir string) string {
+		t.Helper()
+		dbPath := filepath.Join(dir, "migration53.db")
+		db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("open raw database: %v", err)
+		}
+		db.SetMaxOpenConns(1)
+
+		if _, err := db.Exec(ddl); err != nil {
+			db.Close()
+			t.Fatalf("execute ddl fixture: %v", err)
+		}
+		seedAppliedMigrationsBefore(t, db, 53)
+
+		for _, s := range []string{
+			`INSERT OR IGNORE INTO users (id, name, email, password_hash) VALUES ('u-mig53', 'User Mig53', 'mig53@e.com', 'hash')`,
+			`INSERT OR IGNORE INTO workspaces (id, name, type) VALUES ('ws-mig53', 'WS Mig53', 'personal')`,
+			`INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES ('ws-mig53', 'u-mig53', 'ADMIN')`,
+		} {
+			if _, err := db.Exec(s); err != nil {
+				db.Close()
+				t.Fatalf("seed: %v", err)
+			}
+		}
+		if _, err := db.Exec(`INSERT OR IGNORE INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-mig53', 'ws-mig53', 'Conta', 'CHECKING', 100000, 100000, ?, ?)`, now, now); err != nil {
+			db.Close()
+			t.Fatalf("seed account: %v", err)
+		}
+		db.Close()
+		return dbPath
+	}
+
+	t.Run("compatible", func(t *testing.T) {
+		dir := t.TempDir()
+		dbPath := prepareV52DB(t, dir)
+
+		dbRaw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("reopen raw: %v", err)
+		}
+		dbRaw.SetMaxOpenConns(1)
+		defer dbRaw.Close()
+
+		if _, err := dbRaw.Exec(`INSERT INTO recurring_series (id, workspace_id, user_id, active, created_at, updated_at) VALUES ('series-mig53-compat', 'ws-mig53', 'u-mig53', 1, ?, ?)`, now, now); err != nil {
+			t.Fatalf("insert series: %v", err)
+		}
+		dbRaw.Exec(`INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, effective_start_sequence, effective_end_sequence, created_at, updated_at) VALUES ('rule-mig53-a', 'ws-mig53', 'u-mig53', 'acc-mig53', NULL, 'EXPENSE', 10000, 'A', ?, 'MONTHLY', 'PENDING', 1, NULL, 'series-mig53-compat', 1, 3, ?, ?)`, jan10, now, now)
+		dbRaw.Exec(`UPDATE recurring_rules SET active=0 WHERE id='rule-mig53-a'`)
+		dbRaw.Exec(`INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, parent_rule_id, effective_start_sequence, created_at, updated_at) VALUES ('rule-mig53-b', 'ws-mig53', 'u-mig53', 'acc-mig53', NULL, 'EXPENSE', 20000, 'B', ?, 'MONTHLY', 'PENDING', 1, NULL, 'series-mig53-compat', 'rule-mig53-a', 4, ?, ?)`, jan10, now, now)
+		dbRaw.Exec(`UPDATE recurring_rules SET active=0 WHERE id='rule-mig53-b'`)
+		dbRaw.Exec(`INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, parent_rule_id, effective_start_sequence, created_at, updated_at) VALUES ('rule-mig53-c', 'ws-mig53', 'u-mig53', 'acc-mig53', NULL, 'EXPENSE', 30000, 'C', ?, 'MONTHLY', 'PENDING', 1, NULL, 'series-mig53-compat', 'rule-mig53-b', 7, ?, ?)`, jan10, now, now)
+
+		rowsBefore := snapshotRecurringRows(t, dbRaw, "ws-mig53")
+		var versionBefore int
+		dbRaw.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&versionBefore)
+		if versionBefore != 52 {
+			t.Fatalf("version before = %d, want 52", versionBefore)
+		}
+
+		dbRaw.Close()
+
+		opened, err := Open(dbPath)
+		if err != nil {
+			t.Fatalf("database.Open on v52 compatible: %v", err)
+		}
+		defer opened.Close()
+
+		var versionAfter int
+		opened.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&versionAfter)
+		if versionAfter < 57 {
+			t.Fatalf("version after database.Open = %d, want >= 57", versionAfter)
+		}
+
+		for _, name := range []string{
+			"trg_recurring_rules_no_active_parent_insert",
+			"trg_recurring_rules_no_active_parent_update",
+			"trg_recurring_rules_no_reactivation_with_children",
+		} {
+			var count int
+			opened.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type='trigger' AND name=?`, name).Scan(&count)
+			if count != 1 {
+				t.Fatalf("trigger %s missing after database.Open", name)
+			}
+		}
+
+		var idxCount int
+		opened.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type='index' AND name='idx_recurring_rules_parent_rule_id'`).Scan(&idxCount)
+		if idxCount != 1 {
+			t.Fatal("idx_recurring_rules_parent_rule_id missing after database.Open")
+		}
+
+		rowsAfter := snapshotRecurringRows(t, opened, "ws-mig53")
+		if rowsAfter != rowsBefore {
+			t.Fatalf("database.Open changed data: before=%q after=%q", rowsBefore, rowsAfter)
+		}
+
+		_, err = opened.Exec(`INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, series_id, parent_rule_id, effective_start_sequence, created_at, updated_at) VALUES ('rule-mig53-child-test', 'ws-mig53', 'u-mig53', 'acc-mig53', NULL, 'EXPENSE', 10000, 'ChildTest', ?, 'MONTHLY', 'PENDING', 1, 'series-mig53-compat', 'rule-mig53-c', 8, ?, ?)`, jan10, now, now)
+		if err == nil {
+			t.Fatal("insert child for active parent C should be rejected by trigger")
+		}
+		if !strings.Contains(strings.ToUpper(err.Error()), "ACTIVE RULE CANNOT HAVE CHILDREN") {
+			t.Fatalf("expected invariant trigger error, got: %v", err)
+		}
+	})
+
+	t.Run("incompatible_then_fixed", func(t *testing.T) {
+		dir := t.TempDir()
+		dbPath := prepareV52DB(t, dir)
+
+		dbRaw, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("reopen raw: %v", err)
+		}
+		dbRaw.SetMaxOpenConns(1)
+
+		if _, err := dbRaw.Exec(`INSERT INTO recurring_series (id, workspace_id, user_id, active, created_at, updated_at) VALUES ('series-mig53-incomp', 'ws-mig53', 'u-mig53', 1, ?, ?)`, now, now); err != nil {
+			dbRaw.Close()
+			t.Fatalf("insert series: %v", err)
+		}
+		dbRaw.Exec(`INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, effective_start_sequence, created_at, updated_at) VALUES ('rule-mig53-active-parent', 'ws-mig53', 'u-mig53', 'acc-mig53', NULL, 'EXPENSE', 10000, 'ActiveParent', ?, 'MONTHLY', 'PENDING', 1, NULL, 'series-mig53-incomp', 1, ?, ?)`, jan10, now, now)
+		dbRaw.Exec(`INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, parent_rule_id, effective_start_sequence, created_at, updated_at) VALUES ('rule-mig53-active-child', 'ws-mig53', 'u-mig53', 'acc-mig53', NULL, 'EXPENSE', 20000, 'ActiveChild', ?, 'MONTHLY', 'PENDING', 1, NULL, 'series-mig53-incomp', 'rule-mig53-active-parent', 2, ?, ?)`, jan10, now, now)
+
+		snapshotBefore := snapshotRecurringRows(t, dbRaw, "ws-mig53")
+		var versionBefore int
+		dbRaw.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&versionBefore)
+		if versionBefore != 52 {
+			dbRaw.Close()
+			t.Fatalf("version before = %d, want 52", versionBefore)
+		}
+
+		dbRaw.Close()
+
+		_, openErr := Open(dbPath)
+		if openErr == nil {
+			t.Fatal("database.Open should fail on incompatible v52 database")
+		}
+
+		inspectDB, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Fatalf("reopen for inspection: %v", err)
+		}
+		defer inspectDB.Close()
+		inspectDB.SetMaxOpenConns(1)
+
+		var versionAfterFail int
+		inspectDB.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&versionAfterFail)
+		if versionAfterFail != 52 {
+			t.Fatalf("version after incompatible = %d, want 52", versionAfterFail)
+		}
+
+		snapshotAfterFail := snapshotRecurringRows(t, inspectDB, "ws-mig53")
+		if snapshotAfterFail != snapshotBefore {
+			t.Fatalf("incompatible database.Open changed data: before=%q after=%q", snapshotBefore, snapshotAfterFail)
+		}
+
+		for _, name := range []string{
+			"trg_recurring_rules_no_active_parent_insert",
+			"trg_recurring_rules_no_active_parent_update",
+			"trg_recurring_rules_no_reactivation_with_children",
+		} {
+			var count int
+			inspectDB.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type='trigger' AND name=?`, name).Scan(&count)
+			if count != 0 {
+				t.Fatalf("trigger %s exists after incompatible database.Open rollback", name)
+			}
+		}
+
+		var idxAfterFail int
+		inspectDB.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type='index' AND name='idx_recurring_rules_parent_rule_id'`).Scan(&idxAfterFail)
+		if idxAfterFail != 0 {
+			t.Fatal("idx_recurring_rules_parent_rule_id exists after incompatible database.Open rollback")
+		}
+
+		inspectDB.Exec(`UPDATE recurring_rules SET active=0 WHERE id='rule-mig53-active-parent'`)
+		inspectDB.Close()
+
+		openedRetry, err := Open(dbPath)
+		if err != nil {
+			t.Fatalf("database.Open after fixing chain: %v", err)
+		}
+		defer openedRetry.Close()
+
+		var versionAfterRetry int
+		openedRetry.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&versionAfterRetry)
+		if versionAfterRetry < 57 {
+			t.Fatalf("version after retry = %d, want >= 57", versionAfterRetry)
+		}
+
+		for _, name := range []string{
+			"trg_recurring_rules_no_active_parent_insert",
+			"trg_recurring_rules_no_active_parent_update",
+			"trg_recurring_rules_no_reactivation_with_children",
+		} {
+			var count int
+			openedRetry.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type='trigger' AND name=?`, name).Scan(&count)
+			if count != 1 {
+				t.Fatalf("trigger %s missing after fixed retry", name)
+			}
+		}
+	})
+
+	t.Run("fresh_database", func(t *testing.T) {
+		db, err := Open(":memory:")
+		if err != nil {
+			t.Fatalf("database.Open fresh :memory:: %v", err)
+		}
+		defer db.Close()
+
+		var version int
+		db.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&version)
+		if version < 57 {
+			t.Fatalf("fresh DB version = %d, want >= 57", version)
+		}
+
+		for _, name := range []string{
+			"trg_recurring_rules_no_active_parent_insert",
+			"trg_recurring_rules_no_active_parent_update",
+			"trg_recurring_rules_no_reactivation_with_children",
+		} {
+			var count int
+			db.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type='trigger' AND name=?`, name).Scan(&count)
+			if count != 1 {
+				t.Fatalf("trigger %s missing on fresh database", name)
+			}
+		}
+
+		var idxCount int
+		db.QueryRow(`SELECT COUNT(1) FROM sqlite_master WHERE type='index' AND name='idx_recurring_rules_parent_rule_id'`).Scan(&idxCount)
+		if idxCount != 1 {
+			t.Fatal("idx_recurring_rules_parent_rule_id missing on fresh database")
+		}
+	})
+}
+
+func TestNormalizeSkipsDDL(t *testing.T) {
+	canonical := normalizeSkipsDDL(authorizedSkipsDDL)
+
+	t.Run("canonical_matches_itself", func(t *testing.T) {
+		if normalizeSkipsDDL(authorizedSkipsDDL) != canonical {
+			t.Fatal("authorized DDL does not normalize to itself")
+		}
+	})
+
+	t.Run("canonical_with_trailing_semicolon", func(t *testing.T) {
+		if normalizeSkipsDDL(authorizedSkipsDDL+";") != canonical {
+			t.Fatal("trailing semicolon not stripped")
+		}
+	})
+
+	t.Run("canonical_with_trailing_semicolon_and_whitespace", func(t *testing.T) {
+		if normalizeSkipsDDL(authorizedSkipsDDL+"\n  ;\n") != canonical {
+			t.Fatal("trailing semicolon with whitespace not stripped")
+		}
+	})
+
+	t.Run("canonical_with_double_semicolons_is_different", func(t *testing.T) {
+		if normalizeSkipsDDL(authorizedSkipsDDL+";;") == canonical {
+			t.Fatal("double semicolons should not normalize to canonical")
+		}
+	})
+
+	t.Run("canonical_with_internal_semicolons_is_different", func(t *testing.T) {
+		ddl := strings.Replace(authorizedSkipsDDL, ")", ";)", 1)
+		if normalizeSkipsDDL(ddl) == canonical {
+			t.Fatal("internal semicolons should not normalize to canonical")
+		}
+	})
+
+	t.Run("semicolon_in_literal_preserved", func(t *testing.T) {
+		ddl := strings.Replace(authorizedSkipsDDL, "'single_delete'", "'single;delete'", 1)
+		n := normalizeSkipsDDL(ddl)
+		if !strings.Contains(n, "'single;delete'") || n == canonical {
+			t.Fatalf("semicolon in literal not preserved: %q", n)
+		}
+	})
+
+	t.Run("semicolon_in_double_quote_preserved", func(t *testing.T) {
+		ddl := `CREATE TABLE t ("col;a" TEXT)`
+		n := normalizeSkipsDDL(ddl)
+		if !strings.Contains(n, "\"col;a\"") {
+			t.Fatalf("semicolon in double-quoted id not preserved: %q", n)
+		}
+	})
+
+	t.Run("semicolon_in_bracket_preserved", func(t *testing.T) {
+		n := normalizeSkipsDDL("CREATE TABLE t ([col;a] TEXT)")
+		if !strings.Contains(n, "[col;a]") {
+			t.Fatalf("semicolon in bracket id not preserved: %q", n)
+		}
+	})
+
+	t.Run("semicolon_in_backtick_preserved", func(t *testing.T) {
+		n := normalizeSkipsDDL("CREATE TABLE t (`col;a` TEXT)")
+		if !strings.Contains(n, "`col;a`") {
+			t.Fatalf("semicolon in backtick id not preserved: %q", n)
+		}
+	})
+
+	t.Run("escaped_single_quote_in_literal", func(t *testing.T) {
+		n := normalizeSkipsDDL("VALUES ('');")
+		if !strings.Contains(n, "''") {
+			t.Fatalf("escaped single quote broken: %q", n)
+		}
+	})
+
+	t.Run("escaped_double_quote_in_identifier", func(t *testing.T) {
+		n := normalizeSkipsDDL("CREATE TABLE t (\"col\"\"name\" TEXT)")
+		if !strings.Contains(n, "\"col\"\"name\"") {
+			t.Fatalf("escaped double quote broken: %q", n)
+		}
+	})
+
+	t.Run("whitespace_inside_literal_preserved", func(t *testing.T) {
+		n := normalizeSkipsDDL("INSERT INTO t VALUES ('a b  c');")
+		if !strings.Contains(n, "'a b  c'") {
+			t.Fatalf("whitespace in literal not preserved: %q", n)
+		}
+	})
+
+	t.Run("empty_input", func(t *testing.T) {
+		if normalizeSkipsDDL("") != "" {
+			t.Fatal("empty input should be empty")
+		}
+	})
+
+	t.Run("only_semicolon", func(t *testing.T) {
+		if normalizeSkipsDDL(";") != "" {
+			t.Fatalf("sole semicolon should produce empty: %q", normalizeSkipsDDL(";"))
+		}
+	})
+
+	t.Run("different_casing_matches", func(t *testing.T) {
+		lower := strings.ToLower(authorizedSkipsDDL)
+		if normalizeSkipsDDL(lower) != canonical {
+			t.Fatal("case-insensitive normalization failed")
+		}
+	})
+
+	t.Run("different_newlines_matches", func(t *testing.T) {
+		withWin := strings.ReplaceAll(authorizedSkipsDDL, "\n", "\r\n")
+		if normalizeSkipsDDL(withWin) != canonical {
+			t.Fatal("\\\\r\\\\n normalization failed")
+		}
+	})
+
+	t.Run("ddl_with_extra_token_is_different", func(t *testing.T) {
+		if normalizeSkipsDDL(authorizedSkipsDDL+"; SELECT 1;") == canonical {
+			t.Fatal("DDL with extra SELECT should not normalize to canonical")
+		}
+	})
+
+	t.Run("comment_before_ddl_is_different", func(t *testing.T) {
+		if normalizeSkipsDDL("/* comment */\n"+authorizedSkipsDDL) == canonical {
+			t.Fatal("DDL with leading comment should not normalize to canonical")
+		}
+	})
+
+	t.Run("unterminated_single_quote", func(t *testing.T) {
+		n := normalizeSkipsDDL("CREATE TABLE t (a TEXT, CHECK (reason IN ('single_delete)))")
+		if n == canonical {
+			t.Fatal("unterminated literal should not normalize to canonical")
+		}
+	})
+
+	t.Run("unterminated_double_quote", func(t *testing.T) {
+		n := normalizeSkipsDDL("CREATE TABLE t (a TEXT)")
+		_ = n
+		n2 := normalizeSkipsDDL("CREATE TABLE t (\"a TEXT)")
+		if n2 == n {
+			t.Fatal("unterminated double-quoted id should differ from valid DDL")
+		}
+	})
+
+	t.Run("unterminated_bracket", func(t *testing.T) {
+		n := normalizeSkipsDDL("CREATE TABLE t ([a TEXT)")
+		if normalizeSkipsDDL("CREATE TABLE t (A TEXT)") == n {
+			t.Fatal("unterminated bracket should differ from valid DDL")
+		}
+	})
+
+	t.Run("unterminated_backtick", func(t *testing.T) {
+		n := normalizeSkipsDDL("CREATE TABLE t (`a TEXT)")
+		if normalizeSkipsDDL("CREATE TABLE t (A TEXT)") == n {
+			t.Fatal("unterminated backtick should differ from valid DDL")
+		}
+	})
+
+	t.Run("literal_SINGLE_DELETE_preserved", func(t *testing.T) {
+		ddl := strings.Replace(authorizedSkipsDDL, "'single_delete'", "'SINGLE_DELETE'", 1)
+		n := normalizeSkipsDDL(ddl)
+		if !strings.Contains(n, "'SINGLE_DELETE'") {
+			t.Fatalf("'SINGLE_DELETE' literal not preserved: %q", n)
+		}
+		if n == canonical {
+			t.Fatal("'SINGLE_DELETE' should differ from 'single_delete'")
+		}
+	})
+
+	t.Run("canonical_with_semicolon_space_semicolon_is_different", func(t *testing.T) {
+		if normalizeSkipsDDL(authorizedSkipsDDL+" ; ;") == canonical {
+			t.Fatal("'DDL ; ;' should not normalize to canonical")
+		}
+	})
 }

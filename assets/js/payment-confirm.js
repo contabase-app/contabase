@@ -37,7 +37,15 @@
             title: document.getElementById('payment-confirm-title'),
             description: document.getElementById('payment-confirm-description'),
             summary: document.getElementById('payment-confirm-summary'),
-            submit: document.getElementById('payment-confirm-submit')
+            submit: document.getElementById('payment-confirm-submit'),
+            accountReadonlyRow: document.getElementById('payment-account-readonly-row'),
+            accountReadonly: document.getElementById('payment-account-readonly'),
+            accountReadonlyEffect: document.getElementById('payment-account-readonly-effect'),
+            accountHint: document.getElementById('payment-account-hint'),
+            accountSelectRow: document.getElementById('payment-account-select-row'),
+            accountSelect: document.getElementById('payment-account-select'),
+            accountSelectEffect: document.getElementById('payment-account-select-effect'),
+            accountLabels: document.querySelectorAll('[data-payment-account-label]')
         };
     }
 
@@ -62,6 +70,55 @@
         form.appendChild(input);
     }
 
+    function configurePaymentAccount(source) {
+        var parts = getModalParts();
+        if (!parts.form) return;
+        var accountID = source ? (source.getAttribute('data-payment-account-id') || '') : '';
+        var accountName = source ? (source.getAttribute('data-payment-account-name') || 'Conta vinculada') : 'Contas dos lançamentos selecionados';
+        var canChange = source && source.getAttribute('data-payment-account-change-allowed') === 'true';
+        var paymentType = source ? (source.getAttribute('data-payment-type') || '') : '';
+
+        parts.form.dataset.paymentAccountID = accountID;
+        parts.form.dataset.paymentAccountName = accountName;
+        parts.form.dataset.paymentAccountChangeAllowed = canChange ? 'true' : 'false';
+        parts.form.dataset.paymentType = paymentType;
+        if (parts.accountReadonly) parts.accountReadonly.textContent = accountName;
+        if (!parts.accountSelect) return;
+
+        parts.accountSelect.innerHTML = '';
+        var options = document.getElementById('payment-account-options');
+        if (options) {
+            Array.prototype.forEach.call(options.options, function (option) {
+                parts.accountSelect.appendChild(option.cloneNode(true));
+            });
+        }
+        parts.accountSelect.value = accountID;
+        if (parts.accountSelect.value !== accountID) canChange = false;
+        parts.form.dataset.paymentAccountChangeAllowed = canChange ? 'true' : 'false';
+    }
+
+    function updatePaymentAccountMode(parts, action) {
+        if (!parts || !parts.form) return;
+        var canChange = parts.form.dataset.paymentAccountChangeAllowed === 'true' && action === 'paid';
+        var isIncome = parts.form.dataset.paymentType === 'INCOME';
+        var accountLabel = isIncome ? 'Conta de recebimento' : 'Conta de pagamento';
+        var accountEffect = isIncome ? 'Será creditado nesta conta.' : 'Será debitado desta conta.';
+        Array.prototype.forEach.call(parts.accountLabels || [], function (label) {
+            label.textContent = accountLabel;
+        });
+        if (parts.accountSelectRow) parts.accountSelectRow.classList.toggle('hidden', !canChange);
+        if (parts.accountReadonlyRow) parts.accountReadonlyRow.classList.toggle('hidden', canChange);
+        if (parts.accountSelect) parts.accountSelect.disabled = !canChange;
+        if (parts.accountSelectEffect) parts.accountSelectEffect.textContent = accountEffect;
+        if (parts.accountReadonlyEffect) {
+            parts.accountReadonlyEffect.textContent = action === 'paid' ? accountEffect : 'A conta vinculada será mantida ao agendar.';
+        }
+        if (parts.accountHint) {
+            parts.accountHint.classList.toggle('hidden', action !== 'paid');
+            parts.accountHint.textContent = 'Para trocar a conta, edite o lançamento antes de pagar.';
+        }
+    }
+
     function updateSummary() {
         var parts = getModalParts();
         if (!parts.summary || !parts.form) return;
@@ -70,6 +127,8 @@
         if (parts.scheduledDateRow) parts.scheduledDateRow.classList.toggle('hidden', action !== 'scheduled');
         if (parts.dateInput) parts.dateInput.required = action === 'paid';
         if (parts.scheduledDateInput) parts.scheduledDateInput.required = action === 'scheduled';
+
+        updatePaymentAccountMode(parts, action);
         if (action === 'scheduled') {
             parts.summary.textContent = 'Continuará pendente e ficará agendado para ' + formatDateLabel(parts.scheduledDateInput && parts.scheduledDateInput.value);
             if (parts.submit) parts.submit.innerHTML = '<i data-lucide="timer" class="h-4 w-4"></i>Agendar pagamento';
@@ -82,7 +141,13 @@
             refreshIcons();
             return;
         }
-        parts.summary.textContent = 'Será marcado como pago em ' + formatDateLabel(parts.dateInput && parts.dateInput.value);
+        if (parts.context && parts.context.value === 'bulk-lancamentos') {
+            parts.summary.textContent = 'Serão marcados como pagos em ' + formatDateLabel(parts.dateInput && parts.dateInput.value) + '.';
+        } else if (parts.form.dataset.paymentType === 'INCOME') {
+            parts.summary.textContent = 'Será recebido em ' + formatDateLabel(parts.dateInput && parts.dateInput.value) + '.';
+        } else {
+            parts.summary.textContent = 'Será pago em ' + formatDateLabel(parts.dateInput && parts.dateInput.value) + '.';
+        }
         if (parts.submit) parts.submit.innerHTML = '<i data-lucide="check" class="h-4 w-4"></i>Pagar agora';
         refreshIcons();
     }
@@ -120,6 +185,10 @@
         var desc = source.getAttribute('data-payment-description') || 'Lançamento';
         var amount = source.getAttribute('data-payment-amount') || '';
         var scheduledAt = source.getAttribute('data-payment-scheduled-at') || '';
+
+        configurePaymentAccount(source);
+        if (parts.submit) parts.submit.disabled = false;
+        parts.form.removeAttribute('aria-busy');
 
         parts.form.setAttribute('hx-post', postURL);
         parts.form.setAttribute('hx-target', target);
@@ -165,6 +234,10 @@
         if (ids.length === 0) return;
 
         clearBulkInputs(parts.form);
+
+        configurePaymentAccount(null);
+        if (parts.submit) parts.submit.disabled = false;
+        parts.form.removeAttribute('aria-busy');
         parts.form.setAttribute('hx-post', options.postURL || '/transacoes/bulk/update');
         parts.form.setAttribute('hx-target', options.target || '#lancamentos-table-body');
         parts.form.setAttribute('hx-swap', options.swap || 'outerHTML');
@@ -223,7 +296,7 @@
     });
 
     document.addEventListener('change', function (event) {
-        if (event.target && (event.target.id === 'payment-confirm-date' || event.target.id === 'payment-scheduled-date' || event.target.hasAttribute('data-payment-mode'))) updateSummary();
+        if (event.target && (event.target.id === 'payment-confirm-date' || event.target.id === 'payment-scheduled-date' || event.target.id === 'payment-account-select' || event.target.hasAttribute('data-payment-mode'))) updateSummary();
     });
 
     document.addEventListener('submit', function (event) {
@@ -251,10 +324,43 @@
         }
     }, true);
 
+    // Paid rows still use the legacy HTMX markup without a form payload. Make
+    // their confirmed undo explicit without changing the row template: both
+    // the status button and the swipe URL receive payment_action=pending.
+    document.body.addEventListener('htmx:configRequest', function (event) {
+        var detail = event.detail || {};
+        var parameters = detail.parameters;
+        if (!parameters || parameters.payment_action) return;
+
+        var path = detail.path || (detail.pathInfo && detail.pathInfo.requestPath) || '';
+        if (!path || path.indexOf('/status-pagamento') === -1) return;
+
+        var sourceRow = detail.elt && detail.elt.closest ? detail.elt.closest('[data-swipe-right-url]') : null;
+        if (!sourceRow) {
+            Array.prototype.some.call(document.querySelectorAll('[data-swipe-right-url]'), function (row) {
+                if (row.getAttribute('data-swipe-right-url') !== path) return false;
+                sourceRow = row;
+                return true;
+            });
+        }
+        if (sourceRow && sourceRow.getAttribute('data-swipe-right-url') === path) {
+            parameters.payment_action = 'pending';
+        }
+    });
+
+    document.body.addEventListener('htmx:beforeRequest', function (event) {
+        var parts = getModalParts();
+        if (!parts.form || event.detail.elt !== parts.form) return;
+        parts.form.setAttribute('aria-busy', 'true');
+        if (parts.submit) parts.submit.disabled = true;
+    });
+
     document.body.addEventListener('htmx:afterRequest', function (event) {
         var parts = getModalParts();
-        if (!parts.form || event.detail.elt !== parts.form || !event.detail.successful) return;
-        window.closePaymentConfirmModal();
+        if (!parts.form || event.detail.elt !== parts.form) return;
+        parts.form.removeAttribute('aria-busy');
+        if (parts.submit) parts.submit.disabled = false;
+        if (event.detail.successful) window.closePaymentConfirmModal();
     });
 
     document.body.addEventListener('closePaymentConfirmModal', function () {

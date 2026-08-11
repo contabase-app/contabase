@@ -87,6 +87,24 @@ func TestContasPayablesIncludesCardInvoices(t *testing.T) {
 		}
 	})
 
+	t.Run("lineage toda revertida nao ressuscita cache legacy", func(t *testing.T) {
+		now := time.Now().Unix()
+		execTestSQL(t, db, `UPDATE invoices SET paid_amount = 30000 WHERE id = 'invoice-zero'`)
+		execTestSQL(t, db, `UPDATE invoice_payments SET reversed_at = ? WHERE id = 'pay-invoice-zero-full'`, now)
+
+		rows, err := queryPendingItemsFiltered(db, "ws-contas-zero", "EXPENSE", false, 8, 2026, "")
+		if err != nil {
+			t.Fatalf("query payables after reversal: %v", err)
+		}
+		row, ok := contasFindByDesc(rows, "Fatura Cartao Zero - 2026-08")
+		if !ok {
+			t.Fatalf("all-reversed invoice missing from pending rows: %#v", rows)
+		}
+		if row.Amount != 30000 {
+			t.Fatalf("all-reversed pending amount = %d, want 30000", row.Amount)
+		}
+	})
+
 	t.Run("fatura fora do mes selecionado nao aparece", func(t *testing.T) {
 		rows, err := queryPendingItemsFiltered(db, "ws-contas", "EXPENSE", false, 9, 2026, "")
 		if err != nil {

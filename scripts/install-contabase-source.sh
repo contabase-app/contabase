@@ -183,20 +183,32 @@ require_commands() {
 }
 
 require_node_version() {
-  local node_version major
-  node_version="$(node --version 2>/dev/null | sed 's/^v//')"
-  if [ -z "$node_version" ]; then
-    log_error "Erro: node nao encontrado. Instale Node.js 20 ou superior."
+  local node_full major
+  node_full="$(node --version 2>/dev/null)"
+  if [ -z "$node_full" ]; then
+    log_error "Erro: node nao encontrado. O toolchain CSS do ContaBase exige Node.js 22 ou 24 LTS."
     exit 1
   fi
 
-  major="${node_version%%.*}"
-  if ! [ "$major" -ge 20 ] 2>/dev/null; then
-    log_error "Erro: Node.js ${node_version} detectado, mas o build do CSS (Tailwind 4) exige Node.js 20 ou superior."
-    log_error "O apt do Debian 12 instala Node 18, que faz o npm pular o binario nativo @tailwindcss/oxide e quebra o build."
-    log_error "Instale Node.js 20+ (ex.: via NodeSource) antes de continuar. Veja docs/instalacao-lxc-vps.md."
+  major="$(echo "$node_full" | sed -E 's/^v([0-9]+).*/\1/')"
+  case "$major" in
+  22|24)
+    ;;
+  *)
+    log_error "Erro: Node.js ${node_full} nao e suportado pelo toolchain CSS do ContaBase."
+    log_error "O toolchain CSS do ContaBase foi validado com Node.js 22 e 24 LTS."
+    log_error ""
+    log_error "Versoes suportadas:"
+    log_error "  Node.js 24 LTS — recomendada"
+    log_error "  Node.js 22 LTS — compativel"
+    log_error ""
+    if [ "$major" -lt 22 ] 2>/dev/null; then
+      log_error "O apt do Debian 12 instala Node 18, que faz o npm pular o binario nativo @tailwindcss/oxide e quebra o build."
+    fi
+    log_error "Instale Node.js 24 LTS antes de continuar. Veja docs/instalacao-lxc-vps.md."
     exit 1
-  fi
+    ;;
+  esac
 }
 
 require_go_version() {
@@ -459,7 +471,7 @@ ensure_env_values() {
 }
 
 run_local_validations() {
-  npm ci
+  npm ci --include=optional
   ./scripts/build-css.sh
   go test ./...
   go build ./...

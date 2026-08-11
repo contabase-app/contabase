@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -31,19 +32,14 @@ func TestRecurringProjectionNonCardRespectsDefaultPaymentStatusPending(t *testin
 		12000,
 		"Recorrencia Pending",
 		"",
-		"",
-		time.Now().UTC().AddDate(0, -1, 0).Unix(),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(time.Now().UTC().AddDate(0, -1, 0).Unix()), "checking-test",
 		"",
 		"cat-expense-rec",
 		1,
 		"pending",
 		true,
 		"MONTHLY",
-		"",
-		0,
-		false,
-		&totalOccurrences,
+		"", OptionalCivilWriteDate{}, &totalOccurrences,
 		"",
 		false,
 	)
@@ -73,19 +69,14 @@ func TestRecurringProjectionNonCardKeepsFuturePendingWhenCurrentIsPaid(t *testin
 		12000,
 		"Recorrencia Paid",
 		"",
-		"",
-		time.Now().UTC().AddDate(0, -1, 0).Unix(),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(time.Now().UTC().AddDate(0, -1, 0).Unix()), "checking-test",
 		"",
 		"cat-expense-rec",
 		1,
 		"paid",
 		true,
 		"MONTHLY",
-		"",
-		0,
-		false,
-		&totalOccurrences,
+		"", OptionalCivilWriteDate{}, &totalOccurrences,
 		"",
 		false,
 	)
@@ -111,19 +102,14 @@ func TestRecurringCreateCreatesSeriesAndPropagatesSeriesID(t *testing.T) {
 		12000,
 		"Recorrencia Fase3 Series",
 		"",
-		"",
-		testUnixDate("2026-07-01"),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-01")), "checking-test",
 		"",
 		"cat-expense-rec",
 		1,
 		"pending",
 		true,
 		"MONTHLY",
-		"",
-		0,
-		false,
-		&totalOccurrences,
+		"", OptionalCivilWriteDate{}, &totalOccurrences,
 		"",
 		false,
 	)
@@ -150,19 +136,14 @@ func TestRecurringCreatePersonalContactNullAndCommonTransactionNoSeries(t *testi
 		10000,
 		"Recorrencia Personal Fase3",
 		"",
-		"",
-		testUnixDate("2026-07-03"),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-03")), "checking-test",
 		"",
 		"cat-expense-rec",
 		1,
 		"pending",
 		true,
 		"MONTHLY",
-		"",
-		0,
-		false,
-		&totalOccurrences,
+		"", OptionalCivilWriteDate{}, &totalOccurrences,
 		"",
 		false,
 	)
@@ -176,19 +157,14 @@ func TestRecurringCreatePersonalContactNullAndCommonTransactionNoSeries(t *testi
 		9000,
 		"Transacao Comum Fase3",
 		"",
-		"",
-		testUnixDate("2026-07-04"),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-04")), "checking-test",
 		"",
 		"cat-expense-rec",
 		1,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"",
 		false,
 	)
@@ -213,25 +189,20 @@ func TestRecurringCreateBusinessPreservesDueDateAndContact(t *testing.T) {
 
 	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
 	totalOccurrences := int64(2)
-	dueDate := testUnixDate("2026-07-20")
+	dueDate := MustCivilWriteDate("2026-07-20").LegacyUnix()
 	_, err := handler.insertTransaction(
 		"EXPENSE",
 		13000,
 		"Recorrencia Business Fase3",
 		"",
-		"",
-		testUnixDate("2026-07-05"),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-05")), "checking-test",
 		"",
 		"cat-expense-rec",
 		1,
 		"pending",
 		true,
 		"MONTHLY",
-		"contact-fase3",
-		dueDate,
-		true,
-		&totalOccurrences,
+		"contact-fase3", MustOptionalCivilWriteDate("2026-07-20"), &totalOccurrences,
 		"",
 		false,
 	)
@@ -268,11 +239,11 @@ func TestRecurringCreateWorkspaceIsolationSeriesID(t *testing.T) {
 
 	totalOccurrences := int64(2)
 	handlerA := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
-	if _, err := handlerA.insertTransaction("EXPENSE", 11000, "Recorrencia Isolada Fase3", "", "", testUnixDate("2026-07-06"), "checking-test", "", "cat-expense-rec", 1, "pending", true, "MONTHLY", "", 0, false, &totalOccurrences, "", false); err != nil {
+	if _, err := handlerA.insertTransaction("EXPENSE", 11000, "Recorrencia Isolada Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-06")), "checking-test", "", "cat-expense-rec", 1, "pending", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, "", false); err != nil {
 		t.Fatalf("insert workspace A recurring: %v", err)
 	}
 	handlerB := TransactionHandler{DB: db, WorkspaceID: "ws-other", UserID: "user-other"}
-	if _, err := handlerB.insertTransaction("EXPENSE", 11000, "Recorrencia Isolada Fase3", "", "", testUnixDate("2026-07-06"), "checking-other", "", "cat-expense-other", 1, "pending", true, "MONTHLY", "", 0, false, &totalOccurrences, "", false); err != nil {
+	if _, err := handlerB.insertTransaction("EXPENSE", 11000, "Recorrencia Isolada Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-06")), "checking-other", "", "cat-expense-other", 1, "pending", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, "", false); err != nil {
 		t.Fatalf("insert workspace B recurring: %v", err)
 	}
 
@@ -294,7 +265,7 @@ func TestRecurringCardCreatePropagatesSeriesIDToMaterializedOccurrences(t *testi
 
 	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
 	totalOccurrences := int64(3)
-	if _, err := handler.insertTransaction("EXPENSE", 14000, "Recorrencia Cartao Fase3", "", "", testUnixDate("2026-07-07"), "card-test", "", "cat-expense-rec", 1, "paid", true, "MONTHLY", "", 0, false, &totalOccurrences, "", false); err != nil {
+	if _, err := handler.insertTransaction("EXPENSE", 14000, "Recorrencia Cartao Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-07")), "card-test", "", "cat-expense-rec", 1, "paid", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, "", false); err != nil {
 		t.Fatalf("insert card recurring: %v", err)
 	}
 
@@ -312,7 +283,7 @@ func TestRecurringCreateSingleEditMarksExceptionAndPreservesSeriesID(t *testing.
 
 	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
 	totalOccurrences := int64(3)
-	if _, err := handler.insertTransaction("EXPENSE", 15000, "Recorrencia Single Nova Fase3", "", "", testUnixDate("2026-07-08"), "checking-test", "", "cat-expense-rec", 1, "pending", true, "MONTHLY", "", 0, false, &totalOccurrences, "", false); err != nil {
+	if _, err := handler.insertTransaction("EXPENSE", 15000, "Recorrencia Single Nova Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-08")), "checking-test", "", "cat-expense-rec", 1, "pending", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, "", false); err != nil {
 		t.Fatalf("insert recurring for single edit: %v", err)
 	}
 	ids := recurringIDsByDescription(t, db, "Recorrencia Single Nova Fase3")
@@ -352,7 +323,7 @@ func TestRecurringCreateFromExistingTransactionCreatesSeriesWithoutDuplicateSequ
 	seedRecurringExpenseCategory(t, db)
 
 	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
-	if _, err := handler.insertTransaction("EXPENSE", 16000, "Transacao Para Fixo Fase3", "", "", testUnixDate("2026-07-09"), "checking-test", "", "cat-expense-rec", 1, "pending", false, "", "", 0, false, nil, "", false); err != nil {
+	if _, err := handler.insertTransaction("EXPENSE", 16000, "Transacao Para Fixo Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-09")), "checking-test", "", "cat-expense-rec", 1, "pending", false, "", "", OptionalCivilWriteDate{}, nil, "", false); err != nil {
 		t.Fatalf("insert common transaction for conversion: %v", err)
 	}
 	ids := recurringIDsByDescription(t, db, "Transacao Para Fixo Fase3")
@@ -585,19 +556,14 @@ func TestRecurringDailyTogglePaymentOnlySelectedOccurrence(t *testing.T) {
 		12000,
 		"Recorrencia Diaria Toggle",
 		"",
-		"",
-		testUnixDate("2026-07-01"),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-01")), "checking-test",
 		"",
 		"cat-expense-rec",
 		1,
 		"pending",
 		true,
 		"DAILY",
-		"",
-		0,
-		false,
-		&totalOccurrences,
+		"", OptionalCivilWriteDate{}, &totalOccurrences,
 		"",
 		false,
 	)
@@ -616,7 +582,9 @@ func TestRecurringDailyTogglePaymentOnlySelectedOccurrence(t *testing.T) {
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
 	}
-	req := httptest.NewRequest(http.MethodPost, "/transacoes/"+ids[0]+"/status-pagamento", nil)
+	req := formPost("/transacoes/"+ids[0]+"/status-pagamento", url.Values{
+		"payment_action": {"paid"},
+	})
 	rr := httptest.NewRecorder()
 	toggleHandler.HandleTogglePagamento(rr, req, ids[0])
 	if rr.Code != http.StatusOK {
@@ -624,7 +592,9 @@ func TestRecurringDailyTogglePaymentOnlySelectedOccurrence(t *testing.T) {
 	}
 	assertRecurringStatusesByDescription(t, db, "Recorrencia Diaria Toggle", []string{"paid", "pending", "pending"})
 
-	req = httptest.NewRequest(http.MethodPost, "/transacoes/"+ids[0]+"/status-pagamento", nil)
+	req = formPost("/transacoes/"+ids[0]+"/status-pagamento", url.Values{
+		"payment_action": {"pending"},
+	})
 	rr = httptest.NewRecorder()
 	toggleHandler.HandleTogglePagamento(rr, req, ids[0])
 	if rr.Code != http.StatusOK {
@@ -650,19 +620,14 @@ func TestInstallmentSeriesUpdateUsesAmountPerInstallment(t *testing.T) {
 		30000,
 		"Serie Parcelada Base",
 		"",
-		"",
-		testUnixDate("2026-07-05"),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-05")), "checking-test",
 		"",
 		"cat-expense-rec",
 		3,
 		"pending",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"",
 		false,
 	)
@@ -742,19 +707,14 @@ func TestInsertTransactionInstallmentsDistributeRemainderToFirstInstallment(t *t
 				2000000,
 				description,
 				"",
-				"",
-				testUnixDate("2026-07-05"),
-				"checking-test",
+				"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-05")), "checking-test",
 				"",
 				tc.categoryID,
 				3,
 				"pending",
 				false,
 				"",
-				"",
-				0,
-				false,
-				nil,
+				"", OptionalCivilWriteDate{}, nil,
 				"",
 				false,
 			)
@@ -815,19 +775,14 @@ func TestRecurringEditBroadScopeRespondsWithListRefreshHeaders(t *testing.T) {
 		10000,
 		"Recorrencia Mensal Refresh",
 		"",
-		"",
-		testUnixDate("2026-07-05"),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-05")), "checking-test",
 		"",
 		"cat-expense-rec",
 		1,
 		"pending",
 		true,
 		"MONTHLY",
-		"",
-		0,
-		false,
-		&totalOccurrences,
+		"", OptionalCivilWriteDate{}, &totalOccurrences,
 		"",
 		false,
 	)
@@ -900,19 +855,14 @@ func TestRecurringEditAllScopeUpdatesAllOccurrenceStatuses(t *testing.T) {
 		10000,
 		"Recorrencia All Status",
 		"",
-		"",
-		testUnixDate("2026-07-05"),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-05")), "checking-test",
 		"",
 		"cat-expense-rec",
 		1,
 		"pending",
 		true,
 		"DAILY",
-		"",
-		0,
-		false,
-		&totalOccurrences,
+		"", OptionalCivilWriteDate{}, &totalOccurrences,
 		"",
 		false,
 	)
@@ -964,19 +914,14 @@ func TestRecurringEditFutureScopeDoesNotChangePastOccurrence(t *testing.T) {
 		10000,
 		"Recorrencia Future Scope",
 		"",
-		"",
-		testUnixDate("2026-07-01"),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-01")), "checking-test",
 		"",
 		"cat-expense-rec",
 		1,
 		"pending",
 		true,
 		"DAILY",
-		"",
-		0,
-		false,
-		&totalOccurrences,
+		"", OptionalCivilWriteDate{}, &totalOccurrences,
 		"",
 		false,
 	)
@@ -987,6 +932,15 @@ func TestRecurringEditFutureScopeDoesNotChangePastOccurrence(t *testing.T) {
 	ids := recurringIDsByDescription(t, db, "Recorrencia Future Scope")
 	if len(ids) != 3 {
 		t.Fatalf("ids = %v, want 3 occurrences", ids)
+	}
+	var sourceRuleID, seriesID string
+	var currentSequence int64
+	if err := db.QueryRow(`
+		SELECT recurring_rule_id, series_id, recurrence_sequence
+		FROM transactions
+		WHERE id = ? AND workspace_id = 'ws-test'
+	`, ids[1]).Scan(&sourceRuleID, &seriesID, &currentSequence); err != nil {
+		t.Fatalf("query source future occurrence: %v", err)
 	}
 	updateHandler := TransactionHandler{
 		DB:          db,
@@ -1018,6 +972,72 @@ func TestRecurringEditFutureScopeDoesNotChangePastOccurrence(t *testing.T) {
 		{ids[1], "Recorrencia Future Scope Atualizada", "paid"},
 		{ids[2], "Recorrencia Future Scope Atualizada", "paid"},
 	})
+
+	var sourceActive int
+	var sourceEnd sql.NullInt64
+	if err := db.QueryRow(`
+		SELECT active, effective_end_sequence
+		FROM recurring_rules
+		WHERE id = ? AND workspace_id = 'ws-test'
+	`, sourceRuleID).Scan(&sourceActive, &sourceEnd); err != nil {
+		t.Fatalf("query closed source rule: %v", err)
+	}
+	if sourceActive != 0 || !sourceEnd.Valid || sourceEnd.Int64 != currentSequence-1 {
+		t.Fatalf("source active=%d end=%v, want inactive ending at %d", sourceActive, sourceEnd, currentSequence-1)
+	}
+
+	var childRuleID, childWorkspaceID string
+	var childParent sql.NullString
+	var childStart int64
+	var childOffset sql.NullInt64
+	var childPolicy sql.NullString
+	if err := db.QueryRow(`
+		SELECT id, workspace_id, parent_rule_id, effective_start_sequence,
+		       due_date_offset_days, due_date_policy
+		FROM recurring_rules
+		WHERE workspace_id = 'ws-test' AND series_id = ? AND active = 1
+	`, seriesID).Scan(&childRuleID, &childWorkspaceID, &childParent, &childStart, &childOffset, &childPolicy); err != nil {
+		t.Fatalf("query active child rule: %v", err)
+	}
+	if childRuleID == sourceRuleID || childWorkspaceID != "ws-test" || !childParent.Valid || childParent.String != sourceRuleID || childStart != currentSequence {
+		t.Fatalf("child id=%q workspace=%q parent=%v start=%d; source=%q current=%d", childRuleID, childWorkspaceID, childParent, childStart, sourceRuleID, currentSequence)
+	}
+	if childOffset.Valid || childPolicy.Valid {
+		t.Fatalf("paid child due metadata offset=%v policy=%v, want NULL/NULL", childOffset, childPolicy)
+	}
+
+	var activeRules, futureRowsWithDue, duplicateSequences int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM recurring_rules WHERE workspace_id = 'ws-test' AND series_id = ? AND active = 1`, seriesID).Scan(&activeRules); err != nil {
+		t.Fatalf("count active child rules: %v", err)
+	}
+	if activeRules != 1 {
+		t.Fatalf("active rules = %d, want 1", activeRules)
+	}
+	if err := db.QueryRow(`
+		SELECT COUNT(*)
+		FROM transactions
+		WHERE workspace_id = 'ws-test' AND series_id = ? AND recurrence_sequence >= ?
+		  AND (due_date IS NOT NULL OR due_date_civil IS NOT NULL)
+	`, seriesID, currentSequence).Scan(&futureRowsWithDue); err != nil {
+		t.Fatalf("count future rows with due date: %v", err)
+	}
+	if futureRowsWithDue != 0 {
+		t.Fatalf("future rows with due date = %d, want 0", futureRowsWithDue)
+	}
+	if err := db.QueryRow(`
+		SELECT COUNT(*) FROM (
+			SELECT recurrence_sequence
+			FROM transactions
+			WHERE workspace_id = 'ws-test' AND series_id = ?
+			GROUP BY recurrence_sequence
+			HAVING COUNT(*) > 1
+		)
+	`, seriesID).Scan(&duplicateSequences); err != nil {
+		t.Fatalf("count duplicate future sequences: %v", err)
+	}
+	if duplicateSequences != 0 {
+		t.Fatalf("duplicate sequences = %d, want 0", duplicateSequences)
+	}
 }
 
 func TestRecurringEditAllScopeDoesNotChangeOtherWorkspace(t *testing.T) {
@@ -1039,19 +1059,14 @@ func TestRecurringEditAllScopeDoesNotChangeOtherWorkspace(t *testing.T) {
 		10000,
 		"Recorrencia Workspace Local",
 		"",
-		"",
-		testUnixDate("2026-07-05"),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-05")), "checking-test",
 		"",
 		"cat-expense-rec",
 		1,
 		"pending",
 		true,
 		"DAILY",
-		"",
-		0,
-		false,
-		&totalOccurrences,
+		"", OptionalCivilWriteDate{}, &totalOccurrences,
 		"",
 		false,
 	)
@@ -1103,19 +1118,14 @@ func TestRecurringEditSingleScopeKeepsRowSwap(t *testing.T) {
 		10000,
 		"Recorrencia Single Scope",
 		"",
-		"",
-		testUnixDate("2026-07-05"),
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-05")), "checking-test",
 		"",
 		"cat-expense-rec",
 		1,
 		"pending",
 		true,
 		"MONTHLY",
-		"",
-		0,
-		false,
-		&totalOccurrences,
+		"", OptionalCivilWriteDate{}, &totalOccurrences,
 		"",
 		false,
 	)

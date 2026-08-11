@@ -340,7 +340,7 @@ func handleLoginSubmit(w http.ResponseWriter, r *http.Request, tpl handlers.Temp
 	}
 	if !exists {
 		writeAuthAuditEvent(db, r, "", "", "LOGIN_FAIL", map[string]string{"email": normalizedEmail, "reason": "unknown_identity"})
-		logSecurityEventAsync(db, r, "", "", "auth.invalid_user", "WARNING", map[string]any{
+		logSecurityEvent(db, r, "", "", "auth.invalid_user", "WARNING", map[string]any{
 			"email_tentado": normalizedEmail,
 			"reason":        "invalid_credentials",
 		})
@@ -356,7 +356,7 @@ func handleLoginSubmit(w http.ResponseWriter, r *http.Request, tpl handlers.Temp
 	}
 	if locked {
 		writeAuthAuditEvent(db, r, loginUserID, "", "LOGIN_FAIL", map[string]string{"email": normalizedEmail, "reason": "lockout"})
-		logSecurityEventAsync(db, r, "", "", "auth.failed", "HIGH", map[string]any{
+		logSecurityEvent(db, r, "", "", "auth.failed", "HIGH", map[string]any{
 			"email_tentado": normalizedEmail,
 			"reason":        "invalid_credentials",
 		})
@@ -372,7 +372,7 @@ func handleLoginSubmit(w http.ResponseWriter, r *http.Request, tpl handlers.Temp
 				reason = "inactive_account"
 			}
 			writeAuthAuditEvent(db, r, loginUserID, "", "LOGIN_FAIL", map[string]string{"email": normalizedEmail, "reason": reason})
-			logSecurityEventAsync(db, r, "", "", "auth.failed", "HIGH", map[string]any{
+			logSecurityEvent(db, r, "", "", "auth.failed", "HIGH", map[string]any{
 				"email_tentado": normalizedEmail,
 				"reason":        "invalid_credentials",
 			})

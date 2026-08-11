@@ -357,6 +357,16 @@ Healthcheck:
 curl http://127.0.0.1:8080/health
 ```
 
+O container já possui `HEALTHCHECK` integrado, que utiliza o endpoint `/health`. O healthcheck verifica se o processo HTTP está respondendo e se o acesso básico ao SQLite está funcionando. O status `healthy` indica que o servidor e o banco estão operacionais, mas não representa uma auditoria completa dos dados financeiros.
+
+Um container marcado como `unhealthy` não é reiniciado automaticamente apenas pelo Docker healthcheck. Para consultar o estado detalhado do healthcheck:
+
+```bash
+docker inspect \
+  --format='{{json .State.Health}}' \
+  contabase
+```
+
 Logs:
 
 ```bash

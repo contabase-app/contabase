@@ -19,7 +19,9 @@ import (
 )
 
 func TestSetupPageRendersCSRFForCreateAndRestoreForms(t *testing.T) {
-	tpl, err := template.ParseFiles("../../templates/pages/setup.html")
+	tpl, err := template.New("setup.html").Funcs(template.FuncMap{
+		"assetPath": func(path string) string { return path },
+	}).ParseFiles("../../templates/pages/setup.html")
 	if err != nil {
 		t.Fatalf("parse setup template: %v", err)
 	}
@@ -195,14 +197,11 @@ func TestBootstrapRestoreRejectsInvalidBackupCandidate(t *testing.T) {
 func TestBootstrapRestoreValidCandidateReopensSuccessfully(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "contabase.db")
-	currentDB := createRestoreTestDB(t, dbPath, "current")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
 	candidatePath := filepath.Join(dir, "candidate.db")
 	createRestoreTestDB(t, candidatePath, "candidate").Close()
 
-	var refreshed *sql.DB
-	result, err := restoreBootstrapBackupFromFile(currentDB, "file:"+dbPath, dbPath, candidatePath, openRestoreTestDB, func(db *sql.DB) {
-		refreshed = db
-	})
+	result, refreshed, err := restoreBootstrapBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBs, startRestoreTestServerRuntime)
 	if err != nil {
 		t.Fatalf("restore bootstrap backup: %v", err)
 	}
@@ -217,23 +216,21 @@ func TestBootstrapRestoreValidCandidateReopensSuccessfully(t *testing.T) {
 func TestBootstrapRestoreLegacyCandidateRunsMigrations(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "contabase.db")
-	currentDB := createRestoreTestDB(t, dbPath, "current")
+	t.Setenv("DATA_DIR", dir)
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
 	candidatePath := filepath.Join(dir, "legacy.db")
 	createLegacyBootstrapRestoreCandidate(t, candidatePath)
 
-	var refreshed *sql.DB
-	_, err := restoreBootstrapBackupFromFile(currentDB, "file:"+dbPath, dbPath, candidatePath, contabaseDB.Open, func(db *sql.DB) {
-		refreshed = db
-	})
+	_, refreshed, err := restoreBootstrapBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, contabaseDB.OpenRuntimeDBs, startRestoreTestServerRuntime)
 	if err != nil {
 		t.Fatalf("restore legacy bootstrap backup: %v", err)
 	}
 	defer refreshed.Close()
-	assertColumnExistsInBootstrapRestore(t, refreshed, "users", "status")
-	assertColumnExistsInBootstrapRestore(t, refreshed, "workspaces", "type")
-	assertColumnExistsInBootstrapRestore(t, refreshed, "accounts", "icon")
-	assertTableExistsInBootstrapRestore(t, refreshed, "schema_migrations")
-	assertLegacyAccountMigratedInRestore(t, refreshed)
+	assertColumnExistsInBootstrapRestore(t, refreshed.DBs.DB, "users", "status")
+	assertColumnExistsInBootstrapRestore(t, refreshed.DBs.DB, "workspaces", "type")
+	assertColumnExistsInBootstrapRestore(t, refreshed.DBs.DB, "accounts", "icon")
+	assertTableExistsInBootstrapRestore(t, refreshed.DBs.DB, "schema_migrations")
+	assertLegacyAccountMigratedInRestore(t, refreshed.DBs.DB)
 }
 
 func TestBootstrapRestoreRejectsMissingMinimumSchema(t *testing.T) {
@@ -257,22 +254,19 @@ func TestBootstrapRestoreRejectsMissingMinimumSchema(t *testing.T) {
 func TestBootstrapRestoreRollsBackWhenReopenFails(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "rollback-contabase.db")
-	currentDB := createRestoreTestDB(t, dbPath, "current")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
 	candidatePath := filepath.Join(dir, "candidate.db")
 	createRestoreTestDB(t, candidatePath, "candidate").Close()
 
 	calls := 0
-	var refreshed *sql.DB
-	openFn := func(dbURL string) (*sql.DB, error) {
+	openFn := func(dbURL string) (*contabaseDB.RuntimeDBs, error) {
 		calls++
 		if calls == 1 {
 			return nil, os.ErrPermission
 		}
-		return openRestoreTestDB(dbURL)
+		return openRestoreTestRuntimeDBs(dbURL)
 	}
-	result, err := restoreBootstrapBackupFromFile(currentDB, "file:"+dbPath, dbPath, candidatePath, openFn, func(db *sql.DB) {
-		refreshed = db
-	})
+	result, refreshed, err := restoreBootstrapBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, openFn, startRestoreTestServerRuntime)
 	if err == nil {
 		t.Fatalf("expected restore failure")
 	}
@@ -289,7 +283,7 @@ func TestBootstrapRestoreRollsBackWhenReopenFails(t *testing.T) {
 func TestBootstrapRestoreRemovesStaleSidecars(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "wal-shm-contabase.db")
-	currentDB := createRestoreTestDB(t, dbPath, "current")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
 	candidatePath := filepath.Join(dir, "candidate.db")
 	createRestoreTestDB(t, candidatePath, "candidate").Close()
 	if err := os.WriteFile(dbPath+"-wal", []byte("stale wal"), 0o600); err != nil {
@@ -299,10 +293,7 @@ func TestBootstrapRestoreRemovesStaleSidecars(t *testing.T) {
 		t.Fatalf("write stale shm: %v", err)
 	}
 
-	var refreshed *sql.DB
-	_, err := restoreBootstrapBackupFromFile(currentDB, "file:"+dbPath, dbPath, candidatePath, openRestoreTestDBNoWAL, func(db *sql.DB) {
-		refreshed = db
-	})
+	_, refreshed, err := restoreBootstrapBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBsNoWAL, startRestoreTestServerRuntime)
 	if err != nil {
 		t.Fatalf("restore bootstrap backup: %v", err)
 	}
@@ -317,17 +308,14 @@ func TestBootstrapRestoreEnsuresWritableDatabasePermissions(t *testing.T) {
 	}
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "permissions-contabase.db")
-	currentDB := createRestoreTestDB(t, dbPath, "current")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
 	candidatePath := filepath.Join(dir, "candidate.db")
 	createRestoreTestDB(t, candidatePath, "candidate").Close()
 	if err := os.Chmod(candidatePath, 0o400); err != nil {
 		t.Fatalf("chmod candidate: %v", err)
 	}
 
-	var refreshed *sql.DB
-	_, err := restoreBootstrapBackupFromFile(currentDB, "file:"+dbPath, dbPath, candidatePath, openRestoreTestDB, func(db *sql.DB) {
-		refreshed = db
-	})
+	_, refreshed, err := restoreBootstrapBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBs, startRestoreTestServerRuntime)
 	if err != nil {
 		t.Fatalf("restore bootstrap backup: %v", err)
 	}

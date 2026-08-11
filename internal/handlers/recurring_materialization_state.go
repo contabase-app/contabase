@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"time"
+
+	"github.com/contabase-app/contabase/internal/civildate"
 )
 
 // recurringMaterializationHorizonMonths é a janela móvel padrão de materialização.
@@ -16,21 +19,22 @@ const recurringMaterializationLockTTL = 10 * time.Minute
 
 // RecurringMaterializationState espelha uma linha de recurring_materialization_state.
 type RecurringMaterializationState struct {
-	WorkspaceID       string
-	MaterializedUntil int64
-	LastAttemptAt     int64
-	LastSuccessAt     int64
-	LastError         sql.NullString
-	Status            string
-	LockedUntil       int64
-	LockOwner         sql.NullString
+	WorkspaceID            string
+	MaterializedUntil      int64
+	MaterializedUntilCivil sql.NullString
+	LastAttemptAt          int64
+	LastSuccessAt          int64
+	LastError              sql.NullString
+	Status                 string
+	LockedUntil            int64
+	LockOwner              sql.NullString
 }
 
-// defaultRecurringHorizon calcula o horizonte padrão: hoje + 15 meses, normalizado
-// para meia-noite UTC.
-func defaultRecurringHorizon(now int64) time.Time {
-	horizonUnix := safeAddMonths(now, recurringMaterializationHorizonMonths)
-	return time.Unix(dateAtMidnightUTC(horizonUnix), 0).UTC()
+// defaultRecurringHorizon calcula o horizonte padrão usando o timezone da aplicação:
+// hoje civil em America/Sao_Paulo + 15 meses civis. Retorna CivilWriteDate com
+// INTEGER em 12:00 UTC.
+func defaultRecurringHorizon(now int64) (CivilWriteDate, error) {
+	return recurrenceCivilHorizon(time.Unix(now, 0).UTC())
 }
 
 // ensureRecurringMaterializationStateRowTx garante que exista uma linha de estado
@@ -67,12 +71,12 @@ func ensureRecurringMaterializationStateRow(db *sql.DB, workspaceID string, now 
 func readRecurringMaterializationStateTx(tx *sql.Tx, workspaceID string) (*RecurringMaterializationState, error) {
 	var s RecurringMaterializationState
 	err := tx.QueryRow(`
-		SELECT workspace_id, materialized_until, last_attempt_at, last_success_at,
+		SELECT workspace_id, materialized_until, materialized_until_civil, last_attempt_at, last_success_at,
 		       last_error, status, locked_until, lock_owner
 		FROM recurring_materialization_state
 		WHERE workspace_id = ?
 	`, workspaceID).Scan(
-		&s.WorkspaceID, &s.MaterializedUntil, &s.LastAttemptAt, &s.LastSuccessAt,
+		&s.WorkspaceID, &s.MaterializedUntil, &s.MaterializedUntilCivil, &s.LastAttemptAt, &s.LastSuccessAt,
 		&s.LastError, &s.Status, &s.LockedUntil, &s.LockOwner,
 	)
 	if err == sql.ErrNoRows {
@@ -84,13 +88,25 @@ func readRecurringMaterializationStateTx(tx *sql.Tx, workspaceID string) (*Recur
 	return &s, nil
 }
 
-// recurringStateIsFresh retorna true quando materialized_until já cobre o horizonte
-// desejado. Estado ausente é sempre stale.
-func recurringStateIsFresh(state *RecurringMaterializationState, horizon time.Time) bool {
+// recurringStateIsFresh retorna true quando materialized_until_civil já cobre o
+// horizonte civil. Compara datas civis, não timestamps. Estado ausente é sempre stale.
+// Civil persistida inválida retorna erro (não trata como stale).
+func recurringStateIsFresh(state *RecurringMaterializationState, horizon CivilWriteDate) (bool, error) {
 	if state == nil {
-		return false
+		return false, nil
 	}
-	return state.MaterializedUntil >= horizon.Unix()
+	var stateCivil string
+	if state.MaterializedUntilCivil.Valid {
+		if _, err := ParseCivilDateInput(state.MaterializedUntilCivil.String); err != nil {
+			return false, fmt.Errorf("materialized_until_civil invalido: %w", err)
+		}
+		stateCivil = state.MaterializedUntilCivil.String
+	} else if state.MaterializedUntil > 0 {
+		stateCivil = civildate.LegacyUnixToCivilDateUTC(state.MaterializedUntil).String()
+	} else {
+		return false, nil
+	}
+	return stateCivil >= horizon.Civil(), nil
 }
 
 // acquireRecurringMaterializationLockTx tenta adquirir o lock de forma atômica via
@@ -118,19 +134,33 @@ func acquireRecurringMaterializationLockTx(tx *sql.Tx, workspaceID, owner string
 }
 
 // releaseRecurringMaterializationLockSuccessTx registra sucesso e libera o lock.
-func releaseRecurringMaterializationLockSuccessTx(tx *sql.Tx, workspaceID, owner string, materializedUntil, now int64) error {
-	_, err := tx.Exec(`
+func releaseRecurringMaterializationLockSuccessTx(tx *sql.Tx, workspaceID, owner string, materializedUntil, now int64, materializedUntilCivil string) error {
+	res, err := tx.Exec(`
 		UPDATE recurring_materialization_state
 		SET status = 'idle',
 		    materialized_until = ?,
+		    materialized_until_civil = ?,
 		    last_success_at = ?,
 		    last_error = NULL,
 		    locked_until = 0,
 		    lock_owner = NULL,
 		    updated_at = ?
 		WHERE workspace_id = ? AND lock_owner = ?
-	`, materializedUntil, now, now, workspaceID, owner)
-	return err
+	`, materializedUntil, materializedUntilCivil, now, now, workspaceID, owner)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("materialization lock lost for workspace %s: lock_owner changed during execution", workspaceID)
+	}
+	if affected > 1 {
+		return fmt.Errorf("materialization state integrity error for workspace %s: %d rows affected", workspaceID, affected)
+	}
+	return nil
 }
 
 // releaseRecurringMaterializationLockErrorTx registra erro e libera o lock, sem panic.
@@ -149,10 +179,10 @@ func releaseRecurringMaterializationLockErrorTx(tx *sql.Tx, workspaceID, owner, 
 
 // recurringMaterializationRunner executa o motor de materialização. É injetável para
 // permitir testes sem depender do motor real.
-type recurringMaterializationRunner func(tx *sql.Tx, workspaceID string, horizon time.Time, now int64) error
+type recurringMaterializationRunner func(tx *sql.Tx, workspaceID string, horizon CivilWriteDate, now int64) error
 
 // defaultRecurringMaterializationRunner delega ao motor central da Fase 7.a.
-func defaultRecurringMaterializationRunner(tx *sql.Tx, workspaceID string, horizon time.Time, now int64) error {
+func defaultRecurringMaterializationRunner(tx *sql.Tx, workspaceID string, horizon CivilWriteDate, now int64) error {
 	return EnsureRecurringMaterializedTx(tx, workspaceID, horizon, now)
 }
 
@@ -192,7 +222,10 @@ func runRecurringMaterializationForWorkspace(ctx context.Context, db *sql.DB, wo
 		return err
 	}
 
-	horizon := defaultRecurringHorizon(now)
+	horizon, err := defaultRecurringHorizon(now)
+	if err != nil {
+		return err
+	}
 	owner := fmt.Sprintf("%s-%d", workspaceID, now)
 
 	// Passo 1-2: garantir estado e checar frescor.
@@ -209,7 +242,12 @@ func runRecurringMaterializationForWorkspace(ctx context.Context, db *sql.DB, wo
 		_ = txCheck.Rollback()
 		return err
 	}
-	if recurringStateIsFresh(state, horizon) {
+	fresh, err := recurringStateIsFresh(state, horizon)
+	if err != nil {
+		_ = txCheck.Rollback()
+		return err
+	}
+	if fresh {
 		return txCheck.Commit()
 	}
 
@@ -244,12 +282,25 @@ func runRecurringMaterializationForWorkspace(ctx context.Context, db *sql.DB, wo
 		return runErr
 	}
 
-	if err := releaseRecurringMaterializationLockSuccessTx(txRun, workspaceID, owner, horizon.Unix(), now); err != nil {
+	if err := releaseRecurringMaterializationLockSuccessTx(txRun, workspaceID, owner, horizon.LegacyUnix(), now, horizon.Civil()); err != nil {
 		_ = txRun.Rollback()
 		_ = releaseLockBestEffort(db, workspaceID, owner, "success update: "+err.Error(), now)
 		return err
 	}
-	return txRun.Commit()
+	if err := txRun.Commit(); err != nil {
+		return err
+	}
+	var frozenCount int
+	if err := db.QueryRow(`
+		SELECT COUNT(1)
+		FROM recurring_occurrence_blocks
+		WHERE workspace_id = ? AND created_at = ?
+	`, workspaceID, now).Scan(&frozenCount); err != nil {
+		log.Printf("recurring materialization: committed frozen block count unavailable: %v", err)
+	} else if frozenCount > 0 {
+		log.Printf("recurring materialization: committed %d frozen invoice occurrence block(s)", frozenCount)
+	}
+	return nil
 }
 
 // releaseLockBestEffort libera o lock em transação própria, registrando erro. Usado

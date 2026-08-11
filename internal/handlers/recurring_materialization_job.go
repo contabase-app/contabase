@@ -76,16 +76,23 @@ func runRecurringMaterializationSweep(ctx context.Context, db *sql.DB, now time.
 // A primeira varredura roda de forma assíncrona logo após o boot (sem bloquear a
 // aplicação) e, em seguida, um ticker dispara varreduras periódicas. Erros são
 // logados e nunca derrubam o processo.
-func StartRecurringMaterializationJob(ctx context.Context, db *sql.DB, interval time.Duration) {
+func StartRecurringMaterializationJob(ctx context.Context, db *sql.DB, interval time.Duration) <-chan struct{} {
+	return startRecurringMaterializationJob(ctx, db, interval, runRecurringMaterializationSweepLogged)
+}
+
+func startRecurringMaterializationJob(ctx context.Context, db *sql.DB, interval time.Duration, run func(context.Context, *sql.DB, time.Time)) <-chan struct{} {
+	done := make(chan struct{})
 	if db == nil {
-		return
+		close(done)
+		return done
 	}
 	if interval <= 0 {
 		interval = 24 * time.Hour
 	}
 	go func() {
+		defer close(done)
 		// Boot assíncrono: primeira varredura após startup, sem bloquear.
-		runRecurringMaterializationSweepLogged(ctx, db, time.Now())
+		run(ctx, db, time.Now())
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -93,10 +100,11 @@ func StartRecurringMaterializationJob(ctx context.Context, db *sql.DB, interval 
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
-				runRecurringMaterializationSweepLogged(ctx, db, now)
+				run(ctx, db, now)
 			}
 		}
 	}()
+	return done
 }
 
 func runRecurringMaterializationSweepLogged(ctx context.Context, db *sql.DB, now time.Time) {
@@ -113,62 +121,89 @@ func runRecurringMaterializationSweepLogged(ctx context.Context, db *sql.DB, now
 // recurringStateIsStaleForWorkspace faz uma leitura barata do estado para decidir se
 // o materializador precisa rodar. Estado ausente é tratado como stale.
 func recurringStateIsStaleForWorkspace(db *sql.DB, workspaceID string, now int64) (bool, error) {
-	var materializedUntil int64
-	err := db.QueryRow(`
-		SELECT materialized_until
-		FROM recurring_materialization_state
-		WHERE workspace_id = ?
-	`, workspaceID).Scan(&materializedUntil)
-	if err == sql.ErrNoRows {
-		return true, nil
-	}
+	tx, err := db.Begin()
 	if err != nil {
 		return false, err
 	}
-	horizon := defaultRecurringHorizon(now)
-	return materializedUntil < horizon.Unix(), nil
+	defer tx.Rollback()
+
+	state, err := readRecurringMaterializationStateTx(tx, workspaceID)
+	if err != nil {
+		return false, err
+	}
+
+	horizon, err := defaultRecurringHorizon(now)
+	if err != nil {
+		return false, err
+	}
+
+	fresh, err := recurringStateIsFresh(state, horizon)
+	if err != nil {
+		return false, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+
+	return !fresh, nil
 }
 
 // recurringMaterializationScheduler coordena o fallback leve por tela, evitando
 // disparar goroutines redundantes para o mesmo workspace em rajada de requests.
-type recurringMaterializationScheduler struct {
+type RecurringMaterializationFallback struct {
 	db       *sql.DB
 	cooldown time.Duration
+	ctx      context.Context
+	cancel   context.CancelFunc
 
 	mu        sync.Mutex
+	closed    bool
+	active    sync.WaitGroup
 	lastFired map[string]int64
 
 	// dispatch é injetável para testes; em produção agenda uma goroutine.
-	dispatch func(workspaceID string, now int64)
+	dispatch func(ctx context.Context, workspaceID string, now int64)
 }
 
-func newRecurringMaterializationScheduler(db *sql.DB) *recurringMaterializationScheduler {
-	s := &recurringMaterializationScheduler{
+type recurringMaterializationScheduler = RecurringMaterializationFallback
+
+func newRecurringMaterializationScheduler(db *sql.DB) *RecurringMaterializationFallback {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &RecurringMaterializationFallback{
 		db:        db,
 		cooldown:  recurringMaterializationFallbackCooldown,
+		ctx:       ctx,
+		cancel:    cancel,
 		lastFired: make(map[string]int64),
 	}
-	s.dispatch = s.dispatchAsync
+	s.dispatch = s.dispatchSync
 	return s
 }
 
-// dispatchAsync roda o materializador em goroutine, sem bloquear o request. Erros
-// são logados; nunca propagam para o handler.
-func (s *recurringMaterializationScheduler) dispatchAsync(workspaceID string, now int64) {
-	db := s.db
-	go func() {
-		if err := RunRecurringMaterializationForWorkspace(context.Background(), db, workspaceID, now); err != nil {
-			log.Printf("recurring materialization fallback: workspace %s failed: %v", workspaceID, err)
-		}
-	}()
+func (s *RecurringMaterializationFallback) dispatchSync(ctx context.Context, workspaceID string, now int64) {
+	if err := RunRecurringMaterializationForWorkspace(ctx, s.db, workspaceID, now); err != nil && ctx.Err() == nil {
+		log.Printf("recurring materialization fallback: workspace %s failed: %v", workspaceID, err)
+	}
 }
 
 // maybeSchedule aplica o cooldown in-memory e decide se dispara o materializador.
 // Retorna true quando o dispatch foi acionado.
-func (s *recurringMaterializationScheduler) maybeSchedule(workspaceID string, now int64) bool {
+func (s *RecurringMaterializationFallback) maybeSchedule(workspaceID string, now int64) bool {
 	if s.db == nil || workspaceID == "" {
 		return false
 	}
+
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return false
+	}
+	s.active.Add(1)
+	ctx := s.ctx
+	dispatch := s.dispatch
+	s.mu.Unlock()
+	defer s.active.Done()
 
 	s.mu.Lock()
 	last, ok := s.lastFired[workspaceID]
@@ -189,9 +224,17 @@ func (s *recurringMaterializationScheduler) maybeSchedule(workspaceID string, no
 
 	s.mu.Lock()
 	s.lastFired[workspaceID] = now
+	if s.closed {
+		s.mu.Unlock()
+		return false
+	}
+	s.active.Add(1)
 	s.mu.Unlock()
 
-	s.dispatch(workspaceID, now)
+	go func() {
+		defer s.active.Done()
+		dispatch(ctx, workspaceID, now)
+	}()
 	return true
 }
 
@@ -199,15 +242,39 @@ func (s *recurringMaterializationScheduler) maybeSchedule(workspaceID string, no
 // de tela. É inicializado por InitRecurringMaterializationFallback no boot.
 var (
 	packageSchedulerMu        sync.RWMutex
-	packageRecurringScheduler *recurringMaterializationScheduler
+	packageRecurringScheduler *RecurringMaterializationFallback
 )
 
 // InitRecurringMaterializationFallback prepara o scheduler global de fallback leve.
 // Deve ser chamada uma vez no boot. Sem essa inicialização, o fallback é no-op.
-func InitRecurringMaterializationFallback(db *sql.DB) {
+func InitRecurringMaterializationFallback(db *sql.DB) *RecurringMaterializationFallback {
+	scheduler := newRecurringMaterializationScheduler(db)
 	packageSchedulerMu.Lock()
-	packageRecurringScheduler = newRecurringMaterializationScheduler(db)
+	packageRecurringScheduler = scheduler
 	packageSchedulerMu.Unlock()
+	return scheduler
+}
+
+// Close removes this fallback generation from the package-level dispatcher,
+// prevents new operations, cancels active materializations and waits until no
+// stale check or dispatch can still use its database.
+func (s *RecurringMaterializationFallback) Close() {
+	if s == nil {
+		return
+	}
+	packageSchedulerMu.Lock()
+	if packageRecurringScheduler == s {
+		packageRecurringScheduler = nil
+	}
+	packageSchedulerMu.Unlock()
+
+	s.mu.Lock()
+	if !s.closed {
+		s.closed = true
+		s.cancel()
+	}
+	s.mu.Unlock()
+	s.active.Wait()
 }
 
 // ScheduleRecurringMaterializationFallback é o gancho leve para telas críticas

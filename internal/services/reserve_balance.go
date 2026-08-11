@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -19,12 +20,21 @@ func CalculateWorkspaceReserveBalance(db *sql.DB, workspaceID string) (Workspace
 	if db == nil {
 		return balance, fmt.Errorf("db obrigatório")
 	}
+	return calculateWorkspaceReserveBalance(context.Background(), db, workspaceID)
+}
+
+type reserveBalanceQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func calculateWorkspaceReserveBalance(ctx context.Context, db reserveBalanceQuerier, workspaceID string) (WorkspaceReserveBalance, error) {
+	var balance WorkspaceReserveBalance
 	workspaceID = strings.TrimSpace(workspaceID)
 	if workspaceID == "" {
 		return balance, fmt.Errorf("workspace obrigatório")
 	}
 
-	if err := db.QueryRow(`
+	if err := db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(current_balance), 0)
 		FROM accounts
 		WHERE workspace_id = ?
@@ -34,7 +44,7 @@ func CalculateWorkspaceReserveBalance(db *sql.DB, workspaceID string) (Workspace
 		return balance, fmt.Errorf("calcular saldo real: %w", err)
 	}
 
-	if err := db.QueryRow(`
+	if err := db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(l.amount), 0)
 		FROM boxes b
 		LEFT JOIN box_virtual_ledger l ON l.box_id = b.id
@@ -43,6 +53,10 @@ func CalculateWorkspaceReserveBalance(db *sql.DB, workspaceID string) (Workspace
 		return balance, fmt.Errorf("calcular saldo reservado: %w", err)
 	}
 
-	balance.FreeBalance = balance.RealBalance - balance.ReservedBalance
+	freeBalance, err := checkedSubtract(balance.RealBalance, balance.ReservedBalance)
+	if err != nil {
+		return balance, fmt.Errorf("calcular saldo disponível: %w", err)
+	}
+	balance.FreeBalance = freeBalance
 	return balance, nil
 }

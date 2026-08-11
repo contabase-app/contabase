@@ -176,3 +176,46 @@ func TestLayoutSetupTokenNoticeDoesNotRenderTokenValue(t *testing.T) {
 		t.Fatalf("setup token value leaked in rendered layout")
 	}
 }
+
+func TestLayoutFooterRendersAppCurrentTime(t *testing.T) {
+	t.Setenv(bootstrapSetupTokenEnv, testBootstrapSetupToken)
+	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
+	t.Setenv("TZ", "UTC")
+
+	tpl := template.New("layout-test").Funcs(buildFuncMap())
+	for _, p := range []string{
+		"../../templates/layout.html",
+		"../../templates/pages/*.html",
+		"../../templates/components/*.html",
+	} {
+		template.Must(tpl.ParseGlob(p))
+	}
+
+	var out bytes.Buffer
+	if err := tpl.ExecuteTemplate(&out, "layout-start", nil); err != nil {
+		t.Fatalf("execute layout-start with nil: %v", err)
+	}
+	if err := tpl.ExecuteTemplate(&out, "layout-end", nil); err != nil {
+		t.Fatalf("execute layout-end with nil: %v", err)
+	}
+	body := out.String()
+
+	if !strings.Contains(body, "Sistema:") {
+		t.Fatalf("expected Sistema indicator in footer")
+	}
+	if !strings.Contains(body, "America/Sao_Paulo") {
+		t.Fatalf("expected timezone America/Sao_Paulo in footer")
+	}
+	if !strings.Contains(body, "·") {
+		t.Fatalf("expected timezone separator in footer")
+	}
+	if !strings.Contains(body, "Versão") {
+		t.Fatalf("expected versão label preserved")
+	}
+	if strings.Contains(body, "setInterval") {
+		t.Fatalf("unexpected JavaScript timer in footer")
+	}
+	if !strings.Contains(body, "Data e hora reconhecidas pelo ContaBase na timezone configurada.") {
+		t.Fatalf("expected tooltip text in footer")
+	}
+}

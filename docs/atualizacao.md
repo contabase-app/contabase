@@ -284,6 +284,26 @@ Esse processo é **aditivo e seguro**: não altera saldos, não altera faturas e
 
 Como em qualquer atualização, faça backup antes.
 
+## Beta.8 — migrations de datas, reservas, faturas e recorrências
+
+Quando a `v0.1.0-beta.8` estiver publicada, a atualização de uma instalação na
+beta.7 aplicará as migrations `52` a `59`:
+
+- colunas de data civil e proteção da cadeia de versões das recorrências;
+- exclusões unitárias persistentes e proteção contra resultados recorrentes contraditórios;
+- identidade de aportes automáticos, ciclo de vida de contribuições e referências mensais de planejamento de reservas;
+- identidade e proveniência de reversões de pagamento de fatura.
+
+O upgrade preserva os dados existentes, mas pode interromper com diagnóstico se
+encontrar uma cadeia recorrente, uma ocorrência terminal ou uma identidade de
+pagamento em conflito. Não force a atualização: resolva o conflito informado e
+tente novamente. Faça backup WAL-consistente antes de atualizar e, se precisar
+voltar os dados ao estado anterior, use o restore explícito do pacote pré-update.
+
+Depois de registrar uma exclusão unitária de recorrência, não faça downgrade
+para um binário que não reconheça esse registro persistente: ele pode recriar a
+ocorrência removida intencionalmente.
+
 ## Leia também
 
 - [Instalação rápida](instalacao.md)

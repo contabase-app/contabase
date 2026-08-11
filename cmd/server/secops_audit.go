@@ -32,6 +32,12 @@ const (
 type securityAuditService struct {
 	dbProvider func() *sql.DB
 	notifier   *smtpNotifier
+	testHooks  *securityAuditTestHooks
+}
+
+type securityAuditTestHooks struct {
+	beforeRecord func()
+	afterRecord  func()
 }
 
 type securityEvent struct {
@@ -68,7 +74,7 @@ func newSecurityAuditService(dbProvider func() *sql.DB) *securityAuditService {
 	}
 }
 
-func logSecurityEventAsync(db *sql.DB, r *http.Request, workspaceID, userID, eventType, severity string, metadata map[string]any) {
+func logSecurityEvent(db *sql.DB, r *http.Request, workspaceID, userID, eventType, severity string, metadata map[string]any) {
 	if db == nil || r == nil {
 		return
 	}
@@ -88,20 +94,18 @@ func logSecurityEventAsync(db *sql.DB, r *http.Request, workspaceID, userID, eve
 	for key, value := range metadata {
 		payload[key] = value
 	}
-	go func() {
-		metaRaw, err := json.Marshal(payload)
-		if err != nil {
-			slog.Error("security async log marshal failed", "event_type", eventType, "error", err)
-			return
-		}
-		if _, err := db.Exec(`
+	metaRaw, err := json.Marshal(payload)
+	if err != nil {
+		slog.Error("security log marshal failed", "event_type", eventType, "error", err)
+		return
+	}
+	if _, err := db.Exec(`
 			INSERT INTO security_logs (
 				id, workspace_id, user_id, event_type, severity, ip_address, user_agent, metadata, created_at
 			) VALUES (?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, unixepoch())
-		`, uuid.NewString(), strings.TrimSpace(workspaceID), strings.TrimSpace(userID), eventType, severity, clientIP(r), strings.TrimSpace(r.UserAgent()), string(metaRaw)); err != nil {
-			slog.Error("security async log insert failed", "event_type", eventType, "error", err)
-		}
-	}()
+	`, uuid.NewString(), strings.TrimSpace(workspaceID), strings.TrimSpace(userID), eventType, severity, clientIP(r), strings.TrimSpace(r.UserAgent()), string(metaRaw)); err != nil {
+		slog.Error("security log insert failed", "event_type", eventType, "error", err)
+	}
 }
 
 func (s *securityAuditService) Middleware(next http.Handler) http.Handler {
@@ -112,6 +116,9 @@ func (s *securityAuditService) Middleware(next http.Handler) http.Handler {
 		status := recorder.status()
 		event, ok := classifySecurityEvent(r, status, recorder.secOpsHeaders())
 		if !ok {
+			return
+		}
+		if !runtimeLeaseHeld(r.Context()) {
 			return
 		}
 
@@ -125,6 +132,12 @@ func (s *securityAuditService) Middleware(next http.Handler) http.Handler {
 }
 
 func (s *securityAuditService) recordEvent(r *http.Request, responseHeaders http.Header, workspaceID, userID string, httpStatus int, event securityEvent) error {
+	if s.testHooks != nil && s.testHooks.beforeRecord != nil {
+		s.testHooks.beforeRecord()
+	}
+	if s.testHooks != nil && s.testHooks.afterRecord != nil {
+		defer s.testHooks.afterRecord()
+	}
 	db := s.dbProvider()
 	if db == nil {
 		return fmt.Errorf("nil database")

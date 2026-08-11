@@ -9,6 +9,9 @@
 
 <main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative" data-page-title="Lançamentos">
     <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
+    <select id="payment-account-options" class="hidden" aria-hidden="true" tabindex="-1">
+        {{range .PaymentAccounts}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+    </select>
 
     <!-- Seletor de Meses -->
     {{template "seletor_meses" .}}
@@ -394,6 +397,9 @@
     data-payment-description="{{.Description}}"
     data-payment-amount="{{.AmountDisplay}}"
     data-payment-type="{{.Type}}"
+    data-payment-account-id="{{.PaymentAccountID}}"
+    data-payment-account-name="{{.AccountName}}"
+    data-payment-account-change-allowed="{{if .PaymentAccountChangeAllowed}}true{{else}}false{{end}}"
     {{- if .ScheduledPaymentAtDisplay}} data-payment-scheduled-at="{{.ScheduledPaymentAtDisplay}}"{{end}}
     {{- if .IsSeries}} data-is-series="true"{{end}}
     data-swipe-row="true"
@@ -449,9 +455,9 @@
                 {{end}}
             </span>
         </button>
-        <div class="flex flex-col items-end shrink-0 gap-0.5 min-w-0">
-            <p class="text-sm font-bold {{if eq .Type "INCOME"}}text-emerald-600 dark:text-emerald-400{{else if eq .Type "EXPENSE"}}text-red-600 dark:text-red-400{{else}}text-sky-600 dark:text-sky-400{{end}}" data-sensitive>{{.AmountDisplay}}</p>
-            <span class="cb-text-micro text-[var(--cb-text-muted)]">{{.DateLabel}}</span>
+        <div class="flex flex-col items-end shrink-0 gap-0.5 min-w-[110px]">
+            <p class="text-sm font-bold whitespace-nowrap {{if eq .Type "INCOME"}}text-emerald-600 dark:text-emerald-400{{else if eq .Type "EXPENSE"}}text-red-600 dark:text-red-400{{else}}text-sky-600 dark:text-sky-400{{end}}" data-sensitive>{{.AmountDisplay}}</p>
+            <span class="cb-text-micro text-[var(--cb-text-muted)] whitespace-nowrap">{{.DateLabel}}</span>
         </div>
         <span class="tx-desktop-actions">
             <button type="button" data-ignore-select class="tx-action-btn" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Editar">

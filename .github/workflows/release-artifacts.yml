@@ -1,26 +1,15 @@
 name: Release Artifacts
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Public version to package (for example: v0.1.0-beta.1)"
-        required: true
-        type: string
-      publish_image:
-        description: "Publish the multi-arch image to GHCR"
-        required: true
-        default: false
-        type: boolean
   push:
     tags:
-      - "v*"
+      - "v*-beta.*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release-artifacts-${{ github.ref }}
+  group: release-artifacts-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -30,36 +19,37 @@ jobs:
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
       publish_image: ${{ steps.version.outputs.publish_image }}
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Resolve and validate public version
         id: version
         env:
           EVENT_NAME: ${{ github.event_name }}
-          DISPATCH_VERSION: ${{ inputs.version }}
-          DISPATCH_PUBLISH_IMAGE: ${{ inputs.publish_image }}
+          REF_TYPE: ${{ github.ref_type }}
+          GIT_REF: ${{ github.ref }}
           REF_NAME: ${{ github.ref_name }}
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          if [[ "$EVENT_NAME" == "push" ]]; then
-            version="$REF_NAME"
-            publish_image="true"
-          else
-            version="$DISPATCH_VERSION"
-            publish_image="${DISPATCH_PUBLISH_IMAGE:-false}"
-          fi
-
-          if [[ "$version" == *-internal* ]]; then
-            echo "Internal versions cannot produce public release artifacts." >&2
+          if [[ "$EVENT_NAME" != "push" || "$REF_TYPE" != "tag" ]]; then
+            echo "Release artifacts run only for tag pushes." >&2
             exit 1
           fi
-          if [[ ! "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
-            echo "Invalid public SemVer tag: $version" >&2
+          version="$REF_NAME"
+          if [[ "$GIT_REF" != "refs/tags/$version" ]]; then
+            echo "Workflow ref does not match the release tag." >&2
+            exit 1
+          fi
+          if [[ ! "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-beta\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Invalid public Beta SemVer tag: $version" >&2
             exit 1
           fi
 
@@ -68,13 +58,22 @@ jobs:
             echo "VERSION mismatch: snapshot=$snapshot_version requested=$version" >&2
             exit 1
           fi
-          if [[ "$publish_image" == "true" && ! "$version" =~ -beta\.[0-9]+($|\+) ]]; then
-            echo "This workflow only publishes the mutable beta channel for Beta versions." >&2
+          if ! tag_commit="$(git rev-parse --verify -q "refs/tags/$version^{commit}")"; then
+            echo "Release tag is unavailable in this checkout." >&2
+            exit 1
+          fi
+          if ! workflow_commit="$(git rev-parse --verify -q "$WORKFLOW_SHA^{commit}")"; then
+            echo "Workflow commit is unavailable in this checkout." >&2
+            exit 1
+          fi
+          if [[ "$tag_commit" != "$workflow_commit" ]]; then
+            echo "Release tag does not point to the workflow commit." >&2
             exit 1
           fi
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "publish_image=$publish_image" >> "$GITHUB_OUTPUT"
+          echo "commit=$tag_commit" >> "$GITHUB_OUTPUT"
+          echo "publish_image=true" >> "$GITHUB_OUTPUT"
 
   artifacts:
     name: Build and validate Linux release artifacts
@@ -87,6 +86,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go from go.mod
         uses: actions/setup-go@v5
@@ -97,11 +98,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: npm ci --include=optional
 
       - name: Build CSS
         run: ./scripts/build-css.sh
@@ -244,17 +245,56 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Preflight release state
+        id: release-state
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          RELEASE_EVENT_NAME: ${{ github.event_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+          RELEASE_REF: ${{ github.ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          set +e
+          state_json="$(.github/scripts/release-state.sh "$RELEASE_VERSION" "${{ needs.prepare.outputs.commit }}" release-dist)"
+          state_result=$?
+          set -e
+          if [[ "$state_result" -ne 0 ]]; then
+            state="$(printf '%s\n' "$state_json" | jq -r '.state // "unknown"' 2>/dev/null || printf '%s' unknown)"
+            reason="$(printf '%s\n' "$state_json" | jq -r '.reason // "release preflight failed"' 2>/dev/null || printf '%s' 'release preflight failed')"
+            echo "Release preflight blocked: $state ($reason)" >&2
+            exit 1
+          fi
+          state="$(printf '%s\n' "$state_json" | jq -er '.state')"
+          upload_count="$(printf '%s\n' "$state_json" | jq -er '.upload | length')"
+          {
+            echo "state=$state"
+            echo "upload_count=$upload_count"
+            echo 'upload_files<<EOF'
+            printf '%s\n' "$state_json" | jq -r '.upload[] | "release-dist/" + .'
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+          echo "Release state: $state; assets pending: $upload_count"
+          case "$state" in
+            missing|draft-compatible)
+              echo "Proceeding with release asset attachment."
+              ;;
+            *)
+              echo "Incompatible release state: $state"
+              exit 1
+              ;;
+          esac
+
       - name: Attach assets to GitHub Release
-        if: github.event_name == 'push'
+        if: (steps.release-state.outputs.state == 'missing' || steps.release-state.outputs.state == 'draft-compatible') && steps.release-state.outputs.upload_count != '0'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.version }}
-          prerelease: ${{ contains(needs.prepare.outputs.version, '-beta') }}
-          draft: false
-          files: |
-            release-dist/contabase-linux-amd64.tar.gz
-            release-dist/contabase-linux-arm64.tar.gz
-            release-dist/checksums.txt
+          target_commitish: ${{ needs.prepare.outputs.commit }}
+          prerelease: true
+          draft: true
+          fail_on_unmatched_files: true
+          files: ${{ steps.release-state.outputs.upload_files }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

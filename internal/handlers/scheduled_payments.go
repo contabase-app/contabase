@@ -17,28 +17,36 @@ import (
 const scheduledPaymentNotificationType = "transaction.scheduled_payment.executed"
 
 type scheduledPaymentDueRow struct {
-	ID          string
-	WorkspaceID string
-	UserID      string
-	CreatedBy   sql.NullString
-	Type        string
-	Amount      int64
-	AccountID   string
-	AccountType string
-	Description string
-	ScheduledAt int64
-	PaidAt      sql.NullInt64
+	ID                 string
+	WorkspaceID        string
+	UserID             string
+	CreatedBy          sql.NullString
+	Type               string
+	Amount             int64
+	AccountID          string
+	AccountType        string
+	Description        string
+	ScheduledAt        int64
+	ScheduledDateCivil sql.NullString
+	PaidAt             sql.NullInt64
 }
 
-func StartScheduledPaymentExecutor(ctx context.Context, db *sql.DB, interval time.Duration) {
+func StartScheduledPaymentExecutor(ctx context.Context, db *sql.DB, interval time.Duration) <-chan struct{} {
+	return startScheduledPaymentExecutor(ctx, db, interval, runScheduledPaymentExecutor)
+}
+
+func startScheduledPaymentExecutor(ctx context.Context, db *sql.DB, interval time.Duration, run func(context.Context, *sql.DB, time.Time)) <-chan struct{} {
+	done := make(chan struct{})
 	if db == nil {
-		return
+		close(done)
+		return done
 	}
 	if interval <= 0 {
 		interval = 5 * time.Minute
 	}
 	go func() {
-		runScheduledPaymentExecutor(ctx, db, time.Now())
+		defer close(done)
+		run(ctx, db, time.Now())
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -46,10 +54,11 @@ func StartScheduledPaymentExecutor(ctx context.Context, db *sql.DB, interval tim
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
-				runScheduledPaymentExecutor(ctx, db, now)
+				run(ctx, db, now)
 			}
 		}
 	}()
+	return done
 }
 
 func runScheduledPaymentExecutor(ctx context.Context, db *sql.DB, now time.Time) {
@@ -88,7 +97,7 @@ func queryDueScheduledPayments(ctx context.Context, db *sql.DB, now time.Time) (
 	tomorrowStart := appNextDayStartUnix(now)
 	rows, err := db.QueryContext(ctx, `
 		SELECT t.id, t.workspace_id, t.user_id, t.scheduled_payment_created_by, t.type, t.amount,
-		       t.account_id, a.type, t.description, t.scheduled_payment_at, t.paid_at
+		       t.account_id, a.type, t.description, t.scheduled_payment_at, t.scheduled_payment_date_civil, t.paid_at
 		FROM transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		WHERE t.status = 'pending'
@@ -99,6 +108,12 @@ func queryDueScheduledPayments(ctx context.Context, db *sql.DB, now time.Time) (
 		  AND t.destination_account_id IS NULL
 		  AND t.invoice_id IS NULL
 		  AND a.type != ?
+		  AND NOT EXISTS (
+		      SELECT 1
+		      FROM invoice_payments ip
+		      WHERE (ip.transaction_id = t.id OR ip.reversal_transaction_id = t.id)
+		        AND ip.workspace_id = t.workspace_id
+		  )
 		ORDER BY t.scheduled_payment_at ASC, t.created_at ASC
 	`, tomorrowStart, models.TransactionTypeIncome, models.TransactionTypeExpense, models.AccountTypeCreditCard)
 	if err != nil {
@@ -120,6 +135,7 @@ func queryDueScheduledPayments(ctx context.Context, db *sql.DB, now time.Time) (
 			&row.AccountType,
 			&row.Description,
 			&row.ScheduledAt,
+			&row.ScheduledDateCivil,
 			&row.PaidAt,
 		); err != nil {
 			return nil, err
@@ -146,10 +162,44 @@ func executeScheduledPayment(ctx context.Context, db *sql.DB, row scheduledPayme
 
 	nowUnix := now.Unix()
 	tomorrowStart := appNextDayStartUnix(now)
+
+	// Resolve paid_at and paid_date_civil for the payment.
+	var paidAt int64
+	var paidDateCivil string
+	if row.ScheduledDateCivil.Valid && row.ScheduledDateCivil.String != "" {
+		// New schedule: civil date is the source.
+		cd, cerr := ParseCivilDateInput(row.ScheduledDateCivil.String)
+		if cerr != nil {
+			return false, fmt.Errorf("scheduled payment %s has invalid civil date %q: %w", row.ID, row.ScheduledDateCivil.String, cerr)
+		}
+		paidDateCivil = FormatCivilDate(cd)
+		paidAt = CivilDateToLegacyUnixNoonUTC(cd)
+	} else if row.ScheduledAt > 0 {
+		// Legacy schedule: convert INTEGER using app timezone to get
+		// the civil date it represents, then derive the canonical
+		// paid_at via CivilDateToLegacyUnixNoonUTC.
+		loc := appTimeLocation()
+		instant := time.Unix(row.ScheduledAt, 0).In(loc)
+		dateStr := fmt.Sprintf("%04d-%02d-%02d", instant.Year(), instant.Month(), instant.Day())
+		cd, cerr := ParseCivilDateInput(dateStr)
+		if cerr != nil {
+			return false, fmt.Errorf("scheduled payment %s legacy timestamp %d cannot be resolved: %w", row.ID, row.ScheduledAt, cerr)
+		}
+		paidDateCivil = FormatCivilDate(cd)
+		paidAt = CivilDateToLegacyUnixNoonUTC(cd)
+	} else {
+		return false, fmt.Errorf("scheduled payment %s has no schedule date", row.ID)
+	}
+
+	// The UPDATE marks the transaction as paid and records execution.
+	// Schedule columns (scheduled_payment_at, scheduled_payment_date_civil)
+	// are NOT cleared here — only scheduled_payment_executed_at marks
+	// execution. Explicit clear_schedule remains the action that clears them.
 	res, err := tx.ExecContext(ctx, `
 		UPDATE transactions
 		SET status = 'paid',
-		    paid_at = scheduled_payment_at,
+		    paid_at = ?,
+		    paid_date_civil = ?,
 		    scheduled_payment_executed_at = ?,
 		    updated_at = ?
 		WHERE id = ?
@@ -161,7 +211,13 @@ func executeScheduledPayment(ctx context.Context, db *sql.DB, row scheduledPayme
 		  AND invoice_id IS NULL
 		  AND destination_account_id IS NULL
 		  AND type IN (?, ?)
-	`, nowUnix, nowUnix, row.ID, row.WorkspaceID, row.ScheduledAt, tomorrowStart, models.TransactionTypeIncome, models.TransactionTypeExpense)
+		  AND NOT EXISTS (
+		      SELECT 1
+		      FROM invoice_payments ip
+		      WHERE (ip.transaction_id = transactions.id OR ip.reversal_transaction_id = transactions.id)
+		        AND ip.workspace_id = transactions.workspace_id
+		  )
+	`, paidAt, paidDateCivil, nowUnix, nowUnix, row.ID, row.WorkspaceID, row.ScheduledAt, tomorrowStart, models.TransactionTypeIncome, models.TransactionTypeExpense)
 	if err != nil {
 		return false, err
 	}
@@ -188,7 +244,7 @@ func executeScheduledPayment(ctx context.Context, db *sql.DB, row scheduledPayme
 	if row.CreatedBy.Valid && strings.TrimSpace(row.CreatedBy.String) != "" {
 		actorID = strings.TrimSpace(row.CreatedBy.String)
 	}
-	if err := insertAutomaticPaymentHistoryTx(tx, row, actorID, nowUnix); err != nil {
+	if err := insertAutomaticPaymentHistoryTx(tx, row, actorID, paidAt, nowUnix); err != nil {
 		return false, err
 	}
 	if err := insertScheduledPaymentNotificationTx(tx, row, actorID, nowUnix); err != nil {
@@ -201,7 +257,7 @@ func executeScheduledPayment(ctx context.Context, db *sql.DB, row scheduledPayme
 	return true, nil
 }
 
-func insertAutomaticPaymentHistoryTx(tx *sql.Tx, row scheduledPaymentDueRow, actorID string, now int64) error {
+func insertAutomaticPaymentHistoryTx(tx *sql.Tx, row scheduledPaymentDueRow, actorID string, newPaidAt int64, now int64) error {
 	var previousPaidAt interface{}
 	if row.PaidAt.Valid {
 		previousPaidAt = row.PaidAt.Int64
@@ -212,7 +268,7 @@ func insertAutomaticPaymentHistoryTx(tx *sql.Tx, row scheduledPaymentDueRow, act
 			previous_paid_at, new_paid_at, source, created_at
 		)
 		VALUES (?, ?, ?, ?, 'pending', 'paid', ?, ?, 'automatic', ?)
-	`, uuid.NewString(), row.ID, row.WorkspaceID, actorID, previousPaidAt, row.ScheduledAt, now)
+	`, uuid.NewString(), row.ID, row.WorkspaceID, actorID, previousPaidAt, newPaidAt, now)
 	return err
 }
 

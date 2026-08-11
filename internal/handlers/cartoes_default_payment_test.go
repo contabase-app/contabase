@@ -305,6 +305,7 @@ func TestPaymentTotalStillWorksWithDefaultPaymentAccount(t *testing.T) {
 
 	handler := FaturasHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   templates,
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
@@ -347,6 +348,7 @@ func TestPaymentPartialStillWorksWithDefaultPaymentAccount(t *testing.T) {
 
 	handler := FaturasHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   templates,
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",

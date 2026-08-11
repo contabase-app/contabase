@@ -15,7 +15,6 @@ set -euo pipefail
 # Flags:
 #   --yes              Não perguntar confirmação.
 #   --force-reset      Modo agressivo: git reset --hard + git clean (preserva .env, banco e local).
-#   --no-backup        Pular o backup do banco.
 #   --compose ARQUIVO  Usar compose específico em vez da busca automática.
 #   --skip-pull        Recompilar sem atualizar Git (útil para testes locais).
 #   --help             Mostrar esta ajuda.
@@ -29,7 +28,6 @@ set -euo pipefail
 
 YIELD=false
 FORCE_RESET=false
-NO_BACKUP=false
 DRY_RUN=false
 COMPOSE_FILE=""
 SKIP_PULL=false
@@ -40,10 +38,18 @@ PREVIOUS_ROLLBACK_TAG=""
 PREVIOUS_VERSION=""
 APP_VERSION=""
 BACKUP_PATH=""
+BACKUP_ID=""
+CANONICAL_BACKUP_HELPER=""
+CANONICAL_BACKUP_HELPER_TMP=""
+TARGET_REF=""
+TARGET_VERSION=""
+STATE_PRESENT=false
+NEW_RUNTIME_STARTED=false
 HEALTH_URL=""
 ENV_BACKUP_PATH=""
 STATE_FILE="/etc/contabase/install-state.env"
 INSTALL_CHANNEL="${CONTABASE_CHANNEL:-}"
+REPO_ROOT="$(pwd -P)"
 
 # Accept CONTABASE_ASSUME_YES=1 as headless mode (same as --yes)
 [ "${CONTABASE_ASSUME_YES:-0}" = "1" ] && YIELD=true
@@ -57,7 +63,10 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --yes|-y) YIELD=true; shift ;;
     --force-reset) FORCE_RESET=true; shift ;;
-    --no-backup) NO_BACKUP=true; shift ;;
+    --no-backup)
+      echo "Erro: --no-backup foi removido; todo update com estado persistente exige backup canonico."
+      exit 1
+      ;;
     --skip-pull) SKIP_PULL=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
     --help|-h) show_help ;;
@@ -85,6 +94,13 @@ read_version_file() {
 
   tr -d '[:space:]' < VERSION
 }
+
+cleanup_update_tmp() {
+  if [ -n "$CANONICAL_BACKUP_HELPER_TMP" ] && [ -f "$CANONICAL_BACKUP_HELPER_TMP" ]; then
+    rm -f "$CANONICAL_BACKUP_HELPER_TMP"
+  fi
+}
+trap cleanup_update_tmp EXIT
 
 infer_install_channel() {
   local version="$1"
@@ -269,51 +285,123 @@ capture_previous_runtime() {
   fi
 }
 
-create_stopped_backup() {
-  local timestamp backup_root fallback_dir
-  timestamp="$(date +%Y%m%d-%H%M%S)"
-  backup_root="data/backups/pre-update-${timestamp}"
+validate_persistent_state() {
+  local data_dir="$REPO_ROOT/data"
+  local db="$REPO_ROOT/data/contabase.db"
+  local uploads="$REPO_ROOT/data/uploads"
 
-  if [ ! -f "data/contabase.db" ]; then
-    echo "Aviso: banco data/contabase.db nao encontrado; backup de dados foi pulado."
+  STATE_PRESENT=false
+  if [ -e "$data_dir" ] || [ -L "$data_dir" ]; then
+    [ -d "$data_dir" ] && [ ! -L "$data_dir" ] && [ -r "$data_dir" ] && [ -x "$data_dir" ] || {
+      echo "Erro: diretorio de dados invalido, ambiguo ou inacessivel: $data_dir"
+      return 1
+    }
+    if ! find "$data_dir" -mindepth 1 -maxdepth 1 -print -quit >/dev/null; then
+      echo "Erro: nao foi possivel enumerar com seguranca o diretorio de dados: $data_dir"
+      return 1
+    fi
+  fi
+
+  if [ -e "$db" ] || [ -L "$db" ]; then
+    [ -f "$db" ] && [ ! -L "$db" ] && [ -r "$db" ] || {
+      echo "Erro: banco existente e invalido, ambiguo ou ilegivel: $db"
+      return 1
+    }
+    STATE_PRESENT=true
+  elif [ -e "$uploads" ] || [ -L "$uploads" ]; then
+    echo "Erro: uploads existem sem o banco esperado; estado persistente inconsistente: $uploads"
+    return 1
+  else
+    echo "Nenhum estado persistente encontrado; update pode continuar sem pacote de backup."
     return 0
   fi
 
-  mkdir -p "$backup_root"
-
-  if command -v sqlite3 >/dev/null 2>&1; then
-    echo "Criando backup WAL-safe com sqlite3 .backup e stack parada..."
-    DATA_DIR=data \
-      DB_FILE=data/contabase.db \
-      UPLOADS_DIR=data/uploads \
-      ./scripts/ops/backup.sh "$backup_root"
-    BACKUP_PATH="$(find "$backup_root" -mindepth 1 -maxdepth 1 -type d -name 'contabase-backup-*' | sort | tail -n1)"
-  else
-    echo "sqlite3 nao encontrado no host; usando copia consistente com a stack parada."
-    fallback_dir="$backup_root/contabase-backup-stopped-${timestamp}"
-    mkdir -p "$fallback_dir"
-    cp data/contabase.db "$fallback_dir/contabase.db"
-    [ ! -f data/contabase.db-wal ] || cp data/contabase.db-wal "$fallback_dir/contabase.db-wal"
-    [ ! -f data/contabase.db-shm ] || cp data/contabase.db-shm "$fallback_dir/contabase.db-shm"
-    if [ -d data/uploads ]; then
-      cp -R data/uploads "$fallback_dir/uploads"
-    else
-      mkdir -p "$fallback_dir/uploads"
+  if [ -e "$uploads" ] || [ -L "$uploads" ]; then
+    [ -d "$uploads" ] && [ ! -L "$uploads" ] && [ -r "$uploads" ] && [ -x "$uploads" ] || {
+      echo "Erro: diretorio de uploads invalido, ambiguo ou ilegivel: $uploads"
+      return 1
+    }
+    if ! find "$uploads" -mindepth 1 -maxdepth 1 -print -quit >/dev/null; then
+      echo "Erro: nao foi possivel enumerar com seguranca o diretorio de uploads: $uploads"
+      return 1
     fi
-    {
-      echo "created_at=$timestamp"
-      echo "method=stopped_stack_copy"
-      echo "wal_consistency=stack_stopped"
-    } > "$fallback_dir/manifest.txt"
-    BACKUP_PATH="$fallback_dir"
   fi
-
-  if [ -z "$BACKUP_PATH" ] || [ ! -f "$BACKUP_PATH/contabase.db" ]; then
-    echo "Erro: backup preventivo nao foi criado corretamente."
+  if [ "$PREVIOUS_VERSION" = "desconhecida" ] || [ "$PREVIOUS_VERSION" = "unknown" ]; then
+    echo "Erro: nao foi possivel identificar a versao instalada antes do backup."
     return 1
   fi
+}
 
-  echo "Backup preventivo criado: $BACKUP_PATH"
+prepare_canonical_backup_helper() {
+  local target_blob actual_blob
+  target_blob="$(git rev-parse "${TARGET_REF}:scripts/ops/backup.sh" 2>/dev/null)" || {
+    echo "Erro: o alvo ${TARGET_REF} nao contem scripts/ops/backup.sh."
+    return 1
+  }
+  CANONICAL_BACKUP_HELPER_TMP="$(mktemp "${TMPDIR:-/tmp}/contabase-backup-helper.XXXXXX")"
+  if ! git show "${TARGET_REF}:scripts/ops/backup.sh" > "$CANONICAL_BACKUP_HELPER_TMP"; then
+    echo "Erro: nao foi possivel materializar o helper canonico do alvo ${TARGET_REF}."
+    return 1
+  fi
+  actual_blob="$(git hash-object "$CANONICAL_BACKUP_HELPER_TMP")"
+  [ "$actual_blob" = "$target_blob" ] || {
+    echo "Erro: identidade do helper materializado diverge do objeto Git alvo."
+    return 1
+  }
+  chmod 0700 "$CANONICAL_BACKUP_HELPER_TMP"
+  CANONICAL_BACKUP_HELPER="$CANONICAL_BACKUP_HELPER_TMP"
+  echo "Helper canonico vinculado ao alvo ${TARGET_REF} (blob ${target_blob})."
+}
+
+validate_backup_package() {
+  [ -n "$BACKUP_PATH" ] && [ -d "$BACKUP_PATH" ] || return 1
+  [ -f "$BACKUP_PATH/manifest.txt" ] || return 1
+  [ -f "$BACKUP_PATH/checksums.sha256" ] || return 1
+  [ -f "$BACKUP_PATH/database.sqlite" ] || return 1
+  [ -d "$BACKUP_PATH/uploads" ] || return 1
+  BACKUP_ID="$(awk -F= '$1 == "backup_id" { print $2; exit }' "$BACKUP_PATH/manifest.txt")"
+  [ -n "$BACKUP_ID" ] || return 1
+}
+
+create_stopped_backup() {
+  local backup_root helper_output
+  [ "$STATE_PRESENT" = true ] || return 0
+  backup_root="$REPO_ROOT/data/backups"
+  install -d -m 0750 "$backup_root"
+
+  echo "Criando pacote canonico com a stack parada..."
+  if ! helper_output="$(
+    APP_VERSION="$PREVIOUS_VERSION" \
+      DATA_DIR="$REPO_ROOT/data" \
+      DB_FILE="$REPO_ROOT/data/contabase.db" \
+      UPLOADS_DIR="$REPO_ROOT/data/uploads" \
+      "$CANONICAL_BACKUP_HELPER" "$backup_root"
+  )"; then
+    echo "Erro: helper canonico de backup falhou."
+    return 1
+  fi
+  BACKUP_PATH="$(printf '%s\n' "$helper_output" | tail -n1)"
+  validate_backup_package || {
+    echo "Erro: pacote canonico final ausente ou incompleto."
+    return 1
+  }
+  echo "Backup pre-update criado: $BACKUP_PATH"
+  echo "Backup ID: $BACKUP_ID"
+  echo "Versao anterior registrada: $PREVIOUS_VERSION"
+  echo "Pacote confirmado: database.sqlite + uploads/. Preserve-o ate concluir o update."
+}
+
+print_post_start_failure() {
+  echo "A atualizacao NAO foi concluida."
+  echo "O runtime antigo NAO foi reativado automaticamente."
+  echo "O novo runtime foi parado; o banco pode ter sido migrado."
+  echo "Estado/bundle que falhou foi preservado para diagnostico."
+  echo "Pacote pre-update: ${BACKUP_PATH:-nao aplicavel (instalacao sem estado)}"
+  if [ -n "$BACKUP_PATH" ]; then
+    echo "Restore oficial, somente apos decisao explicita do operador:"
+    echo "  CONFIRM_APP_STOPPED=yes DATA_DIR=$REPO_ROOT/data DB_FILE=$REPO_ROOT/data/contabase.db UPLOADS_DIR=$REPO_ROOT/data/uploads $REPO_ROOT/scripts/ops/restore.sh $BACKUP_PATH"
+    echo "Aviso: o restore descarta alteracoes feitas depois desse backup."
+  fi
 }
 
 rollback_runtime() {
@@ -355,7 +443,11 @@ fail_with_rollback() {
   echo ""
   echo "ERRO: $message"
 
-  if [ "$STACK_STOPPED" = true ]; then
+  if [ "$NEW_RUNTIME_STARTED" = true ]; then
+    docker compose $COMPOSE_ARGS down >/dev/null 2>&1 || true
+    STACK_STOPPED=true
+    print_post_start_failure
+  elif [ "$STACK_STOPPED" = true ]; then
     if rollback_runtime; then
       echo "A instancia anterior foi recuperada, mas a atualizacao NAO foi concluida."
     else
@@ -370,7 +462,10 @@ handle_signal() {
   trap - INT TERM
   echo ""
   echo "Atualizacao interrompida por sinal."
-  if [ "$STACK_STOPPED" = true ]; then
+  if [ "$NEW_RUNTIME_STARTED" = true ]; then
+    docker compose $COMPOSE_ARGS down >/dev/null 2>&1 || true
+    print_post_start_failure
+  elif [ "$STACK_STOPPED" = true ]; then
     rollback_runtime || true
   fi
   exit 130
@@ -447,21 +542,17 @@ if [ "$DRY_RUN" = true ]; then
   echo "  - docker compose config valido"
   echo ""
   echo "O que seria feito:"
-  echo "  1. Backup do .env.docker"
-  echo "  2. Backup do banco SQLite (stack parada)"
-  echo "  3. Atualizar codigo (git pull --ff-only)"
-  echo "  4. Reconstruir e subir containers"
-  echo "  5. Validar healthcheck"
-  echo "  6. Em caso de falha: rollback para imagem anterior"
+  echo "  1. Materializar o helper canonico vinculado ao alvo Git"
+  echo "  2. Parar a stack e criar o pacote canonico pre-update"
+  echo "  3. Backup e ajuste compativel do .env.docker"
+  echo "  4. Atualizar codigo (git pull --ff-only)"
+  echo "  5. Reconstruir e subir containers"
+  echo "  6. Validar healthcheck"
+  echo "  7. Antes do novo runtime: rollback de runtime; depois: parar e orientar restore"
   echo ""
   echo "NENHUMA ALTERACAO FOI FEITA."
   exit 0
 fi
-
-# Backup .env.docker before any changes
-echo "--- Backup de ${ENV_FILE_DOCKER} ---"
-env_backup "$ENV_FILE_DOCKER"
-env_set_if_missing "CONTABASE_TIMEZONE" "America/Sao_Paulo" "$ENV_FILE_DOCKER"
 
 # --- Fetch ---
 if [ "$SKIP_PULL" = false ]; then
@@ -480,6 +571,17 @@ else
   COMMITS_AHEAD=0
 fi
 
+CURRENT_BRANCH="$(git branch --show-current)"
+if [ "$SKIP_PULL" = true ] && [ "$FORCE_RESET" = false ]; then
+  TARGET_REF="HEAD"
+else
+  TARGET_REF="origin/${CURRENT_BRANCH}"
+fi
+TARGET_VERSION="$(git show "${TARGET_REF}:VERSION" 2>/dev/null | tr -d '[:space:]')"
+[ -n "$TARGET_VERSION" ] || { echo "Erro: VERSION ausente ou vazia no alvo ${TARGET_REF}."; exit 1; }
+prepare_canonical_backup_helper || exit 1
+validate_persistent_state || exit 1
+
 # --- Confirmação ---
 if [ "$FORCE_RESET" = true ]; then
   echo "ATENÇÃO: modo --force-reset ativado."
@@ -494,7 +596,9 @@ RESUMO="Resumo:
   Commits novos: $COMMITS_AHEAD
   Compose:      ${COMPOSE_FILE:-"docker-compose.yml + overrides"}
   Reset forçado: $FORCE_RESET
-  Backup seguro: $( [ "$NO_BACKUP" = false ] && echo "sim (stack parada)" || echo "não (--no-backup)" )
+  Backup seguro: $( [ "$STATE_PRESENT" = true ] && echo "obrigatorio (pacote canonico, stack parada)" || echo "nao aplicavel (sem estado)" )
+  Helper alvo:   $TARGET_REF
+  Versao alvo:   $TARGET_VERSION
 "
 
 echo "$RESUMO"
@@ -517,12 +621,18 @@ if ! docker compose $COMPOSE_ARGS down; then
   fail_with_rollback "nao foi possivel parar a stack antes do backup."
 fi
 
-if [ "$NO_BACKUP" = false ]; then
-  if ! create_stopped_backup; then
-    fail_with_rollback "backup WAL-safe falhou; codigo nao sera atualizado."
-  fi
-else
-  echo "Aviso: backup preventivo pulado por --no-backup."
+if ! create_stopped_backup; then
+  echo "ERRO: backup canonico falhou; codigo nao sera atualizado e a stack permanecera parada."
+  exit 1
+fi
+
+# O arquivo de ambiente so pode ser alterado depois do pacote pre-update.
+echo "--- Backup de ${ENV_FILE_DOCKER} ---"
+if ! env_backup "$ENV_FILE_DOCKER"; then
+  fail_with_rollback "backup de ${ENV_FILE_DOCKER} falhou."
+fi
+if ! env_set_if_missing "CONTABASE_TIMEZONE" "America/Sao_Paulo" "$ENV_FILE_DOCKER"; then
+  fail_with_rollback "ajuste de CONTABASE_TIMEZONE falhou."
 fi
 
 # --- Atualizar código ---
@@ -576,6 +686,7 @@ echo "Versão nova após atualização do código: $APP_VERSION"
 # --- Rebuild ---
 echo ""
 echo "--- Reconstruindo contêineres ---"
+NEW_RUNTIME_STARTED=true
 if ! VERSION="$APP_VERSION" docker compose $COMPOSE_ARGS up -d --build --remove-orphans; then
   fail_with_rollback "build ou subida da nova imagem falhou."
 fi
@@ -593,6 +704,7 @@ fi
 echo ""
 echo "Healthcheck saudavel: $HEALTH_URL"
 echo "Backup preventivo: ${BACKUP_PATH:-nao criado}"
+echo "Backup ID:         ${BACKUP_ID:-nao aplicavel}"
 echo "Backup .env:       ${ENV_BACKUP_PATH:-nao criado}"
 echo "=== Atualizacao concluida ==="
 

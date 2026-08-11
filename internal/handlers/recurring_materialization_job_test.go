@@ -9,6 +9,67 @@ import (
 	"time"
 )
 
+func TestRecurringMaterializationJobDoneWaitsForActiveSweep(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := startRecurringMaterializationJob(ctx, db, time.Hour, func(context.Context, *sql.DB, time.Time) {
+		close(entered)
+		<-release
+	})
+	<-entered
+	cancel()
+	select {
+	case <-done:
+		t.Fatalf("job finished before active sweep returned")
+	default:
+	}
+	close(release)
+	<-done
+}
+
+func TestRecurringMaterializationFallbackCloseWaitsAndDisablesScheduler(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedMaterializationWorkspace(t, db, "ws-close", "user-close")
+
+	scheduler := InitRecurringMaterializationFallback(db)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	scheduler.dispatch = func(context.Context, string, int64) {
+		close(entered)
+		<-release
+	}
+	if !scheduler.maybeSchedule("ws-close", time.Now().Unix()) {
+		t.Fatalf("expected fallback dispatch")
+	}
+	<-entered
+	closed := make(chan struct{})
+	go func() {
+		scheduler.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		t.Fatalf("Close returned before active dispatch")
+	default:
+	}
+	close(release)
+	<-closed
+	if scheduler.maybeSchedule("ws-close", time.Now().Unix()+120) {
+		t.Fatalf("closed fallback accepted a new dispatch")
+	}
+	packageSchedulerMu.RLock()
+	active := packageRecurringScheduler
+	packageSchedulerMu.RUnlock()
+	if active == scheduler {
+		t.Fatalf("closed fallback remained globally published")
+	}
+	scheduler.Close()
+}
+
 func seedActiveRecurringRule(t *testing.T, db *sql.DB, workspaceID, userID, ruleID string) {
 	t.Helper()
 	now := time.Now().Unix()
@@ -108,8 +169,8 @@ func TestRecurringMaterializationSweepRealRunnerMaterializes(t *testing.T) {
 	if err := db.QueryRow(`SELECT materialized_until FROM recurring_materialization_state WHERE workspace_id = 'ws-a'`).Scan(&materializedUntil); err != nil {
 		t.Fatalf("state: %v", err)
 	}
-	if materializedUntil != defaultRecurringHorizon(now.Unix()).Unix() {
-		t.Fatalf("materialized_until = %d, want %d", materializedUntil, defaultRecurringHorizon(now.Unix()).Unix())
+	if h, _ := defaultRecurringHorizon(now.Unix()); materializedUntil != h.LegacyUnix() {
+		t.Fatalf("materialized_until = %d, want %d", materializedUntil, h.LegacyUnix())
 	}
 }
 
@@ -171,15 +232,16 @@ func TestFallbackFreshDoesNotDispatch(t *testing.T) {
 	seedMaterializationWorkspace(t, db, "ws-mat", "user-mat")
 
 	now := time.Now().Unix()
-	horizon := defaultRecurringHorizon(now)
+	horizon, _ := defaultRecurringHorizon(now)
 	execTestSQL(t, db, `
 		INSERT INTO recurring_materialization_state (workspace_id, materialized_until, status, created_at, updated_at)
 		VALUES ('ws-mat', ?, 'idle', ?, ?)
-	`, horizon.Unix(), now, now)
+	`, horizon.LegacyUnix(), now, now)
 
 	scheduler := newRecurringMaterializationScheduler(db)
+	defer scheduler.Close()
 	var dispatched int
-	scheduler.dispatch = func(workspaceID string, n int64) { dispatched++ }
+	scheduler.dispatch = func(context.Context, string, int64) { dispatched++ }
 
 	if fired := scheduler.maybeSchedule("ws-mat", now); fired {
 		t.Fatalf("fresh state should not dispatch")
@@ -201,12 +263,14 @@ func TestFallbackStaleDispatches(t *testing.T) {
 	`, now, now)
 
 	scheduler := newRecurringMaterializationScheduler(db)
+	defer scheduler.Close()
 	var dispatched []string
-	scheduler.dispatch = func(workspaceID string, n int64) { dispatched = append(dispatched, workspaceID) }
+	scheduler.dispatch = func(_ context.Context, workspaceID string, _ int64) { dispatched = append(dispatched, workspaceID) }
 
 	if fired := scheduler.maybeSchedule("ws-mat", now); !fired {
 		t.Fatalf("stale state should dispatch")
 	}
+	scheduler.Close()
 	if len(dispatched) != 1 || dispatched[0] != "ws-mat" {
 		t.Fatalf("dispatched = %v, want [ws-mat]", dispatched)
 	}
@@ -218,12 +282,14 @@ func TestFallbackNoStateIsStaleAndDispatches(t *testing.T) {
 	seedMaterializationWorkspace(t, db, "ws-mat", "user-mat")
 
 	scheduler := newRecurringMaterializationScheduler(db)
+	defer scheduler.Close()
 	var dispatched int
-	scheduler.dispatch = func(workspaceID string, n int64) { dispatched++ }
+	scheduler.dispatch = func(context.Context, string, int64) { dispatched++ }
 
 	if fired := scheduler.maybeSchedule("ws-mat", time.Now().Unix()); !fired {
 		t.Fatalf("missing state should be treated as stale and dispatch")
 	}
+	scheduler.Close()
 	if dispatched != 1 {
 		t.Fatalf("dispatched = %d, want 1", dispatched)
 	}
@@ -241,8 +307,9 @@ func TestFallbackCooldownPreventsRepeatDispatch(t *testing.T) {
 	`, now, now)
 
 	scheduler := newRecurringMaterializationScheduler(db)
+	defer scheduler.Close()
 	var dispatched int
-	scheduler.dispatch = func(workspaceID string, n int64) { dispatched++ }
+	scheduler.dispatch = func(context.Context, string, int64) { dispatched++ }
 
 	if fired := scheduler.maybeSchedule("ws-mat", now); !fired {
 		t.Fatalf("first call should dispatch")
@@ -250,6 +317,7 @@ func TestFallbackCooldownPreventsRepeatDispatch(t *testing.T) {
 	if fired := scheduler.maybeSchedule("ws-mat", now+10); fired {
 		t.Fatalf("second call within cooldown should not dispatch")
 	}
+	scheduler.Close()
 	if dispatched != 1 {
 		t.Fatalf("dispatched = %d, want 1 (cooldown)", dispatched)
 	}
@@ -267,7 +335,7 @@ func TestFallbackTwoSimultaneousDispatchSingleMotorViaLock(t *testing.T) {
 
 	var mu sync.Mutex
 	motorRuns := 0
-	runner := func(tx *sql.Tx, workspaceID string, horizon time.Time, n int64) error {
+	runner := func(tx *sql.Tx, workspaceID string, horizon CivilWriteDate, n int64) error {
 		mu.Lock()
 		motorRuns++
 		mu.Unlock()
@@ -301,15 +369,14 @@ func TestFallbackDispatchErrorDoesNotPanic(t *testing.T) {
 	`, now, now)
 
 	scheduler := newRecurringMaterializationScheduler(db)
+	defer scheduler.Close()
 	done := make(chan struct{})
-	scheduler.dispatch = func(workspaceID string, n int64) {
+	scheduler.dispatch = func(ctx context.Context, workspaceID string, n int64) {
 		// Simula um dispatch que roda o motor com erro; não deve propagar.
-		go func() {
-			defer close(done)
-			_ = runRecurringMaterializationForWorkspace(context.Background(), db, workspaceID, n, func(tx *sql.Tx, ws string, h time.Time, nn int64) error {
-				return errors.New("motor boom")
-			})
-		}()
+		defer close(done)
+		_ = runRecurringMaterializationForWorkspace(ctx, db, workspaceID, n, func(tx *sql.Tx, ws string, h CivilWriteDate, nn int64) error {
+			return errors.New("motor boom")
+		})
 	}
 
 	if fired := scheduler.maybeSchedule("ws-mat", now); !fired {
@@ -353,7 +420,7 @@ func TestFallbackLockedExpiredTakenEvenWhenStatusRunning(t *testing.T) {
 	`, now-10, now, now)
 
 	var called int
-	runner := func(tx *sql.Tx, workspaceID string, h time.Time, n int64) error {
+	runner := func(tx *sql.Tx, workspaceID string, h CivilWriteDate, n int64) error {
 		called++
 		return nil
 	}

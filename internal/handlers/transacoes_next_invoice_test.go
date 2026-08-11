@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -30,19 +33,14 @@ func TestInsertTransactionNextInvoiceCreatesInvoiceForCreditCard(t *testing.T) {
 		15000,
 		"Compra Proxima Fatura",
 		"",
-		"",
-		date,
-		"card-test",
+		"", civilWriteDateFromLegacyUnix(date), "card-test",
 		"",
 		"",
 		1,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"NEXT_INVOICE",
 		false,
 	)
@@ -77,19 +75,14 @@ func TestInsertTransactionNextInvoiceReusesExistingNextInvoice(t *testing.T) {
 		15000,
 		"Compra Proxima Fatura Existente",
 		"",
-		"",
-		date,
-		"card-test",
+		"", civilWriteDateFromLegacyUnix(date), "card-test",
 		"",
 		"",
 		1,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"NEXT_INVOICE",
 		false,
 	)
@@ -104,7 +97,7 @@ func TestInsertTransactionNextInvoiceReusesExistingNextInvoice(t *testing.T) {
 	assertInvoiceCount(t, db, "card-test", "2026-09", 1)
 }
 
-func TestInsertTransactionAutoUsesPaidInvoiceWithinCycle(t *testing.T) {
+func TestInsertTransactionAutoRejectsPaidInvoiceWithinCycle(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
@@ -123,39 +116,39 @@ func TestInsertTransactionAutoUsesPaidInvoiceWithinCycle(t *testing.T) {
 		15000,
 		"Compra Apos Quitacao Antecipada",
 		"",
-		"",
-		date,
-		"card-test",
+		"", civilWriteDateFromLegacyUnix(date), "card-test",
 		"",
 		"",
 		1,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"",
 		false,
 	)
-	if err != nil {
-		t.Fatalf("insertTransaction auto paid within cycle: %v", err)
+	if !errors.Is(err, errAutomaticInvoiceFrozen) || !errors.Is(err, errInvoiceStateTransitionConflict) {
+		t.Fatalf("insertTransaction auto paid within cycle error = %v, want frozen conflict", err)
 	}
 
-	txID := findTransactionByDescription(t, db, "Compra Apos Quitacao Antecipada")
-	assertTransactionInvoiceReference(t, db, txID, "2026-08")
+	var inserted int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE description = 'Compra Apos Quitacao Antecipada'`).Scan(&inserted); err != nil {
+		t.Fatalf("count inserted transactions: %v", err)
+	}
+	if inserted != 0 {
+		t.Fatalf("inserted transactions = %d, want 0", inserted)
+	}
 
 	var status string
 	if err := db.QueryRow(`SELECT status FROM invoices WHERE id = 'invoice-2026-08'`).Scan(&status); err != nil {
 		t.Fatalf("query invoice status: %v", err)
 	}
-	if status == "PAID" {
-		t.Fatalf("invoice should have left PAID status after new transaction, got %q", status)
+	if status != "PAID" {
+		t.Fatalf("invoice status = %q, want PAID unchanged", status)
 	}
 }
 
-func TestInsertTransactionAutoUsesClosedInvoiceWithinCycle(t *testing.T) {
+func TestInsertTransactionAutoRejectsClosedInvoiceWithinCycle(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
@@ -174,28 +167,170 @@ func TestInsertTransactionAutoUsesClosedInvoiceWithinCycle(t *testing.T) {
 		15000,
 		"Compra Fatura Fechada Mesmo Ciclo",
 		"",
-		"",
-		date,
-		"card-test",
+		"", civilWriteDateFromLegacyUnix(date), "card-test",
 		"",
 		"",
 		1,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"",
 		false,
 	)
-	if err != nil {
-		t.Fatalf("insertTransaction auto closed within cycle: %v", err)
+	if !errors.Is(err, errAutomaticInvoiceFrozen) || !errors.Is(err, errInvoiceStateTransitionConflict) {
+		t.Fatalf("insertTransaction auto closed within cycle error = %v, want frozen conflict", err)
 	}
 
-	txID := findTransactionByDescription(t, db, "Compra Fatura Fechada Mesmo Ciclo")
-	assertTransactionInvoiceReference(t, db, txID, "2026-08")
+	var inserted int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE description = 'Compra Fatura Fechada Mesmo Ciclo'`).Scan(&inserted); err != nil {
+		t.Fatalf("count inserted transactions: %v", err)
+	}
+	if inserted != 0 {
+		t.Fatalf("inserted transactions = %d, want 0", inserted)
+	}
+	var status string
+	if err := db.QueryRow(`SELECT status FROM invoices WHERE id = 'invoice-2026-08'`).Scan(&status); err != nil {
+		t.Fatalf("query invoice status: %v", err)
+	}
+	if status != "CLOSED" {
+		t.Fatalf("invoice status = %q, want CLOSED unchanged", status)
+	}
+}
+
+func TestHandleSalvarTransacaoAutoFrozenReturns409WithoutTombstone(t *testing.T) {
+	for _, status := range []string{"CLOSED", "PAID"} {
+		t.Run(status, func(t *testing.T) {
+			db := openTestDB(t)
+			defer db.Close()
+			seedInvoicePaymentScenario(t, db)
+			seedRecurringExpenseCategory(t, db)
+			setInvoiceStatusForTest(t, db, "invoice-2026-08", status)
+			handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+
+			req := formPostMultipart(t, "/transacoes", url.Values{
+				"valor":            {"150,00"},
+				"descricao":        {"Auto frozen HTTP " + status},
+				"data":             {"2026-07-10"},
+				"tipo":             {"despesa"},
+				"origem_conta_id":  {"card-test"},
+				"categoria_id":     {"cat-expense-rec"},
+				"status_pagamento": {"paid"},
+			})
+			rr := httptest.NewRecorder()
+			handler.HandleSalvarTransacao(rr, req)
+			if rr.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want 409; body=%q", rr.Code, rr.Body.String())
+			}
+
+			var transactions, blocks int
+			_ = db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE description=?`, "Auto frozen HTTP "+status).Scan(&transactions)
+			_ = db.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_blocks`).Scan(&blocks)
+			if transactions != 0 || blocks != 0 {
+				t.Fatalf("sync frozen path wrote state: transactions=%d blocks=%d", transactions, blocks)
+			}
+		})
+	}
+}
+
+func TestInsertTransactionAutoUnknownInvoiceStatusIsStructural(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedInvoicePaymentScenario(t, db)
+	seedRecurringExpenseCategory(t, db)
+	execTestSQL(t, db, `PRAGMA ignore_check_constraints=ON`)
+	execTestSQL(t, db, `UPDATE invoices SET status='CORRUPT' WHERE id='invoice-2026-08'`)
+	execTestSQL(t, db, `PRAGMA ignore_check_constraints=OFF`)
+	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+
+	_, err := handler.insertTransaction(
+		"EXPENSE", 15000, "Auto corrupt status", "", "",
+		MustCivilWriteDate("2026-07-10"), "card-test", "", "cat-expense-rec",
+		1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false,
+	)
+	if !errors.Is(err, errInvoiceStateStructural) {
+		t.Fatalf("error = %v, want structural", err)
+	}
+	var inserted int
+	_ = db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE description='Auto corrupt status'`).Scan(&inserted)
+	if inserted != 0 {
+		t.Fatalf("inserted transactions = %d, want 0", inserted)
+	}
+}
+
+func TestAutomaticInstallmentsFrozenDestinationRollbackIntegral(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedInvoicePaymentScenario(t, db)
+	seedRecurringExpenseCategory(t, db)
+	seedInvoiceForStatusTest(t, db, "card-test", "2026-09", "CLOSED")
+	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+
+	_, err := handler.insertTransaction(
+		"EXPENSE", 30000, "Installments frozen rollback", "", "",
+		MustCivilWriteDate("2026-07-10"), "card-test", "", "cat-expense-rec",
+		2, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false,
+	)
+	if !errors.Is(err, errAutomaticInvoiceFrozen) {
+		t.Fatalf("error = %v, want frozen conflict", err)
+	}
+	var transactions, blocks int
+	_ = db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE description='Installments frozen rollback'`).Scan(&transactions)
+	_ = db.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_blocks`).Scan(&blocks)
+	if transactions != 0 || blocks != 0 {
+		t.Fatalf("partial installment state persisted: transactions=%d blocks=%d", transactions, blocks)
+	}
+}
+
+func TestAutomaticRecurringProjectionFrozenDestinationRollbackIntegral(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedInvoicePaymentScenario(t, db)
+	seedRecurringExpenseCategory(t, db)
+	seedInvoiceForStatusTest(t, db, "card-test", "2026-09", "CLOSED")
+	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+	total := int64(2)
+
+	_, err := handler.insertTransaction(
+		"EXPENSE", 15000, "Projection frozen rollback", "", "",
+		MustCivilWriteDate("2026-07-10"), "card-test", "", "cat-expense-rec",
+		1, "paid", true, "MONTHLY", "", OptionalCivilWriteDate{}, &total, "", false,
+	)
+	if !errors.Is(err, errAutomaticInvoiceFrozen) {
+		t.Fatalf("error = %v, want frozen conflict", err)
+	}
+	var transactions, rules, blocks int
+	_ = db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE description='Projection frozen rollback'`).Scan(&transactions)
+	_ = db.QueryRow(`SELECT COUNT(1) FROM recurring_rules WHERE description='Projection frozen rollback'`).Scan(&rules)
+	_ = db.QueryRow(`SELECT COUNT(1) FROM recurring_occurrence_blocks`).Scan(&blocks)
+	if transactions != 0 || rules != 0 || blocks != 0 {
+		t.Fatalf("partial projection state persisted: transactions=%d rules=%d blocks=%d", transactions, rules, blocks)
+	}
+}
+
+func TestManualClosedInvoiceSelectionRemainsExplicitControl(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedInvoicePaymentScenario(t, db)
+	seedRecurringExpenseCategory(t, db)
+	setInvoiceStatusForTest(t, db, "invoice-2026-08", "CLOSED")
+	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+
+	_, err := handler.insertTransaction(
+		"EXPENSE", 15000, "Manual closed control", "", "",
+		MustCivilWriteDate("2026-07-10"), "card-test", "", "cat-expense-rec",
+		1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "invoice-2026-08", false,
+	)
+	if err != nil {
+		t.Fatalf("manual CLOSED selection: %v", err)
+	}
+	var invoiceID, overrideID string
+	if err := db.QueryRow(`SELECT invoice_id, invoice_override_id FROM transactions WHERE description='Manual closed control'`).Scan(&invoiceID, &overrideID); err != nil {
+		t.Fatalf("query manual transaction: %v", err)
+	}
+	if invoiceID != "invoice-2026-08" || overrideID != "invoice-2026-08" {
+		t.Fatalf("manual invoice evidence = %q/%q", invoiceID, overrideID)
+	}
 }
 
 func TestInsertTransactionAutoAfterClosingGoesToNextInvoice(t *testing.T) {
@@ -218,19 +353,14 @@ func TestInsertTransactionAutoAfterClosingGoesToNextInvoice(t *testing.T) {
 		15000,
 		"Compra Apos Fechamento",
 		"",
-		"",
-		date,
-		"card-test",
+		"", civilWriteDateFromLegacyUnix(date), "card-test",
 		"",
 		"",
 		1,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"",
 		false,
 	)
@@ -242,7 +372,7 @@ func TestInsertTransactionAutoAfterClosingGoesToNextInvoice(t *testing.T) {
 	assertTransactionInvoiceReference(t, db, txID, "2026-09")
 }
 
-func TestInsertTransactionNextUsesNextReferenceRegardlessOfStatus(t *testing.T) {
+func TestInsertTransactionNextPaidReferencePreservesStateMachineBlock(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
@@ -261,28 +391,28 @@ func TestInsertTransactionNextUsesNextReferenceRegardlessOfStatus(t *testing.T) 
 		15000,
 		"Compra Next Fatura Paga",
 		"",
-		"",
-		date,
-		"card-test",
+		"", civilWriteDateFromLegacyUnix(date), "card-test",
 		"",
 		"",
 		1,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"NEXT_INVOICE",
 		false,
 	)
-	if err != nil {
-		t.Fatalf("insertTransaction next paid reference: %v", err)
+	if !errors.Is(err, errInvoiceImplicitReopenBlocked) {
+		t.Fatalf("insertTransaction next paid reference error = %v, want state-machine block", err)
 	}
 
-	txID := findTransactionByDescription(t, db, "Compra Next Fatura Paga")
-	assertTransactionInvoiceReference(t, db, txID, "2026-09")
+	var inserted int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE description = 'Compra Next Fatura Paga'`).Scan(&inserted); err != nil {
+		t.Fatalf("count inserted transactions: %v", err)
+	}
+	if inserted != 0 {
+		t.Fatalf("inserted transactions = %d, want 0", inserted)
+	}
 }
 
 func TestHandleAtualizarTransacaoRespeitaFaturaOffsetNext(t *testing.T) {
@@ -385,19 +515,14 @@ func TestInsertTransactionNextInvoiceSkipsForNonFirstInstallment(t *testing.T) {
 		45000,
 		"Compra Parcelada Proxima Fatura",
 		"",
-		"",
-		date,
-		"card-test",
+		"", civilWriteDateFromLegacyUnix(date), "card-test",
 		"",
 		"",
 		3,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"NEXT_INVOICE",
 		false,
 	)
@@ -468,19 +593,14 @@ func TestInsertTransactionNextInvoiceFailsForNonCreditCardAccount(t *testing.T) 
 		15000,
 		"Compra Checking Proxima Fatura",
 		"",
-		"",
-		date,
-		"checking-test",
+		"", civilWriteDateFromLegacyUnix(date), "checking-test",
 		"",
 		"",
 		1,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"NEXT_INVOICE",
 		false,
 	)
@@ -591,19 +711,14 @@ func TestInsertTransactionNextInvoiceMissingCreditCardConfig(t *testing.T) {
 		15000,
 		"Compra Cartao Sem Configuracao",
 		"",
-		"",
-		date,
-		"card-no-config",
+		"", civilWriteDateFromLegacyUnix(date), "card-no-config",
 		"",
 		"",
 		1,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"NEXT_INVOICE",
 		false,
 	)
@@ -634,19 +749,14 @@ func TestInsertTransactionNextInvoiceNormalCreditCardAlsoWorks(t *testing.T) {
 		15000,
 		"Compra Normal Cartao",
 		"",
-		"",
-		date,
-		"card-test",
+		"", civilWriteDateFromLegacyUnix(date), "card-test",
 		"",
 		"",
 		1,
 		"paid",
 		false,
 		"",
-		"",
-		0,
-		false,
-		nil,
+		"", OptionalCivilWriteDate{}, nil,
 		"",
 		false,
 	)

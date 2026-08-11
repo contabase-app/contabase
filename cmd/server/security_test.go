@@ -195,7 +195,7 @@ func TestAccessDockerLocalHTTPBlockedWithPublicAllowedHost(t *testing.T) {
 	}
 }
 
-func TestHealthRouteUsesHTTPBoundary(t *testing.T) {
+func TestHTTPBoundaryMiddlewareBlocksNonHTTPS(t *testing.T) {
 	cfg := newHTTPBoundaryConfigWithAccess("app.example.com", "", "proxy", "https://app.example.com")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

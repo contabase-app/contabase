@@ -252,6 +252,7 @@ func QueryInvoiceCashEvents(db *sql.DB, workspaceID string, period ReportPeriod)
 			ip.account_id,
 			ip.amount_cents,
 			ip.paid_at,
+			ip.reversed_at,
 			COALESCE(a.name, '') AS account_name,
 			COALESCE(i.account_id, '') AS card_account_id,
 			COALESCE(ca.name, '') AS card_name,
@@ -261,10 +262,12 @@ func QueryInvoiceCashEvents(db *sql.DB, workspaceID string, period ReportPeriod)
 		JOIN invoices i ON i.id = ip.invoice_id
 		JOIN accounts ca ON ca.id = i.account_id AND ca.workspace_id = ip.workspace_id
 		WHERE ip.workspace_id = ?
-			AND ip.reversed_at IS NULL
-			AND ip.paid_at >= ? AND ip.paid_at <= ?
+			AND (
+				(ip.paid_at >= ? AND ip.paid_at <= ?)
+				OR (ip.reversed_at >= ? AND ip.reversed_at <= ?)
+			)
 		ORDER BY ip.paid_at ASC
-	`, workspaceID, period.Start, period.End)
+	`, workspaceID, period.Start, period.End, period.Start, period.End)
 	if err != nil {
 		return nil, err
 	}
@@ -274,20 +277,33 @@ func QueryInvoiceCashEvents(db *sql.DB, workspaceID string, period ReportPeriod)
 	for rows.Next() {
 		var id, invoiceID, accountID, accountName, cardAccountID, cardName, invoiceRef sql.NullString
 		var amountCents, paidAt int64
-		if err := rows.Scan(&id, &invoiceID, &accountID, &amountCents, &paidAt,
+		var reversedAt sql.NullInt64
+		if err := rows.Scan(&id, &invoiceID, &accountID, &amountCents, &paidAt, &reversedAt,
 			&accountName, &cardAccountID, &cardName, &invoiceRef); err != nil {
 			return nil, err
 		}
-		ev := CashEvent{
-			DateUnix:    paidAt,
-			AmountCents: amountCents,
-			Source:      CashSourceInvoicePayment,
-			AccountID:   accountID.String,
-			Description: "Pagamento Fatura " + cardName.String + " - " + invoiceRef.String,
-			IsRealized:  true,
-			IsIncome:    false,
+		if paidAt >= period.Start && paidAt <= period.End {
+			events = append(events, CashEvent{
+				DateUnix:    paidAt,
+				AmountCents: amountCents,
+				Source:      CashSourceInvoicePayment,
+				AccountID:   accountID.String,
+				Description: "Pagamento Fatura " + cardName.String + " - " + invoiceRef.String,
+				IsRealized:  true,
+				IsIncome:    false,
+			})
 		}
-		events = append(events, ev)
+		if reversedAt.Valid && reversedAt.Int64 >= period.Start && reversedAt.Int64 <= period.End {
+			events = append(events, CashEvent{
+				DateUnix:    reversedAt.Int64,
+				AmountCents: amountCents,
+				Source:      CashSourceInvoicePayment,
+				AccountID:   accountID.String,
+				Description: "Reversão pagamento Fatura " + cardName.String + " - " + invoiceRef.String,
+				IsRealized:  true,
+				IsIncome:    true,
+			})
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -311,11 +327,7 @@ func QueryInvoiceProjectedCashEvents(db *sql.DB, workspaceID string, period Repo
 				FROM transactions t
 				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
 			), 0) AS total,
-			COALESCE((
-				SELECT SUM(ip.amount_cents)
-				FROM invoice_payments ip
-				WHERE ip.workspace_id = a.workspace_id AND ip.invoice_id = i.id AND ip.reversed_at IS NULL
-			), 0) AS paid
+			`+invoiceEffectivePaidSQLExpr+` AS paid
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id
 		WHERE a.workspace_id = ?
@@ -653,11 +665,7 @@ func QueryInvoiceCashEventsByDueDate(db *sql.DB, workspaceID string, period Repo
 					FROM transactions t
 					WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
 				), 0) AS total,
-				COALESCE((
-					SELECT SUM(ip.amount_cents)
-					FROM invoice_payments ip
-					WHERE ip.workspace_id = a.workspace_id AND ip.invoice_id = i.id AND ip.reversed_at IS NULL
-				), 0) AS paid
+				`+invoiceEffectivePaidSQLExpr+` AS paid
 			FROM invoices i
 			JOIN accounts a ON a.id = i.account_id
 			WHERE a.workspace_id = ?
@@ -779,13 +787,7 @@ func BuildProjectedBalanceUntilPeriodEnd(db *sql.DB, workspaceID string, periodE
 					FROM transactions t
 					WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
 				), 0) -
-				COALESCE((
-					SELECT SUM(ip.amount_cents)
-					FROM invoice_payments ip
-					WHERE ip.workspace_id = a.workspace_id
-						AND ip.invoice_id = i.id
-						AND ip.reversed_at IS NULL
-				), 0) AS pending_amount
+				`+invoiceEffectivePaidSQLExpr+` AS pending_amount
 			FROM invoices i
 			JOIN accounts a ON a.id = i.account_id
 			WHERE a.workspace_id = ?
@@ -876,7 +878,7 @@ func BuildCaixaData(db *sql.DB, workspaceID string, year, month int) ([]CaixaRow
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 			LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
-			LEFT JOIN invoice_payments ip ON ip.transaction_id = t.id AND ip.workspace_id = t.workspace_id AND ip.reversed_at IS NULL
+			LEFT JOIN invoice_payments ip ON ip.transaction_id = t.id AND ip.workspace_id = t.workspace_id
 			WHERE t.workspace_id = ?
 					AND t.status = 'paid'
 					AND t.type IN ('INCOME', 'EXPENSE')
@@ -952,13 +954,7 @@ func buildPendingInvoiceCaixaRows(db *sql.DB, workspaceID string, start, end int
 				FROM transactions tx
 				WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
 			), 0) -
-			COALESCE((
-				SELECT SUM(ip.amount_cents)
-				FROM invoice_payments ip
-				WHERE ip.workspace_id = a.workspace_id
-					AND ip.invoice_id = i.id
-					AND ip.reversed_at IS NULL
-			), 0) AS pending_amount
+			`+invoiceEffectivePaidSQLExpr+` AS pending_amount
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id
 		WHERE a.workspace_id = ?
@@ -1334,7 +1330,11 @@ func BuildAccountingCloseData(db *sql.DB, workspaceID string, period ReportPerio
 		}
 	}
 	for _, ev := range invoiceRealized {
-		totalExpenseRealized += ev.AmountCents
+		if ev.IsIncome {
+			totalIncomeRealized += ev.AmountCents
+		} else {
+			totalExpenseRealized += ev.AmountCents
+		}
 	}
 
 	var openingBalanceReal int64

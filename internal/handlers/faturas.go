@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/contabase-app/contabase/internal/civildate"
 	"github.com/contabase-app/contabase/internal/models"
 	"github.com/contabase-app/contabase/internal/services"
 
@@ -19,10 +21,17 @@ import (
 )
 
 type FaturasHandler struct {
-	DB          *sql.DB
-	Templates   TemplateEngine
-	WorkspaceID string
-	UserID      string
+	DB                     *sql.DB
+	WriterDB               *sql.DB
+	Templates              TemplateEngine
+	WorkspaceID            string
+	UserID                 string
+	paymentWriterTestHooks *invoicePaymentWriterTestHooks
+}
+
+type invoicePaymentWriterTestHooks struct {
+	beforeBegin func()
+	afterBegin  func(*sql.Tx) error
 }
 
 type FaturaData struct {
@@ -442,12 +451,25 @@ func (h *FaturasHandler) HandlePagarFatura(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	tx, err := h.DB.Begin()
+	if h.WriterDB == nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if h.paymentWriterTestHooks != nil && h.paymentWriterTestHooks.beforeBegin != nil {
+		h.paymentWriterTestHooks.beforeBegin()
+	}
+	tx, err := h.WriterDB.BeginTx(r.Context(), nil)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	defer tx.Rollback()
+	if h.paymentWriterTestHooks != nil && h.paymentWriterTestHooks.afterBegin != nil {
+		if err := h.paymentWriterTestHooks.afterBegin(tx); err != nil {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
 
 	var cardAccountID, status, reference, cardName string
 	err = tx.QueryRow(`
@@ -475,16 +497,25 @@ func (h *FaturasHandler) HandlePagarFatura(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	total := sumInvoiceTotalTx(tx, h.WorkspaceID, invoiceID)
+	snapshot, err := loadInvoiceFinancialSnapshotTx(tx, h.WorkspaceID, invoiceID)
+	if err != nil {
+		http.Error(w, "erro ao carregar estado financeiro da fatura", http.StatusInternalServerError)
+		return
+	}
+	if err := validateInvoiceForNewPayment(snapshot); err != nil {
+		if errors.Is(err, errInvoiceStateTransitionConflict) {
+			http.Error(w, "estado financeiro da fatura não permite novo pagamento", http.StatusConflict)
+		} else {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+		}
+		return
+	}
+	total := snapshot.Total
 	if total <= 0 {
 		http.Error(w, "fatura sem valor para pagar", http.StatusBadRequest)
 		return
 	}
-	totalPaid, err := sumActiveInvoicePaymentsTx(tx, h.WorkspaceID, invoiceID)
-	if err != nil {
-		http.Error(w, "erro ao calcular pagamentos da fatura", http.StatusInternalServerError)
-		return
-	}
+	totalPaid := snapshot.EffectivePaid
 	pendingAmount := CalculateInvoicePendingAmount(total, totalPaid)
 	if pendingAmount <= 0 {
 		http.Error(w, "fatura sem saldo pendente para pagar", http.StatusBadRequest)
@@ -534,42 +565,6 @@ func (h *FaturasHandler) HandlePagarFatura(w http.ResponseWriter, r *http.Reques
 		paymentDate = parsedDate
 	}
 
-	paidAmount := totalPaid + paymentAmount
-	settleInvoice := paymentAmount == pendingAmount
-
-	var res sql.Result
-	if settleInvoice {
-		res, err = tx.Exec(`
-			UPDATE invoices
-			SET status = 'PAID', paid_at = ?, paid_amount = ?
-			WHERE id = ? AND account_id = ? AND status IN ('OPEN', 'CLOSED')
-		`, paymentDate, paidAmount, invoiceID, cardAccountID)
-	} else {
-		res, err = tx.Exec(`
-			UPDATE invoices
-			SET paid_amount = ?
-			WHERE id = ? AND account_id = ? AND status IN ('OPEN', 'CLOSED')
-		`, paidAmount, invoiceID, cardAccountID)
-	}
-	if err != nil {
-		http.Error(w, "erro ao registrar pagamento da fatura", http.StatusInternalServerError)
-		return
-	}
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		http.Error(w, "erro ao registrar pagamento da fatura", http.StatusInternalServerError)
-		return
-	}
-	if rowsAffected == 0 {
-		http.Error(w, "fatura já está paga", http.StatusConflict)
-		return
-	}
-
-	if err := services.ApplyBalanceEffect(tx, h.WorkspaceID, "EXPENSE", paymentAccountType, "paid", paymentAmount, paymentAccountID, "", now); err != nil {
-		http.Error(w, "erro ao debitar conta", http.StatusInternalServerError)
-		return
-	}
-
 	paymentTxID := uuid.NewString()
 	if err := execOneTx(tx, `
 		INSERT INTO transactions (id, workspace_id, user_id, account_id, type, amount, date, description, status, installment_number, total_installments, created_at, updated_at)
@@ -587,12 +582,24 @@ func (h *FaturasHandler) HandlePagarFatura(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if err := reconcileInvoiceAfterPaymentMutationTx(tx, h.WorkspaceID, invoiceID, now); err != nil {
+		if errors.Is(err, errInvoiceStateTransitionConflict) {
+			http.Error(w, "estado financeiro da fatura não permite novo pagamento", http.StatusConflict)
+		} else {
+			http.Error(w, "erro ao reconciliar pagamento da fatura", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if err := services.ApplyBalanceEffect(tx, h.WorkspaceID, "EXPENSE", paymentAccountType, "paid", paymentAmount, paymentAccountID, "", now); err != nil {
+		http.Error(w, "erro ao debitar conta", http.StatusInternalServerError)
+		return
+	}
+
 	if _, _, _, _, _, err := ensureNextInvoiceTx(tx, h.WorkspaceID, cardAccountID, reference); err != nil {
 		http.Error(w, "erro ao abrir próxima fatura", http.StatusInternalServerError)
 		return
 	}
-
-	_ = reconcileInvoiceStatusTx(tx, h.WorkspaceID, invoiceID)
 
 	if err := tx.Commit(); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -661,16 +668,22 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 		}
 	}
 
-	if data.Status != models.InvoiceStatusPaid {
+	if err := autoCloseInvoices(db, workspaceID, data.AccountID); err != nil {
+		return data, err
+	}
+	if err := db.QueryRow(`SELECT status FROM invoices WHERE id = ?`, invoiceID).Scan(&data.Status); err != nil {
+		return data, err
+	}
+	switch data.Status {
+	case models.InvoiceStatusOpen:
 		if err := materializeRecurringInvoiceTransactions(db, workspaceID, invoiceID); err != nil {
 			return data, err
 		}
-		if err := autoCloseInvoices(db, workspaceID, data.AccountID); err != nil {
-			return data, err
-		}
-		if err := db.QueryRow(`SELECT status FROM invoices WHERE id = ?`, invoiceID).Scan(&data.Status); err != nil {
-			return data, err
-		}
+	case models.InvoiceStatusClosed, models.InvoiceStatusPaid:
+		// Historical page reads never own the terminal recurring decision. The
+		// authoritative catch-up persists frozen blocks; this path is a no-op.
+	default:
+		return data, fmt.Errorf("%w: unsupported invoice status", errInvoiceStateStructural)
 	}
 
 	data.CardProviderSlug = normalizeAccountProviderSlug(providerSlug)
@@ -692,10 +705,12 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 	data.ClosingLabel = formatDateLabel(closingUnix)
 	data.DueLabel = formatDateLabel(dueUnix)
 
-	total, err := sumInvoiceTotal(db, workspaceID, invoiceID)
+	snapshot, err := loadInvoiceFinancialSnapshotDB(db, workspaceID, invoiceID)
 	if err != nil {
 		return data, err
 	}
+	total := snapshot.Total
+	effectivePaid := snapshot.EffectivePaid
 	data.Total = MoneyMinor(total)
 	data.CreditLimit = MoneyMinor(creditLimitCents)
 	if creditLimitCents > 0 {
@@ -721,44 +736,20 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 	data.PaymentAccounts = queryPaymentAccounts(db, workspaceID)
 	data.PaymentDateInput = time.Now().Format("2006-01-02")
 
-	pendingAmountRaw := total
-	paidActive := int64(0)
+	pendingAmountRaw := CalculateInvoicePendingAmount(total, effectivePaid)
+	data.TotalPaid = MoneyMinor(effectivePaid)
+	data.PendingAmount = MoneyMinor(pendingAmountRaw)
+	data.PendingAmountInput = formatCurrencyCentsBase(pendingAmountRaw)
+	if snapshot.TotalPaymentRecordCount == 0 && snapshot.LegacyPaidAmount > 0 {
+		data.HasLegacyPaymentSummary = true
+		data.LegacyPaymentNotice = "Pagamento anterior ao hist\u00F3rico detalhado"
+	}
+
 	payments, err := QueryActiveInvoicePayments(db, workspaceID, invoiceID)
 	if err == nil && len(payments) > 0 {
-		totalPaid, payErr := SumActiveInvoicePayments(db, workspaceID, invoiceID)
-		if payErr == nil {
-			pendingAmountRaw = CalculateInvoicePendingAmount(total, totalPaid)
-			paidActive = totalPaid
-			data.HasPayments = true
-			data.TotalPaid = MoneyMinor(totalPaid)
-			data.PendingAmount = MoneyMinor(pendingAmountRaw)
-			data.PendingAmountInput = formatCurrencyCentsBase(pendingAmountRaw)
-			accountNameMap := paymentAccountNameMap(data.PaymentAccounts)
-			data.InvoicePayments = buildInvoicePaymentRows(payments, accountNameMap)
-		}
-	} else {
-		if data.Status == models.InvoiceStatusPaid {
-			var legacyPaidAmount int64
-			if err := db.QueryRow(`SELECT COALESCE(paid_amount, 0) FROM invoices WHERE id = ?`, invoiceID).Scan(&legacyPaidAmount); err == nil && legacyPaidAmount > 0 {
-				pendingAmountRaw = 0
-				data.HasLegacyPaymentSummary = true
-				data.LegacyPaymentNotice = "Pagamento anterior ao hist\u00F3rico detalhado"
-				data.TotalPaid = MoneyMinor(legacyPaidAmount)
-				data.PendingAmount = MoneyMinor(0)
-				data.PendingAmountInput = formatCurrencyCentsBase(0)
-			} else {
-				data.TotalPaid = MoneyMinor(0)
-				data.PendingAmount = MoneyMinor(total)
-				data.PendingAmountInput = formatCurrencyCentsBase(total)
-			}
-		} else {
-			data.TotalPaid = MoneyMinor(0)
-			data.PendingAmount = MoneyMinor(total)
-			data.PendingAmountInput = formatCurrencyCentsBase(total)
-		}
-	}
-	if data.PendingAmountInput == "" {
-		data.PendingAmountInput = formatCurrencyCentsBase(pendingAmountRaw)
+		data.HasPayments = true
+		accountNameMap := paymentAccountNameMap(data.PaymentAccounts)
+		data.InvoicePayments = buildInvoicePaymentRows(payments, accountNameMap)
 	}
 	for i := range data.PaymentAccounts {
 		data.PaymentAccounts[i].BalanceAfterPayment = MoneyMinor(data.PaymentAccounts[i].BalanceCents - pendingAmountRaw)
@@ -768,7 +759,7 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 	data.CanSubmitPayment = data.CanAttemptPayment && pendingAmountRaw > 0 && len(data.PaymentAccounts) > 0
 
 	cycleBadge := computeCycleBadge(closingUnix, time.Now())
-	finBadge := computeFinancialBadge(pendingAmountRaw, paidActive)
+	finBadge := computeFinancialBadge(pendingAmountRaw, effectivePaid)
 	data.CycleLabel = cycleBadge
 	data.HasCycleBadge = cycleBadge != ""
 	data.FinancialLabel = finBadge
@@ -989,16 +980,23 @@ func materializeRecurringInvoiceTransactions(db *sql.DB, workspaceID, invoiceID 
 }
 
 func materializeRecurringInvoiceTransactionsTx(tx *sql.Tx, workspaceID, invoiceID string, now int64) error {
-	var accountID, reference string
+	var accountID, reference, invoiceStatus string
 	var closingUnix, dueUnix, closingDay, dueDay int64
 	if err := tx.QueryRow(`
-		SELECT i.account_id, i.reference, i.closing_date, i.due_date, cc.closing_day, cc.due_day
+		SELECT i.account_id, i.reference, i.status, i.closing_date, i.due_date, cc.closing_day, cc.due_day
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id
 		JOIN credit_cards cc ON cc.account_id = i.account_id
 		WHERE i.id = ? AND a.workspace_id = ? AND a.type = ?
-	`, invoiceID, workspaceID, models.AccountTypeCreditCard).Scan(&accountID, &reference, &closingUnix, &dueUnix, &closingDay, &dueDay); err != nil {
+	`, invoiceID, workspaceID, models.AccountTypeCreditCard).Scan(&accountID, &reference, &invoiceStatus, &closingUnix, &dueUnix, &closingDay, &dueDay); err != nil {
 		return err
+	}
+	switch invoiceStatus {
+	case models.InvoiceStatusOpen:
+	case models.InvoiceStatusClosed, models.InvoiceStatusPaid:
+		return nil
+	default:
+		return fmt.Errorf("%w: unsupported invoice status", errInvoiceStateStructural)
 	}
 
 	refYear, refMonth, err := parseInvoiceReference(reference)
@@ -1078,6 +1076,40 @@ func materializeRecurringInvoiceTransactionsTx(tx *sql.Tx, workspaceID, invoiceI
 }
 
 func materializeRecurringInvoiceOccurrenceTx(tx *sql.Tx, workspaceID, invoiceID, accountID string, rule recurringInvoiceRuleSeed, occurrenceUnix, seq, now int64) error {
+	if _, err := ensureAutomaticInvoiceAcceptsTransactionTx(tx, workspaceID, accountID, invoiceID); err != nil {
+		if errors.Is(err, errAutomaticInvoiceFrozen) {
+			return nil
+		}
+		return err
+	}
+
+	if rule.seriesID.Valid && strings.TrimSpace(rule.seriesID.String) != "" {
+		_, skipped, blocked, err := recurringOccurrenceTerminalConflictsTx(tx, workspaceID, rule.seriesID.String, seq)
+		if err != nil {
+			return err
+		}
+		if skipped && blocked {
+			return fmt.Errorf("%w: manual skip contradicts frozen block", errInvoiceStateStructural)
+		}
+		if skipped {
+			return nil
+		}
+		resolved, err := resolveRecurringOccurrenceBlockTx(tx, recurringOccurrenceBlockExpectation{
+			WorkspaceID:        workspaceID,
+			SeriesID:           rule.seriesID.String,
+			RecurringRuleID:    rule.id,
+			RecurrenceSequence: seq,
+			OccurrenceDate:     MustCivilWriteDate(civildate.LegacyUnixToCivilDateUTC(occurrenceUnix).String()),
+			AccountID:          accountID,
+		})
+		if err != nil {
+			return err
+		}
+		if resolved {
+			return nil
+		}
+	}
+
 	var existingID string
 	var existingInvoiceID sql.NullString
 	err := tx.QueryRow(`
@@ -1093,7 +1125,7 @@ func materializeRecurringInvoiceOccurrenceTx(tx *sql.Tx, workspaceID, invoiceID,
 		_, execErr := tx.Exec(`
 			UPDATE transactions
 			SET invoice_id = ?, status = 'paid', series_id = COALESCE(series_id, ?), updated_at = ?
-			WHERE id = ? AND workspace_id = ?
+			WHERE id = ? AND workspace_id = ? AND invoice_override_id IS NULL
 		`, invoiceID, nullStringInterface(rule.seriesID), now, existingID, workspaceID)
 		return execErr
 	}
@@ -1472,7 +1504,11 @@ func resolveCardTransactionInvoiceTx(tx *sql.Tx, workspaceID, accountID string, 
 		}
 	}
 
-	return ensureFirstOpenInvoiceFromReferenceTx(tx, workspaceID, accountID, startReference)
+	invoiceID, reference, status, closingUnix, dueUnix, err = ensureFirstOpenInvoiceFromReferenceTx(tx, workspaceID, accountID, startReference)
+	if err != nil {
+		return "", "", "", 0, 0, err
+	}
+	return invoiceID, reference, status, closingUnix, dueUnix, nil
 }
 
 func candidateInvoiceForDateTx(tx *sql.Tx, workspaceID, accountID string, txDate int64) (invoiceID, reference, status string, closingUnix, dueUnix int64, err error) {
@@ -1580,61 +1616,65 @@ func queryInvoiceOptionsForAccount(db *sql.DB, workspaceID, accountID string) []
 		return nil
 	}
 	rows, err := db.Query(`
-		SELECT i.id, i.reference, i.status, i.closing_date, i.due_date
+		SELECT
+			i.id,
+			i.reference,
+			i.status,
+			i.closing_date,
+			i.due_date,
+			COALESCE((
+				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END)
+				FROM transactions t
+				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
+			), 0) AS total,
+			`+invoiceEffectivePaidSQLExpr+` AS effective_paid
 		FROM invoices i
+		JOIN accounts a ON a.id = i.account_id
 		WHERE i.account_id = ?
+		  AND a.workspace_id = ?
+		  AND a.type = ?
 		ORDER BY i.reference ASC
 		LIMIT 24
-	`, accountID)
+	`, accountID, workspaceID, models.AccountTypeCreditCard)
 	if err != nil {
 		return nil
 	}
 	defer rows.Close()
 
-	type invoiceRow struct {
-		id          string
-		reference   string
-		status      string
-		closingUnix int64
-		dueUnix     int64
-	}
-	var raw []invoiceRow
-	for rows.Next() {
-		var r invoiceRow
-		if err := rows.Scan(&r.id, &r.reference, &r.status, &r.closingUnix, &r.dueUnix); err != nil {
-			return nil
-		}
-		raw = append(raw, r)
-	}
-	if err := rows.Err(); err != nil {
-		return nil
-	}
-	rows.Close()
-
 	now := time.Now()
 	var out []InvoiceOption
-	for _, r := range raw {
-		total, _ := sumInvoiceTotal(db, workspaceID, r.id)
-		paidActive, _ := sumActiveInvoicePaymentsDB(db, workspaceID, r.id)
-		pending := total - paidActive
+	for rows.Next() {
+		var id, reference, status string
+		var closingUnix, dueUnix, total, effectivePaid int64
+		if err := rows.Scan(&id, &reference, &status, &closingUnix, &dueUnix, &total, &effectivePaid); err != nil {
+			return nil
+		}
+		pending := total - effectivePaid
 		if pending < 0 {
 			pending = 0
 		}
 		opt := InvoiceOption{
-			ID:             r.id,
-			Reference:      r.reference,
-			Status:         r.status,
-			CycleLabel:     computeCycleBadge(r.closingUnix, now),
-			FinLabel:       computeFinancialBadge(pending, paidActive),
-			StatusLabel:    invoiceStatusLabel(r.status),
-			ReferenceLabel: formatReferenceLabel(r.reference),
-			DueLabel:       formatDateLabel(r.dueUnix),
-			ClosingLabel:   formatDateLabel(r.closingUnix),
+			ID:             id,
+			Reference:      reference,
+			Status:         status,
+			CycleLabel:     computeCycleBadge(closingUnix, now),
+			FinLabel:       computeFinancialBadge(pending, effectivePaid),
+			StatusLabel:    invoiceStatusLabel(status),
+			ReferenceLabel: formatReferenceLabel(reference),
+			DueLabel:       formatDateLabel(dueUnix),
+			ClosingLabel:   formatDateLabel(closingUnix),
 			TotalDisplay:   "R$ " + formatCurrencyCentsBase(total),
 			PendingDisplay: "R$ " + formatCurrencyCentsBase(pending),
-			IsSensitive:    r.status == models.InvoiceStatusClosed || r.status == models.InvoiceStatusPaid,
+			IsSensitive:    status == models.InvoiceStatusClosed || status == models.InvoiceStatusPaid,
+			ManualEligible: (status == models.InvoiceStatusOpen || status == models.InvoiceStatusClosed) && effectivePaid <= total && !(total > 0 && effectivePaid >= total),
+		}
+		if !opt.ManualEligible {
+			opt.ManualBlock = "Movimentação bloqueada: esta fatura está integralmente paga."
 		}
 		out = append(out, opt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil
 	}
 	return out
 }
@@ -1904,22 +1944,16 @@ func sumCardOutstandingLimit(db *sql.DB, workspaceID, cardAccountID string) (int
 		       COALESCE((
 		           SELECT SUM(t.amount)
 		           FROM transactions t
-		           WHERE t.workspace_id = ?
+		           WHERE t.workspace_id = a.workspace_id
 		             AND t.invoice_id = i.id
 		             AND t.type = 'EXPENSE'
 		       ), 0) AS invoice_total,
-		       COALESCE((
-		           SELECT SUM(ip.amount_cents)
-		           FROM invoice_payments ip
-		           WHERE ip.workspace_id = ?
-		             AND ip.invoice_id = i.id
-		             AND ip.reversed_at IS NULL
-		       ), 0) AS invoice_paid
+		       `+invoiceEffectivePaidSQLExpr+` AS invoice_paid
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id AND a.workspace_id = ?
 		WHERE i.account_id = ?
 		  AND a.type = ?
-	`, workspaceID, workspaceID, workspaceID, cardAccountID, models.AccountTypeCreditCard)
+	`, workspaceID, cardAccountID, models.AccountTypeCreditCard)
 	if err != nil {
 		return 0, err
 	}

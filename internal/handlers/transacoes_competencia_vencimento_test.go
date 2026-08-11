@@ -96,7 +96,7 @@ func TestBusinessListagemAgrupaPorDateSemDueDate(t *testing.T) {
 	seedBusinessWorkspace(t, db)
 
 	now := time.Now().Unix()
-	date := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC).Unix()
+	date := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC).Unix()
 	execTestSQL(t, db, `
 		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, installment_number, total_installments, created_at, updated_at)
 		VALUES ('tx-no-due', 'ws-test', 'user-test', 'checking-test', NULL, 'EXPENSE', 25000, ?, 'Despesa sem vencimento', 'pending', 1, 1, ?, ?)
@@ -121,8 +121,8 @@ func TestBusinessListagemAgrupaPorDateSemDueDate(t *testing.T) {
 			if tx.UsesDueDate {
 				t.Fatalf("UsesDueDate = true, want false")
 			}
-			if tx.DateLabel != "10 Ago" {
-				t.Fatalf("DateLabel = %q, want %q", tx.DateLabel, "10 Ago")
+			if tx.DateLabel != "1 Ago" {
+				t.Fatalf("DateLabel = %q, want %q", tx.DateLabel, "1 Ago")
 			}
 		}
 	}

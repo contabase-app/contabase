@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"testing"
 	"time"
+
+	"github.com/contabase-app/contabase/internal/models"
 )
 
 func TestDashboardPendingWindowIncludesOverdueAndNext7Days(t *testing.T) {
@@ -208,6 +210,61 @@ func TestDashboardPendingPartiallyPaidInvoice(t *testing.T) {
 	assertMoneyDisplay(t, "payable total", payableTotal, "250", ",00")
 	if payableCount != 1 {
 		t.Fatalf("payable count = %d, want 1", payableCount)
+	}
+	if raw := queryDashboardPendingWindowRawTotal(db, "ws-partial", models.TransactionTypeExpense, now); raw != 25000 {
+		t.Fatalf("raw payable total = %d, want 25000", raw)
+	}
+}
+
+func TestDashboardPendingUsesCanonicalEffectivePaidLineage(t *testing.T) {
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name       string
+		legacyPaid int64
+		reverse    bool
+		modernPaid int64
+		wantAmount int64
+		wantCount  int
+	}{
+		{"legacy partial without lineage", 10000, false, 0, 25000, 1},
+		{"all reversed ignores stale legacy", 35000, true, 10000, 35000, 1},
+		{"modern overpayment removes remaining", 35000, false, 40000, 0, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := openTestDB(t)
+			defer db.Close()
+			seedDashboardPartialInvoicePaymentScenario(t, db)
+			execTestSQL(t, db, `UPDATE invoices SET paid_amount = ? WHERE id = 'invoice-partial'`, tt.legacyPaid)
+			if tt.modernPaid == 0 {
+				execTestSQL(t, db, `DELETE FROM invoice_payments WHERE id = 'pay-partial'`)
+			} else {
+				var reversedAt any
+				if tt.reverse {
+					reversedAt = time.Now().Unix()
+				}
+				execTestSQL(t, db, `UPDATE invoice_payments SET amount_cents = ?, reversed_at = ? WHERE id = 'pay-partial'`, tt.modernPaid, reversedAt)
+			}
+
+			items := QueryDashboardPendingPayables7d(db, "ws-partial", now)
+			if len(items) != tt.wantCount {
+				t.Fatalf("items count = %d, want %d: %#v", len(items), tt.wantCount, items)
+			}
+			if tt.wantCount == 1 {
+				got := moneyDisplayToCentsForTest(t, items[0].Amount)
+				if got != tt.wantAmount {
+					t.Fatalf("item amount = %d, want %d", got, tt.wantAmount)
+				}
+			}
+			_, count := queryDashboardPayable7dTotal(db, "ws-partial", now)
+			if count != tt.wantCount {
+				t.Fatalf("total count = %d, want %d", count, tt.wantCount)
+			}
+			if raw := queryDashboardPendingWindowRawTotal(db, "ws-partial", models.TransactionTypeExpense, now); raw != tt.wantAmount {
+				t.Fatalf("raw total = %d, want %d", raw, tt.wantAmount)
+			}
+		})
 	}
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,14 +21,11 @@ import (
 func TestAdminImportBackupValidCandidate(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "custom-contabase.db")
-	currentDB := createRestoreTestDB(t, dbPath, "current")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
 	candidatePath := filepath.Join(dir, "candidate.db")
 	createRestoreTestDB(t, candidatePath, "candidate").Close()
 
-	var refreshed *sql.DB
-	result, err := restoreAdminBackupFromFile(currentDB, "file:"+dbPath, dbPath, candidatePath, openRestoreTestDB, func(db *sql.DB) {
-		refreshed = db
-	})
+	result, refreshed, err := restoreAdminBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBs, startRestoreTestServerRuntime)
 	if err != nil {
 		t.Fatalf("restore admin backup: %v", err)
 	}
@@ -37,36 +35,72 @@ func TestAdminImportBackupValidCandidate(t *testing.T) {
 		t.Fatalf("expected pre-restore backup path")
 	}
 	assertRestoreMarker(t, dbPath, "candidate")
-	assertRestoredAuthStateInvalidated(t, refreshed)
+	assertRestoredAuthStateInvalidated(t, refreshed.DBs.DB)
 	assertRestoreMarker(t, result.PreRestoreBackupPath, "current")
 }
 
 func TestAdminImportBackupRefreshesExistingAuthServiceDB(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "runtime-contabase.db")
-	currentDB := createRestoreTestDB(t, dbPath, "current")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
 	candidatePath := filepath.Join(dir, "candidate.db")
 	createRestoreTestDB(t, candidatePath, "candidate").Close()
 
-	authService := auth.NewService(currentDB)
-	var runtimeDB *sql.DB = currentDB
-	_, err := restoreAdminBackupFromFile(currentDB, "file:"+dbPath, dbPath, candidatePath, openRestoreTestDB, func(newDB *sql.DB) {
-		runtimeDB = newDB
-		authService.DB = newDB
+	authService := auth.NewService(current.DBs.DB)
+	coordinator := newServerRuntimeCoordinator(current, func(runtime *serverRuntime) {
+		authService.DB = runtime.DBs.DB
+	})
+	err := coordinator.Replace(nil, func(old *serverRuntime) (*serverRuntime, error) {
+		_, next, restoreErr := restoreAdminBackupFromFile(old, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBs, startRestoreTestServerRuntime)
+		return next, restoreErr
 	})
 	if err != nil {
 		t.Fatalf("restore admin backup: %v", err)
 	}
-	defer runtimeDB.Close()
-
-	if runtimeDB == currentDB {
-		t.Fatalf("expected runtime db reference to be replaced")
-	}
-	if authService.DB != runtimeDB {
+	defer coordinator.Close()
+	if authService.DB == current.DBs.DB {
 		t.Fatalf("expected existing auth service to point at refreshed db")
 	}
 	if _, err := isDatabaseBootstrapMode(authService.DB); err != nil {
 		t.Fatalf("bootstrap mode check should use live refreshed db: %v", err)
+	}
+	assertRestoreMarker(t, dbPath, "candidate")
+}
+
+func TestAdminImportBackupClosesBothOldPoolsBeforeOpeningReplacement(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "runtime-contabase.db")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
+	oldDB := current.DBs.DB
+	oldImmediate := current.DBs.Immediate
+	candidatePath := filepath.Join(dir, "candidate.db")
+	createRestoreTestDB(t, candidatePath, "candidate").Close()
+
+	openCalled := false
+	openFn := func(dbURL string) (*contabaseDB.RuntimeDBs, error) {
+		openCalled = true
+		if err := oldDB.Ping(); err == nil {
+			return nil, fmt.Errorf("old deferred pool remained open")
+		}
+		if err := oldImmediate.Ping(); err == nil {
+			return nil, fmt.Errorf("old immediate pool remained open")
+		}
+		return openRestoreTestRuntimeDBs(dbURL)
+	}
+
+	_, refreshed, err := restoreAdminBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, openFn, startRestoreTestServerRuntime)
+	if err != nil {
+		t.Fatalf("restore admin backup: %v", err)
+	}
+	defer refreshed.Close()
+	if !openCalled {
+		t.Fatalf("expected replacement owner to be opened")
+	}
+	if refreshed == nil || refreshed.DBs == nil || refreshed.DBs.DB == nil || refreshed.DBs.Immediate == nil {
+		t.Fatalf("expected both replacement pools to be refreshed together")
+	}
+	if refreshed.DBs.DB == oldDB || refreshed.DBs.Immediate == oldImmediate {
+		t.Fatalf("replacement owner retained an old pool handle")
 	}
 	assertRestoreMarker(t, dbPath, "candidate")
 }
@@ -124,67 +158,59 @@ func TestAdminImportBackupUsesCustomDatabasePath(t *testing.T) {
 	hardcodedDB := createRestoreTestDB(t, hardcodedPath, "hardcoded")
 	hardcodedDB.Close()
 
-	currentDB := createRestoreTestDB(t, dbPath, "current")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
 	candidatePath := filepath.Join(dir, "candidate.db")
 	createRestoreTestDB(t, candidatePath, "candidate").Close()
 
-	var refreshed *sql.DB
-	_, err := restoreAdminBackupFromFile(currentDB, "file:"+dbPath, dbPath, candidatePath, openRestoreTestDB, func(db *sql.DB) {
-		refreshed = db
-	})
+	_, refreshed, err := restoreAdminBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBs, startRestoreTestServerRuntime)
 	if err != nil {
 		t.Fatalf("restore admin backup: %v", err)
 	}
 	defer refreshed.Close()
 
 	assertRestoreMarker(t, dbPath, "candidate")
-	assertRestoredAuthStateInvalidated(t, refreshed)
+	assertRestoredAuthStateInvalidated(t, refreshed.DBs.DB)
 	assertRestoreMarker(t, hardcodedPath, "hardcoded")
 }
 
 func TestAdminImportBackupLegacyCandidateRunsMigrations(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "contabase.db")
-	currentDB := createRestoreTestDB(t, dbPath, "current")
+	t.Setenv("DATA_DIR", dir)
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
 	candidatePath := filepath.Join(dir, "legacy.db")
 	createLegacyBootstrapRestoreCandidate(t, candidatePath)
 
-	var refreshed *sql.DB
-	_, err := restoreAdminBackupFromFile(currentDB, "file:"+dbPath, dbPath, candidatePath, contabaseDB.Open, func(db *sql.DB) {
-		refreshed = db
-	})
+	_, refreshed, err := restoreAdminBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, contabaseDB.OpenRuntimeDBs, startRestoreTestServerRuntime)
 	if err != nil {
 		t.Fatalf("restore legacy admin backup: %v", err)
 	}
 	defer refreshed.Close()
 
-	assertColumnExistsInBootstrapRestore(t, refreshed, "users", "status")
-	assertColumnExistsInBootstrapRestore(t, refreshed, "workspaces", "type")
-	assertColumnExistsInBootstrapRestore(t, refreshed, "accounts", "icon")
-	assertTableExistsInBootstrapRestore(t, refreshed, "schema_migrations")
-	assertLegacyAccountMigratedInRestore(t, refreshed)
+	assertColumnExistsInBootstrapRestore(t, refreshed.DBs.DB, "users", "status")
+	assertColumnExistsInBootstrapRestore(t, refreshed.DBs.DB, "workspaces", "type")
+	assertColumnExistsInBootstrapRestore(t, refreshed.DBs.DB, "accounts", "icon")
+	assertTableExistsInBootstrapRestore(t, refreshed.DBs.DB, "schema_migrations")
+	assertLegacyAccountMigratedInRestore(t, refreshed.DBs.DB)
 }
 
 func TestAdminImportBackupRollsBackWhenReopenFails(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "rollback-contabase.db")
-	currentDB := createRestoreTestDB(t, dbPath, "current")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
 	candidatePath := filepath.Join(dir, "candidate.db")
 	createRestoreTestDB(t, candidatePath, "candidate").Close()
 
 	calls := 0
-	var refreshed *sql.DB
-	openFn := func(dbURL string) (*sql.DB, error) {
+	openFn := func(dbURL string) (*contabaseDB.RuntimeDBs, error) {
 		calls++
 		if calls == 1 {
 			return nil, fmt.Errorf("forced reopen failure")
 		}
-		return openRestoreTestDB(dbURL)
+		return openRestoreTestRuntimeDBs(dbURL)
 	}
 
-	result, err := restoreAdminBackupFromFile(currentDB, "file:"+dbPath, dbPath, candidatePath, openFn, func(db *sql.DB) {
-		refreshed = db
-	})
+	result, refreshed, err := restoreAdminBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, openFn, startRestoreTestServerRuntime)
 	if err == nil {
 		t.Fatalf("expected restore failure")
 	}
@@ -201,7 +227,7 @@ func TestAdminImportBackupRollsBackWhenReopenFails(t *testing.T) {
 func TestAdminImportBackupRemovesStaleWALAndSHM(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "wal-shm-contabase.db")
-	currentDB := createRestoreTestDB(t, dbPath, "current")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
 	candidatePath := filepath.Join(dir, "candidate.db")
 	createRestoreTestDB(t, candidatePath, "candidate").Close()
 	if err := os.WriteFile(dbPath+"-wal", []byte("stale wal"), 0o600); err != nil {
@@ -211,10 +237,7 @@ func TestAdminImportBackupRemovesStaleWALAndSHM(t *testing.T) {
 		t.Fatalf("write stale shm: %v", err)
 	}
 
-	var refreshed *sql.DB
-	_, err := restoreAdminBackupFromFile(currentDB, "file:"+dbPath, dbPath, candidatePath, openRestoreTestDBNoWAL, func(db *sql.DB) {
-		refreshed = db
-	})
+	_, refreshed, err := restoreAdminBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBsNoWAL, startRestoreTestServerRuntime)
 	if err != nil {
 		t.Fatalf("restore admin backup: %v", err)
 	}
@@ -227,21 +250,54 @@ func TestAdminImportBackupRemovesStaleWALAndSHM(t *testing.T) {
 func TestAdminImportBackupValidationFailureDoesNotCreatePreRestoreBackup(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "contabase.db")
-	currentDB := createRestoreTestDB(t, dbPath, "current")
-	defer currentDB.Close()
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
+	defer current.Close()
 	candidatePath := filepath.Join(dir, "invalid.db")
 	if err := os.WriteFile(candidatePath, []byte("not sqlite"), 0o600); err != nil {
 		t.Fatalf("write invalid candidate: %v", err)
 	}
 
-	_, err := restoreAdminBackupFromFile(currentDB, "file:"+dbPath, dbPath, candidatePath, openRestoreTestDB, func(*sql.DB) {})
+	_, returned, err := restoreAdminBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBs, startRestoreTestServerRuntime)
 	if err == nil {
 		t.Fatalf("expected restore to reject invalid candidate")
+	}
+	if returned != current {
+		t.Fatalf("invalid candidate must preserve the current runtime")
 	}
 	if _, statErr := os.Stat(filepath.Join(dir, "backups", "pre-restore")); !os.IsNotExist(statErr) {
 		t.Fatalf("expected no pre-restore backup for invalid candidate, stat err=%v", statErr)
 	}
 	assertRestoreMarker(t, dbPath, "current")
+}
+
+func TestAdminImportBackupCandidateCleanupIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "contabase.db")
+	createRestoreTestDB(t, dbPath, "current").Close()
+	path, cleanup, err := saveAdminBackupImportUpload(dbPath, strings.NewReader("candidate"))
+	if err != nil {
+		t.Fatalf("stage candidate: %v", err)
+	}
+	cleanup()
+	cleanup()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("staged candidate remained after cleanup: %v", err)
+	}
+}
+
+func TestAdminImportBackupCandidateAndRollbackFailureReturnsNoRuntime(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "contabase.db")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
+	candidatePath := filepath.Join(dir, "candidate.db")
+	createRestoreTestDB(t, candidatePath, "candidate").Close()
+	openFn := func(string) (*contabaseDB.RuntimeDBs, error) {
+		return nil, errors.New("forced candidate and rollback open failure")
+	}
+	result, runtime, err := restoreAdminBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, openFn, startRestoreTestServerRuntime)
+	if err == nil || runtime != nil || !result.RolledBack {
+		t.Fatalf("double failure must be fail-closed: runtime=%v rolled_back=%v err=%v", runtime, result.RolledBack, err)
+	}
 }
 
 func TestAdminBackupImportRateLimitResponseIsFriendly(t *testing.T) {
@@ -380,6 +436,73 @@ func createRestoreTestDB(t *testing.T, dbPath, marker string) *sql.DB {
 		}
 	}
 	return db
+}
+
+func createRestoreTestRuntimeDBs(t *testing.T, dbPath, marker string) *contabaseDB.RuntimeDBs {
+	t.Helper()
+	seedDB := createRestoreTestDB(t, dbPath, marker)
+	if err := seedDB.Close(); err != nil {
+		t.Fatalf("close seeded restore test db: %v", err)
+	}
+	dbs, err := openRestoreTestRuntimeDBs("file:" + dbPath)
+	if err != nil {
+		t.Fatalf("open restore test runtime dbs: %v", err)
+	}
+	return dbs
+}
+
+func createRestoreTestServerRuntime(t *testing.T, dbPath, marker string) *serverRuntime {
+	t.Helper()
+	return &serverRuntime{DBs: createRestoreTestRuntimeDBs(t, dbPath, marker)}
+}
+
+func startRestoreTestServerRuntime(dbs *contabaseDB.RuntimeDBs) (*serverRuntime, error) {
+	return &serverRuntime{DBs: dbs}, nil
+}
+
+func openRestoreTestRuntimeDBs(dbURL string) (*contabaseDB.RuntimeDBs, error) {
+	return openRestoreTestRuntimeDBsWithJournal(dbURL, true)
+}
+
+func openRestoreTestRuntimeDBsNoWAL(dbURL string) (*contabaseDB.RuntimeDBs, error) {
+	return openRestoreTestRuntimeDBsWithJournal(dbURL, false)
+}
+
+func openRestoreTestRuntimeDBsWithJournal(dbURL string, enableWAL bool) (*contabaseDB.RuntimeDBs, error) {
+	normalURL := restoreTestDSNWithTxLock(dbURL, "deferred")
+	immediateURL := restoreTestDSNWithTxLock(dbURL, "immediate")
+
+	var normal *sql.DB
+	var err error
+	if enableWAL {
+		normal, err = openRestoreTestDB(normalURL)
+	} else {
+		normal, err = openRestoreTestDBNoWAL(normalURL)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	immediate, err := sql.Open("sqlite", immediateURL)
+	if err != nil {
+		_ = normal.Close()
+		return nil, err
+	}
+	immediate.SetMaxOpenConns(1)
+	if err := immediate.Ping(); err != nil {
+		_ = immediate.Close()
+		_ = normal.Close()
+		return nil, err
+	}
+	return &contabaseDB.RuntimeDBs{DB: normal, Immediate: immediate}, nil
+}
+
+func restoreTestDSNWithTxLock(dbURL, mode string) string {
+	separator := "?"
+	if strings.Contains(dbURL, "?") {
+		separator = "&"
+	}
+	return dbURL + separator + "_txlock=" + mode
 }
 
 func openRestoreTestDB(dbURL string) (*sql.DB, error) {

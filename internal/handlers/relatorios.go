@@ -1504,6 +1504,7 @@ func (h *RelatoriosHandler) queryContabilReceitasByMacro(ctx context.Context, mo
 		WHERE t.workspace_id = ?
 			AND t.type = 'INCOME'
 			AND t.date >= ? AND t.date <= ?
+			AND `+excludeInvoicePaymentCompetenceClause("t")+`
 		GROUP BY COALESCE(NULLIF(c.macro_group, ''), NULLIF(p.macro_group, ''), 'Sem grupo macro')
 		ORDER BY total DESC
 	`, h.WorkspaceID, monthStart, monthEnd)
@@ -1608,6 +1609,7 @@ func (h *RelatoriosHandler) queryRevenueByCategory(ctx context.Context, monthSta
 		  AND t.type = 'INCOME'
 		  AND t.status = 'paid'
 		  AND t.date >= ? AND t.date <= ?
+		  AND `+excludeInvoicePaymentCompetenceClause("t")+`
 		GROUP BY category_name
 		ORDER BY total DESC
 	`, h.WorkspaceID, monthStart, monthEnd)
@@ -2354,12 +2356,7 @@ func (h *RelatoriosHandler) queryCaixaExpenseAnalysisRows(ctx context.Context, m
 		  AND COALESCE(NULLIF(t.paid_at, 0), t.date) >= ?
 		  AND COALESCE(NULLIF(t.paid_at, 0), t.date) <= ?
 		  AND COALESCE(t.description, '') NOT LIKE ?
-		  AND NOT EXISTS (
-			SELECT 1 FROM invoice_payments ip
-			WHERE ip.workspace_id = t.workspace_id
-			  AND ip.transaction_id = t.id
-			  AND ip.reversed_at IS NULL
-		  )
+		  AND ` + excludeInvoicePaymentCompetenceClause("t") + `
 	`
 	args := []any{h.WorkspaceID, monthStart, monthEnd, invoicePaymentDescriptionPrefix + "%"}
 	if normalizeCaixaModo(modo) == "previsao" {
@@ -2476,7 +2473,6 @@ func (h *RelatoriosHandler) queryInvoiceAllocationTargets(ctx context.Context, s
 			SELECT ip.invoice_id, COALESCE(SUM(ip.amount_cents), 0)
 			FROM invoice_payments ip
 			WHERE ip.workspace_id = ?
-			  AND ip.reversed_at IS NULL
 			  AND ip.paid_at >= ? AND ip.paid_at <= ?
 			GROUP BY ip.invoice_id
 		`, h.WorkspaceID, start, end)
@@ -2489,13 +2485,7 @@ func (h *RelatoriosHandler) queryInvoiceAllocationTargets(ctx context.Context, s
 					FROM transactions tx
 					WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
 				), 0) -
-				COALESCE((
-					SELECT SUM(ip.amount_cents)
-					FROM invoice_payments ip
-					WHERE ip.workspace_id = a.workspace_id
-						AND ip.invoice_id = i.id
-						AND ip.reversed_at IS NULL
-				), 0) AS pending_amount
+				`+invoiceEffectivePaidSQLExpr+` AS pending_amount
 			FROM invoices i
 			JOIN accounts a ON a.id = i.account_id
 			WHERE a.workspace_id = ?

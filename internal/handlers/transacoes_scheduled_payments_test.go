@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/contabase-app/contabase/internal/civildate"
 	"github.com/contabase-app/contabase/internal/models"
 )
 
@@ -194,6 +195,109 @@ func TestRunDueScheduledPaymentsExecutesAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestScheduledPaymentExecutorRejectsHistoricalInvoicePaymentTransactions(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		reversed bool
+	}{
+		{name: "active"},
+		{name: "reversed", reversed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
+			db := openTestDB(t)
+			t.Cleanup(func() { _ = db.Close() })
+
+			paymentTransactionID, dueRow := seedHistoricalScheduledInvoicePayment(t, db, tc.reversed)
+			before := scheduledInvoicePaymentProtectionSnapshotFor(t, db, paymentTransactionID)
+			executorNow := time.Date(2026, 8, 2, 8, 0, 0, 0, time.UTC)
+
+			dueRows, err := queryDueScheduledPayments(context.Background(), db, executorNow)
+			if err != nil {
+				t.Fatalf("query due scheduled payments: %v", err)
+			}
+			for _, got := range dueRows {
+				if got.ID == paymentTransactionID {
+					t.Fatalf("invoice payment transaction %s appeared in due selection", paymentTransactionID)
+				}
+			}
+
+			executed, err := executeScheduledPayment(context.Background(), db, dueRow, executorNow)
+			if err != nil {
+				t.Fatalf("execute protected scheduled payment: %v", err)
+			}
+			if executed {
+				t.Fatal("conditional UPDATE executed an invoice payment transaction")
+			}
+			assertScheduledInvoicePaymentProtectionSnapshot(t, db, paymentTransactionID, before)
+
+			processed, err := RunDueScheduledPayments(context.Background(), db, executorNow)
+			if err != nil {
+				t.Fatalf("run due scheduled payments: %v", err)
+			}
+			if processed != 0 {
+				t.Fatalf("processed = %d, want 0", processed)
+			}
+			assertScheduledInvoicePaymentProtectionSnapshot(t, db, paymentTransactionID, before)
+		})
+	}
+}
+
+func TestScheduledPaymentInvoiceProtectionPreservesWorkspaceIsolationAndOrdinaryExecution(t *testing.T) {
+	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
+	db := openTestDB(t)
+	t.Cleanup(func() { _ = db.Close() })
+	seedInvoicePaymentScenario(t, db)
+	seedForeignInvoicePaymentProtectionScenario(t, db)
+
+	insertScheduledPaymentTestTransaction(t, db, "tx-workspace-common", models.TransactionTypeExpense, "checking-test", "", "pending", nil)
+	scheduledAt := testAppCivilDate("2026-08-01")
+	execTestSQL(t, db, `UPDATE transactions SET scheduled_payment_at = ?, scheduled_payment_date_civil = '2026-08-01', scheduled_payment_created_by = 'user-test' WHERE id = 'tx-workspace-common'`, scheduledAt)
+	// invoice_payments.transaction_id is not a foreign key. A malformed relation
+	// from another tenant must not hide a legitimate transaction in ws-test.
+	execTestSQL(t, db, `UPDATE invoice_payments SET transaction_id = 'tx-workspace-common' WHERE id = 'foreign-ip'`)
+
+	executorNow := time.Date(2026, 8, 2, 8, 0, 0, 0, time.UTC)
+	dueRows, err := queryDueScheduledPayments(context.Background(), db, executorNow)
+	if err != nil {
+		t.Fatalf("query due scheduled payments: %v", err)
+	}
+	if len(dueRows) != 1 || dueRows[0].ID != "tx-workspace-common" {
+		t.Fatalf("due rows = %#v, want only tx-workspace-common", scheduledPaymentRowIDs(dueRows))
+	}
+
+	processed, err := RunDueScheduledPayments(context.Background(), db, executorNow)
+	if err != nil {
+		t.Fatalf("run due scheduled payments: %v", err)
+	}
+	if processed != 1 {
+		t.Fatalf("processed = %d, want 1", processed)
+	}
+
+	var status string
+	var balance int64
+	if err := db.QueryRow(`SELECT status FROM transactions WHERE id = 'tx-workspace-common'`).Scan(&status); err != nil {
+		t.Fatalf("query ordinary transaction: %v", err)
+	}
+	if status != models.PaymentStatusPaid {
+		t.Fatalf("ordinary status = %q, want paid", status)
+	}
+	if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id = 'checking-test' AND workspace_id = 'ws-test'`).Scan(&balance); err != nil {
+		t.Fatalf("query ordinary account balance: %v", err)
+	}
+	if balance != 87655 {
+		t.Fatalf("ordinary account balance = %d, want 87655", balance)
+	}
+
+	var foreignPaymentCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM invoice_payments WHERE id = 'foreign-ip' AND workspace_id = 'ws-foreign' AND transaction_id = 'tx-workspace-common'`).Scan(&foreignPaymentCount); err != nil {
+		t.Fatalf("query foreign invoice payment: %v", err)
+	}
+	if foreignPaymentCount != 1 {
+		t.Fatalf("foreign invoice payment count = %d, want 1", foreignPaymentCount)
+	}
+}
+
 func TestRunDueScheduledPaymentsSkipsFuturePaidAndOtherWorkspace(t *testing.T) {
 	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
 	db := openTestDB(t)
@@ -211,6 +315,145 @@ func TestRunDueScheduledPaymentsSkipsFuturePaidAndOtherWorkspace(t *testing.T) {
 	if count != 0 {
 		t.Fatalf("processed = %d, want 0", count)
 	}
+}
+
+type scheduledInvoicePaymentProtectionState struct {
+	status              string
+	paidAt              sql.NullInt64
+	paidDateCivil       sql.NullString
+	scheduledAt         sql.NullInt64
+	scheduledDateCivil  sql.NullString
+	executedAt          sql.NullInt64
+	updatedAt           int64
+	balance             int64
+	invoicePaymentCount int
+	invoicePaymentTotal int64
+	reversedAt          sql.NullInt64
+	invoiceStatus       string
+	invoicePaidAmount   int64
+	invoicePaidAt       sql.NullInt64
+	historyCount        int
+	notificationCount   int
+}
+
+func seedHistoricalScheduledInvoicePayment(t *testing.T, db *sql.DB, reversed bool) (string, scheduledPaymentDueRow) {
+	t.Helper()
+	seedInvoicePaymentScenario(t, db)
+
+	faturas := FaturasHandler{
+		DB:          db,
+		WriterDB:    db,
+		Templates:   invoicePaymentProtectionTemplates(),
+		WorkspaceID: "ws-test",
+		UserID:      "user-test",
+	}
+	payRR := httptest.NewRecorder()
+	faturas.HandlePagarFatura(payRR, formPost("/cartoes/faturas/pagar", url.Values{
+		"invoice_id":         {"invoice-2026-08"},
+		"payment_account_id": {"checking-test"},
+		"payment_mode":       {"settle"},
+		"confirm_settle":     {"1"},
+		"payment_date":       {"2026-08-08"},
+	}))
+	if payRR.Code != http.StatusOK {
+		t.Fatalf("invoice payment status = %d, body = %q", payRR.Code, payRR.Body.String())
+	}
+
+	var paymentTransactionID string
+	if err := db.QueryRow(`SELECT transaction_id FROM invoice_payments WHERE workspace_id = 'ws-test' AND invoice_id = 'invoice-2026-08'`).Scan(&paymentTransactionID); err != nil {
+		t.Fatalf("query payment transaction: %v", err)
+	}
+	if paymentTransactionID == "" {
+		t.Fatal("HandlePagarFatura created an empty transaction_id")
+	}
+
+	scheduledAt := testAppCivilDate("2026-08-01")
+	execTestSQL(t, db, `
+		UPDATE transactions
+		SET status = 'pending', paid_at = NULL, paid_date_civil = NULL,
+		    scheduled_payment_at = ?, scheduled_payment_date_civil = '2026-08-01',
+		    scheduled_payment_created_by = 'user-test', scheduled_payment_executed_at = NULL,
+		    updated_at = ?
+		WHERE id = ? AND workspace_id = 'ws-test'
+	`, scheduledAt, scheduledAt, paymentTransactionID)
+	// This is the balance left by the formerly reachable paid -> pending action.
+	execTestSQL(t, db, `UPDATE accounts SET current_balance = 100000 WHERE id = 'checking-test' AND workspace_id = 'ws-test'`)
+	if reversed {
+		execTestSQL(t, db, `UPDATE invoice_payments SET reversed_at = ? WHERE workspace_id = 'ws-test' AND transaction_id = ?`, scheduledAt+1, paymentTransactionID)
+		execTestSQL(t, db, `UPDATE invoices SET status = 'OPEN', paid_amount = 0, paid_at = NULL WHERE id = 'invoice-2026-08'`)
+	}
+
+	var row scheduledPaymentDueRow
+	if err := db.QueryRow(`
+		SELECT t.id, t.workspace_id, t.user_id, t.scheduled_payment_created_by, t.type, t.amount,
+		       t.account_id, a.type, t.description, t.scheduled_payment_at,
+		       t.scheduled_payment_date_civil, t.paid_at
+		FROM transactions t
+		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		WHERE t.id = ? AND t.workspace_id = 'ws-test'
+	`, paymentTransactionID).Scan(
+		&row.ID, &row.WorkspaceID, &row.UserID, &row.CreatedBy, &row.Type, &row.Amount,
+		&row.AccountID, &row.AccountType, &row.Description, &row.ScheduledAt,
+		&row.ScheduledDateCivil, &row.PaidAt,
+	); err != nil {
+		t.Fatalf("query historical scheduled payment row: %v", err)
+	}
+	return paymentTransactionID, row
+}
+
+func scheduledInvoicePaymentProtectionSnapshotFor(t *testing.T, db *sql.DB, transactionID string) scheduledInvoicePaymentProtectionState {
+	t.Helper()
+	var state scheduledInvoicePaymentProtectionState
+	if err := db.QueryRow(`
+		SELECT t.status, t.paid_at, t.paid_date_civil, t.scheduled_payment_at,
+		       t.scheduled_payment_date_civil, t.scheduled_payment_executed_at,
+		       t.updated_at, a.current_balance
+		FROM transactions t
+		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		WHERE t.id = ? AND t.workspace_id = 'ws-test'
+	`, transactionID).Scan(
+		&state.status, &state.paidAt, &state.paidDateCivil, &state.scheduledAt,
+		&state.scheduledDateCivil, &state.executedAt, &state.updatedAt, &state.balance,
+	); err != nil {
+		t.Fatalf("query protected scheduled transaction snapshot: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT COUNT(1), COALESCE(SUM(amount_cents), 0), MAX(reversed_at)
+		FROM invoice_payments
+		WHERE workspace_id = 'ws-test' AND transaction_id = ?
+	`, transactionID).Scan(&state.invoicePaymentCount, &state.invoicePaymentTotal, &state.reversedAt); err != nil {
+		t.Fatalf("query invoice payment snapshot: %v", err)
+	}
+	if err := db.QueryRow(`
+		SELECT i.status, i.paid_amount, i.paid_at
+		FROM invoices i
+		JOIN invoice_payments ip ON ip.invoice_id = i.id
+		WHERE ip.workspace_id = 'ws-test' AND ip.transaction_id = ?
+	`, transactionID).Scan(&state.invoiceStatus, &state.invoicePaidAmount, &state.invoicePaidAt); err != nil {
+		t.Fatalf("query invoice snapshot: %v", err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transaction_status_history WHERE transaction_id = ? AND workspace_id = 'ws-test'`, transactionID).Scan(&state.historyCount); err != nil {
+		t.Fatalf("query automatic history snapshot: %v", err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(1) FROM user_notifications WHERE workspace_id = 'ws-test' AND type = ?`, scheduledPaymentNotificationType).Scan(&state.notificationCount); err != nil {
+		t.Fatalf("query scheduled notification snapshot: %v", err)
+	}
+	return state
+}
+
+func assertScheduledInvoicePaymentProtectionSnapshot(t *testing.T, db *sql.DB, transactionID string, want scheduledInvoicePaymentProtectionState) {
+	t.Helper()
+	if got := scheduledInvoicePaymentProtectionSnapshotFor(t, db, transactionID); got != want {
+		t.Fatalf("protected scheduled payment state changed\n got: %+v\nwant: %+v", got, want)
+	}
+}
+
+func scheduledPaymentRowIDs(rows []scheduledPaymentDueRow) []string {
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	return ids
 }
 
 func TestScheduledPaymentTimezoneUsesConfiguredCivilDay(t *testing.T) {
@@ -273,19 +516,13 @@ func TestScheduledPaymentTimezoneUsesConfiguredCivilDay(t *testing.T) {
 func TestAppTimezonePriorityAndFallback(t *testing.T) {
 	t.Setenv("TZ", "UTC")
 	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
-	if got, want := testAppCivilDate("2026-07-10"), time.Date(2026, 7, 10, 0, 0, 0, 0, mustLocation(t, "America/Sao_Paulo")).Unix(); got != want {
-		t.Fatalf("CONTABASE_TIMEZONE priority got %d, want %d", got, want)
+	wantNoonUTC := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC).Unix()
+	if got := testAppCivilDate("2026-07-10"); got != wantNoonUTC {
+		t.Fatalf("CONTABASE_TIMEZONE priority got %d, want noon-UTC %d", got, wantNoonUTC)
 	}
-
 	t.Setenv("CONTABASE_TIMEZONE", "")
-	if got, want := testAppCivilDate("2026-07-10"), time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC).Unix(); got != want {
-		t.Fatalf("TZ fallback got %d, want %d", got, want)
-	}
-
-	t.Setenv("CONTABASE_TIMEZONE", "Invalid/Zone")
-	t.Setenv("TZ", "Invalid/Zone")
-	if got, want := testAppCivilDate("2026-07-10"), time.Date(2026, 7, 10, 0, 0, 0, 0, mustLocation(t, "America/Sao_Paulo")).Unix(); got != want {
-		t.Fatalf("default fallback got %d, want %d", got, want)
+	if got := testAppCivilDate("2026-07-10"); got != wantNoonUTC {
+		t.Fatalf("UTC fallback got %d, want noon-UTC %d", got, wantNoonUTC)
 	}
 }
 
@@ -318,11 +555,7 @@ func ptrInt64(v int64) *int64 {
 }
 
 func testAppCivilDate(date string) int64 {
-	v, err := parseCivilDateStartUnix(date)
-	if err != nil {
-		panic(err)
-	}
-	return v
+	return civildate.CivilDateToLegacyUnixNoonUTC(civildate.MustCivilDate(date))
 }
 
 func mustLocation(t *testing.T, name string) *time.Location {

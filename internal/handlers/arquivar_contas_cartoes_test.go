@@ -283,9 +283,8 @@ func TestNewTransactionRejectsArchivedAccount(t *testing.T) {
 	handler := TransactionHandler{DB: db, WorkspaceID: "ws-1", UserID: "user-1"}
 
 	_, err := handler.insertTransaction(
-		"EXPENSE", 1000, "Test", "", "", time.Now().Unix(),
-		"conta-1", "", "cat-1",
-		1, "paid", false, "", "", 0, false, nil, "", false,
+		"EXPENSE", 1000, "Test", "", "", civilWriteDateFromLegacyUnix(time.Now().Unix()), "conta-1", "", "cat-1",
+		1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false,
 	)
 	if err == nil {
 		t.Fatal("expected error when transacting with archived account")

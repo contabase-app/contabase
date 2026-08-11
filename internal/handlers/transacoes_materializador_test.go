@@ -50,9 +50,9 @@ func seedRecurringSeriesFiniteChecking(t *testing.T, db *sql.DB, description, st
 	return ruleID, seriesID
 }
 
-func runMaterializer(t *testing.T, db *sql.DB, horizonDate time.Time) {
+func runMaterializer(t *testing.T, db *sql.DB, horizon CivilWriteDate) {
 	t.Helper()
-	if err := EnsureRecurringMaterialized(db, "ws-test", horizonDate); err != nil {
+	if err := EnsureRecurringMaterialized(db, "ws-test", horizon); err != nil {
 		t.Fatalf("EnsureRecurringMaterialized: %v", err)
 	}
 }
@@ -63,7 +63,7 @@ func TestEnsureRecurringMaterializedInfiniteMonthly(t *testing.T) {
 	const desc = "Assinatura Materializador"
 	ruleID, seriesID := seedRecurringSeriesInfiniteChecking(t, db, desc, "2026-06-05")
 
-	horizon := time.Date(2027, 9, 5, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2027-09-05")
 	runMaterializer(t, db, horizon)
 
 	var count int
@@ -91,7 +91,7 @@ func TestEnsureRecurringMaterializedIdempotent(t *testing.T) {
 	const desc = "Assinatura Materializador"
 	_, seriesID := seedRecurringSeriesInfiniteChecking(t, db, desc, "2026-06-05")
 
-	horizon := time.Date(2027, 9, 5, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2027-09-05")
 	runMaterializer(t, db, horizon)
 	runMaterializer(t, db, horizon)
 
@@ -110,7 +110,7 @@ func TestEnsureRecurringMaterializedFifteenMonthWindow(t *testing.T) {
 	const desc = "Assinatura Materializador"
 	_, seriesID := seedRecurringSeriesInfiniteChecking(t, db, desc, "2026-06-05")
 
-	horizon := time.Date(2027, 9, 5, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2027-09-05")
 	runMaterializer(t, db, horizon)
 
 	var count int
@@ -121,7 +121,7 @@ func TestEnsureRecurringMaterializedFifteenMonthWindow(t *testing.T) {
 		t.Fatalf("tx count = %d, want 16 for 15 month window", count)
 	}
 
-	horizon2 := time.Date(2027, 10, 5, 0, 0, 0, 0, time.UTC)
+	horizon2 := MustCivilWriteDate("2027-10-05")
 	runMaterializer(t, db, horizon2)
 
 	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE workspace_id = 'ws-test' AND series_id = ?`, seriesID).Scan(&count); err != nil {
@@ -138,7 +138,7 @@ func TestEnsureRecurringMaterializedTotalOccurrences(t *testing.T) {
 	const desc = "Assinatura Materializador"
 	_, seriesID := seedRecurringSeriesFiniteChecking(t, db, desc, "2026-06-05", 5)
 
-	horizon := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2028-01-01")
 	runMaterializer(t, db, horizon)
 
 	var count int
@@ -157,7 +157,7 @@ func TestEnsureRecurringMaterializedEffectiveEndSequence(t *testing.T) {
 	ruleID, seriesID := seedRecurringSeriesInfiniteChecking(t, db, desc, "2026-06-05")
 	execTestSQL(t, db, `UPDATE recurring_rules SET effective_end_sequence = 4 WHERE id = ? AND workspace_id = 'ws-test'`, ruleID)
 
-	horizon := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2028-01-01")
 	runMaterializer(t, db, horizon)
 
 	var count int
@@ -178,7 +178,7 @@ func TestEnsureRecurringMaterializedEndDate(t *testing.T) {
 	// (jun, jul, ago, set/2026). Ocorrência de out/2026 já ultrapassa end_date.
 	execTestSQL(t, db, `UPDATE recurring_rules SET end_date = ? WHERE id = ? AND workspace_id = 'ws-test'`, testUnixDate("2026-09-05"), ruleID)
 
-	horizon := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2028-01-01")
 	runMaterializer(t, db, horizon)
 
 	var count int
@@ -200,7 +200,7 @@ func TestEnsureRecurringMaterializedRuleTotalOccurrences(t *testing.T) {
 	// total_occurrences = 3. O motor deve respeitar como limite adicional.
 	execTestSQL(t, db, `UPDATE recurring_rules SET total_occurrences = 3 WHERE id = ? AND workspace_id = 'ws-test'`, ruleID)
 
-	horizon := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2028-01-01")
 	runMaterializer(t, db, horizon)
 
 	var count int
@@ -221,7 +221,7 @@ func TestEnsureRecurringMaterializedSmallestTotalOccurrencesWins(t *testing.T) {
 	ruleID, seriesID := seedRecurringSeriesFiniteChecking(t, db, desc, "2026-06-05", 5)
 	execTestSQL(t, db, `UPDATE recurring_rules SET total_occurrences = 2 WHERE id = ? AND workspace_id = 'ws-test'`, ruleID)
 
-	horizon := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2028-01-01")
 	runMaterializer(t, db, horizon)
 
 	var count int
@@ -242,7 +242,7 @@ func TestEnsureRecurringMaterializedSeriesTotalOccurrencesWinsWhenSmaller(t *tes
 	ruleID, seriesID := seedRecurringSeriesFiniteChecking(t, db, desc, "2026-06-05", 3)
 	execTestSQL(t, db, `UPDATE recurring_rules SET total_occurrences = 6 WHERE id = ? AND workspace_id = 'ws-test'`, ruleID)
 
-	horizon := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2028-01-01")
 	runMaterializer(t, db, horizon)
 
 	var count int
@@ -270,20 +270,21 @@ func TestEnsureRecurringMaterializedChainABC(t *testing.T) {
 		INSERT INTO recurring_series (id, workspace_id, user_id, active, total_occurrences, created_at, updated_at)
 		VALUES (?, 'ws-test', 'user-test', 1, NULL, ?, ?)
 	`, seriesID, now, now)
+
 	execTestSQL(t, db, `
-		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, parent_rule_id, effective_start_sequence, effective_end_sequence, created_at, updated_at)
-		VALUES (?, 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 10000, ?, ?, 'MONTHLY', 'PENDING', 1, NULL, ?, NULL, 1, 3, ?, ?)
+		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, effective_start_sequence, effective_end_sequence, created_at, updated_at)
+		VALUES (?, 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 10000, ?, ?, 'MONTHLY', 'PENDING', 1, NULL, ?, 1, 3, ?, ?)
 	`, ruleA, descA, testUnixDate("2026-06-05"), seriesID, now, now)
 	execTestSQL(t, db, `
-		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, parent_rule_id, effective_start_sequence, created_at, updated_at)
-		VALUES (?, 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 20000, ?, ?, 'MONTHLY', 'PENDING', 1, NULL, ?, ?, 4, ?, ?)
-	`, ruleB, "Assinatura B", testUnixDate("2026-09-05"), seriesID, ruleA, now, now)
+		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, effective_start_sequence, effective_end_sequence, created_at, updated_at)
+		VALUES (?, 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 20000, ?, ?, 'MONTHLY', 'PENDING', 1, NULL, ?, 4, 6, ?, ?)
+	`, ruleB, "Assinatura B", testUnixDate("2026-09-05"), seriesID, now, now)
 	execTestSQL(t, db, `
-		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, parent_rule_id, effective_start_sequence, created_at, updated_at)
-		VALUES (?, 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 30000, ?, ?, 'MONTHLY', 'PENDING', 1, NULL, ?, ?, 7, ?, ?)
-	`, ruleC, "Assinatura C", testUnixDate("2026-12-05"), seriesID, ruleB, now, now)
+		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, effective_start_sequence, created_at, updated_at)
+		VALUES (?, 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 30000, ?, ?, 'MONTHLY', 'PENDING', 1, NULL, ?, 7, ?, ?)
+	`, ruleC, "Assinatura C", testUnixDate("2026-12-05"), seriesID, now, now)
 
-	horizon := time.Date(2027, 5, 5, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2027-05-05")
 	runMaterializer(t, db, horizon)
 
 	want := map[int64]string{
@@ -338,7 +339,7 @@ func TestEnsureRecurringMaterializedDeleteFutureDoesNotRegenerate(t *testing.T) 
 		t.Fatalf("series active = %d, want 1 (delete future keeps series active)", seriesActive)
 	}
 
-	horizon := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2028-01-01")
 	runMaterializer(t, db, horizon)
 
 	var count int
@@ -356,11 +357,11 @@ func TestEnsureRecurringMaterializedPreservesManualException(t *testing.T) {
 	const desc = "Assinatura Materializador"
 	ruleID, seriesID := seedRecurringSeriesInfiniteChecking(t, db, desc, "2026-06-05")
 	execTestSQL(t, db, `
-		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, is_recurring_exception, recurring_exception_reason, created_at, updated_at)
-		VALUES ('tx-mat-exc-2', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 9999, ?, 'Assinatura Materializador Manual', 'pending', 1, 1, ?, 2, ?, 1, 'manual_edit', ?, ?)
-	`, testUnixDate("2026-07-05"), ruleID, seriesID, time.Now().Unix(), time.Now().Unix())
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, date_civil, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, is_recurring_exception, recurring_exception_reason, created_at, updated_at)
+		VALUES ('tx-mat-exc-2', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 9999, ?, ?, 'Assinatura Materializador Manual', 'pending', 1, 1, ?, 2, ?, 1, 'manual_edit', ?, ?)
+	`, MustCivilWriteDate("2026-07-05").LegacyUnix(), MustCivilWriteDate("2026-07-05").Civil(), ruleID, seriesID, time.Now().Unix(), time.Now().Unix())
 
-	horizon := time.Date(2027, 9, 5, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2027-09-05")
 	runMaterializer(t, db, horizon)
 
 	var desc2 string
@@ -383,7 +384,7 @@ func TestEnsureRecurringMaterializedPreservesPaidWithoutInvoice(t *testing.T) {
 		VALUES ('tx-mat-paid-2', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, 'paid', 1, 1, ?, 2, ?, ?, ?, ?)
 	`, testUnixDate("2026-07-05"), desc, ruleID, seriesID, time.Now().Unix(), time.Now().Unix(), time.Now().Unix())
 
-	horizon := time.Date(2027, 9, 5, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2027-09-05")
 	runMaterializer(t, db, horizon)
 
 	var status string
@@ -396,36 +397,275 @@ func TestEnsureRecurringMaterializedPreservesPaidWithoutInvoice(t *testing.T) {
 	}
 }
 
-func TestEnsureRecurringMaterializedPreservesClosedAndPaidInvoices(t *testing.T) {
+func TestEnsureRecurringMaterializedPreservesClosedInvoiceOccurrence(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
-	const desc = "Assinatura Materializador"
-	ruleID, seriesID := seedRecurringSeriesInfiniteChecking(t, db, desc, "2026-06-05")
+
+	now := time.Now().Unix()
+	seedInvoicePaymentScenario(t, db)
+	seedRecurringExpenseCategory(t, db)
+	seriesID := "series-mat-closed"
+	ruleID := "rule-mat-closed"
+	desc := "Assinatura Materializador Closed"
+	execTestSQL(t, db, `
+		INSERT INTO recurring_series (id, workspace_id, user_id, active, total_occurrences, created_at, updated_at)
+		VALUES (?, 'ws-test', 'user-test', 1, NULL, ?, ?)
+	`, seriesID, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, effective_start_sequence, created_at, updated_at)
+		VALUES (?, 'ws-test', 'user-test', 'card-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, 'MONTHLY', 'PAID', 1, NULL, ?, 1, ?, ?)
+	`, ruleID, desc, testUnixDate("2026-06-24"), seriesID, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, invoice_id, type, amount, date, date_civil, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, created_at, updated_at)
+		VALUES ('tx-mat-closed-1', 'ws-test', 'user-test', 'card-test', 'cat-expense-rec', 'invoice-2026-08', 'EXPENSE', 15000, ?, ?, ?, 'paid', 1, 1, ?, 1, ?, ?, ?)
+	`, testUnixDate("2026-06-24"), MustCivilWriteDate("2026-06-24").Civil(), desc, ruleID, seriesID, now, now)
+
 	execTestSQL(t, db, `
 		INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, created_at)
 		VALUES ('invoice-mat-closed', 'card-test', '2026-07', ?, ?, 'CLOSED', ?)
-	`, testUnixDate("2026-06-20"), testUnixDate("2026-07-10"), time.Now().Unix())
+	`, testUnixDate("2026-06-20"), testUnixDate("2026-07-10"), now)
 	execTestSQL(t, db, `
-		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, invoice_id, type, amount, date, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, created_at, updated_at)
-		VALUES ('tx-mat-closed-2', 'ws-test', 'user-test', 'card-test', 'cat-expense-rec', 'invoice-mat-closed', 'EXPENSE', 15000, ?, ?, 'paid', 1, 1, ?, 2, ?, ?, ?)
-	`, testUnixDate("2026-07-05"), desc, ruleID, seriesID, time.Now().Unix(), time.Now().Unix())
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, invoice_id, type, amount, date, date_civil, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, created_at, updated_at)
+		VALUES ('tx-mat-closed-2', 'ws-test', 'user-test', 'card-test', 'cat-expense-rec', 'invoice-mat-closed', 'EXPENSE', 15000, ?, ?, ?, 'paid', 1, 1, ?, 2, ?, ?, ?)
+	`, testUnixDate("2026-07-24"), MustCivilWriteDate("2026-07-24").Civil(), desc, ruleID, seriesID, now, now)
 
-	horizon := time.Date(2027, 9, 5, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2027-09-24")
 	runMaterializer(t, db, horizon)
 
-	var invoiceStatus string
-	if err := db.QueryRow(`SELECT status FROM invoices WHERE id = 'invoice-mat-closed' AND account_id = 'card-test'`).Scan(&invoiceStatus); err != nil {
+	// Invoice status preserved
+	var invStatus string
+	if err := db.QueryRow(`SELECT status FROM invoices WHERE id = 'invoice-mat-closed'`).Scan(&invStatus); err != nil {
 		t.Fatalf("query invoice: %v", err)
 	}
-	if invoiceStatus != "CLOSED" {
-		t.Fatalf("invoice status = %q, want CLOSED", invoiceStatus)
+	if invStatus != "CLOSED" {
+		t.Fatalf("invoice status = %q, want CLOSED", invStatus)
 	}
-	var txStatus string
-	if err := db.QueryRow(`SELECT status FROM transactions WHERE id = 'tx-mat-closed-2' AND workspace_id = 'ws-test'`).Scan(&txStatus); err != nil {
-		t.Fatalf("query tx: %v", err)
+
+	// Full transaction identity preserved
+	var txID, txStatus, txType, txAccID, txDesc string
+	var amount int64
+	var txDate int64
+	var txDateCiv string
+	var dueDate sql.NullInt64
+	var dueDateCiv sql.NullString
+	var invID sql.NullString
+	var isExc sql.NullInt64
+	var ruleIDGot, seriesIDGot string
+	var seq int64
+	db.QueryRow(`SELECT id, type, amount, account_id, status, invoice_id, description, recurring_rule_id, series_id, recurrence_sequence, date, date_civil, due_date, due_date_civil, is_recurring_exception FROM transactions WHERE id = 'tx-mat-closed-2'`).Scan(&txID, &txType, &amount, &txAccID, &txStatus, &invID, &txDesc, &ruleIDGot, &seriesIDGot, &seq, &txDate, &txDateCiv, &dueDate, &dueDateCiv, &isExc)
+	if txID != "tx-mat-closed-2" {
+		t.Errorf("id changed: %q", txID)
+	}
+	if txType != "EXPENSE" {
+		t.Errorf("type changed: %q", txType)
+	}
+	if amount != 15000 {
+		t.Errorf("amount changed: %d", amount)
+	}
+	if txAccID != "card-test" {
+		t.Errorf("account_id changed: %q", txAccID)
 	}
 	if txStatus != "paid" {
-		t.Fatalf("tx status = %q, want paid", txStatus)
+		t.Errorf("status changed: %q", txStatus)
+	}
+	if !invID.Valid || invID.String != "invoice-mat-closed" {
+		t.Errorf("invoice_id = %v", invID)
+	}
+	if isExc.Int64 != 0 {
+		t.Errorf("is_recurring_exception = %d, want 0", isExc.Int64)
+	}
+	if ruleIDGot != ruleID {
+		t.Errorf("recurring_rule_id changed: %q != %q", ruleIDGot, ruleID)
+	}
+	if seriesIDGot != seriesID {
+		t.Errorf("series_id changed: %q != %q", seriesIDGot, seriesID)
+	}
+	if seq != 2 {
+		t.Errorf("recurrence_sequence changed: %d", seq)
+	}
+	if txDateCiv != "2026-07-24" {
+		t.Errorf("date_civil changed: %q", txDateCiv)
+	}
+	if LegacyUnixToCivilDateUTC(txDate).String() != txDateCiv {
+		t.Errorf("date/date_civil mismatch: date=%d→%q date_civil=%q", txDate, LegacyUnixToCivilDateUTC(txDate).String(), txDateCiv)
+	}
+	// Due date: must be NULL for this transaction (no offset set)
+	if dueDate.Valid {
+		t.Errorf("due_date = %d, want NULL", dueDate.Int64)
+	}
+	if dueDateCiv.Valid {
+		t.Errorf("due_date_civil = %q, want NULL", dueDateCiv.String)
+	}
+
+	// Next sequence (3) must be created with correct rule and date
+	var nextRuleID, nextDC string
+	var nextSeq int64
+	if err := db.QueryRow(`SELECT recurring_rule_id, date_civil, recurrence_sequence FROM transactions WHERE workspace_id = 'ws-test' AND series_id = ? AND recurrence_sequence = 3`, seriesID).Scan(&nextRuleID, &nextDC, &nextSeq); err != nil {
+		t.Fatalf("seq 3: %v", err)
+	}
+	if nextRuleID != ruleID {
+		t.Fatalf("seq 3 ruleID = %q, want %q", nextRuleID, ruleID)
+	}
+	if nextDC != "2026-08-24" {
+		t.Fatalf("seq 3 date_civil = %q, want 2026-08-24", nextDC)
+	}
+
+	// No duplicate
+	var countSeq2 int
+	db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE workspace_id = 'ws-test' AND series_id = ? AND recurrence_sequence = 2`, seriesID).Scan(&countSeq2)
+	if countSeq2 != 1 {
+		t.Fatalf("seq 2 count = %d, want 1", countSeq2)
+	}
+
+	// Markers advanced exactly to horizon
+	var gen int64
+	var genCiv string
+	if err := db.QueryRow(`SELECT generated_until, generated_until_civil FROM recurring_rules WHERE id = ?`, ruleID).Scan(&gen, &genCiv); err != nil {
+		t.Fatalf("generated markers: %v", err)
+	}
+	if gen != horizon.LegacyUnix() {
+		t.Fatalf("generated_until = %d, want %d (horizon)", gen, horizon.LegacyUnix())
+	}
+	if genCiv != horizon.Civil() {
+		t.Fatalf("generated_until_civil = %q, want %q (horizon)", genCiv, horizon.Civil())
+	}
+	if LegacyUnixToCivilDateUTC(gen).String() != genCiv {
+		t.Fatalf("generated_until/date_civil mismatch: %d->%q, civil=%q", gen, LegacyUnixToCivilDateUTC(gen).String(), genCiv)
+	}
+}
+
+func TestEnsureRecurringMaterializedPreservesPaidInvoiceOccurrence(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().Unix()
+	seedInvoicePaymentScenario(t, db)
+	seedRecurringExpenseCategory(t, db)
+	seriesID := "series-mat-paid"
+	ruleID := "rule-mat-paid"
+	desc := "Assinatura Materializador Paid"
+	execTestSQL(t, db, `
+		INSERT INTO recurring_series (id, workspace_id, user_id, active, total_occurrences, created_at, updated_at)
+		VALUES (?, 'ws-test', 'user-test', 1, NULL, ?, ?)
+	`, seriesID, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, description, start_date, frequency, default_payment_status, active, total_occurrences, series_id, effective_start_sequence, created_at, updated_at)
+		VALUES (?, 'ws-test', 'user-test', 'card-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, 'MONTHLY', 'PAID', 1, NULL, ?, 1, ?, ?)
+	`, ruleID, desc, testUnixDate("2026-06-24"), seriesID, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, invoice_id, type, amount, date, date_civil, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, created_at, updated_at)
+		VALUES ('tx-mat-paid-1', 'ws-test', 'user-test', 'card-test', 'cat-expense-rec', 'invoice-2026-08', 'EXPENSE', 15000, ?, ?, ?, 'paid', 1, 1, ?, 1, ?, ?, ?)
+	`, testUnixDate("2026-06-24"), MustCivilWriteDate("2026-06-24").Civil(), desc, ruleID, seriesID, now, now)
+
+	execTestSQL(t, db, `
+		INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, paid_at, paid_amount, created_at)
+		VALUES ('inv-mat-paid-inv', 'card-test', '2026-07', ?, ?, 'PAID', ?, 15000, ?)
+	`, testUnixDate("2026-06-20"), testUnixDate("2026-07-10"), now, now)
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, invoice_id, type, amount, date, date_civil, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, created_at, updated_at)
+		VALUES ('tx-mat-paid-2', 'ws-test', 'user-test', 'card-test', 'cat-expense-rec', 'inv-mat-paid-inv', 'EXPENSE', 15000, ?, ?, ?, 'paid', 1, 1, ?, 2, ?, ?, ?)
+	`, testUnixDate("2026-07-24"), MustCivilWriteDate("2026-07-24").Civil(), desc, ruleID, seriesID, now, now)
+
+	horizon := MustCivilWriteDate("2027-09-24")
+	runMaterializer(t, db, horizon)
+
+	// Invoice status PAID preserved
+	var invStatus string
+	if err := db.QueryRow(`SELECT status FROM invoices WHERE id = 'inv-mat-paid-inv'`).Scan(&invStatus); err != nil {
+		t.Fatalf("query invoice: %v", err)
+	}
+	if invStatus != "PAID" {
+		t.Fatalf("invoice status = %q, want PAID", invStatus)
+	}
+
+	// Full transaction identity preserved
+	var txID, txStatus, txType, txAccID string
+	var amount int64
+	var invID sql.NullString
+	var isExc sql.NullInt64
+	var ruleIDGot, seriesIDGot string
+	var seq int64
+	var txDateCiv string
+	var txDate int64
+	var dueDate sql.NullInt64
+	var dueDateCiv sql.NullString
+	var gen int64
+	var genCiv string
+	db.QueryRow(`SELECT id, type, amount, account_id, status, invoice_id, recurring_rule_id, series_id, recurrence_sequence, date, date_civil, due_date, due_date_civil, is_recurring_exception FROM transactions WHERE id = 'tx-mat-paid-2'`).Scan(&txID, &txType, &amount, &txAccID, &txStatus, &invID, &ruleIDGot, &seriesIDGot, &seq, &txDate, &txDateCiv, &dueDate, &dueDateCiv, &isExc)
+	if txID != "tx-mat-paid-2" {
+		t.Errorf("id changed: %q", txID)
+	}
+	if txType != "EXPENSE" {
+		t.Errorf("type: %q", txType)
+	}
+	if amount != 15000 {
+		t.Errorf("amount: %d", amount)
+	}
+	if txAccID != "card-test" {
+		t.Errorf("account_id: %q", txAccID)
+	}
+	if txStatus != "paid" {
+		t.Errorf("status: %q", txStatus)
+	}
+	if !invID.Valid || invID.String != "inv-mat-paid-inv" {
+		t.Errorf("invoice_id = %v", invID)
+	}
+	if isExc.Int64 != 0 {
+		t.Errorf("is_recurring_exception = %d, want 0", isExc.Int64)
+	}
+	if ruleIDGot != ruleID {
+		t.Errorf("recurring_rule_id: %q != %q", ruleIDGot, ruleID)
+	}
+	if seriesIDGot != seriesID {
+		t.Errorf("series_id: %q != %q", seriesIDGot, seriesID)
+	}
+	if seq != 2 {
+		t.Errorf("recurrence_sequence: %d", seq)
+	}
+	if txDateCiv != "2026-07-24" {
+		t.Errorf("date_civil: %q", txDateCiv)
+	}
+	if LegacyUnixToCivilDateUTC(txDate).String() != txDateCiv {
+		t.Errorf("date/date_civil mismatch: date=%d→%q date_civil=%q", txDate, LegacyUnixToCivilDateUTC(txDate).String(), txDateCiv)
+	}
+	if dueDate.Valid {
+		t.Errorf("due_date = %d, want NULL", dueDate.Int64)
+	}
+	if dueDateCiv.Valid {
+		t.Errorf("due_date_civil = %q, want NULL", dueDateCiv.String)
+	}
+
+	// Next sequence (3) must be created with correct rule and date
+	var nextRuleID, nextDC string
+	if err := db.QueryRow(`SELECT recurring_rule_id, date_civil FROM transactions WHERE workspace_id = 'ws-test' AND series_id = ? AND recurrence_sequence = 3`, seriesID).Scan(&nextRuleID, &nextDC); err != nil {
+		t.Fatalf("seq 3: %v", err)
+	}
+	if nextRuleID != ruleID {
+		t.Fatalf("seq 3 ruleID = %q, want %q", nextRuleID, ruleID)
+	}
+	if nextDC != "2026-08-24" {
+		t.Fatalf("seq 3 date_civil = %q, want 2026-08-24", nextDC)
+	}
+
+	// No duplicate
+	var countSeq2 int
+	db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE workspace_id = 'ws-test' AND series_id = ? AND recurrence_sequence = 2`, seriesID).Scan(&countSeq2)
+	if countSeq2 != 1 {
+		t.Fatalf("seq 2 count = %d, want 1", countSeq2)
+	}
+
+	// Markers advanced exactly to horizon
+	if err := db.QueryRow(`SELECT generated_until, generated_until_civil FROM recurring_rules WHERE id = ?`, ruleID).Scan(&gen, &genCiv); err != nil {
+		t.Fatalf("generated markers: %v", err)
+	}
+	if gen != horizon.LegacyUnix() {
+		t.Fatalf("generated_until = %d, want %d (horizon)", gen, horizon.LegacyUnix())
+	}
+	if genCiv != horizon.Civil() {
+		t.Fatalf("generated_until_civil = %q, want %q (horizon)", genCiv, horizon.Civil())
+	}
+	if LegacyUnixToCivilDateUTC(gen).String() != genCiv {
+		t.Fatalf("generated_until/date_civil mismatch: %d->%q, civil=%q", gen, LegacyUnixToCivilDateUTC(gen).String(), genCiv)
 	}
 }
 
@@ -452,7 +692,7 @@ func TestEnsureRecurringMaterializedCreditCardResolvesInvoice(t *testing.T) {
 		VALUES ('tx-mat-card-1', 'ws-test', 'user-test', 'card-test', 'cat-expense-rec', 'invoice-2026-08', 'EXPENSE', 15000, ?, ?, 'paid', 1, 1, ?, 1, ?, ?, ?)
 	`, testUnixDate("2026-06-24"), desc, ruleID, seriesID, now, now)
 
-	horizon := time.Date(2027, 9, 24, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2027-09-24")
 	runMaterializer(t, db, horizon)
 
 	var count int
@@ -495,7 +735,7 @@ func TestEnsureRecurringMaterializedIdempotentOnOpenInvoice(t *testing.T) {
 		VALUES ('tx-mat-card-open-1', 'ws-test', 'user-test', 'card-test', 'cat-expense-rec', 'invoice-2026-08', 'EXPENSE', 15000, ?, ?, 'paid', 1, 1, ?, 1, ?, ?, ?)
 	`, testUnixDate("2026-06-24"), desc, ruleID, seriesID, now, now)
 
-	horizon := time.Date(2027, 9, 24, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2027-09-24")
 	runMaterializer(t, db, horizon)
 	runMaterializer(t, db, horizon)
 
@@ -529,11 +769,11 @@ func TestEnsureRecurringMaterializedBusinessPreservesContactAndDueDate(t *testin
 		VALUES (?, 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, 'MONTHLY', 'PENDING', 1, NULL, ?, 'contact-mat', 10, 1, ?, ?)
 	`, ruleID, desc, testUnixDate("2026-06-05"), seriesID, now, now)
 	execTestSQL(t, db, `
-		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, created_at, updated_at)
-		VALUES ('tx-mat-bus-1', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, 'pending', 1, 1, ?, 1, ?, ?, ?)
-	`, testUnixDate("2026-06-05"), desc, ruleID, seriesID, now, now)
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, date_civil, due_date, due_date_civil, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, created_at, updated_at)
+		VALUES ('tx-mat-bus-1', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, ?, ?, ?, 'pending', 1, 1, ?, 1, ?, ?, ?)
+	`, testUnixDate("2026-06-05"), MustCivilWriteDate("2026-06-05").Civil(), MustCivilWriteDate("2026-06-15").LegacyUnix(), MustCivilWriteDate("2026-06-15").Civil(), desc, ruleID, seriesID, now, now)
 
-	horizon := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2026-09-05")
 	runMaterializer(t, db, horizon)
 
 	var dueDate sql.NullInt64
@@ -541,8 +781,8 @@ func TestEnsureRecurringMaterializedBusinessPreservesContactAndDueDate(t *testin
 	if err := db.QueryRow(`SELECT due_date, contact_id FROM transactions WHERE workspace_id = 'ws-test' AND series_id = ? AND recurrence_sequence = 2`, seriesID).Scan(&dueDate, &contactID); err != nil {
 		t.Fatalf("query seq 2: %v", err)
 	}
-	if !dueDate.Valid || dueDate.Int64 != testUnixDate("2026-07-15") {
-		t.Fatalf("due_date = %v, want 2026-07-15", dueDate)
+	if !dueDate.Valid || dueDate.Int64 != MustCivilWriteDate("2026-07-15").LegacyUnix() {
+		t.Fatalf("due_date = %v, want 2026-07-15 (noon UTC=%d)", dueDate, MustCivilWriteDate("2026-07-15").LegacyUnix())
 	}
 	if !contactID.Valid || contactID.String != "contact-mat" {
 		t.Fatalf("contact_id = %v, want contact-mat", contactID)
@@ -573,7 +813,7 @@ func TestEnsureRecurringMaterializedPersonalKeepsContactNull(t *testing.T) {
 		VALUES ('tx-mat-per-1', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, 'pending', 1, 1, ?, 1, ?, ?, ?)
 	`, testUnixDate("2026-06-05"), desc, ruleID, seriesID, now, now)
 
-	horizon := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2026-09-05")
 	runMaterializer(t, db, horizon)
 
 	var dueDate sql.NullInt64
@@ -601,7 +841,7 @@ func TestEnsureRecurringMaterializedDoesNotCrossWorkspace(t *testing.T) {
 		t.Fatalf("count other workspace before: %v", err)
 	}
 
-	horizon := time.Date(2027, 9, 5, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2027-09-05")
 	runMaterializer(t, db, horizon)
 
 	var otherAfter int
@@ -629,7 +869,7 @@ func TestEnsureRecurringMaterializedBackfillsLegacyRuleWithoutSeries(t *testing.
 		VALUES ('tx-mat-legacy-1', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, 'Assinatura Legacy', 'pending', 1, 1, ?, 1, ?, ?)
 	`, testUnixDate("2026-06-05"), ruleID, now, now)
 
-	horizon := time.Date(2027, 9, 5, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2027-09-05")
 	runMaterializer(t, db, horizon)
 
 	var seriesID sql.NullString
@@ -660,7 +900,7 @@ func TestEnsureRecurringMaterializedFillsGapOnly(t *testing.T) {
 		VALUES ('tx-mat-gap-5', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, 'pending', 1, 1, ?, 5, ?, ?, ?)
 	`, testUnixDate("2026-10-05"), desc, ruleID, seriesID, now, now)
 
-	horizon := time.Date(2027, 9, 5, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2027-09-05")
 	runMaterializer(t, db, horizon)
 
 	var count int
@@ -683,7 +923,7 @@ func TestEnsureRecurringMaterializedPartiallyMaterializedDoesNotDuplicate(t *tes
 		VALUES ('tx-mat-part-2', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 15000, ?, ?, 'pending', 1, 1, ?, 2, ?, ?, ?)
 	`, testUnixDate("2026-07-05"), desc, ruleID, seriesID, now, now)
 
-	horizon := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC)
+	horizon := MustCivilWriteDate("2028-01-01")
 	runMaterializer(t, db, horizon)
 
 	var count int

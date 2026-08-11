@@ -280,18 +280,22 @@ type Invoice struct {
 }
 
 type InvoicePayment struct {
-	ID            string  `json:"id"`
-	WorkspaceID   string  `json:"workspace_id"`
-	InvoiceID     string  `json:"invoice_id"`
-	AccountID     string  `json:"account_id"`
-	TransactionID *string `json:"transaction_id"`
-	AmountCents   int64   `json:"amount_cents"`
-	PaidAt        int64   `json:"paid_at"`
-	Note          *string `json:"note"`
-	Source        string  `json:"source"`
-	ReversedAt    *int64  `json:"reversed_at"`
-	CreatedBy     *string `json:"created_by"`
-	CreatedAt     int64   `json:"created_at"`
+	ID                    string  `json:"id"`
+	WorkspaceID           string  `json:"workspace_id"`
+	InvoiceID             string  `json:"invoice_id"`
+	AccountID             string  `json:"account_id"`
+	TransactionID         *string `json:"transaction_id"`
+	AmountCents           int64   `json:"amount_cents"`
+	PaidAt                int64   `json:"paid_at"`
+	Note                  *string `json:"note"`
+	Source                string  `json:"source"`
+	ReversedAt            *int64  `json:"reversed_at"`
+	ReversedBy            *string `json:"reversed_by"`
+	ReversalReason        *string `json:"reversal_reason"`
+	ReversalTransactionID *string `json:"reversal_transaction_id"`
+	ReversedDateCivil     *string `json:"reversed_date_civil"`
+	CreatedBy             *string `json:"created_by"`
+	CreatedAt             int64   `json:"created_at"`
 }
 
 const (

@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -1538,6 +1539,1090 @@ var migrations = []migration{
 			return nil
 		},
 	},
+	{
+		version: 52,
+		name:    "civil_date_columns",
+		up: func(tx *sql.Tx) error {
+			if err := migrateCivilDateColumns(tx); err != nil {
+				return fmt.Errorf("migration 52 civil date columns: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 53,
+		name:    "recurring_rules_active_leaf_invariant",
+		up: func(tx *sql.Tx) error {
+			rulesExist, err := tableExists(tx, "recurring_rules")
+			if err != nil {
+				return err
+			}
+			if !rulesExist {
+				return nil
+			}
+
+			stmts := []string{
+				`CREATE TRIGGER IF NOT EXISTS trg_recurring_rules_no_active_parent_insert
+BEFORE INSERT ON recurring_rules
+WHEN NEW.parent_rule_id IS NOT NULL AND (
+    SELECT active FROM recurring_rules WHERE id = NEW.parent_rule_id
+) = 1
+BEGIN
+    SELECT RAISE(ABORT, 'active rule cannot have children');
+END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_recurring_rules_no_active_parent_update
+BEFORE UPDATE OF parent_rule_id ON recurring_rules
+WHEN NEW.parent_rule_id IS NOT NULL
+ AND NEW.parent_rule_id != COALESCE(OLD.parent_rule_id, '')
+ AND (
+    SELECT active FROM recurring_rules WHERE id = NEW.parent_rule_id
+) = 1
+BEGIN
+    SELECT RAISE(ABORT, 'active rule cannot have children');
+END`,
+				`CREATE TRIGGER IF NOT EXISTS trg_recurring_rules_no_reactivation_with_children
+BEFORE UPDATE OF active ON recurring_rules
+WHEN NEW.active = 1 AND OLD.active = 0 AND (
+    SELECT COUNT(1) FROM recurring_rules WHERE parent_rule_id = OLD.id
+) > 0
+BEGIN
+    SELECT RAISE(ABORT, 'active rule cannot have children');
+END`,
+				`CREATE INDEX IF NOT EXISTS idx_recurring_rules_parent_rule_id ON recurring_rules(parent_rule_id)`,
+			}
+			for _, stmt := range stmts {
+				if _, err := tx.Exec(stmt); err != nil {
+					return fmt.Errorf("migration 53 active leaf invariant: %w", err)
+				}
+			}
+
+			rows, err := tx.Query(`
+				SELECT p.id, p.workspace_id
+				FROM recurring_rules p
+				WHERE p.active = 1
+				  AND EXISTS (SELECT 1 FROM recurring_rules c WHERE c.parent_rule_id = p.id)
+				ORDER BY p.id
+			`)
+			if err != nil {
+				return fmt.Errorf("migration 53 preflight check invariant violations: %w", err)
+			}
+			defer rows.Close()
+
+			var violations int
+			var sampleID, sampleWS string
+			for rows.Next() {
+				if err := rows.Scan(&sampleID, &sampleWS); err != nil {
+					return fmt.Errorf("migration 53 preflight scan invariant violation: %w", err)
+				}
+				violations++
+			}
+			if err := rows.Err(); err != nil {
+				return fmt.Errorf("migration 53 preflight rows invariant violations: %w", err)
+			}
+			if violations > 0 {
+				return fmt.Errorf(
+					"migration 53 aborted: found %d active rule(s) with children in recurring_rules that violate the active-leaf invariant; example rule_id=%q workspace_id=%q; resolve these data violations before upgrading (deactivate the parent or reassign the children)",
+					violations, sampleID, sampleWS,
+				)
+			}
+			return nil
+		},
+	},
+	{
+		version: 54,
+		name:    "recurring_occurrence_skips",
+		up: func(tx *sql.Tx) error {
+			if err := migrateRecurringOccurrenceSkips(tx); err != nil {
+				return fmt.Errorf("migration 54 recurring occurrence skips: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 55,
+		name:    "box_monthly_recharge_identity",
+		up: func(tx *sql.Tx) error {
+			if err := migrateBoxMonthlyRechargeIdentity(tx, time.Now()); err != nil {
+				return fmt.Errorf("migration 55 box monthly recharge identity: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 56,
+		name:    "box_contribution_lifecycle",
+		up: func(tx *sql.Tx) error {
+			if err := migrateBoxContributionLifecycle(tx); err != nil {
+				return fmt.Errorf("migration 56 box contribution lifecycle: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 57,
+		name:    "workspace_monthly_planning_references",
+		up: func(tx *sql.Tx) error {
+			if err := migrateWorkspaceMonthlyPlanningReferences(tx); err != nil {
+				return fmt.Errorf("migration 57 workspace monthly planning references: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 58,
+		name:    "invoice_payment_reversal_identity",
+		up: func(tx *sql.Tx) error {
+			if err := migrateInvoicePaymentReversalIdentity(tx); err != nil {
+				return fmt.Errorf("migration 58 invoice payment reversal identity: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 59,
+		name:    "recurring_occurrence_blocks",
+		up: func(tx *sql.Tx) error {
+			if err := migrateRecurringOccurrenceBlocks(tx); err != nil {
+				return fmt.Errorf("migration 59 recurring occurrence blocks: %w", err)
+			}
+			return nil
+		},
+	},
+}
+
+func migrateRecurringOccurrenceBlocks(tx *sql.Tx) error {
+	// This preflight must remain before every v59 DDL statement. Existing
+	// transaction+skip pairs are contradictory terminal outcomes and require an
+	// explicit operator decision; migration 59 never repairs or chooses a winner.
+	if err := preflightRecurringOccurrenceTerminalConflicts(tx); err != nil {
+		return err
+	}
+
+	statements := []string{recurringOccurrenceBlocksDDL}
+	for _, trigger := range recurringOccurrenceBlocksTriggerContract {
+		statements = append(statements, trigger.ddl)
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(statement); err != nil {
+			return err
+		}
+	}
+	if err := validateRecurringOccurrenceBlocksSchema(tx); err != nil {
+		return fmt.Errorf("validate recurring occurrence blocks schema: %w", err)
+	}
+	return nil
+}
+
+const recurringOccurrenceBlocksDDL = `CREATE TABLE recurring_occurrence_blocks (
+    workspace_id          TEXT    NOT NULL,
+    series_id             TEXT    NOT NULL,
+    recurring_rule_id     TEXT    NOT NULL,
+    recurrence_sequence   INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+    occurrence_date_civil TEXT    NOT NULL,
+    invoice_id            TEXT    NOT NULL,
+    invoice_reference     TEXT    NOT NULL,
+    invoice_status        TEXT    NOT NULL CHECK (invoice_status IN ('CLOSED', 'PAID')),
+    reason                TEXT    NOT NULL CHECK (reason = 'frozen_invoice'),
+    created_at            INTEGER NOT NULL,
+    PRIMARY KEY (workspace_id, series_id, recurrence_sequence),
+    UNIQUE (workspace_id, recurring_rule_id, recurrence_sequence)
+)`
+
+var recurringOccurrenceBlocksTriggerContract = []struct {
+	name      string
+	tableName string
+	ddl       string
+}{
+	{
+		name:      "trg_recurring_occurrence_blocks_no_transaction",
+		tableName: "recurring_occurrence_blocks",
+		ddl: `CREATE TRIGGER trg_recurring_occurrence_blocks_no_transaction
+BEFORE INSERT ON recurring_occurrence_blocks
+WHEN EXISTS (
+    SELECT 1 FROM transactions t
+    WHERE t.workspace_id = NEW.workspace_id
+      AND t.series_id = NEW.series_id
+      AND t.recurrence_sequence = NEW.recurrence_sequence
+)
+BEGIN
+    SELECT RAISE(ABORT, 'recurring occurrence terminal conflict: transaction exists');
+END`,
+	},
+	{
+		name:      "trg_recurring_occurrence_blocks_no_skip",
+		tableName: "recurring_occurrence_blocks",
+		ddl: `CREATE TRIGGER trg_recurring_occurrence_blocks_no_skip
+BEFORE INSERT ON recurring_occurrence_blocks
+WHEN EXISTS (
+    SELECT 1 FROM recurring_occurrence_skips s
+    WHERE s.workspace_id = NEW.workspace_id
+      AND s.series_id = NEW.series_id
+      AND s.recurrence_sequence = NEW.recurrence_sequence
+)
+BEGIN
+    SELECT RAISE(ABORT, 'recurring occurrence terminal conflict: manual skip exists');
+END`,
+	},
+	{
+		name:      "trg_transactions_no_recurring_terminal_insert",
+		tableName: "transactions",
+		ddl: `CREATE TRIGGER trg_transactions_no_recurring_terminal_insert
+BEFORE INSERT ON transactions
+WHEN NEW.series_id IS NOT NULL
+ AND NEW.recurrence_sequence IS NOT NULL
+ AND (
+    EXISTS (
+        SELECT 1 FROM recurring_occurrence_skips s
+        WHERE s.workspace_id = NEW.workspace_id
+          AND s.series_id = NEW.series_id
+          AND s.recurrence_sequence = NEW.recurrence_sequence
+    )
+    OR EXISTS (
+        SELECT 1 FROM recurring_occurrence_blocks b
+        WHERE b.workspace_id = NEW.workspace_id
+          AND b.series_id = NEW.series_id
+          AND b.recurrence_sequence = NEW.recurrence_sequence
+    )
+ )
+BEGIN
+    SELECT RAISE(ABORT, 'recurring occurrence terminal conflict: tombstone exists');
+END`,
+	},
+	{
+		name:      "trg_transactions_no_recurring_terminal_update",
+		tableName: "transactions",
+		ddl: `CREATE TRIGGER trg_transactions_no_recurring_terminal_update
+BEFORE UPDATE OF workspace_id, series_id, recurrence_sequence ON transactions
+WHEN NEW.series_id IS NOT NULL
+ AND NEW.recurrence_sequence IS NOT NULL
+ AND (
+    EXISTS (
+        SELECT 1 FROM recurring_occurrence_skips s
+        WHERE s.workspace_id = NEW.workspace_id
+          AND s.series_id = NEW.series_id
+          AND s.recurrence_sequence = NEW.recurrence_sequence
+    )
+    OR EXISTS (
+        SELECT 1 FROM recurring_occurrence_blocks b
+        WHERE b.workspace_id = NEW.workspace_id
+          AND b.series_id = NEW.series_id
+          AND b.recurrence_sequence = NEW.recurrence_sequence
+    )
+ )
+BEGIN
+    SELECT RAISE(ABORT, 'recurring occurrence terminal conflict: tombstone exists');
+END`,
+	},
+	{
+		name:      "trg_recurring_occurrence_skips_no_block_insert",
+		tableName: "recurring_occurrence_skips",
+		ddl: `CREATE TRIGGER trg_recurring_occurrence_skips_no_block_insert
+BEFORE INSERT ON recurring_occurrence_skips
+WHEN EXISTS (
+    SELECT 1 FROM recurring_occurrence_blocks b
+    WHERE b.workspace_id = NEW.workspace_id
+      AND b.series_id = NEW.series_id
+      AND b.recurrence_sequence = NEW.recurrence_sequence
+)
+BEGIN
+    SELECT RAISE(ABORT, 'recurring occurrence terminal conflict: frozen block exists');
+END`,
+	},
+	{
+		name:      "trg_recurring_occurrence_skips_no_block_update",
+		tableName: "recurring_occurrence_skips",
+		ddl: `CREATE TRIGGER trg_recurring_occurrence_skips_no_block_update
+BEFORE UPDATE OF workspace_id, series_id, recurrence_sequence ON recurring_occurrence_skips
+WHEN EXISTS (
+    SELECT 1 FROM recurring_occurrence_blocks b
+    WHERE b.workspace_id = NEW.workspace_id
+      AND b.series_id = NEW.series_id
+      AND b.recurrence_sequence = NEW.recurrence_sequence
+)
+BEGIN
+    SELECT RAISE(ABORT, 'recurring occurrence terminal conflict: frozen block exists');
+END`,
+	},
+	{
+		name:      "trg_recurring_occurrence_blocks_immutable_update",
+		tableName: "recurring_occurrence_blocks",
+		ddl: `CREATE TRIGGER trg_recurring_occurrence_blocks_immutable_update
+BEFORE UPDATE ON recurring_occurrence_blocks
+BEGIN
+    SELECT RAISE(ABORT, 'recurring occurrence block is immutable');
+END`,
+	},
+	{
+		name:      "trg_recurring_occurrence_blocks_immutable_delete",
+		tableName: "recurring_occurrence_blocks",
+		ddl: `CREATE TRIGGER trg_recurring_occurrence_blocks_immutable_delete
+BEFORE DELETE ON recurring_occurrence_blocks
+BEGIN
+    SELECT RAISE(ABORT, 'recurring occurrence block is immutable');
+END`,
+	},
+}
+
+var recurringOccurrenceBlocksColumnContract = []struct {
+	name     string
+	typeName string
+	notNull  int
+	pk       int
+}{
+	{name: "workspace_id", typeName: "TEXT", notNull: 1, pk: 1},
+	{name: "series_id", typeName: "TEXT", notNull: 1, pk: 2},
+	{name: "recurring_rule_id", typeName: "TEXT", notNull: 1, pk: 0},
+	{name: "recurrence_sequence", typeName: "INTEGER", notNull: 1, pk: 3},
+	{name: "occurrence_date_civil", typeName: "TEXT", notNull: 1, pk: 0},
+	{name: "invoice_id", typeName: "TEXT", notNull: 1, pk: 0},
+	{name: "invoice_reference", typeName: "TEXT", notNull: 1, pk: 0},
+	{name: "invoice_status", typeName: "TEXT", notNull: 1, pk: 0},
+	{name: "reason", typeName: "TEXT", notNull: 1, pk: 0},
+	{name: "created_at", typeName: "INTEGER", notNull: 1, pk: 0},
+}
+
+func validateRecurringOccurrenceBlocksSchema(tx *sql.Tx) error {
+	type columnInfo struct {
+		cid      int
+		name     string
+		typeName string
+		notNull  int
+		dflt     *string
+		pk       int
+		hidden   int
+	}
+
+	rows, err := tx.Query(`PRAGMA table_xinfo(recurring_occurrence_blocks)`)
+	if err != nil {
+		return fmt.Errorf("pragma table_xinfo recurring_occurrence_blocks: %w", err)
+	}
+	var actualColumns []columnInfo
+	for rows.Next() {
+		var column columnInfo
+		if err := rows.Scan(&column.cid, &column.name, &column.typeName, &column.notNull, &column.dflt, &column.pk, &column.hidden); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan recurring_occurrence_blocks column: %w", err)
+		}
+		actualColumns = append(actualColumns, column)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close recurring_occurrence_blocks columns: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate recurring_occurrence_blocks columns: %w", err)
+	}
+	if len(actualColumns) != len(recurringOccurrenceBlocksColumnContract) {
+		return fmt.Errorf("recurring_occurrence_blocks: expected %d columns, got %d", len(recurringOccurrenceBlocksColumnContract), len(actualColumns))
+	}
+	for i, column := range actualColumns {
+		want := recurringOccurrenceBlocksColumnContract[i]
+		actualType := strings.TrimSpace(strings.ToUpper(column.typeName))
+		if column.name != want.name || actualType != want.typeName || column.notNull != want.notNull || column.pk != want.pk {
+			return fmt.Errorf("recurring_occurrence_blocks: column %d contract mismatch", i)
+		}
+		if column.dflt != nil || column.hidden != 0 {
+			return fmt.Errorf("recurring_occurrence_blocks: column %q has unexpected default/visibility", column.name)
+		}
+	}
+
+	var actualDDL string
+	if err := tx.QueryRow(`SELECT sql FROM sqlite_schema WHERE type='table' AND name='recurring_occurrence_blocks'`).Scan(&actualDDL); err != nil {
+		return fmt.Errorf("read recurring_occurrence_blocks DDL: %w", err)
+	}
+	if normalizeSkipsDDL(actualDDL) != normalizeSkipsDDL(recurringOccurrenceBlocksDDL) {
+		return fmt.Errorf("recurring_occurrence_blocks: DDL does not match authorized contract")
+	}
+	if err := validateRecurringOccurrenceBlocksIndexes(tx); err != nil {
+		return err
+	}
+	if err := validateRecurringOccurrenceBlocksTriggers(tx); err != nil {
+		return err
+	}
+	foreignKeys, err := tx.Query(`PRAGMA foreign_key_list(recurring_occurrence_blocks)`)
+	if err != nil {
+		return fmt.Errorf("pragma foreign_key_list recurring_occurrence_blocks: %w", err)
+	}
+	defer foreignKeys.Close()
+	if foreignKeys.Next() {
+		return fmt.Errorf("recurring_occurrence_blocks: foreign key found, expected none")
+	}
+	return foreignKeys.Err()
+}
+
+func validateRecurringOccurrenceBlocksIndexes(tx *sql.Tx) error {
+	rows, err := tx.Query(`PRAGMA index_list(recurring_occurrence_blocks)`)
+	if err != nil {
+		return fmt.Errorf("pragma index_list recurring_occurrence_blocks: %w", err)
+	}
+	defer rows.Close()
+	wantPK := []string{"workspace_id", "series_id", "recurrence_sequence"}
+	wantUnique := []string{"workspace_id", "recurring_rule_id", "recurrence_sequence"}
+	var foundPK, foundUnique bool
+	for rows.Next() {
+		var seq, unique, partial int
+		var name, origin string
+		if err := rows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+			return fmt.Errorf("scan recurring_occurrence_blocks index: %w", err)
+		}
+		columns, err := sqliteIndexColumnsTx(tx, name)
+		if err != nil {
+			return err
+		}
+		if partial != 0 || unique != 1 {
+			return fmt.Errorf("recurring_occurrence_blocks: incompatible index %q", name)
+		}
+		switch origin {
+		case "pk":
+			if foundPK || !stringSlicesEqual(columns, wantPK) {
+				return fmt.Errorf("recurring_occurrence_blocks: incompatible primary-key index")
+			}
+			foundPK = true
+		case "u":
+			if foundUnique || !stringSlicesEqual(columns, wantUnique) {
+				return fmt.Errorf("recurring_occurrence_blocks: incompatible UNIQUE index")
+			}
+			foundUnique = true
+		default:
+			return fmt.Errorf("recurring_occurrence_blocks: unexpected index %q origin=%q", name, origin)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !foundPK || !foundUnique {
+		return fmt.Errorf("recurring_occurrence_blocks: missing PK or UNIQUE index")
+	}
+	return nil
+}
+
+func sqliteIndexColumnsTx(tx *sql.Tx, indexName string) ([]string, error) {
+	query := fmt.Sprintf("PRAGMA index_info('%s')", strings.ReplaceAll(indexName, "'", "''"))
+	rows, err := tx.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("pragma index_info %q: %w", indexName, err)
+	}
+	defer rows.Close()
+	var columns []string
+	for rows.Next() {
+		var seq, cid int
+		var name string
+		if err := rows.Scan(&seq, &cid, &name); err != nil {
+			return nil, fmt.Errorf("scan index_info %q: %w", indexName, err)
+		}
+		columns = append(columns, name)
+	}
+	return columns, rows.Err()
+}
+
+func stringSlicesEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func validateRecurringOccurrenceBlocksTriggers(tx *sql.Tx) error {
+	for _, want := range recurringOccurrenceBlocksTriggerContract {
+		var tableName, ddl string
+		if err := tx.QueryRow(`SELECT tbl_name, sql FROM sqlite_schema WHERE type='trigger' AND name=?`, want.name).Scan(&tableName, &ddl); err != nil {
+			return fmt.Errorf("recurring occurrence trigger %q: %w", want.name, err)
+		}
+		if tableName != want.tableName || normalizeSkipsDDL(ddl) != normalizeSkipsDDL(want.ddl) {
+			return fmt.Errorf("recurring occurrence trigger %q does not match authorized contract", want.name)
+		}
+	}
+	return nil
+}
+
+func preflightRecurringOccurrenceTerminalConflicts(tx *sql.Tx) error {
+	const conflictSource = `
+		FROM recurring_occurrence_skips s
+		JOIN transactions t
+		  ON t.workspace_id = s.workspace_id
+		 AND t.series_id = s.series_id
+		 AND t.recurrence_sequence = s.recurrence_sequence`
+
+	var conflicts int
+	if err := tx.QueryRow(`SELECT COUNT(1) FROM (
+		SELECT s.workspace_id, s.series_id, s.recurrence_sequence
+		` + conflictSource + `
+		GROUP BY s.workspace_id, s.series_id, s.recurrence_sequence
+	)`).Scan(&conflicts); err != nil {
+		return fmt.Errorf("migration 59 preflight recurring terminal conflicts: %w", err)
+	}
+	if conflicts == 0 {
+		return nil
+	}
+
+	var workspaceID, seriesID, transactionID string
+	var sequence int64
+	if err := tx.QueryRow(`
+		SELECT s.workspace_id, s.series_id, s.recurrence_sequence, t.id
+		`+conflictSource+`
+		ORDER BY s.workspace_id, s.series_id, s.recurrence_sequence, t.id
+		LIMIT 1
+	`).Scan(&workspaceID, &seriesID, &sequence, &transactionID); err != nil {
+		return fmt.Errorf("migration 59 preflight recurring terminal conflict sample: %w", err)
+	}
+	return fmt.Errorf(
+		"migration 59 aborted: found %d committed recurring terminal occurrence conflict(s) between transactions and recurring_occurrence_skips; example workspace_id=%q series_id=%q recurrence_sequence=%d transaction_id=%q; resolve the integrity conflict explicitly before upgrading",
+		conflicts, workspaceID, seriesID, sequence, transactionID,
+	)
+}
+
+func migrateInvoicePaymentReversalIdentity(tx *sql.Tx) error {
+	paymentsExist, err := tableExists(tx, "invoice_payments")
+	if err != nil {
+		return err
+	}
+	if !paymentsExist {
+		return nil
+	}
+
+	columns := []struct {
+		name string
+		ddl  string
+	}{
+		{name: "reversed_by", ddl: "TEXT"},
+		{name: "reversal_reason", ddl: "TEXT"},
+		{name: "reversal_transaction_id", ddl: "TEXT REFERENCES transactions(id) ON DELETE RESTRICT"},
+		{name: "reversed_date_civil", ddl: "TEXT"},
+	}
+	for _, column := range columns {
+		if err := addColumnIfMissing(tx, "invoice_payments", column.name, column.ddl); err != nil {
+			return fmt.Errorf("add invoice_payments.%s: %w", column.name, err)
+		}
+	}
+
+	var duplicateWorkspaceID, duplicateTransactionID string
+	var duplicateCount int
+	err = tx.QueryRow(`
+		SELECT workspace_id, transaction_id, COUNT(1)
+		FROM invoice_payments
+		WHERE transaction_id IS NOT NULL
+		GROUP BY workspace_id, transaction_id
+		HAVING COUNT(1) > 1
+		ORDER BY workspace_id, transaction_id
+		LIMIT 1
+	`).Scan(&duplicateWorkspaceID, &duplicateTransactionID, &duplicateCount)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("preflight original transaction identity: %w", err)
+	}
+	if err == nil {
+		return fmt.Errorf(
+			"preflight found duplicate original payment identity workspace_id=%q transaction_id=%q count=%d",
+			duplicateWorkspaceID,
+			duplicateTransactionID,
+			duplicateCount,
+		)
+	}
+
+	indexes := []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_invoice_payments_workspace_transaction
+			ON invoice_payments(workspace_id, transaction_id)
+			WHERE transaction_id IS NOT NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS uq_invoice_payments_workspace_reversal_transaction
+			ON invoice_payments(workspace_id, reversal_transaction_id)
+			WHERE reversal_transaction_id IS NOT NULL`,
+	}
+	for _, stmt := range indexes {
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("create invoice payment identity index: %w", err)
+		}
+	}
+	return nil
+}
+
+func migrateWorkspaceMonthlyPlanningReferences(tx *sql.Tx) error {
+	workspacesExist, err := tableExists(tx, "workspaces")
+	if err != nil {
+		return err
+	}
+	if !workspacesExist {
+		return nil
+	}
+
+	columns := []struct {
+		name string
+		ddl  string
+	}{
+		{name: "monthly_income_reference", ddl: "INTEGER CHECK (monthly_income_reference IS NULL OR monthly_income_reference >= 0)"},
+		{name: "monthly_total_cost_reference", ddl: "INTEGER CHECK (monthly_total_cost_reference IS NULL OR monthly_total_cost_reference >= 0)"},
+		{name: "monthly_essential_cost_reference", ddl: "INTEGER CHECK (monthly_essential_cost_reference IS NULL OR monthly_essential_cost_reference >= 0)"},
+	}
+	for _, column := range columns {
+		if err := addColumnIfMissing(tx, "workspaces", column.name, column.ddl); err != nil {
+			return fmt.Errorf("add workspaces.%s: %w", column.name, err)
+		}
+	}
+	return nil
+}
+
+func migrateBoxContributionLifecycle(tx *sql.Tx) error {
+	boxesExist, err := tableExists(tx, "boxes")
+	if err != nil {
+		return err
+	}
+	if !boxesExist {
+		return nil
+	}
+
+	if err := addColumnIfMissing(tx, "boxes", "continue_after_target", "INTEGER NOT NULL DEFAULT 1 CHECK (continue_after_target IN (0, 1))"); err != nil {
+		return fmt.Errorf("add boxes.continue_after_target: %w", err)
+	}
+	if err := addColumnIfMissing(tx, "boxes", "automatic_contribution_state", "TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (automatic_contribution_state IN ('ACTIVE', 'BLOCKED'))"); err != nil {
+		return fmt.Errorf("add boxes.automatic_contribution_state: %w", err)
+	}
+
+	if _, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS box_contribution_lifecycle_events (
+			id             TEXT PRIMARY KEY,
+			box_id         TEXT    NOT NULL,
+			event_type     TEXT    NOT NULL CHECK (event_type IN ('GOAL_REACHED', 'CONTRIBUTION_BLOCKED', 'CONTRIBUTION_REACTIVATED')),
+			previous_state TEXT CHECK (previous_state IS NULL OR previous_state IN ('ACTIVE', 'BLOCKED')),
+			new_state      TEXT CHECK (new_state IS NULL OR new_state IN ('ACTIVE', 'BLOCKED')),
+			occurred_at    INTEGER NOT NULL,
+			CHECK (
+				(event_type = 'GOAL_REACHED' AND previous_state IS NULL AND new_state IS NULL) OR
+				(event_type = 'CONTRIBUTION_BLOCKED' AND previous_state = 'ACTIVE' AND new_state = 'BLOCKED') OR
+				(event_type = 'CONTRIBUTION_REACTIVATED' AND previous_state = 'BLOCKED' AND new_state = 'ACTIVE')
+			),
+			FOREIGN KEY (box_id) REFERENCES boxes(id) ON DELETE CASCADE
+		)
+	`); err != nil {
+		return fmt.Errorf("create box_contribution_lifecycle_events: %w", err)
+	}
+	if _, err := tx.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_box_contribution_lifecycle_events_box_occurred
+		ON box_contribution_lifecycle_events(box_id, occurred_at, id)
+	`); err != nil {
+		return fmt.Errorf("create box contribution lifecycle event index: %w", err)
+	}
+	return nil
+}
+
+func migrateBoxMonthlyRechargeIdentity(tx *sql.Tx, now time.Time) error {
+	boxesExist, err := tableExists(tx, "boxes")
+	if err != nil {
+		return err
+	}
+	ledgerExists, err := tableExists(tx, "box_virtual_ledger")
+	if err != nil {
+		return err
+	}
+	if !boxesExist || !ledgerExists {
+		// Historical migration tests intentionally use partial schemas. Normal
+		// application startup executes ddl first, so a real ContaBase database
+		// always has both tables before v55 runs.
+		return nil
+	}
+
+	const civilMonthCheck = `CHECK (
+		%s IS NULL OR (
+			length(%s) = 7 AND
+			substr(%s, 5, 1) = '-' AND
+			substr(%s, 1, 4) NOT GLOB '*[^0-9]*' AND
+			substr(%s, 6, 2) NOT GLOB '*[^0-9]*' AND
+			CAST(substr(%s, 6, 2) AS INTEGER) BETWEEN 1 AND 12
+		)
+	)`
+	anchorColumn := "monthly_recharge_anchor_month"
+	anchorDDL := fmt.Sprintf("TEXT "+civilMonthCheck, anchorColumn, anchorColumn, anchorColumn, anchorColumn, anchorColumn, anchorColumn)
+	if err := addColumnIfMissing(tx, "boxes", anchorColumn, anchorDDL); err != nil {
+		return fmt.Errorf("add boxes.%s: %w", anchorColumn, err)
+	}
+	automaticMonthColumn := "automatic_recharge_month"
+	const automaticCivilMonthCheck = `CHECK (
+		%s IS NULL OR (
+			type = 'RECHARGE' AND
+			length(%s) = 7 AND
+			substr(%s, 5, 1) = '-' AND
+			substr(%s, 1, 4) NOT GLOB '*[^0-9]*' AND
+			substr(%s, 6, 2) NOT GLOB '*[^0-9]*' AND
+			CAST(substr(%s, 6, 2) AS INTEGER) BETWEEN 1 AND 12
+		)
+	)`
+	automaticMonthDDL := fmt.Sprintf("TEXT "+automaticCivilMonthCheck, automaticMonthColumn, automaticMonthColumn, automaticMonthColumn, automaticMonthColumn, automaticMonthColumn, automaticMonthColumn)
+	if err := addColumnIfMissing(tx, "box_virtual_ledger", automaticMonthColumn, automaticMonthDDL); err != nil {
+		return fmt.Errorf("add box_virtual_ledger.%s: %w", automaticMonthColumn, err)
+	}
+
+	loc, err := resolveCivilRepairTimezone()
+	if err != nil {
+		return fmt.Errorf("resolve financial timezone: %w", err)
+	}
+	rolloutMonth := now.In(loc).Format("2006-01")
+	if _, err := tx.Exec(`
+		UPDATE boxes
+		SET monthly_recharge_anchor_month = ?
+		WHERE monthly_recharge_anchor_month IS NULL
+	`, rolloutMonth); err != nil {
+		return fmt.Errorf("anchor existing boxes at rollout month %s: %w", rolloutMonth, err)
+	}
+
+	// The old engine had no structural origin. Its exact fixed description is
+	// therefore the only evidence available during upgrade. Use it once here to
+	// recognize a deterministic first legacy event per box/civil month. Future
+	// idempotency depends only on the structural column and unique index below.
+	rows, err := tx.Query(`
+		SELECT id, box_id, reference_date
+		FROM box_virtual_ledger
+		WHERE type = 'RECHARGE'
+		  AND description = 'Aporte Automático'
+		  AND automatic_recharge_month IS NULL
+		ORDER BY box_id, reference_date, created_at, id
+	`)
+	if err != nil {
+		return fmt.Errorf("select legacy automatic box recharges: %w", err)
+	}
+	type legacyRecharge struct {
+		id            string
+		boxID         string
+		referenceDate int64
+	}
+	var legacy []legacyRecharge
+	for rows.Next() {
+		var event legacyRecharge
+		if err := rows.Scan(&event.id, &event.boxID, &event.referenceDate); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan legacy automatic box recharge: %w", err)
+		}
+		legacy = append(legacy, event)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("legacy automatic box recharges: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close legacy automatic box recharges: %w", err)
+	}
+
+	recognized := make(map[string]struct{}, len(legacy))
+	for _, event := range legacy {
+		month := time.Unix(event.referenceDate, 0).In(loc).Format("2006-01")
+		identity := event.boxID + "\x00" + month
+		if _, duplicate := recognized[identity]; duplicate {
+			continue
+		}
+		if _, err := tx.Exec(`
+			UPDATE box_virtual_ledger
+			SET automatic_recharge_month = ?
+			WHERE id = ? AND automatic_recharge_month IS NULL
+		`, month, event.id); err != nil {
+			return fmt.Errorf("recognize legacy automatic box recharge %q: %w", event.id, err)
+		}
+		recognized[identity] = struct{}{}
+	}
+
+	if _, err := tx.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_box_virtual_ledger_automatic_recharge_month
+		ON box_virtual_ledger(box_id, automatic_recharge_month)
+		WHERE automatic_recharge_month IS NOT NULL
+	`); err != nil {
+		return fmt.Errorf("create automatic box recharge identity index: %w", err)
+	}
+	return nil
+}
+
+func migrateRecurringOccurrenceSkips(tx *sql.Tx) error {
+	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS recurring_occurrence_skips (
+    workspace_id          TEXT    NOT NULL,
+    series_id             TEXT    NOT NULL,
+    recurrence_sequence   INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+    original_transaction_id TEXT,
+    reason                TEXT    NOT NULL CHECK (reason IN ('single_delete')),
+    deleted_by            TEXT,
+    deleted_at            INTEGER NOT NULL,
+    PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+)`); err != nil {
+		return err
+	}
+
+	if err := validateRecurringOccurrenceSkipsSchema(tx); err != nil {
+		return err
+	}
+	return nil
+}
+
+const authorizedSkipsDDL = `CREATE TABLE recurring_occurrence_skips (
+    workspace_id TEXT NOT NULL,
+    series_id TEXT NOT NULL,
+    recurrence_sequence INTEGER NOT NULL CHECK (recurrence_sequence > 0),
+    original_transaction_id TEXT,
+    reason TEXT NOT NULL CHECK (reason IN ('single_delete')),
+    deleted_by TEXT,
+    deleted_at INTEGER NOT NULL,
+    PRIMARY KEY (workspace_id, series_id, recurrence_sequence)
+)`
+
+var authorizedSkipsColumnContract = []struct {
+	name     string
+	typeName string
+	notNull  int
+	pk       int
+}{
+	{name: "workspace_id", typeName: "TEXT", notNull: 1, pk: 1},
+	{name: "series_id", typeName: "TEXT", notNull: 1, pk: 2},
+	{name: "recurrence_sequence", typeName: "INTEGER", notNull: 1, pk: 3},
+	{name: "original_transaction_id", typeName: "TEXT", notNull: 0, pk: 0},
+	{name: "reason", typeName: "TEXT", notNull: 1, pk: 0},
+	{name: "deleted_by", typeName: "TEXT", notNull: 0, pk: 0},
+	{name: "deleted_at", typeName: "INTEGER", notNull: 1, pk: 0},
+}
+
+func validateRecurringOccurrenceSkipsSchema(tx *sql.Tx) error {
+	rows, err := tx.Query(`PRAGMA table_xinfo(recurring_occurrence_skips)`)
+	if err != nil {
+		return fmt.Errorf("pragma table_xinfo recurring_occurrence_skips: %w", err)
+	}
+	defer rows.Close()
+
+	type columnInfo struct {
+		cid      int
+		name     string
+		typeName string
+		notNull  int
+		dflt     *string
+		pk       int
+		hidden   int
+	}
+	var actual []columnInfo
+	for rows.Next() {
+		var c columnInfo
+		if err := rows.Scan(&c.cid, &c.name, &c.typeName, &c.notNull, &c.dflt, &c.pk, &c.hidden); err != nil {
+			return fmt.Errorf("scan table_xinfo recurring_occurrence_skips: %w", err)
+		}
+		actual = append(actual, c)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate table_xinfo recurring_occurrence_skips: %w", err)
+	}
+
+	if len(actual) != len(authorizedSkipsColumnContract) {
+		return fmt.Errorf("recurring_occurrence_skips: expected %d columns, got %d", len(authorizedSkipsColumnContract), len(actual))
+	}
+
+	for i, col := range actual {
+		want := authorizedSkipsColumnContract[i]
+		if col.name != want.name {
+			return fmt.Errorf("recurring_occurrence_skips: column %d name = %q, want %q", i, col.name, want.name)
+		}
+		actualType := strings.TrimSpace(strings.ToUpper(col.typeName))
+		if actualType != want.typeName {
+			return fmt.Errorf("recurring_occurrence_skips: column %q type = %q, want %q", col.name, actualType, want.typeName)
+		}
+		if col.notNull != want.notNull {
+			return fmt.Errorf("recurring_occurrence_skips: column %q notnull = %d, want %d", col.name, col.notNull, want.notNull)
+		}
+		if col.pk != want.pk {
+			return fmt.Errorf("recurring_occurrence_skips: column %q pk = %d, want %d", col.name, col.pk, want.pk)
+		}
+		if col.dflt != nil {
+			return fmt.Errorf("recurring_occurrence_skips: column %q has default value %q, want none", col.name, *col.dflt)
+		}
+		if col.hidden != 0 {
+			return fmt.Errorf("recurring_occurrence_skips: column %q is hidden (%d), want visible", col.name, col.hidden)
+		}
+	}
+
+	var actualDDL string
+	if err := tx.QueryRow(`
+		SELECT sql FROM sqlite_schema
+		WHERE type = 'table'
+		  AND name = 'recurring_occurrence_skips'
+	`).Scan(&actualDDL); err != nil {
+		return fmt.Errorf("read recurring_occurrence_skips DDL: %w", err)
+	}
+
+	expected := normalizeSkipsDDL(authorizedSkipsDDL)
+	actualCanonical := normalizeSkipsDDL(actualDDL)
+
+	if actualCanonical != expected {
+		return fmt.Errorf("recurring_occurrence_skips: DDL does not match authorized contract")
+	}
+
+	if err := checkSkipsNoExtraIndexes(tx); err != nil {
+		return err
+	}
+	if err := checkSkipsNoForeignKeys(tx); err != nil {
+		return err
+	}
+	if err := checkSkipsNoTriggers(tx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func normalizeSkipsDDL(sql string) string {
+	if sql == "" {
+		return ""
+	}
+	var out strings.Builder
+	out.Grow(len(sql))
+
+	const (
+		stateNormal = iota
+		stateSingleQuote
+		stateDoubleQuote
+		stateBracket
+		stateBacktick
+	)
+
+	state := stateNormal
+	prevWasSpace := true
+
+	for i := 0; i < len(sql); i++ {
+		ch := sql[i]
+
+		switch state {
+		case stateNormal:
+			switch ch {
+			case '\'':
+				state = stateSingleQuote
+				out.WriteByte(ch)
+			case '"':
+				state = stateDoubleQuote
+				out.WriteByte(ch)
+			case '[':
+				state = stateBracket
+				out.WriteByte(ch)
+			case '`':
+				state = stateBacktick
+				out.WriteByte(ch)
+			case ' ', '\t', '\n', '\r', '\f':
+				if prevWasSpace {
+					continue
+				}
+				prevWasSpace = true
+				out.WriteByte(' ')
+				continue
+			case '(':
+				if !prevWasSpace {
+					out.WriteByte(' ')
+				}
+				out.WriteByte(ch)
+				prevWasSpace = false
+			case ')':
+				out.WriteByte(ch)
+				prevWasSpace = false
+			case ',':
+				out.WriteByte(ch)
+				prevWasSpace = false
+			default:
+				if ch >= 'a' && ch <= 'z' {
+					out.WriteByte(ch - 32)
+				} else {
+					out.WriteByte(ch)
+				}
+				prevWasSpace = false
+			}
+
+		case stateSingleQuote:
+			out.WriteByte(ch)
+			if ch == '\'' {
+				if i+1 < len(sql) && sql[i+1] == '\'' {
+					i++
+					out.WriteByte('\'')
+				} else {
+					state = stateNormal
+				}
+			}
+
+		case stateDoubleQuote:
+			out.WriteByte(ch)
+			if ch == '"' {
+				if i+1 < len(sql) && sql[i+1] == '"' {
+					i++
+					out.WriteByte('"')
+				} else {
+					state = stateNormal
+				}
+			}
+
+		case stateBracket:
+			out.WriteByte(ch)
+			if ch == ']' {
+				state = stateNormal
+			}
+
+		case stateBacktick:
+			out.WriteByte(ch)
+			if ch == '`' {
+				state = stateNormal
+			}
+		}
+	}
+
+	result := strings.TrimSpace(out.String())
+	if strings.HasSuffix(result, ";") {
+		result = result[:len(result)-1]
+	}
+	result = strings.TrimSpace(result)
+	return result
+}
+
+func checkSkipsNoExtraIndexes(tx *sql.Tx) error {
+	rows, err := tx.Query(`PRAGMA index_list(recurring_occurrence_skips)`)
+	if err != nil {
+		return fmt.Errorf("pragma index_list recurring_occurrence_skips: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var seq int
+		var name, origin string
+		var unique, partial int
+		if err := rows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+			return fmt.Errorf("scan index_list: %w", err)
+		}
+		if origin != "pk" && origin != "u" {
+			return fmt.Errorf("recurring_occurrence_skips: unexpected index %q (origin=%q unique=%d)", name, origin, unique)
+		}
+		if unique != 0 && origin != "pk" {
+			return fmt.Errorf("recurring_occurrence_skips: unexpected UNIQUE index %q", name)
+		}
+	}
+	return rows.Err()
+}
+
+func checkSkipsNoForeignKeys(tx *sql.Tx) error {
+	rows, err := tx.Query(`PRAGMA foreign_key_list(recurring_occurrence_skips)`)
+	if err != nil {
+		return fmt.Errorf("pragma foreign_key_list recurring_occurrence_skips: %w", err)
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		return fmt.Errorf("recurring_occurrence_skips: foreign key found, but expected none")
+	}
+	return rows.Err()
+}
+
+func checkSkipsNoTriggers(tx *sql.Tx) error {
+	rows, err := tx.Query(`
+		SELECT name FROM sqlite_schema
+		WHERE type = 'trigger'
+		  AND tbl_name = 'recurring_occurrence_skips'
+	`)
+	if err != nil {
+		return fmt.Errorf("query triggers for recurring_occurrence_skips: %w", err)
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		return fmt.Errorf("recurring_occurrence_skips: trigger %q found, expected none", name)
+	}
+	return rows.Err()
 }
 
 func runMigrations(db *sql.DB) error {
@@ -1880,6 +2965,78 @@ func migrateRecurringMaterializationState(tx *sql.Tx) error {
 	}
 	return nil
 }
+
+// migrateCivilDateColumns adds nullable civil-date companion columns (ISO YYYY-MM-DD stored as
+// TEXT) alongside the existing legacy INTEGER date columns. It is strictly additive:
+//   - every new column is nullable, has no DEFAULT and no CHECK constraint;
+//   - no backfill runs, so the new columns stay NULL until a later phase populates them;
+//   - no legacy INTEGER column is read, written, altered or dropped;
+//   - no table is rebuilt.
+//
+// Because the columns are only appended, a rollback to a previous application version simply
+// ignores the unknown columns (SQLite keeps them; older code never selects them).
+//
+// Index policy: composite (workspace_id, <civil>) indexes are created only on tables that carry
+// workspace_id directly (transactions, recurring_rules, recurring_materialization_state,
+// invoice_payments). The invoices table has no workspace_id column — it scopes through account_id
+// — so its civil indexes are single-column instead of inventing a workspace_id index.
+func migrateCivilDateColumns(tx *sql.Tx) error {
+	additions := []struct {
+		table   string
+		columns []string
+	}{
+		{table: "transactions", columns: []string{"date_civil", "due_date_civil", "paid_date_civil", "scheduled_payment_date_civil"}},
+		{table: "recurring_rules", columns: []string{"start_date_civil", "starts_at_civil", "end_date_civil", "generated_until_civil"}},
+		{table: "recurring_materialization_state", columns: []string{"materialized_until_civil"}},
+		{table: "invoice_payments", columns: []string{"paid_date_civil"}},
+		{table: "invoices", columns: []string{"closing_date_civil", "due_date_civil"}},
+	}
+	for _, addition := range additions {
+		exists, err := tableExists(tx, addition.table)
+		if err != nil {
+			return fmt.Errorf("check %s existence: %w", addition.table, err)
+		}
+		if !exists {
+			continue
+		}
+		for _, column := range addition.columns {
+			if err := addColumnIfMissing(tx, addition.table, column, "TEXT"); err != nil {
+				return fmt.Errorf("add %s.%s: %w", addition.table, column, err)
+			}
+		}
+	}
+
+	indexes := []struct {
+		table string
+		stmt  string
+	}{
+		{table: "transactions", stmt: `CREATE INDEX IF NOT EXISTS idx_transactions_workspace_date_civil ON transactions(workspace_id, date_civil)`},
+		{table: "transactions", stmt: `CREATE INDEX IF NOT EXISTS idx_transactions_workspace_due_date_civil ON transactions(workspace_id, due_date_civil)`},
+		{table: "transactions", stmt: `CREATE INDEX IF NOT EXISTS idx_transactions_workspace_paid_date_civil ON transactions(workspace_id, paid_date_civil)`},
+		{table: "transactions", stmt: `CREATE INDEX IF NOT EXISTS idx_transactions_workspace_scheduled_payment_date_civil ON transactions(workspace_id, scheduled_payment_date_civil)`},
+		{table: "recurring_rules", stmt: `CREATE INDEX IF NOT EXISTS idx_recurring_rules_workspace_start_date_civil ON recurring_rules(workspace_id, start_date_civil)`},
+		{table: "recurring_rules", stmt: `CREATE INDEX IF NOT EXISTS idx_recurring_rules_workspace_starts_at_civil ON recurring_rules(workspace_id, starts_at_civil)`},
+		{table: "recurring_rules", stmt: `CREATE INDEX IF NOT EXISTS idx_recurring_rules_workspace_end_date_civil ON recurring_rules(workspace_id, end_date_civil)`},
+		{table: "recurring_materialization_state", stmt: `CREATE INDEX IF NOT EXISTS idx_recurring_materialization_state_workspace_materialized_until_civil ON recurring_materialization_state(workspace_id, materialized_until_civil)`},
+		{table: "invoice_payments", stmt: `CREATE INDEX IF NOT EXISTS idx_invoice_payments_workspace_paid_date_civil ON invoice_payments(workspace_id, paid_date_civil)`},
+		{table: "invoices", stmt: `CREATE INDEX IF NOT EXISTS idx_invoices_closing_date_civil ON invoices(closing_date_civil)`},
+		{table: "invoices", stmt: `CREATE INDEX IF NOT EXISTS idx_invoices_due_date_civil ON invoices(due_date_civil)`},
+	}
+	for _, index := range indexes {
+		exists, err := tableExists(tx, index.table)
+		if err != nil {
+			return fmt.Errorf("check %s existence for index: %w", index.table, err)
+		}
+		if !exists {
+			continue
+		}
+		if _, err := tx.Exec(index.stmt); err != nil {
+			return fmt.Errorf("create civil date index on %s: %w", index.table, err)
+		}
+	}
+	return nil
+}
+
 // idx_transactions_workspace_recurring_sequence_unique BEFORE it is created. Without this
 // check a duplicate would surface only as an opaque "UNIQUE constraint failed" error while
 // creating the index. Instead this fails the migration with an actionable message that points

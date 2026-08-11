@@ -529,6 +529,50 @@ func TestReportHelpersPagamentoTotalFaturaZeraPendente(t *testing.T) {
 	}
 }
 
+func TestReportHelpersCurrentInvoiceAllReversedDoesNotUseLegacy(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedReportHelpersScenario(t, db)
+
+	now := time.Now().Unix()
+	purchaseDate := testUnixDate("2026-08-05")
+	dueDate := testUnixDate("2026-09-10")
+	execTestSQL(t, db, `
+		INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, paid_amount, created_at)
+		VALUES ('inv-current-reversed', 'card-rpt', '2026-08', ?, ?, 'OPEN', 40000, ?)
+	`, testUnixDate("2026-08-20"), dueDate, now)
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, invoice_id, type, amount, date, description, status, installment_number, total_installments, created_at, updated_at)
+		VALUES ('purchase-current-reversed', 'ws-rpt', 'u-rpt', 'card-rpt', 'cat-card-food', 'inv-current-reversed', 'EXPENSE', 40000, ?, 'Compra revertida current', 'paid', 1, 1, ?, ?)
+	`, purchaseDate, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, amount_cents, paid_at, source, reversed_at, created_at)
+		VALUES ('ip-current-reversed', 'ws-rpt', 'inv-current-reversed', 'chk-rpt', 40000, ?, 'manual', ?, ?)
+	`, testUnixDate("2026-09-01"), testUnixDate("2026-09-02"), now)
+
+	period := NewReportPeriodFromMonth(2026, 9)
+	for name, query := range map[string]func(*sql.DB, string, ReportPeriod) ([]CashEvent, error){
+		"projected":   QueryInvoiceProjectedCashEvents,
+		"by_due_date": QueryInvoiceCashEventsByDueDate,
+	} {
+		events, err := query(db, "ws-rpt", period)
+		if err != nil {
+			t.Fatalf("%s query: %v", name, err)
+		}
+		if len(events) != 1 || events[0].AmountCents != 40000 {
+			t.Fatalf("%s events = %#v, want one CURRENT pending event of 40000", name, events)
+		}
+	}
+
+	projectedBalance, show, err := BuildProjectedBalanceUntilPeriodEnd(db, "ws-rpt", period.End, time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildProjectedBalanceUntilPeriodEnd: %v", err)
+	}
+	if !show || projectedBalance != 660000 {
+		t.Fatalf("projected balance = %d/show:%v, want 660000/true", projectedBalance, show)
+	}
+}
+
 func TestReportHelpersCompraCartaoPagamentoFaturaNaoDuplicaCaixa(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()

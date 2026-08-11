@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -33,6 +34,12 @@ func main() {
 		runRepairOrphanCards()
 	case "category-reseed":
 		runCategoryReseed()
+	case "civil-date-backfill":
+		runCivilDateBackfill()
+	case "civil-date-audit":
+		runCivilDateAudit()
+	case "civil-date-repair":
+		os.Exit(runCivilDateRepair())
 	default:
 		fmt.Printf("Comando desconhecido: %s\n", command)
 		printUsage()
@@ -92,6 +99,9 @@ func printUsage() {
 	fmt.Println("  workspaces list       Lista workspaces disponíveis (somente leitura)")
 	fmt.Println("  repair-orphan-cards   Diagnostica e repara cartões de crédito sem configuração")
 	fmt.Println("  category-reseed       Analisa e aplica reseed de categorias canônicas por workspace")
+	fmt.Println("  civil-date-backfill   Audita ou preenche as colunas civis da migration v52")
+	fmt.Println("  civil-date-audit      Audita datas civis em ocorrencias recorrentes (read-only)")
+	fmt.Println("  civil-date-repair     Audita pares civis e classifica reparabilidade (audit | apply)")
 	fmt.Println("\nExemplos:")
 	fmt.Println("  admin reset-password --email admin@example.com")
 	fmt.Println("  admin users disable-2fa --email admin@example.com")
@@ -103,6 +113,205 @@ func printUsage() {
 	fmt.Println("  admin repair-orphan-cards")
 	fmt.Println("  admin category-reseed --workspace-id <id>")
 	fmt.Println("  admin category-reseed --workspace-id <id> --apply --confirm \"RESEED CATEGORIES\"")
+	fmt.Println("  admin civil-date-backfill --database-url file:/caminho/copia.db --dry-run")
+	fmt.Println("  admin civil-date-backfill --database-url file:/caminho/copia.db --apply --backup-confirmed --confirm \"BACKFILL CIVIL DATES\"")
+	fmt.Println("  admin civil-date-audit --database-url file:/caminho/contabase.db")
+	fmt.Println("  admin civil-date-audit --database-url file:/caminho/contabase.db --format json")
+	fmt.Println("  admin civil-date-repair audit --database-url file:/caminho/contabase.db")
+	fmt.Println("  admin civil-date-repair audit --database-url file:/caminho/contabase.db --format json")
+}
+
+func runCivilDateAudit() {
+	os.Exit(database.RunCivilDateLegacyAuditWithArgs(os.Args[2:], os.Stdout, os.Stderr))
+}
+
+func runCivilDateRepair() int {
+	if len(os.Args) < 3 {
+		fmt.Fprintln(os.Stderr, "Erro: subcomando obrigatorio (audit | plan | apply)")
+		fmt.Fprintln(os.Stderr, "Uso: admin civil-date-repair audit --database-url file:<caminho> [--format json|text]")
+		fmt.Fprintln(os.Stderr, "Use admin civil-date-repair --help para ajuda completa")
+		return 1
+	}
+	subcommand := os.Args[2]
+	switch subcommand {
+	case "-h", "--help":
+		printCivilDateRepairHelp()
+		return 0
+	case "audit":
+		return database.RunCivilDateRepairAuditWithArgs(os.Args[3:], os.Stdout, os.Stderr)
+	case "plan":
+		return database.RunCivilDateRepairPlanWithArgs(os.Args[3:], os.Stdout, os.Stderr)
+	case "apply":
+		return database.RunCivilDateRepairApplyWithArgs(os.Args[3:], os.Stdout, os.Stderr)
+	default:
+		if strings.HasPrefix(subcommand, "--") {
+			fmt.Fprintln(os.Stderr, "Erro: flags devem vir depois do subcomando audit")
+			fmt.Fprintln(os.Stderr, "Uso: admin civil-date-repair audit --database-url file:<caminho> [--format json|text]")
+			return 1
+		}
+		fmt.Fprintf(os.Stderr, "Erro: subcomando desconhecido: %s\n", subcommand)
+		fmt.Fprintln(os.Stderr, "Subcomandos validos: audit, plan, apply (reservado)")
+		return 1
+	}
+}
+
+func printCivilDateRepairHelp() {
+	fmt.Println("Uso: admin civil-date-repair <subcomando> [flags]")
+	fmt.Println()
+	fmt.Println("Subcomandos:")
+	fmt.Println("  audit   Audita pares civis e classifica reparabilidade (read-only)")
+	fmt.Println("  plan    Gera plano de reparo a partir da auditoria (nao operacional)")
+	fmt.Println("  apply   Aplica reparos automaticos (nao disponivel nesta fase)")
+	fmt.Println()
+	fmt.Println("Flags de audit:")
+	fmt.Println("  --database-url  URL do banco SQLite existente (obrigatorio)")
+	fmt.Println("  --format        json ou text (padrao: text)")
+	fmt.Println()
+	fmt.Println("Exemplos:")
+	fmt.Println("  admin civil-date-repair audit --database-url file:/caminho/contabase.db")
+	fmt.Println("  admin civil-date-repair audit --database-url file:/caminho/contabase.db --format json")
+	fmt.Println()
+	fmt.Println("Exit codes (audit):")
+	fmt.Println("  0 = nenhum achado")
+	fmt.Println("  2 = apenas auto-reparo")
+	fmt.Println("  3 = ao menos um que requer revisao humana")
+	fmt.Println("  1 = falha operacional")
+}
+
+func runCivilDateBackfill() {
+	cmd := flag.NewFlagSet("civil-date-backfill", flag.ExitOnError)
+	databaseURL := cmd.String("database-url", "", "URL explícita de um banco SQLite existente (obrigatória)")
+	dryRun := cmd.Bool("dry-run", false, "Apenas auditar, sem aplicar alterações (padrão)")
+	apply := cmd.Bool("apply", false, "Preencher colunas civis NULL elegíveis")
+	serverStopped := cmd.Bool("server-stopped", false, "Confirma que o servidor ContaBase está PARADO antes do apply")
+	backupDir := cmd.String("backup-dir", "", "Diretório explícito para criação do backup obrigatório antes do apply")
+	confirm := cmd.String("confirm", "", "Confirmação textual para apply: \"BACKFILL CIVIL DATES\"")
+	help := cmd.Bool("help", false, "Exibe esta ajuda")
+	helpShort := cmd.Bool("h", false, "Exibe esta ajuda (atalho)")
+	if err := cmd.Parse(os.Args[2:]); err != nil {
+		cmd.Usage()
+		os.Exit(1)
+	}
+	if *help || *helpShort {
+		printCivilDateBackfillHelp(cmd)
+		return
+	}
+	if strings.TrimSpace(*databaseURL) == "" {
+		fmt.Println("Erro: --database-url é obrigatória; o comando não usa o banco padrão implicitamente.")
+		printCivilDateBackfillHelp(cmd)
+		os.Exit(1)
+	}
+	if *apply && *dryRun {
+		fmt.Println("Erro: --apply e --dry-run são mutuamente exclusivos.")
+		os.Exit(1)
+	}
+	if *apply {
+		if !*serverStopped {
+			fmt.Println("Erro: --apply exige --server-stopped (o servidor ContaBase deve estar PARADO).")
+			os.Exit(1)
+		}
+		if strings.TrimSpace(*backupDir) == "" {
+			fmt.Println("Erro: --apply exige --backup-dir com o diretório de backup.")
+			os.Exit(1)
+		}
+		if *confirm != "BACKFILL CIVIL DATES" {
+			fmt.Println("Erro: --apply exige --confirm \"BACKFILL CIVIL DATES\".")
+			os.Exit(1)
+		}
+	}
+
+	var db *sql.DB
+	var openErr error
+	if *apply {
+		var dbPath string
+		db, dbPath, openErr = database.OpenExistingForMaintenanceReadWrite(*databaseURL)
+		if openErr != nil {
+			log.Fatalf("Erro ao abrir banco para manutenção explícita: %v", openErr)
+		}
+		defer db.Close()
+
+		report, err := database.ApplyCivilDateBackfill(context.Background(), db, dbPath, *backupDir)
+		if err != nil {
+			log.Fatalf("Erro no backfill de datas civis: %v", err)
+		}
+		printCivilDateBackfillReport(report)
+		return
+	}
+
+	db, _, openErr = database.OpenExistingForMaintenanceReadOnly(*databaseURL)
+	if openErr != nil {
+		log.Fatalf("Erro ao abrir banco para manutenção explícita: %v", openErr)
+	}
+	defer db.Close()
+
+	report, err := database.DryRunCivilDateBackfill(context.Background(), db)
+	if err != nil {
+		log.Fatalf("Erro no backfill de datas civis: %v", err)
+	}
+	printCivilDateBackfillReport(report)
+}
+
+func printCivilDateBackfillHelp(cmd *flag.FlagSet) {
+	fmt.Println("Uso: admin civil-date-backfill [opções]")
+	fmt.Println()
+	fmt.Println("Audita ou preenche explicitamente as colunas civis da migration v52.")
+	fmt.Println("O dry-run é o padrão. O comando exige um banco SQLite existente e não")
+	fmt.Println("executa migrations, backups automáticos ou jobs do servidor ao abri-lo.")
+	fmt.Println()
+	fmt.Println("Antes de --apply:")
+	fmt.Println("  1. Pare qualquer processo que escreva no banco (--server-stopped).")
+	fmt.Println("  2. O comando cria automaticamente um backup WAL-safe em --backup-dir.")
+	fmt.Println("  3. Execute primeiro em uma cópia e revise o relatório agregado.")
+	fmt.Println()
+	cmd.PrintDefaults()
+	fmt.Println()
+	fmt.Println("Exemplos:")
+	fmt.Println("  admin civil-date-backfill --database-url file:/tmp/contabase-copy.db --dry-run")
+	fmt.Println("  admin civil-date-backfill --database-url file:/tmp/contabase.db --apply --server-stopped --backup-dir /backups/civil --confirm \"BACKFILL CIVIL DATES\"")
+}
+
+func printCivilDateBackfillReport(report database.CivilDateBackfillReport) {
+	if report.Applied {
+		fmt.Println("=== BACKFILL DE DATAS CIVIS APLICADO ===")
+	} else {
+		fmt.Println("=== BACKFILL DE DATAS CIVIS (DRY-RUN) ===")
+	}
+	fmt.Printf("Timezone da divergência: %s\n", report.DivergenceTimezone)
+	if report.BackupPath != "" {
+		fmt.Printf("Backup: %s\n", report.BackupPath)
+	}
+	fmt.Println()
+	fmt.Println("Linhas por tabela:")
+	for _, table := range report.Tables {
+		fmt.Printf("  %s: %d\n", table.Table, table.TotalRows)
+	}
+
+	fmt.Println()
+	fmt.Println("Campos:")
+	for _, field := range report.Fields {
+		fmt.Printf("  %s.%s -> %s: elegíveis=%d candidatos=%d preenchidos=%d já_preenchidos=%d legado_nulo_ou_zero=%d divergências=%d restantes=%d\n",
+			field.Table, field.LegacyColumn, field.CivilColumn, field.EligibleLegacy, field.Candidates,
+			field.Filled, field.AlreadyFilled, field.LegacyNullOrZero, field.DivergentUTCAndSaoPaulo,
+			field.RemainingEligibleCivilNull)
+		buckets := make([]string, 0, len(field.UTCHourDistribution))
+		for hour, count := range field.UTCHourDistribution {
+			buckets = append(buckets, fmt.Sprintf("%02d=%d", hour, count))
+		}
+		fmt.Printf("    horas_utc: %s\n", strings.Join(buckets, " "))
+	}
+
+	i := report.Integrity
+	fmt.Println()
+	fmt.Println("Integridade:")
+	fmt.Printf("  PRAGMA integrity_check: antes=%s depois=%s\n", i.IntegrityCheckBefore, i.IntegrityCheckAfter)
+	fmt.Printf("  transactions: antes=%d depois=%d\n", i.TransactionCountBefore, i.TransactionCountAfter)
+	fmt.Printf("  somas de amount por workspace: grupos=%d inalteradas=%t\n", i.TransactionAmountWorkspaceGroups, i.TransactionAmountsUnchanged)
+	fmt.Printf("  vínculos transactions->invoices: antes=%d depois=%d\n", i.TransactionInvoiceLinksBefore, i.TransactionInvoiceLinksAfter)
+	fmt.Printf("  vínculos invoice_payments->invoices: antes=%d depois=%d\n", i.InvoicePaymentInvoiceLinksBefore, i.InvoicePaymentInvoiceLinksAfter)
+	fmt.Printf("  vínculos transactions->recurring_rules: antes=%d depois=%d\n", i.TransactionRuleLinksBefore, i.TransactionRuleLinksAfter)
+	fmt.Printf("  vínculos transactions->recurring_series: antes=%d depois=%d\n", i.TransactionSeriesLinksBefore, i.TransactionSeriesLinksAfter)
+	fmt.Printf("  invoice_payments: antes=%d depois=%d\n", i.InvoicePaymentCountBefore, i.InvoicePaymentCountAfter)
+	fmt.Printf("  civis NULL com legado válido restantes: %d\n", i.RemainingEligibleCivilNull)
 }
 
 func runUsersCommand() {
