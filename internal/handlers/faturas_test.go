@@ -1879,7 +1879,9 @@ func seedInvoicePaymentScenario(t *testing.T, db *sql.DB) {
 
 	ref := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 	now := ref.Unix()
-	closingDate := ref.AddDate(0, 1, 0).Unix()
+	// Keep the fixture's OPEN-state boundary ahead of the real test clock.
+	openInvoiceClosing := time.Now().UTC().AddDate(0, 1, 0)
+	closingDate := openInvoiceClosing.Unix()
 	dueDate := ref.AddDate(0, 1, 10).Unix()
 	execTestSQL(t, db, `
 		INSERT INTO users (id, name, email, password_hash, created_at, updated_at)

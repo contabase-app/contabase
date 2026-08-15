@@ -12,14 +12,11 @@ O ContaBase usa SemVer. A tag pública, o arquivo `VERSION`, o changelog e a not
 
 - `v0.1.0-beta.1` — primeira Beta pública. Tag, GitHub Release, GHCR e assets disponíveis nos canais públicos.
 - `v0.1.0-beta.7` — Beta pública mais recente.
+- `v0.1.0-beta.8` — Beta publicada e posteriormente retirada; tag, Release e assets permanecem como histórico imutável.
 
 ## Em preparação
 
-- `v0.1.0-beta.10` — HOTFIX, rascunho local. Não representa uma tag, release, imagem ou canal disponível.
-
-## Tentativa anterior não publicada
-
-- `v0.1.0-beta.9` — tag preservada; publicação interrompida antes de GitHub Release, artifacts, imagem e promoção do canal.
+- `v0.1.0-beta.9` — próxima candidata. Ainda não representa tag, Release, imagem ou canal disponível.
 
 ## Processo de publicação
 
@@ -27,10 +24,11 @@ As releases públicas são preparadas e revisadas pelos mantenedores antes de
 serem disponibilizadas. Cada snapshot passa por validações de versão,
 documentação, artifacts, checksums e instalação em ambiente descartável.
 
-Uma Beta só é considerada publicada depois que a tag, a GitHub Release, os
-artifacts e a imagem correspondente estiverem disponíveis e validados. O canal
-de instalação é atualizado por último e aponta somente para uma versão pública
-existente.
+Uma versão é considerada materializada assim que qualquer superfície oficial
+de distribuição existir: Release publicada ou com assets, artifacts finais,
+imagem GHCR, canal ou promoção para instalação. A partir daí, sua tag e seu
+identificador são imutáveis. Uma tag de tentativa que falhou no CI antes de
+qualquer superfície oficial pode ser removida somente após auditoria formal.
 
 ### Preparação pública
 
@@ -46,24 +44,33 @@ Ela é usada como gate pós-release, não durante a preparação do snapshot.
 
 1. preparar e revisar o snapshot público (`check`, `export`, `diff`, `sync`);
 2. enviar a branch pública com autorização explícita;
-3. criar e enviar uma nova tag imutável (somente `git push origin <tag>`);
-4. o workflow é disparado exclusivamente por push de tag Beta válida;
-5. o workflow cria ou reutiliza um **draft prerelease** — nunca publica;
-6. validar draft, assets e checksums (SHA-256);
-7. validar a imagem GHCR com tag fixa;
-8. executar smokes de instalação e atualização;
-9. publicar o draft manualmente com autorização específica;
-10. validar o canal com `validate-channel`;
-11. avançar o canal Beta por commit forward e autorização própria.
+3. aguardar o `Release Preflight` automático para o SHA exato da branch;
+4. criar a tag somente se o preflight estiver verde e a branch remota ainda apontar para o mesmo SHA;
+5. enviar somente a nova tag (`git push origin <tag>`);
+6. o workflow da tag reconfirma o preflight e cria ou reutiliza um **draft prerelease** — nunca publica;
+7. validar draft, assets e checksums (SHA-256);
+8. validar a imagem GHCR com tag fixa;
+9. executar smokes de instalação e atualização;
+10. publicar o draft manualmente com autorização específica;
+11. validar o canal com `validate-channel`;
+12. avançar o canal Beta por commit forward e autorização própria.
 
 Enquanto isso, o canal Beta permanece na última versão publicada e o canal
 stable permanece `null`. Nenhuma etapa anterior antecipa o canal.
 
-### Disparo do workflow
+### Release Preflight
+
+Todo push candidato para `beta` executa os mesmos gates críticos usados pelo
+release: versão, dependências, CSS, `TZ=UTC go test ./... -count=1`, vet, build,
+backup/restore GNU, BSD e BusyBox, packages amd64/arm64, checksums e conteúdo dos
+archives. O preflight não cria tag, Release, GHCR ou canal.
+
+### Disparo do workflow de publicação
 
 Somente push de tag Beta válida (`v*`). O workflow não aceita
 `workflow_dispatch`. Reruns para a mesma tag ocorrem pelo mecanismo nativo do
-GitHub Actions. Tags são imutáveis — nunca retaggear ou usar force push.
+GitHub Actions. Tags materializadas são imutáveis — nunca retaggear ou usar
+force push. Nenhuma tag é criada apenas para testar o workflow.
 
 Antes de anexar assets, o workflow classifica o estado da release:
 
@@ -119,8 +126,7 @@ O update por release artifact segue o mesmo contrato de segurança (backup canô
 - [Release Notes](../RELEASE_NOTES.md)
 - [GitHub Releases](https://github.com/contabase-app/contabase/releases)
 - [GHCR](https://github.com/contabase-app/contabase/pkgs/container/contabase)
-- [Nota da v0.1.0-beta.10 — HOTFIX (rascunho)](releases/v0.1.0-beta.10.md)
-- [Nota da v0.1.0-beta.9 — HOTFIX (tentativa não publicada)](releases/v0.1.0-beta.9.md)
+- [Nota da próxima v0.1.0-beta.9](releases/v0.1.0-beta.9.md)
 - [Nota da v0.1.0-beta.8](releases/v0.1.0-beta.8.md)
 - [Nota da v0.1.0-beta.7](releases/v0.1.0-beta.7.md)
 - [Canal de instalação](https://get-contabase.pages.dev)

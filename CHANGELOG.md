@@ -11,15 +11,7 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
-## [v0.1.0-beta.10] — HOTFIX — Unreleased
-
-### Alterado
-- **Continuidade da Beta.9:** reúne o conjunto funcional já preparado no ciclo anterior, incluindo a política canônica dos updaters e o resumo mensal de reservas na tela de Metas, sem mudança funcional adicional neste bump.
-
-### Corrigido
-- **Validação de backup/restore no BusyBox:** o harness deixa de combinar `grep` com `head` para selecionar o primeiro caminho de staging/rollback, evitando `SIGPIPE` sob `set -o pipefail` no Alpine/BusyBox.
-
-## [v0.1.0-beta.9] — HOTFIX — Publicação interrompida
+## [v0.1.0-beta.9] — HOTFIX — Unreleased
 
 ### Adicionado
 - **Reservas — resumo mensal:** concluída a apresentação do planejamento na tela de Metas, reunindo saldo reservado, valor disponível, aportes programados, margem mensal estimada e cobertura do custo essencial. A origem da referência de cobertura agora fica explícita, inclusive quando vem da média histórica.
@@ -31,6 +23,8 @@ Este arquivo organiza as mudanças por versão e por tipo:
 ### Corrigido
 - **Backup canônico:** corrigida incompatibilidade entre variantes BSD/GNU de `stat` que quebrava o backup em GNU/Linux e BusyBox. A captura de metadata agora isola stdout de cada tentativa e valida valores estritamente.
 - **Restore canônico:** corrigida a rejeição de pacotes válidos pela mesma classe de incompatibilidade `stat` BSD/GNU. O restore agora aceita metadata gerada por qualquer variante compatível.
+- **Validação de backup/restore no BusyBox:** o harness deixa de combinar `grep` com `head` para selecionar o primeiro caminho de staging/rollback, evitando `SIGPIPE` sob `set -o pipefail` no Alpine/BusyBox.
+- **Fixture de fatura aberta:** o fechamento usado pelos testes passa a permanecer à frente do relógio real, impedindo que a suíte expire com a passagem do calendário sem enfraquecer a proteção produtiva de faturas congeladas.
 - **Updater Docker:** reforçada a identificação do container realmente recriado, incluindo projeto Compose, diretório de trabalho, mounts críticos, versão embarcada, healthcheck e estabilidade de reinício antes da promoção do estado.
 
 ### Segurança/Confiabilidade
@@ -38,6 +32,9 @@ Este arquivo organiza as mudanças por versão e por tipo:
 - Não houve corrupção de dados demonstrada no incidente beta.8; o updater abortava antes da mutação.
 
 ### Release pipeline
+- Release Preflight obrigatório no SHA público antes da criação da tag.
+- Gate Go canônico alterado para `TZ=UTC go test ./... -count=1`, sem reutilização de cache de resultado.
+- Preflight e release compartilham o mesmo caminho de testes, vet, build, packages, checksums e validação dos archives.
 - Matriz obrigatória BSD/macOS, GNU/Linux e Alpine/BusyBox antes de artifacts/GHCR.
 - GHCR de release passa a publicar somente tag imutável da versão.
 - Alias móvel `:beta` deixa de ser promovido automaticamente; promoção ocorrerá somente após smokes pós-publicação.

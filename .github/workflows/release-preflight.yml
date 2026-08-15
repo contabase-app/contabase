@@ -1,0 +1,143 @@
+name: Release Preflight
+
+on:
+  push:
+    branches:
+      - beta
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-preflight-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Validate public candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.candidate.outputs.version }}
+      commit: ${{ steps.candidate.outputs.commit }}
+
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate branch, SHA and VERSION
+        id: candidate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT_NAME" != "push" ]]; then
+            echo "Release Preflight runs only for branch pushes." >&2
+            exit 1
+          fi
+          if [[ "$GIT_REF" != "refs/heads/$REF_NAME" ]]; then
+            echo "Workflow ref is not a branch head." >&2
+            exit 1
+          fi
+
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-beta\.(0|[1-9][0-9]*)$ ]]; then
+            expected_branch="beta"
+          elif [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            expected_branch="main"
+          else
+            echo "Invalid public SemVer in VERSION: $version" >&2
+            exit 1
+          fi
+          if [[ "$REF_NAME" != "$expected_branch" ]]; then
+            echo "VERSION $version requires branch $expected_branch, got $REF_NAME" >&2
+            exit 1
+          fi
+
+          commit="$(git rev-parse --verify "$WORKFLOW_SHA^{commit}")"
+          if [[ "$commit" != "$WORKFLOW_SHA" ]]; then
+            echo "Workflow SHA did not resolve to the checked-out commit." >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+  backup-restore-portability:
+    name: Backup/restore portability (${{ matrix.stat_family }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            stat_family: GNU
+          - os: macos-latest
+            stat_family: BSD
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v4
+
+      - name: Verify native stat and SQLite
+        run: |
+          set -euo pipefail
+          command -v stat
+          command -v sqlite3
+
+      - name: Run canonical backup/restore matrix
+        run: ./scripts/tests/test_backup_restore_package.sh
+
+  backup-restore-busybox:
+    name: Backup/restore portability (BusyBox)
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v4
+
+      - name: Run canonical matrix on Alpine 3.21 without coreutils
+        run: ./.github/scripts/run-backup-restore-busybox.sh
+
+  build-and-package:
+    name: Build and validate Linux release artifacts
+    needs:
+      - prepare
+      - backup-restore-portability
+      - backup-restore-busybox
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go from go.mod
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Run canonical release validation
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: ./.github/scripts/release-validation.sh "$RELEASE_VERSION"

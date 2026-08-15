@@ -5,31 +5,17 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Em preparação
 
-- **v0.1.0-beta.10 — HOTFIX — Draft** — *Atualização self-hosted mais segura e resumo mensal de reservas concluído*
+- **v0.1.0-beta.9 — HOTFIX — Unreleased** — *Atualização self-hosted mais segura e resumo mensal de reservas concluído*
 
-  Esta candidata reúne o conjunto funcional preparado no ciclo Beta.9: política de versão consistente e execução repetível nos updaters Docker, source e release, além do resumo mensal de reservas na tela de Metas.
+  Esta candidata reúne política de versão consistente e execução repetível nos updaters Docker, source e release, além do resumo mensal de reservas na tela de Metas.
 
-  A validação canônica de backup/restore foi ajustada para funcionar de forma portátil no BusyBox. Nenhuma mudança funcional adicional foi introduzida por este bump.
+  A validação canônica de backup/restore foi ajustada para funcionar de forma portátil no BusyBox. A fixture de faturas foi corrigida para manter a suíte Go determinística sob `TZ=UTC`.
 
-  **Caminhos pretendidos de atualização:** `beta.7` → `beta.10` e `beta.8` → `beta.10`. Os smokes remotos com os artifacts reais da Beta.10 serão executados nos gates posteriores.
+  Antes de qualquer tag, o commit público exato deve passar pelo workflow `Release Preflight`, incluindo testes Go com `TZ=UTC`, validações GNU/BSD/BusyBox, builds Linux `amd64`/`arm64`, empacotamento e checksums. A tag só pode ser criada enquanto `origin/beta` continuar apontando para o mesmo SHA verde.
 
-  **GHCR:** a release publicará somente a tag imutável `v0.1.0-beta.10`. O alias `:beta` permanece para uma microfase posterior, após os smokes de instalação e atualização.
+  **Caminhos pretendidos de atualização:** `beta.7` → `beta.9` e `beta.8` → `beta.9`. Os smokes remotos com os artifacts reais serão executados somente nos gates posteriores.
 
-  **Canal:** permanece em `v0.1.0-beta.7` até a publicação e validação dos artifacts.
-
-## Tentativa anterior não publicada
-
-- **v0.1.0-beta.9 — HOTFIX** — *Tag preservada; publicação interrompida antes de artifacts, imagem e Release*
-
-  Hotfix corretivo da beta.8. Corrige a incompatibilidade entre variantes BSD/GNU de `stat` que quebrava o backup canônico em GNU/Linux e BusyBox. O comportamento fail-closed estava preservado: o updater abortava o backup antes de qualquer mutação, e nenhuma corrupção de dados foi demonstrada no incidente reproduzido.
-
-  **Atualização segura e repetível.** Os updaters Docker, source e release agora compartilham a mesma política de versão: evitam reinstalação desnecessária, rejeitam downgrade e interrompem versões ou origens ambíguas antes de mudar o sistema. Nos fluxos source e Docker, a revisão alvo é congelada e o estado instalado só avança depois que o runtime correto está saudável; se uma tentativa falhar no meio, a repetição converge para uma única revisão sem misturar arquivos.
-
-  **Metas e Reservas.** O resumo mensal de reservas foi concluído para mostrar, de forma compacta e responsiva, quanto está reservado, quanto continua disponível, os aportes programados, a margem mensal estimada e quantos meses de custo essencial o valor disponível cobre. A tela também informa se essa cobertura usa o valor configurado ou uma média histórica.
-
-  **Caminhos pretendidos de atualização:** `beta.7` → `beta.9` e `beta.8` → `beta.9`. Os smokes remotos com os artifacts reais da beta.9 ainda serão executados durante os gates da release. Instalações fresh beta.8 também devem poder atualizar.
-
-  **GHCR:** a release publica apenas a tag imutável `v0.1.0-beta.9`. O alias `:beta` será promovido em microfase posterior, após smokes de fresh install e upgrade cruzado.
+  **GHCR:** a futura release publicará somente a tag imutável `v0.1.0-beta.9`. O alias `:beta` permanece para uma microfase posterior, após os smokes de instalação e atualização.
 
   **Canal:** permanece em `v0.1.0-beta.7` até a publicação e validação dos artifacts.
 
