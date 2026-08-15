@@ -699,10 +699,10 @@ for attempt in 1 2; do
   PATH="$attempt_target/shim:$PATH" CB_REAL_MV="$REAL_MV" CB_MV_LOG="$attempt_target/mv-$attempt.log" CB_MV_FAIL_KIND=install_db CB_TARGET_DB="$attempt_target/contabase.db" CB_TARGET_UPLOADS="$attempt_target/uploads" CONFIRM_APP_STOPPED=yes DATA_DIR="$attempt_target" DB_FILE="$attempt_target/contabase.db" UPLOADS_DIR="$attempt_target/uploads" "$RESTORE_SCRIPT" "$base_pkg" > "$attempt_target/out-$attempt" 2> "$attempt_target/err-$attempt" || rc=$?
   [ "$rc" -ne 0 ]
 done
-stage_one="$(grep -o "$attempt_target/.restore-stage\.[^/]\+" "$attempt_target/mv-1.log" | head -1)"
-stage_two="$(grep -o "$attempt_target/.restore-stage\.[^/]\+" "$attempt_target/mv-2.log" | head -1)"
-rollback_one="$(grep -o "$attempt_target/.restore-rollback\.[^/]\+" "$attempt_target/mv-1.log" | head -1)"
-rollback_two="$(grep -o "$attempt_target/.restore-rollback\.[^/]\+" "$attempt_target/mv-2.log" | head -1)"
+stage_one="$(grep -m 1 -o "$attempt_target/.restore-stage\.[^/]\+" "$attempt_target/mv-1.log")"
+stage_two="$(grep -m 1 -o "$attempt_target/.restore-stage\.[^/]\+" "$attempt_target/mv-2.log")"
+rollback_one="$(grep -m 1 -o "$attempt_target/.restore-rollback\.[^/]\+" "$attempt_target/mv-1.log")"
+rollback_two="$(grep -m 1 -o "$attempt_target/.restore-rollback\.[^/]\+" "$attempt_target/mv-2.log")"
 assert_true "stagings foram distintas" test "$stage_one" != "$stage_two"
 assert_true "areas de rollback foram distintas" test "$rollback_one" != "$rollback_two"
 
