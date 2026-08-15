@@ -11,7 +11,7 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
-## [v0.1.0-beta.9] — HOTFIX — Unreleased
+## [v0.1.0-beta.9] — HOTFIX — 2026-08-15
 
 ### Adicionado
 - **Reservas — resumo mensal:** concluída a apresentação do planejamento na tela de Metas, reunindo saldo reservado, valor disponível, aportes programados, margem mensal estimada e cobertura do custo essencial. A origem da referência de cobertura agora fica explícita, inclusive quando vem da média histórica.

@@ -5,21 +5,23 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Em preparação
 
-- **v0.1.0-beta.9 — HOTFIX — Unreleased** — *Atualização self-hosted mais segura e resumo mensal de reservas concluído*
+Nenhuma nova versão pública está em preparação neste documento.
 
-  Esta candidata reúne política de versão consistente e execução repetível nos updaters Docker, source e release, além do resumo mensal de reservas na tela de Metas.
+## Histórico
+
+- **v0.1.0-beta.9 — HOTFIX — 15 de agosto de 2026** — *Atualização self-hosted mais segura e resumo mensal de reservas concluído*
+
+  Esta Beta publicada reúne política de versão consistente e execução repetível nos updaters Docker, source e release, além do resumo mensal de reservas na tela de Metas.
 
   A validação canônica de backup/restore foi ajustada para funcionar de forma portátil no BusyBox. A fixture de faturas foi corrigida para manter a suíte Go determinística sob `TZ=UTC`.
 
-  Antes de qualquer tag, o commit público exato deve passar pelo workflow `Release Preflight`, incluindo testes Go com `TZ=UTC`, validações GNU/BSD/BusyBox, builds Linux `amd64`/`arm64`, empacotamento e checksums. A tag só pode ser criada enquanto `origin/beta` continuar apontando para o mesmo SHA verde.
+  O commit público `58544389c85b7a438bfb16fa1ee527cadb333f19` passou pelo workflow `Release Preflight`, incluindo testes Go com `TZ=UTC`, validações GNU/BSD/BusyBox, builds Linux `amd64`/`arm64`, empacotamento e checksums. Os mesmos gates passaram novamente após a tag.
 
-  **Caminhos pretendidos de atualização:** `beta.7` → `beta.9` e `beta.8` → `beta.9`. Os smokes remotos com os artifacts reais serão executados somente nos gates posteriores.
+  **Caminhos suportados de atualização:** `beta.7` → `beta.9` e `beta.8` → `beta.9`. Os contratos possuem cobertura automatizada; smokes reais sobre ambientes descartáveis não foram executados por ainda não existir harness oficial apropriado.
 
-  **GHCR:** a futura release publicará somente a tag imutável `v0.1.0-beta.9`. O alias `:beta` permanece para uma microfase posterior, após os smokes de instalação e atualização.
+  **Distribuição:** a GitHub Release prerelease disponibiliza packages Linux `amd64` e `arm64`, `checksums.txt` e a imagem multi-arquitetura imutável `ghcr.io/contabase-app/contabase:v0.1.0-beta.9`.
 
-  **Canal:** permanece em `v0.1.0-beta.7` até a publicação e validação dos artifacts.
-
-## Histórico
+  **Canal:** o canal Beta oficial aponta para `v0.1.0-beta.9`. A versão Stable continua inalterada.
 
 - **v0.1.0-beta.8** — *Datas civis, histórico de faturas protegido, recorrências mais seguras e atualização self-hosted com Node 24*
 
