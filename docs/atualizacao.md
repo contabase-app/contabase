@@ -284,9 +284,9 @@ Esse processo é **aditivo e seguro**: não altera saldos, não altera faturas e
 
 Como em qualquer atualização, faça backup antes.
 
-## Beta.9 — updater portátil e migrations de datas, reservas, faturas e recorrências
+## Beta.10 — updater portátil e migrations de datas, reservas, faturas e recorrências
 
-Ao atualizar da `v0.1.0-beta.7` para a `v0.1.0-beta.9`, o ContaBase aplica as
+Ao atualizar da `v0.1.0-beta.7` para a `v0.1.0-beta.10`, o ContaBase aplica as
 migrations `52` a `59`:
 
 - colunas de data civil e proteção da cadeia de versões das recorrências;

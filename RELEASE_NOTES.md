@@ -5,7 +5,21 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Em preparação
 
-- **v0.1.0-beta.9 — HOTFIX — Draft** — *Atualização self-hosted mais segura e resumo mensal de reservas concluído*
+- **v0.1.0-beta.10 — HOTFIX — Draft** — *Atualização self-hosted mais segura e resumo mensal de reservas concluído*
+
+  Esta candidata reúne o conjunto funcional preparado no ciclo Beta.9: política de versão consistente e execução repetível nos updaters Docker, source e release, além do resumo mensal de reservas na tela de Metas.
+
+  A validação canônica de backup/restore foi ajustada para funcionar de forma portátil no BusyBox. Nenhuma mudança funcional adicional foi introduzida por este bump.
+
+  **Caminhos pretendidos de atualização:** `beta.7` → `beta.10` e `beta.8` → `beta.10`. Os smokes remotos com os artifacts reais da Beta.10 serão executados nos gates posteriores.
+
+  **GHCR:** a release publicará somente a tag imutável `v0.1.0-beta.10`. O alias `:beta` permanece para uma microfase posterior, após os smokes de instalação e atualização.
+
+  **Canal:** permanece em `v0.1.0-beta.7` até a publicação e validação dos artifacts.
+
+## Tentativa anterior não publicada
+
+- **v0.1.0-beta.9 — HOTFIX** — *Tag preservada; publicação interrompida antes de artifacts, imagem e Release*
 
   Hotfix corretivo da beta.8. Corrige a incompatibilidade entre variantes BSD/GNU de `stat` que quebrava o backup canônico em GNU/Linux e BusyBox. O comportamento fail-closed estava preservado: o updater abortava o backup antes de qualquer mutação, e nenhuma corrupção de dados foi demonstrada no incidente reproduzido.
 
@@ -18,6 +32,8 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
   **GHCR:** a release publica apenas a tag imutável `v0.1.0-beta.9`. O alias `:beta` será promovido em microfase posterior, após smokes de fresh install e upgrade cruzado.
 
   **Canal:** permanece em `v0.1.0-beta.7` até a publicação e validação dos artifacts.
+
+## Histórico
 
 - **v0.1.0-beta.8** — *Datas civis, histórico de faturas protegido, recorrências mais seguras e atualização self-hosted com Node 24*
 

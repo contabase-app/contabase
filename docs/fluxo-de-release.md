@@ -15,7 +15,11 @@ O ContaBase usa SemVer. A tag pública, o arquivo `VERSION`, o changelog e a not
 
 ## Em preparação
 
-- `v0.1.0-beta.9` — HOTFIX, rascunho local. Não representa uma tag, release, imagem ou canal disponível.
+- `v0.1.0-beta.10` — HOTFIX, rascunho local. Não representa uma tag, release, imagem ou canal disponível.
+
+## Tentativa anterior não publicada
+
+- `v0.1.0-beta.9` — tag preservada; publicação interrompida antes de GitHub Release, artifacts, imagem e promoção do canal.
 
 ## Processo de publicação
 
@@ -115,7 +119,8 @@ O update por release artifact segue o mesmo contrato de segurança (backup canô
 - [Release Notes](../RELEASE_NOTES.md)
 - [GitHub Releases](https://github.com/contabase-app/contabase/releases)
 - [GHCR](https://github.com/contabase-app/contabase/pkgs/container/contabase)
-- [Nota da v0.1.0-beta.9 — HOTFIX (rascunho)](releases/v0.1.0-beta.9.md)
+- [Nota da v0.1.0-beta.10 — HOTFIX (rascunho)](releases/v0.1.0-beta.10.md)
+- [Nota da v0.1.0-beta.9 — HOTFIX (tentativa não publicada)](releases/v0.1.0-beta.9.md)
 - [Nota da v0.1.0-beta.8](releases/v0.1.0-beta.8.md)
 - [Nota da v0.1.0-beta.7](releases/v0.1.0-beta.7.md)
 - [Canal de instalação](https://get-contabase.pages.dev)

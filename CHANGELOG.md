@@ -11,7 +11,15 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
-## [v0.1.0-beta.9] — HOTFIX — Unreleased
+## [v0.1.0-beta.10] — HOTFIX — Unreleased
+
+### Alterado
+- **Continuidade da Beta.9:** reúne o conjunto funcional já preparado no ciclo anterior, incluindo a política canônica dos updaters e o resumo mensal de reservas na tela de Metas, sem mudança funcional adicional neste bump.
+
+### Corrigido
+- **Validação de backup/restore no BusyBox:** o harness deixa de combinar `grep` com `head` para selecionar o primeiro caminho de staging/rollback, evitando `SIGPIPE` sob `set -o pipefail` no Alpine/BusyBox.
+
+## [v0.1.0-beta.9] — HOTFIX — Publicação interrompida
 
 ### Adicionado
 - **Reservas — resumo mensal:** concluída a apresentação do planejamento na tela de Metas, reunindo saldo reservado, valor disponível, aportes programados, margem mensal estimada e cobertura do custo essencial. A origem da referência de cobertura agora fica explícita, inclusive quando vem da média histórica.
