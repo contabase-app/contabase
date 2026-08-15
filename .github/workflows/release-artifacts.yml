@@ -75,9 +75,63 @@ jobs:
           echo "commit=$tag_commit" >> "$GITHUB_OUTPUT"
           echo "publish_image=true" >> "$GITHUB_OUTPUT"
 
+  backup-restore-portability:
+    name: Backup/restore portability (${{ matrix.stat_family }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            stat_family: GNU
+          - os: macos-latest
+            stat_family: BSD
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Verify native stat and SQLite
+        run: |
+          set -euo pipefail
+          command -v stat
+          command -v sqlite3
+
+      - name: Run canonical backup/restore matrix
+        run: ./scripts/tests/test_backup_restore_package.sh
+
+  backup-restore-busybox:
+    name: Backup/restore portability (BusyBox)
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Run canonical matrix on Alpine 3.21 without coreutils
+        run: |
+          set -euo pipefail
+          docker build --tag contabase-backup-restore-alpine:3.21 - <<'DOCKERFILE'
+          FROM alpine:3.21
+          RUN apk add --no-cache bash sqlite
+          USER 65534:65534
+          WORKDIR /workspace
+          DOCKERFILE
+          docker run --rm \
+            --volume "$PWD:/workspace:ro" \
+            contabase-backup-restore-alpine:3.21 \
+            bash ./scripts/tests/test_backup_restore_package.sh
+
   artifacts:
     name: Build and validate Linux release artifacts
-    needs: prepare
+    needs:
+      - prepare
+      - backup-restore-portability
+      - backup-restore-busybox
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -335,6 +389,4 @@ jobs:
           push: true
           build-args: |
             VERSION=${{ needs.prepare.outputs.version }}
-          tags: |
-            ghcr.io/contabase-app/contabase:${{ needs.prepare.outputs.version }}
-            ghcr.io/contabase-app/contabase:beta
+          tags: ghcr.io/contabase-app/contabase:${{ needs.prepare.outputs.version }}

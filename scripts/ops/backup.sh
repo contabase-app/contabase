@@ -26,7 +26,19 @@ sha_file() {
 }
 
 file_size() {
-  stat -f '%z' "$1" 2>/dev/null || stat -c '%s' "$1"
+  local path="$1" value
+
+  if value="$(stat -f '%z' "$path" 2>/dev/null)"; then
+    case "$value" in ''|*[!0-9]*) return 1 ;; esac
+    printf '%s\n' "$value"
+    return 0
+  fi
+  if value="$(stat -c '%s' "$path" 2>/dev/null)"; then
+    case "$value" in ''|*[!0-9]*) return 1 ;; esac
+    printf '%s\n' "$value"
+    return 0
+  fi
+  return 1
 }
 
 validate_manifest_value() {

@@ -16,15 +16,15 @@ else
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_DIR="/opt/contabase"
+APP_DIR="${CONTABASE_INSTALL_DIR:-/opt/contabase}"
 DATA_DIR="${DATA_DIR:-/var/lib/contabase}"
-STATE_FILE="/etc/contabase/install-state.env"
+STATE_FILE="${CONTABASE_STATE_FILE:-/etc/contabase/install-state.env}"
 UPLOADS_DIR="${UPLOADS_DIR:-${DATA_DIR}/uploads}"
 PROFILE_UPLOADS_DIR="${UPLOADS_DIR}/profile"
 WORKSPACE_UPLOADS_DIR="${UPLOADS_DIR}/workspaces"
 BACKUPS_DIR="${DATA_DIR}/backups"
 DB_FILE="${DATA_DIR}/contabase.db"
-TMP_BINARY="/tmp/contabase"
+TMP_BINARY="${CONTABASE_TMP_BINARY:-/tmp/contabase}"
 HEALTH_URL="http://127.0.0.1:8080/health"
 INSTALL_CHANNEL="${CONTABASE_CHANNEL:-}"
 
@@ -37,6 +37,7 @@ APP_VERSION=""
 PREVIOUS_VERSION=""
 PREVIOUS_VERSION_RESOLVED=false
 TARGET_VERSION=""
+CURRENT_VERSION=""
 CURRENT_BRANCH=""
 CURRENT_COMMIT=""
 UPSTREAM_REF=""
@@ -48,10 +49,22 @@ UPDATE_SUCCEEDED=false
 BACKUP_SUCCEEDED=false
 STATE_PRESENT=false
 NEW_RUNTIME_STARTED=false
+UPSTREAM_REMOTE=""
+UPSTREAM_MERGE_REF=""
+TARGET_OID=""
+CURRENT_HEAD_OID=""
+ACTUAL_HEAD_OID=""
+CHECKOUT_VERSION=""
+CANONICAL_BUILD_DIR=""
+CHECKOUT_VERSION_BEFORE=""
+PERSISTED_VERSION=""
+CONFIRMED_RUNTIME_VERSION=""
+RECOVERY_FINALIZE_ONLY=false
+RUNTIME_CONFIRMED=false
 
 error_handler() {
-  local exit_code=$?
-  trap - ERR
+  local exit_code="${1:-$?}"
+  trap - ERR INT TERM
 
   echo ""
   echo -e "${RED}ERRO: atualizacao binaria publica falhou.${NC}"
@@ -61,7 +74,9 @@ error_handler() {
     exit 0
   fi
 
-  if [ "$NEW_RUNTIME_STARTED" = true ]; then
+  if [ "$RUNTIME_CONFIRMED" = true ]; then
+    log_warn "Runtime alvo confirmado; mantendo a instancia saudavel para finalizar checkout/estado no retry."
+  elif [ "$NEW_RUNTIME_STARTED" = true ]; then
     log_error "Falha depois do inicio do novo runtime; a instancia antiga nao sera reativada automaticamente."
     systemctl stop contabase >/dev/null 2>&1 || true
     print_post_start_failure
@@ -83,11 +98,19 @@ error_handler() {
   print_summary
   exit "$exit_code"
 }
-trap 'error_handler' ERR
+trap 'error_handler $?' ERR
+
+handle_signal() {
+  error_handler 130
+}
+trap handle_signal INT TERM
 
 cleanup_update_tmp() {
   if [ -n "$CANONICAL_BACKUP_HELPER_TMP" ] && [ -f "$CANONICAL_BACKUP_HELPER_TMP" ]; then
     rm -f "$CANONICAL_BACKUP_HELPER_TMP"
+  fi
+  if [ -n "$CANONICAL_BUILD_DIR" ] && [ -d "$CANONICAL_BUILD_DIR" ]; then
+    rm -rf "$CANONICAL_BUILD_DIR"
   fi
 }
 trap cleanup_update_tmp EXIT
@@ -149,12 +172,30 @@ require_repo_root() {
   fi
 }
 
-detect_app_version() {
-  APP_VERSION="${CONTABASE_VERSION:-}"
-  if [ -z "$APP_VERSION" ] && [ -f VERSION ]; then
-    APP_VERSION="$(tr -d '[:space:]' < VERSION)"
+resolve_checkout_version() {
+  local checkout_version oid_version
+  if [ ! -f VERSION ]; then
+    log_error "VERSION ausente no checkout apos a transicao."
+    return 1
   fi
-  APP_VERSION="${APP_VERSION:-dev}"
+  checkout_version="$(tr -d '[:space:]' < VERSION)"
+  CHECKOUT_VERSION="$checkout_version"
+  oid_version="$(git show "${TARGET_OID}:VERSION" 2>/dev/null | tr -d '[:space:]')"
+
+  if [ "$CHECKOUT_VERSION" != "$TARGET_VERSION" ]; then
+    log_error "VERSION do checkout (${CHECKOUT_VERSION}) diverge do alvo (${TARGET_VERSION})."
+    return 1
+  fi
+  if [ "$oid_version" != "$TARGET_VERSION" ]; then
+    log_error "VERSION do OID congelado (${oid_version}) diverge do alvo (${TARGET_VERSION})."
+    return 1
+  fi
+  if [ -n "${CONTABASE_VERSION:-}" ] && [ "${CONTABASE_VERSION}" != "$TARGET_VERSION" ]; then
+    log_error "CONTABASE_VERSION (${CONTABASE_VERSION}) diverge do alvo (${TARGET_VERSION})."
+    return 1
+  fi
+  APP_VERSION="$CHECKOUT_VERSION"
+  return 0
 }
 
 resolve_previous_version() {
@@ -178,7 +219,212 @@ resolve_previous_version() {
   esac
 
   PREVIOUS_VERSION="$installed_version"
+  CHECKOUT_VERSION_BEFORE="$installed_version"
   PREVIOUS_VERSION_RESOLVED=true
+}
+
+# === VERSION_POLICY_BLOCK_BEGIN ===
+# canonicalize_version <version>
+#   Parses vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.N into a canonical
+#   5-tuple: major minor patch release_rank beta_number
+#   release_rank: 0 = beta, 1 = stable; beta_number: 0 for stable.
+#   Returns 0 on success, 1 on invalid/ambiguous format.
+canonicalize_version() {
+  local version="$1"
+  local major minor patch base prerelease beta_num
+
+  [ -n "$version" ] || return 1
+  [[ "$version" =~ ^v[0-9] ]] || return 1
+  case "$version" in
+    *$'\n'*|*$'\r'*) return 1 ;;
+  esac
+
+  base="${version#v}"
+
+  if [[ "$base" == *-* ]]; then
+    prerelease="${base#*-}"
+    base="${base%%-*}"
+    [ -n "$prerelease" ] || return 1
+  else
+    prerelease=""
+  fi
+
+  IFS='.' read -r major minor patch <<< "$base"
+  [[ "$major" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+  [[ "$minor" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+  [[ "$patch" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+
+  if [ -z "$prerelease" ]; then
+    printf '%s %s %s 1 0' "$major" "$minor" "$patch"
+    return 0
+  fi
+
+  if [[ "$prerelease" =~ ^beta\.(0|[1-9][0-9]*)$ ]]; then
+    beta_num="${BASH_REMATCH[1]}"
+    printf '%s %s %s 0 %s' "$major" "$minor" "$patch" "$beta_num"
+    return 0
+  fi
+
+  return 1
+}
+
+# compare_decimal <left> <right>
+#   Compares two canonical non-negative decimal strings of arbitrary length
+#   without arithmetic on the values. Prints -1/0/1. Returns 2 on non-canonical.
+compare_decimal() {
+  local left="$1" right="$2"
+  local left_len right_len
+
+  [[ "$left" =~ ^(0|[1-9][0-9]*)$ ]] || return 2
+  [[ "$right" =~ ^(0|[1-9][0-9]*)$ ]] || return 2
+
+  left_len="${#left}"
+  right_len="${#right}"
+
+  if [ "$left_len" -lt "$right_len" ]; then printf '%s' "-1"; return 0; fi
+  if [ "$left_len" -gt "$right_len" ]; then printf '%s' "1"; return 0; fi
+  if [ "$left" = "$right" ]; then printf '%s' "0"; return 0; fi
+
+  if LC_ALL=C [ "$left" \< "$right" ]; then
+    printf '%s' "-1"
+    return 0
+  fi
+  printf '%s' "1"
+  return 0
+}
+
+# compare_canonical <major1> <minor1> <patch1> <rank1> <beta1> \
+#                  <major2> <minor2> <patch2> <rank2> <beta2>
+#   Prints -1 if v1 < v2, 0 if equal, 1 if v1 > v2. Returns 2 on error.
+compare_canonical() {
+  local major1="$1" minor1="$2" patch1="$3" rank1="$4" beta1="$5"
+  local major2="$6" minor2="$7" patch2="$8" rank2="$9" beta2="${10}"
+  local cmp
+
+  cmp="$(compare_decimal "$major1" "$major2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  cmp="$(compare_decimal "$minor1" "$minor2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  cmp="$(compare_decimal "$patch1" "$patch2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  cmp="$(compare_decimal "$rank1" "$rank2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  cmp="$(compare_decimal "$beta1" "$beta2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  printf '%s' "0"
+  return 0
+}
+# === VERSION_POLICY_BLOCK_END ===
+
+version_decision() {
+  local current="$1" target="$2"
+  local cc tc cmp
+
+  if [ -z "$current" ]; then
+    log_error "Versao instalada nao encontrada ou vazia."
+    return 3
+  fi
+  if [ -z "$target" ]; then
+    log_error "Versao alvo nao encontrada ou vazia."
+    return 3
+  fi
+
+  cc="$(canonicalize_version "$current")" || {
+    log_error "Versao instalada invalida ou ambigua: ${current}"
+    return 3
+  }
+  tc="$(canonicalize_version "$target")" || {
+    log_error "Versao alvo invalida ou ambigua: ${target}"
+    return 3
+  }
+
+  cmp="$(compare_canonical $cc $tc)" || {
+    log_error "Erro interno ao comparar versoes: ${current} vs ${target}"
+    return 3
+  }
+
+  case "$cmp" in
+    "-1") return 0 ;;
+    "0")  return 2 ;;
+    "1")  return 1 ;;
+    *)    return 3 ;;
+  esac
+}
+
+resolve_current_version() {
+  local persisted=""
+
+  if [ -f "$STATE_FILE" ]; then
+    persisted="$(awk -F= '$1 == "CONTABASE_INSTALLED_VERSION" { v = substr($0, index($0, "=") + 1); gsub(/[[:space:]]/, "", v); print v; exit }' "$STATE_FILE")"
+  fi
+
+  PERSISTED_VERSION="$persisted"
+  CURRENT_VERSION=""
+
+  if [ -n "$CONFIRMED_RUNTIME_VERSION" ]; then
+    CURRENT_VERSION="$CONFIRMED_RUNTIME_VERSION"
+    PREVIOUS_VERSION="$CONFIRMED_RUNTIME_VERSION"
+    PREVIOUS_VERSION_RESOLVED=true
+    if [ "$CURRENT_VERSION" = "$TARGET_VERSION" ] \
+      && { [ "$persisted" != "$CURRENT_VERSION" ] || [ "$CHECKOUT_VERSION_BEFORE" != "$CURRENT_VERSION" ]; }; then
+      RECOVERY_FINALIZE_ONLY=true
+    fi
+    return 0
+  fi
+
+  if [ -n "$persisted" ] && [ "$PREVIOUS_VERSION_RESOLVED" = true ] && [ "$persisted" != "$PREVIOUS_VERSION" ]; then
+    log_error "Contradicao de versao: estado persistido=${persisted} checkout=${PREVIOUS_VERSION}."
+    return 1
+  fi
+
+  if [ -n "$persisted" ]; then
+    CURRENT_VERSION="$persisted"
+  elif [ "$PREVIOUS_VERSION_RESOLVED" = true ]; then
+    CURRENT_VERSION="$PREVIOUS_VERSION"
+  fi
+  return 0
+}
+
+detect_confirmed_runtime_version() {
+  local runtime_version health
+  CONFIRMED_RUNTIME_VERSION=""
+
+  [ -f "${APP_DIR}/VERSION" ] && [ ! -L "${APP_DIR}/VERSION" ] && [ -r "${APP_DIR}/VERSION" ] || return 0
+  runtime_version="$(tr -d '[:space:]' < "${APP_DIR}/VERSION")"
+  canonicalize_version "$runtime_version" >/dev/null 2>&1 || return 0
+  health="$(curl -fsS --max-time 2 "$HEALTH_URL" 2>/dev/null || true)"
+  [ "$health" = '{"status":"healthy"}' ] || return 0
+
+  CONFIRMED_RUNTIME_VERSION="$runtime_version"
+  log_ok "Runtime saudavel comprova versao instalada ${CONFIRMED_RUNTIME_VERSION}."
+}
+
+enforce_version_policy() {
+  local decision_rc=0
+  version_decision "$CURRENT_VERSION" "$TARGET_VERSION" || decision_rc=$?
+  case "$decision_rc" in
+    0) return 0 ;;
+    2)
+      if [ "$RECOVERY_FINALIZE_ONLY" = true ]; then
+        return 0
+      fi
+      log_ok "ContaBase ja esta em ${CURRENT_VERSION}; nenhuma atualizacao necessaria."
+      exit 0
+      ;;
+    1)
+      log_error "Downgrade recusado: instalado=${CURRENT_VERSION} oferecido=${TARGET_VERSION}."
+      log_error "O updater normal nao realiza downgrade."
+      exit 1
+      ;;
+    3)
+      exit 1
+      ;;
+  esac
 }
 
 infer_install_channel() {
@@ -207,9 +453,10 @@ write_install_state() {
   local channel="$2"
   local version="$3"
   local repo_path="$4"
-  local tmpfile
+  local tmpfile state_dir
 
-  install -d -o root -g root -m 0755 /etc/contabase
+  state_dir="$(dirname "$STATE_FILE")"
+  install -d -o root -g root -m 0755 "$state_dir"
   tmpfile="$(mktemp "${TMPDIR:-/tmp}/contabase-install-state.XXXXXX")"
   {
     printf 'CONTABASE_STATE_VERSION=1\n'
@@ -242,8 +489,8 @@ check_linux_systemd() {
     exit 1
   fi
 
-  local pid1_comm=""
-  if [ -r /proc/1/comm ]; then
+  local pid1_comm="${CONTABASE_PID1_COMM:-}"
+  if [ -z "$pid1_comm" ] && [ -r /proc/1/comm ]; then
     pid1_comm="$(tr -d '[:space:]' < /proc/1/comm)"
   fi
   if [ "$pid1_comm" != "systemd" ]; then
@@ -298,7 +545,7 @@ require_node_version() {
 
 require_go_version() {
   local required have smallest
-  required="$(awk '$1 == "go" { print $2; exit }' go.mod 2>/dev/null)"
+  required="$(awk '$1 == "go" { print $2; exit }' "$CANONICAL_BUILD_DIR/go.mod" 2>/dev/null)"
   if [ -z "$required" ]; then
     log_error "Erro: nao foi possivel ler a versao minima do Go em go.mod."
     exit 1
@@ -319,44 +566,78 @@ require_go_version() {
   fi
 }
 
-check_dirty_repo() {
-  if [ -n "$(git status --short)" ]; then
-    log_warn "Repositorio com alteracoes locais:"
-    git status --short
-    confirm_or_abort "Continuar mesmo assim? O git pull --ff-only pode falhar se suas alteracoes locais conflitarem com o update"
+enforce_clean_worktree() {
+  local staged tracked untracked
+  staged="$(git diff --cached --name-only 2>/dev/null || true)"
+  tracked="$(git diff --name-only 2>/dev/null || true)"
+  untracked="$(git ls-files --others --exclude-standard 2>/dev/null || true)"
+
+  if [ -n "$staged" ] || [ -n "$tracked" ] || [ -n "$untracked" ]; then
+    log_error "Working tree nao esta limpo. Resolva manualmente o estado local antes do update."
+    if [ -n "$staged" ]; then
+      log_error "Mudancas staged:"
+      printf '%s\n' "$staged" >&2
+    fi
+    if [ -n "$tracked" ]; then
+      log_error "Mudancas tracked:"
+      printf '%s\n' "$tracked" >&2
+    fi
+    if [ -n "$untracked" ]; then
+      log_error "Arquivos untracked nao ignorados:"
+      printf '%s\n' "$untracked" >&2
+    fi
+    return 1
   fi
+  return 0
 }
 
 fetch_remote_state() {
-  git fetch --tags origin
+  git fetch --no-tags "$UPSTREAM_REMOTE" "$UPSTREAM_MERGE_REF"
+}
+
+freeze_target_oid() {
+  TARGET_OID="$(git rev-parse --verify 'FETCH_HEAD^{commit}')" || {
+    log_error "Nao foi possivel congelar o alvo a partir do FETCH_HEAD."
+    return 1
+  }
+  [ -n "$TARGET_OID" ] || {
+    log_error "TARGET_OID vazio apos o fetch."
+    return 1
+  }
+  CURRENT_HEAD_OID="$(git rev-parse --verify 'HEAD^{commit}')" || {
+    log_error "Nao foi possivel resolver o HEAD atual."
+    return 1
+  }
+  log_ok "Alvo congelado: ${TARGET_OID} (HEAD atual: ${CURRENT_HEAD_OID})."
 }
 
 resolve_upstream() {
-  if git rev-parse --abbrev-ref --symbolic-full-name "@{upstream}" >/dev/null 2>&1; then
-    UPSTREAM_REF="$(git rev-parse --abbrev-ref --symbolic-full-name "@{upstream}")"
-    return 0
+  local remote merge_ref remote_branch
+
+  remote="$(git config --get "branch.${CURRENT_BRANCH}.remote" 2>/dev/null || true)"
+  merge_ref="$(git config --get "branch.${CURRENT_BRANCH}.merge" 2>/dev/null || true)"
+
+  if [ -n "$remote" ] && [ -n "$merge_ref" ]; then
+    UPSTREAM_REMOTE="$remote"
+    UPSTREAM_MERGE_REF="$merge_ref"
+  else
+    UPSTREAM_REMOTE="origin"
+    UPSTREAM_MERGE_REF="refs/heads/${CURRENT_BRANCH}"
   fi
 
-  if git show-ref --verify --quiet "refs/remotes/origin/${CURRENT_BRANCH}"; then
-    UPSTREAM_REF="origin/${CURRENT_BRANCH}"
-    return 0
-  fi
-
-  log_error "Erro: nao foi possivel localizar uma referencia remota para a branch ${CURRENT_BRANCH}."
-  exit 1
+  remote_branch="${UPSTREAM_MERGE_REF#refs/heads/}"
+  UPSTREAM_REF="${UPSTREAM_REMOTE}/${remote_branch}"
+  log_ok "Upstream resolvido: remote=${UPSTREAM_REMOTE} ref=${UPSTREAM_MERGE_REF}."
 }
 
 ensure_fast_forward_possible() {
-  if git merge-base --is-ancestor HEAD "$UPSTREAM_REF"; then
+  if git merge-base --is-ancestor "$CURRENT_HEAD_OID" "$TARGET_OID"; then
     return 0
   fi
 
-  if git merge-base --is-ancestor "$UPSTREAM_REF" HEAD; then
-    return 0
-  fi
-
-  log_error "Erro: a branch local divergiu de ${UPSTREAM_REF}. Resolva a divergencia manualmente antes de usar este script."
-  exit 1
+  log_error "Erro: HEAD atual (${CURRENT_HEAD_OID}) nao e ancestral do alvo congelado (${TARGET_OID})."
+  log_error "Resolva a divergencia manualmente antes de usar este script."
+  return 1
 }
 
 record_current_state() {
@@ -364,6 +645,7 @@ record_current_state() {
   echo "Commit atual: $CURRENT_COMMIT"
   echo "Versao atual: $APP_VERSION"
   echo "Referencia remota: $UPSTREAM_REF"
+  echo "Target OID: $TARGET_OID"
 }
 
 ensure_storage_dirs() {
@@ -407,13 +689,13 @@ validate_state_paths() {
 }
 
 prepare_canonical_backup_helper() {
-  local target_blob actual_blob ref_version
-  target_blob="$(git rev-parse "${UPSTREAM_REF}:scripts/ops/backup.sh" 2>/dev/null)" || {
-    log_error "O alvo ${UPSTREAM_REF} nao contem scripts/ops/backup.sh."
+  local target_blob actual_blob
+  target_blob="$(git rev-parse "${TARGET_OID}:scripts/ops/backup.sh" 2>/dev/null)" || {
+    log_error "O alvo ${TARGET_OID} nao contem scripts/ops/backup.sh."
     return 1
   }
   CANONICAL_BACKUP_HELPER_TMP="$(mktemp "${TMPDIR:-/tmp}/contabase-backup-helper.XXXXXX")"
-  git show "${UPSTREAM_REF}:scripts/ops/backup.sh" > "$CANONICAL_BACKUP_HELPER_TMP" || return 1
+  git show "${TARGET_OID}:scripts/ops/backup.sh" > "$CANONICAL_BACKUP_HELPER_TMP" || return 1
   actual_blob="$(git hash-object "$CANONICAL_BACKUP_HELPER_TMP")"
   [ "$actual_blob" = "$target_blob" ] || {
     log_error "Identidade do helper materializado diverge do objeto Git alvo."
@@ -421,14 +703,25 @@ prepare_canonical_backup_helper() {
   }
   chmod 0700 "$CANONICAL_BACKUP_HELPER_TMP"
   CANONICAL_BACKUP_HELPER="$CANONICAL_BACKUP_HELPER_TMP"
-  ref_version="$(git show "${UPSTREAM_REF}:VERSION" | tr -d '[:space:]')"
-  [ -n "$ref_version" ] || { log_error "VERSION ausente no alvo ${UPSTREAM_REF}."; return 1; }
-  TARGET_VERSION="${CONTABASE_VERSION:-$ref_version}"
-  [ "$TARGET_VERSION" = "$ref_version" ] || {
-    log_error "Versao alvo solicitada (${TARGET_VERSION}) diverge de ${UPSTREAM_REF} (${ref_version})."
+  log_ok "Helper canonico vinculado a ${TARGET_OID} (blob ${target_blob})."
+}
+
+resolve_target_version() {
+  local ref_version
+  ref_version="$(git show "${TARGET_OID}:VERSION" 2>/dev/null | tr -d '[:space:]')"
+  [ -n "$ref_version" ] || {
+    log_error "VERSION ausente no alvo congelado ${TARGET_OID}."
     return 1
   }
-  log_ok "Helper canonico vinculado a ${UPSTREAM_REF} (blob ${target_blob})."
+  if [ -n "${CONTABASE_VERSION:-}" ] && [ "${CONTABASE_VERSION}" != "$ref_version" ]; then
+    log_error "Versao alvo solicitada (${CONTABASE_VERSION}) diverge do OID congelado ${TARGET_OID} (${ref_version})."
+    return 1
+  fi
+  TARGET_VERSION="$ref_version"
+  canonicalize_version "$TARGET_VERSION" >/dev/null 2>&1 || {
+    log_error "Versao alvo invalida ou ambigua: ${TARGET_VERSION}"
+    return 1
+  }
 }
 
 validate_backup_package() {
@@ -469,27 +762,59 @@ stop_service() {
   SERVICE_STOPPED=true
 }
 
-pull_fast_forward() {
-  git pull --ff-only origin "$CURRENT_BRANCH"
+merge_target_oid() {
+  git merge --ff-only "$TARGET_OID"
+}
+
+create_canonical_build_snapshot() {
+  local snapshot_version
+  CANONICAL_BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/contabase-build-snapshot.XXXXXX")" || return 1
+  if ! git archive --format=tar "$TARGET_OID" | tar -xf - -C "$CANONICAL_BUILD_DIR"; then
+    log_error "Falha ao materializar o snapshot canonico do alvo ${TARGET_OID}."
+    return 1
+  fi
+  if [ ! -f "$CANONICAL_BUILD_DIR/VERSION" ]; then
+    log_error "Snapshot canonico sem VERSION."
+    return 1
+  fi
+  snapshot_version="$(tr -d '[:space:]' < "$CANONICAL_BUILD_DIR/VERSION")"
+  if [ "$snapshot_version" != "$TARGET_VERSION" ]; then
+    log_error "VERSION do snapshot (${snapshot_version}) diverge do alvo (${TARGET_VERSION})."
+    return 1
+  fi
+  if [ ! -f "$CANONICAL_BUILD_DIR/go.mod" ] || [ ! -f "$CANONICAL_BUILD_DIR/scripts/build-css.sh" ]; then
+    log_error "Snapshot canonico incompleto para build (go.mod ou build-css.sh ausente)."
+    return 1
+  fi
+  return 0
 }
 
 run_local_validations() {
-  npm ci --include=optional
-  ./scripts/build-css.sh
-  go test ./...
-  go build ./...
+  (
+    trap - ERR
+    cd "$CANONICAL_BUILD_DIR" || exit 1
+    npm ci --include=optional \
+      && ./scripts/build-css.sh \
+      && go test ./... \
+      && go build ./...
+  )
 }
 
 build_release_binary() {
   rm -f "$TMP_BINARY"
-  go build \
-    -ldflags "-X github.com/contabase-app/contabase/internal/version.Version=${APP_VERSION}" \
-    -o "$TMP_BINARY" \
-    ./cmd/server
+  (
+    trap - ERR
+    set -e
+    cd "$CANONICAL_BUILD_DIR" || exit 1
+    go build \
+      -ldflags "-X github.com/contabase-app/contabase/internal/version.Version=${APP_VERSION}" \
+      -o "$TMP_BINARY" \
+      ./cmd/server
+  )
 }
 
 preserve_previous_bundle() {
-  rm -rf "${APP_DIR}/contabase.previous" "${APP_DIR}/templates.previous" "${APP_DIR}/assets.previous"
+  rm -rf "${APP_DIR}/contabase.previous" "${APP_DIR}/templates.previous" "${APP_DIR}/assets.previous" "${APP_DIR}/VERSION.previous"
 
   if [ -f "${APP_DIR}/contabase" ]; then
     cp "${APP_DIR}/contabase" "${APP_DIR}/contabase.previous"
@@ -503,6 +828,10 @@ preserve_previous_bundle() {
     cp -R "${APP_DIR}/assets" "${APP_DIR}/assets.previous"
   fi
 
+  if [ -f "${APP_DIR}/VERSION" ]; then
+    cp "${APP_DIR}/VERSION" "${APP_DIR}/VERSION.previous"
+  fi
+
   BUNDLE_PRESERVED=true
 }
 
@@ -510,8 +839,9 @@ install_new_bundle() {
   BUNDLE_SWAP_STARTED=true
   install -o root -g root -m 0755 "$TMP_BINARY" "${APP_DIR}/contabase"
   rm -rf "${APP_DIR}/templates" "${APP_DIR}/assets"
-  cp -R templates "${APP_DIR}/templates"
-  cp -R assets "${APP_DIR}/assets"
+  cp -R "$CANONICAL_BUILD_DIR/templates" "${APP_DIR}/templates"
+  cp -R "$CANONICAL_BUILD_DIR/assets" "${APP_DIR}/assets"
+  install -o root -g root -m 0644 "$CANONICAL_BUILD_DIR/VERSION" "${APP_DIR}/VERSION"
   chown -R root:root "${APP_DIR}"
   find "${APP_DIR}/templates" -type d -exec chmod 0755 {} +
   find "${APP_DIR}/templates" -type f -exec chmod 0644 {} +
@@ -580,6 +910,13 @@ rollback_bundle() {
     cp -R "${APP_DIR}/assets.previous" "${APP_DIR}/assets"
   fi
 
+  if [ -f "${APP_DIR}/VERSION.previous" ]; then
+    cp "${APP_DIR}/VERSION.previous" "${APP_DIR}/VERSION"
+    chmod 0644 "${APP_DIR}/VERSION"
+  else
+    rm -f "${APP_DIR}/VERSION"
+  fi
+
   chown -R root:root "${APP_DIR}"
   start_service || true
 }
@@ -609,14 +946,14 @@ print_summary() {
 }
 
 backfill_update_command() {
-  local update_wrapper="/usr/local/bin/contabase-update"
-  local mode_file="/etc/contabase/install-mode"
+  local update_wrapper="${CONTABASE_UPDATE_WRAPPER:-/usr/local/bin/contabase-update}"
+  local update_alias="${CONTABASE_UPDATE_ALIAS:-/usr/local/bin/cb-update}"
+  local mode_file="${CONTABASE_MODE_FILE:-/etc/contabase/install-mode}"
   local repo_path installed_channel wrapper_source
   repo_path="$REPO_ROOT"
   installed_channel="$(infer_install_channel)"
   wrapper_source="${repo_path}/scripts/lib/contabase-update-wrapper.sh"
 
-  write_install_state "source" "$installed_channel" "$APP_VERSION" "$repo_path"
   printf '%s\n' "source" > "$mode_file"
   printf '%s\n' "$repo_path" >> "$mode_file"
   chown root:root "$mode_file" 2>/dev/null || true
@@ -624,9 +961,10 @@ backfill_update_command() {
 
   if [ -f "$wrapper_source" ]; then
     install -o root -g root -m 0755 "$wrapper_source" "$update_wrapper"
-    if [ ! -e /usr/local/bin/cb-update ]; then
-      ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
+    if [ ! -e "$update_alias" ]; then
+      ln -s "$(basename "$update_wrapper")" "$update_alias" 2>/dev/null || true
     fi
+    write_install_state "source" "$installed_channel" "$APP_VERSION" "$repo_path"
     echo ""
     echo -e "${GREEN}Comando global de atualizacao instalado:${NC}"
     echo "  sudo contabase-update"
@@ -767,14 +1105,40 @@ WRAPPER_EOF
   chown root:root "$update_wrapper" 2>/dev/null || true
   chmod 0755 "$update_wrapper"
 
-  if [ ! -e /usr/local/bin/cb-update ]; then
-    ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
+  if [ ! -e "$update_alias" ]; then
+    ln -s "$(basename "$update_wrapper")" "$update_alias" 2>/dev/null || true
   fi
+
+  write_install_state "source" "$installed_channel" "$APP_VERSION" "$repo_path"
 
   echo ""
   echo -e "${GREEN}Comando global de atualizacao instalado:${NC}"
   echo "  sudo contabase-update"
   echo "  sudo cb-update"
+}
+
+finalize_confirmed_update() {
+  local head_oid
+
+  enforce_clean_worktree || return 1
+  head_oid="$(git rev-parse --verify 'HEAD^{commit}')" || return 1
+  if [ "$head_oid" != "$TARGET_OID" ]; then
+    git merge-base --is-ancestor "$head_oid" "$TARGET_OID" || {
+      log_error "Checkout atual nao pode avancar em fast-forward para o runtime confirmado ${TARGET_OID}."
+      return 1
+    }
+    merge_target_oid || return 1
+  fi
+
+  ACTUAL_HEAD_OID="$(git rev-parse --verify 'HEAD^{commit}')" || return 1
+  [ "$ACTUAL_HEAD_OID" = "$TARGET_OID" ] || {
+    log_error "HEAD apos finalizacao (${ACTUAL_HEAD_OID}) diverge do runtime confirmado (${TARGET_OID})."
+    return 1
+  }
+  resolve_checkout_version || return 1
+  APP_VERSION="$TARGET_VERSION"
+  backfill_update_command || return 1
+  log_ok "Commit logico concluido: runtime, checkout e estado em ${TARGET_VERSION}."
 }
 
 main() {
@@ -791,28 +1155,53 @@ main() {
   require_repo_root
   detect_branch_and_commit
   resolve_previous_version
+  detect_confirmed_runtime_version
   APP_VERSION="${PREVIOUS_VERSION:-desconhecida}"
 
-  log_step "[1/8] Preflight de branch, sistema e comandos"
+  log_step "[1/9] Resolvendo alvo e congelando OID"
+  enforce_clean_worktree || exit 1
+  resolve_upstream
+  fetch_remote_state
+  freeze_target_oid || exit 1
+  resolve_target_version || exit 1
+  resolve_current_version || exit 1
+  enforce_version_policy
+  ensure_fast_forward_possible || exit 1
+  APP_VERSION="$TARGET_VERSION"
+  echo "Versao alvo: $TARGET_VERSION"
+  echo "Target OID: $TARGET_OID"
+  log_ok "Alvo congelado e versao instalada resolvidos antes de qualquer mutacao."
+
+  if [ "$RECOVERY_FINALIZE_ONLY" = true ]; then
+    log_step "Finalizando transacao confirmada de execucao anterior"
+    finalize_confirmed_update || exit 1
+    UPDATE_SUCCEEDED=true
+    print_summary
+    exit 0
+  fi
+
+  log_step "[2/9] Materializando helper canonico vinculado ao OID"
+  prepare_canonical_backup_helper || exit 1
+  log_ok "Helper canonico materializado do OID ${TARGET_OID}."
+
+  log_step "[3/9] Materializando snapshot canonico sem avancar o checkout"
+  create_canonical_build_snapshot || exit 1
+  log_ok "Snapshot canonico em ${CANONICAL_BUILD_DIR}."
+
+  log_step "[4/9] Preflight operacional"
   check_linux_systemd
   require_commands
   require_node_version
   require_go_version
-  check_dirty_repo
-  fetch_remote_state
-  resolve_upstream
-  ensure_fast_forward_possible
-  prepare_canonical_backup_helper
   validate_state_paths
   record_current_state
-  echo "Versao alvo: $TARGET_VERSION"
   log_ok "Preflight concluido antes de parar o servico."
 
-  log_step "[2/8] Parando servico"
+  log_step "[5/9] Parando servico"
   stop_service
   log_ok "Servico contabase parado."
 
-  log_step "[3/8] Criando pacote canonico pre-update"
+  log_step "[6/9] Criando pacote canonico pre-update"
   create_canonical_backup
   BACKUP_SUCCEEDED=true
   ensure_storage_dirs
@@ -822,34 +1211,27 @@ main() {
     log_ok "Backup nao aplicavel: banco e uploads ausentes."
   fi
 
-  log_step "[4/8] Atualizando repositorio com fast-forward"
-  pull_fast_forward
-  detect_app_version
-  [ "$APP_VERSION" = "$TARGET_VERSION" ] || {
-    log_error "VERSION apos pull (${APP_VERSION}) diverge do alvo validado (${TARGET_VERSION})."
+  log_step "[7/9] Validacoes e build no snapshot"
+  if ! run_local_validations; then
+    log_error "Validacoes locais falharam no snapshot canonico."
     return 1
-  }
-  log_ok "Repositorio atualizado via git pull --ff-only."
-
-  log_step "[5/8] Validacoes locais de build"
-  run_local_validations
-  log_ok "npm ci, build CSS, go test e go build concluidos."
-
-  log_step "[6/8] Compilando e preservando bundle anterior"
-  build_release_binary
+  fi
+  if ! build_release_binary; then
+    log_error "Build do binario falhou no snapshot canonico."
+    return 1
+  fi
   preserve_previous_bundle
-  log_ok "Bundle anterior preservado e binario novo compilado."
+  log_ok "Build concluido no snapshot; bundle anterior preservado."
 
-  log_step "[7/8] Instalando novo bundle"
+  log_step "[8/9] Instalando novo bundle e iniciando servico"
   install_new_bundle
-  log_ok "Novo bundle instalado em ${APP_DIR}."
-
-  log_step "[8/8] Iniciando servico e validando healthcheck"
   start_new_runtime
   if run_healthcheck; then
-    UPDATE_SUCCEEDED=true
+    RUNTIME_CONFIRMED=true
     log_ok "Healthcheck retornou healthy."
-    backfill_update_command
+    log_step "[9/9] Finalizando checkout e estado instalado"
+    finalize_confirmed_update
+    UPDATE_SUCCEEDED=true
     print_summary
     exit 0
   fi

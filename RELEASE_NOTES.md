@@ -5,7 +5,21 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Em preparação
 
-- **v0.1.0-beta.8 — Draft** — *Datas civis, histórico de faturas protegido, recorrências mais seguras e atualização self-hosted com Node 24*
+- **v0.1.0-beta.9 — HOTFIX — Draft** — *Atualização self-hosted mais segura e resumo mensal de reservas concluído*
+
+  Hotfix corretivo da beta.8. Corrige a incompatibilidade entre variantes BSD/GNU de `stat` que quebrava o backup canônico em GNU/Linux e BusyBox. O comportamento fail-closed estava preservado: o updater abortava o backup antes de qualquer mutação, e nenhuma corrupção de dados foi demonstrada no incidente reproduzido.
+
+  **Atualização segura e repetível.** Os updaters Docker, source e release agora compartilham a mesma política de versão: evitam reinstalação desnecessária, rejeitam downgrade e interrompem versões ou origens ambíguas antes de mudar o sistema. Nos fluxos source e Docker, a revisão alvo é congelada e o estado instalado só avança depois que o runtime correto está saudável; se uma tentativa falhar no meio, a repetição converge para uma única revisão sem misturar arquivos.
+
+  **Metas e Reservas.** O resumo mensal de reservas foi concluído para mostrar, de forma compacta e responsiva, quanto está reservado, quanto continua disponível, os aportes programados, a margem mensal estimada e quantos meses de custo essencial o valor disponível cobre. A tela também informa se essa cobertura usa o valor configurado ou uma média histórica.
+
+  **Caminhos pretendidos de atualização:** `beta.7` → `beta.9` e `beta.8` → `beta.9`. Os smokes remotos com os artifacts reais da beta.9 ainda serão executados durante os gates da release. Instalações fresh beta.8 também devem poder atualizar.
+
+  **GHCR:** a release publica apenas a tag imutável `v0.1.0-beta.9`. O alias `:beta` será promovido em microfase posterior, após smokes de fresh install e upgrade cruzado.
+
+  **Canal:** permanece em `v0.1.0-beta.7` até a publicação e validação dos artifacts.
+
+- **v0.1.0-beta.8** — *Datas civis, histórico de faturas protegido, recorrências mais seguras e atualização self-hosted com Node 24*
 
   Esta Beta prepara o ContaBase para tratar datas financeiras como datas de calendário, sem depender do fuso horário do servidor. O histórico de faturas e pagamentos fica mais protegido: estados e saldos usam pagamentos efetivos de forma consistente, pagamentos podem ser revertidos com proveniência e os registros históricos não são alterados automaticamente. As recorrências também preservam melhor o histórico: excluir apenas uma ocorrência impede que ela volte a ser criada, editar este e os futuros respeita o ponto escolhido e toda a série é atualizada de forma atômica, protegendo lançamentos pagos, exceções e faturas. O healthcheck de monitoramento foi reforçado com documentação para Docker e Uptime Kuma.
 

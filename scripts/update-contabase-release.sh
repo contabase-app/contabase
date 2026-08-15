@@ -71,8 +71,8 @@ BACKUP_ID=""
 CANONICAL_BACKUP_HELPER=""
 CANONICAL_RESTORE_HELPER=""
 PERSISTED_RESTORE_HELPER=""
-CANONICAL_BACKUP_SHA256="e91430f5d5751fb088c6a755efddfc1793f3990adae039e47b119edc2b58451c"
-CANONICAL_RESTORE_SHA256="bd41388e27cda6b779e0ecf1adea9590d32d2c811aed57a768f3e115a11e16c1"
+CANONICAL_BACKUP_SHA256="6b9382927526cdd77b0d46fec7c6ff410bf003b69420a34aa080970d0956bc72"
+CANONICAL_RESTORE_SHA256="dd8685882a5508fe41705280936a9b301d60248411f972b3fa5e8d288e953b5b"
 
 say() {
   printf '%s\n' "$*"
@@ -81,6 +81,179 @@ say() {
 fail() {
   say "Erro: $*" >&2
   exit 1
+}
+
+# === VERSION_POLICY_BLOCK_BEGIN ===
+# canonicalize_version <version>
+#   Parses vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.N into a canonical
+#   5-tuple: major minor patch release_rank beta_number
+#   release_rank: 0 = beta, 1 = stable; beta_number: 0 for stable.
+#   Returns 0 on success, 1 on invalid/ambiguous format.
+canonicalize_version() {
+  local version="$1"
+  local major minor patch base prerelease beta_num
+
+  [ -n "$version" ] || return 1
+  [[ "$version" =~ ^v[0-9] ]] || return 1
+  case "$version" in
+    *$'\n'*|*$'\r'*) return 1 ;;
+  esac
+
+  base="${version#v}"
+
+  if [[ "$base" == *-* ]]; then
+    prerelease="${base#*-}"
+    base="${base%%-*}"
+    [ -n "$prerelease" ] || return 1
+  else
+    prerelease=""
+  fi
+
+  IFS='.' read -r major minor patch <<< "$base"
+  [[ "$major" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+  [[ "$minor" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+  [[ "$patch" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+
+  if [ -z "$prerelease" ]; then
+    printf '%s %s %s 1 0' "$major" "$minor" "$patch"
+    return 0
+  fi
+
+  if [[ "$prerelease" =~ ^beta\.(0|[1-9][0-9]*)$ ]]; then
+    beta_num="${BASH_REMATCH[1]}"
+    printf '%s %s %s 0 %s' "$major" "$minor" "$patch" "$beta_num"
+    return 0
+  fi
+
+  return 1
+}
+
+# compare_decimal <left> <right>
+#   Compares two canonical non-negative decimal strings of arbitrary length
+#   without arithmetic on the values. Prints -1/0/1. Returns 2 on non-canonical.
+compare_decimal() {
+  local left="$1" right="$2"
+  local left_len right_len
+
+  [[ "$left" =~ ^(0|[1-9][0-9]*)$ ]] || return 2
+  [[ "$right" =~ ^(0|[1-9][0-9]*)$ ]] || return 2
+
+  left_len="${#left}"
+  right_len="${#right}"
+
+  if [ "$left_len" -lt "$right_len" ]; then printf '%s' "-1"; return 0; fi
+  if [ "$left_len" -gt "$right_len" ]; then printf '%s' "1"; return 0; fi
+  if [ "$left" = "$right" ]; then printf '%s' "0"; return 0; fi
+
+  if LC_ALL=C [ "$left" \< "$right" ]; then
+    printf '%s' "-1"
+    return 0
+  fi
+  printf '%s' "1"
+  return 0
+}
+
+# compare_canonical <major1> <minor1> <patch1> <rank1> <beta1> \
+#                  <major2> <minor2> <patch2> <rank2> <beta2>
+#   Prints -1 if v1 < v2, 0 if equal, 1 if v1 > v2. Returns 2 on error.
+compare_canonical() {
+  local major1="$1" minor1="$2" patch1="$3" rank1="$4" beta1="$5"
+  local major2="$6" minor2="$7" patch2="$8" rank2="$9" beta2="${10}"
+  local cmp
+
+  cmp="$(compare_decimal "$major1" "$major2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  cmp="$(compare_decimal "$minor1" "$minor2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  cmp="$(compare_decimal "$patch1" "$patch2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  cmp="$(compare_decimal "$rank1" "$rank2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  cmp="$(compare_decimal "$beta1" "$beta2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  printf '%s' "0"
+  return 0
+}
+# === VERSION_POLICY_BLOCK_END ===
+
+version_decision() {
+  local current="$1" target="$2"
+  local cc tc cmp
+
+  if [ -z "$current" ]; then
+    say "Versao instalada nao encontrada ou vazia." >&2
+    return 3
+  fi
+  if [ -z "$target" ]; then
+    say "Versao alvo nao encontrada ou vazia." >&2
+    return 3
+  fi
+
+  cc="$(canonicalize_version "$current")" || {
+    say "Versao instalada invalida ou ambigua: ${current}" >&2
+    return 3
+  }
+  tc="$(canonicalize_version "$target")" || {
+    say "Versao alvo invalida ou ambigua: ${target}" >&2
+    return 3
+  }
+
+  cmp="$(compare_canonical $cc $tc)" || {
+    say "Erro interno ao comparar versoes: ${current} vs ${target}" >&2
+    return 3
+  }
+
+  case "$cmp" in
+    "-1") return 0 ;;
+    "0")  return 2 ;;
+    "1")  return 1 ;;
+    *)    return 3 ;;
+  esac
+}
+
+resolve_current_version() {
+  local persisted=""
+
+  if [ -f "$STATE_FILE" ]; then
+    persisted="$(awk -F= '$1 == "CONTABASE_INSTALLED_VERSION" { v = substr($0, index($0, "=") + 1); gsub(/[[:space:]'"'"']/, "", v); print v; exit }' "$STATE_FILE")"
+  fi
+
+  CURRENT_VERSION=""
+
+  if [ -n "$persisted" ] && [ "$PREVIOUS_VERSION_RESOLVED" = true ] && [ "$persisted" != "$PREVIOUS_VERSION" ]; then
+    fail "contradicao de versao: estado persistido=${persisted} runtime=${PREVIOUS_VERSION}."
+  fi
+
+  if [ -n "$persisted" ]; then
+    CURRENT_VERSION="$persisted"
+  elif [ "$PREVIOUS_VERSION_RESOLVED" = true ]; then
+    CURRENT_VERSION="$PREVIOUS_VERSION"
+  fi
+}
+
+enforce_version_policy() {
+  local decision_rc=0
+  version_decision "$CURRENT_VERSION" "$TAG" || decision_rc=$?
+  case "$decision_rc" in
+    0) return 0 ;;
+    2)
+      say "ContaBase ja esta em ${CURRENT_VERSION}; nenhuma atualizacao necessaria."
+      exit 0
+      ;;
+    1)
+      say "Downgrade recusado: instalado=${CURRENT_VERSION} oferecido=${TAG}."
+      say "O updater normal nao realiza downgrade."
+      exit 1
+      ;;
+    3)
+      exit 1
+      ;;
+  esac
 }
 
 usage() {
@@ -1213,6 +1386,8 @@ main() {
     validate_existing_env
     validate_existing_installation
     validate_persistent_state
+    resolve_current_version
+    enforce_version_policy
   fi
 
   build_urls

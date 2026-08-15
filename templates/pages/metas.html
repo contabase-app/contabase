@@ -171,7 +171,8 @@
             <span class="metas-summary-label">Disponível</span>
             <span class="metas-summary-value {{if .FreeBalanceNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-success)]{{end}}" data-sensitive>R$ {{.FreeBalance.Reais}}{{.FreeBalance.Cents}}</span>
             {{if .HasCoverage}}
-            <span class="text-sm cb-text-subtle">{{.CoverageText}}</span>
+            <span class="metas-summary-aux">{{.CoverageText}}</span>
+            <span class="metas-summary-source">{{.CoverageSourceText}}</span>
             {{end}}
         </div>
         {{if .HasMonthlyPlanning}}
@@ -179,7 +180,7 @@
             <span class="metas-summary-label">Aportes programados</span>
             <span class="metas-summary-value" data-sensitive>R$ {{.ProgrammedContributions.Reais}}{{.ProgrammedContributions.Cents}}/mês</span>
             {{if .HasMargin}}
-            <span class="text-sm cb-text-subtle">Margem mensal estimada: R$ {{.Margin.Reais}}{{.Margin.Cents}}</span>
+            <span class="metas-summary-aux">Margem mensal estimada: R$ {{.Margin.Reais}}{{.Margin.Cents}}</span>
             {{end}}
         </div>
         {{end}}

@@ -11,7 +11,31 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
-## [v0.1.0-beta.8] — Unreleased
+## [v0.1.0-beta.9] — HOTFIX — Unreleased
+
+### Adicionado
+- **Reservas — resumo mensal:** concluída a apresentação do planejamento na tela de Metas, reunindo saldo reservado, valor disponível, aportes programados, margem mensal estimada e cobertura do custo essencial. A origem da referência de cobertura agora fica explícita, inclusive quando vem da média histórica.
+
+### Alterado
+- **Atualização self-hosted:** os fluxos Docker, source e release passam a aplicar a mesma política canônica de versão antes de qualquer mutação. Versão já instalada vira no-op; downgrade, versão ambígua e divergência de proveniência falham de forma fechada.
+- **Atualização por source e Docker:** o alvo é congelado em uma revisão Git específica e o checkout/estado instalado só é promovido depois que o runtime correspondente passa nas verificações de identidade e saúde. Uma nova tentativa após falha intermediária volta a executar o update completo e converge sem misturar revisões.
+
+### Corrigido
+- **Backup canônico:** corrigida incompatibilidade entre variantes BSD/GNU de `stat` que quebrava o backup em GNU/Linux e BusyBox. A captura de metadata agora isola stdout de cada tentativa e valida valores estritamente.
+- **Restore canônico:** corrigida a rejeição de pacotes válidos pela mesma classe de incompatibilidade `stat` BSD/GNU. O restore agora aceita metadata gerada por qualquer variante compatível.
+- **Updater Docker:** reforçada a identificação do container realmente recriado, incluindo projeto Compose, diretório de trabalho, mounts críticos, versão embarcada, healthcheck e estabilidade de reinício antes da promoção do estado.
+
+### Segurança/Confiabilidade
+- Comportamento fail-closed preservado: falha de backup continua abortando update antes de migrations/troca de bundle.
+- Não houve corrupção de dados demonstrada no incidente beta.8; o updater abortava antes da mutação.
+
+### Release pipeline
+- Matriz obrigatória BSD/macOS, GNU/Linux e Alpine/BusyBox antes de artifacts/GHCR.
+- GHCR de release passa a publicar somente tag imutável da versão.
+- Alias móvel `:beta` deixa de ser promovido automaticamente; promoção ocorrerá somente após smokes pós-publicação.
+- Validador privado de publicação alinhado à política immutable-only.
+
+## [v0.1.0-beta.8]
 
 ### Adicionado
 - **Datas civis:** novas colunas de data civil e escrita dupla nos fluxos de lançamentos, recorrências, pagamentos e agendamentos, preservando a data de calendário independentemente do fuso horário do servidor.

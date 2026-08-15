@@ -3,9 +3,13 @@ package handlers
 import (
 	"database/sql"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/contabase-app/contabase/internal/services"
 )
 
 func seedMonthlyPlanningScenario(t *testing.T, db *sql.DB) {
@@ -113,9 +117,60 @@ func TestMetasMonthlyPlanningFullSnapshot(t *testing.T) {
 	if !data.HasCoverage {
 		t.Fatal("HasCoverage = false, want true (essential 70000, free 453000)")
 	}
-	if !strings.Contains(data.CoverageText, "6,5") {
-		t.Fatalf("CoverageText = %q, expected to contain 6,5", data.CoverageText)
+	if !strings.Contains(data.CoverageText, "Cobre cerca de 6,5") {
+		t.Fatalf("CoverageText = %q, expected to contain 'Cobre cerca de 6,5'", data.CoverageText)
 	}
+	if data.CoverageSourceText != "Baseado no custo essencial mensal configurado." {
+		t.Fatalf("CoverageSourceText = %q, want manual reference explanation", data.CoverageSourceText)
+	}
+}
+
+func TestMetasMonthlyPlanningRendersFullAndEmptyStates(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedMonthlyPlanningScenario(t, db)
+
+	t.Run("full summary", func(t *testing.T) {
+		h := MetasHandler{
+			DB:          db,
+			Templates:   testMetasPageTemplates(t),
+			WorkspaceID: "ws-full",
+			UserID:      "user-a",
+		}
+		req := httptest.NewRequest(http.MethodGet, "/metas?aba=reservas", nil)
+		rr := httptest.NewRecorder()
+
+		h.HandleListarMetas(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200, body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		assertContains(t, body, "Cobre cerca de 6,5 meses")
+		assertContains(t, body, "Baseado no custo essencial mensal configurado.")
+		assertContains(t, body, "Aportes programados")
+		assertContains(t, body, "Margem mensal estimada: R$ 1.885,00")
+	})
+
+	t.Run("empty workspace", func(t *testing.T) {
+		h := MetasHandler{
+			DB:          db,
+			Templates:   testMetasPageTemplates(t),
+			WorkspaceID: "ws-no-references",
+			UserID:      "user-a",
+		}
+		req := httptest.NewRequest(http.MethodGet, "/metas?aba=reservas", nil)
+		rr := httptest.NewRecorder()
+
+		h.HandleListarMetas(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200, body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		assertContains(t, body, "Nenhuma reserva criada")
+		if strings.Contains(body, "Cobre cerca de") || strings.Contains(body, "Baseado no custo essencial") {
+			t.Fatalf("empty workspace rendered unavailable coverage: %s", body)
+		}
+	})
 }
 
 func TestMetasMonthlyPlanningNoEssentialReference(t *testing.T) {
@@ -143,6 +198,9 @@ func TestMetasMonthlyPlanningNoEssentialReference(t *testing.T) {
 
 	if data.CoverageText != "" {
 		t.Fatalf("CoverageText = %q, want empty", data.CoverageText)
+	}
+	if data.CoverageSourceText != "" {
+		t.Fatalf("CoverageSourceText = %q, want empty", data.CoverageSourceText)
 	}
 }
 
@@ -254,18 +312,39 @@ func TestFormatCoverageText(t *testing.T) {
 		tenths int64
 		want   string
 	}{
-		{68, "6,8 meses de custo essencial"},
-		{10, "1,0 mês de custo essencial"},
-		{0, "0,0 mês de custo essencial"},
-		{5, "0,5 mês de custo essencial"},
-		{20, "2,0 meses de custo essencial"},
-		{386, "38,6 meses de custo essencial"},
+		{68, "Cobre cerca de 6,8 meses"},
+		{10, "Cobre cerca de 1,0 mês"},
+		{0, "Cobre cerca de 0,0 mês"},
+		{5, "Cobre cerca de 0,5 mês"},
+		{20, "Cobre cerca de 2,0 meses"},
+		{386, "Cobre cerca de 38,6 meses"},
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("tenths_%d", tt.tenths), func(t *testing.T) {
 			got := formatCoverageText(tt.tenths)
 			if got != tt.want {
 				t.Fatalf("formatCoverageText(%d) = %q, want %q", tt.tenths, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatCoverageSourceText(t *testing.T) {
+	tests := []struct {
+		source           services.MonthlyReferenceSource
+		historicalMonths int
+		want             string
+	}{
+		{services.MonthlyReferenceSourceHistorical, 6, "Baseado na média dos custos essenciais dos últimos 6 meses completos."},
+		{services.MonthlyReferenceSourceHistorical, 3, "Baseado na média dos custos essenciais dos últimos 3 meses completos."},
+		{services.MonthlyReferenceSourceManual, 0, "Baseado no custo essencial mensal configurado."},
+		{services.MonthlyReferenceSourceUnavailable, 0, "Estimativa baseada no custo essencial mensal de referência."},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("source_%s", tt.source), func(t *testing.T) {
+			got := formatCoverageSourceText(tt.source, tt.historicalMonths)
+			if got != tt.want {
+				t.Fatalf("formatCoverageSourceText(%s, %d) = %q, want %q", tt.source, tt.historicalMonths, got, tt.want)
 			}
 		})
 	}
@@ -468,8 +547,8 @@ func TestMetasMonthlyPlanningZeroCoverage(t *testing.T) {
 	if !data.HasCoverage {
 		t.Fatal("HasCoverage = false, want true (essential reference present, free balance zero)")
 	}
-	if !strings.Contains(data.CoverageText, "0,0") {
-		t.Fatalf("CoverageText = %q, expected 0,0", data.CoverageText)
+	if !strings.Contains(data.CoverageText, "Cobre cerca de 0,0") {
+		t.Fatalf("CoverageText = %q, expected 'Cobre cerca de 0,0'", data.CoverageText)
 	}
 }
 
@@ -499,5 +578,8 @@ func TestMetasMonthlyPlanningHTMXFragmentsIncludeData(t *testing.T) {
 	}
 	if data.CoverageText == "" {
 		t.Fatal("CoverageText empty in HTMX data build")
+	}
+	if data.CoverageSourceText == "" {
+		t.Fatal("CoverageSourceText empty in HTMX data build")
 	}
 }

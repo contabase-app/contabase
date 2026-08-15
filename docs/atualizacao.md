@@ -284,10 +284,10 @@ Esse processo é **aditivo e seguro**: não altera saldos, não altera faturas e
 
 Como em qualquer atualização, faça backup antes.
 
-## Beta.8 — migrations de datas, reservas, faturas e recorrências
+## Beta.9 — updater portátil e migrations de datas, reservas, faturas e recorrências
 
-Quando a `v0.1.0-beta.8` estiver publicada, a atualização de uma instalação na
-beta.7 aplicará as migrations `52` a `59`:
+Ao atualizar da `v0.1.0-beta.7` para a `v0.1.0-beta.9`, o ContaBase aplica as
+migrations `52` a `59`:
 
 - colunas de data civil e proteção da cadeia de versões das recorrências;
 - exclusões unitárias persistentes e proteção contra resultados recorrentes contraditórios;
@@ -303,6 +303,13 @@ voltar os dados ao estado anterior, use o restore explícito do pacote pré-upda
 Depois de registrar uma exclusão unitária de recorrência, não faça downgrade
 para um binário que não reconheça esse registro persistente: ele pode recriar a
 ocorrência removida intencionalmente.
+
+Instalações que chegaram à `v0.1.0-beta.8` já possuem essas migrations. Para
+elas, a Beta.9 corrige a portabilidade do backup/restore canônico em GNU/Linux
+e BusyBox e reforça a atualização para validar versão, proveniência e identidade
+do runtime antes de promover o estado instalado. Não use downgrade como forma
+de recuperação; em caso de falha, preserve o pacote pré-update e siga o fluxo
+de restore explícito.
 
 ## Leia também
 

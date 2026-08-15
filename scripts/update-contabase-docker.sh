@@ -43,11 +43,23 @@ CANONICAL_BACKUP_HELPER=""
 CANONICAL_BACKUP_HELPER_TMP=""
 TARGET_REF=""
 TARGET_VERSION=""
+TARGET_OID=""
+CURRENT_VERSION=""
 STATE_PRESENT=false
 NEW_RUNTIME_STARTED=false
+CANONICAL_BUILD_DIR=""
+CANONICAL_COMPOSE_OVERRIDE=""
 HEALTH_URL=""
 ENV_BACKUP_PATH=""
-STATE_FILE="/etc/contabase/install-state.env"
+CHECKOUT_VERSION_BEFORE=""
+PERSISTED_VERSION=""
+CONFIRMED_RUNTIME_VERSION=""
+RECOVERY_FINALIZE_ONLY=false
+RUNTIME_CONFIRMED=false
+COMPOSE_SERVICE="contabase"
+RESOLVED_CONTAINER_ID=""
+RESOLVED_COMPOSE_PROJECT=""
+STATE_FILE="${CONTABASE_STATE_FILE:-/etc/contabase/install-state.env}"
 INSTALL_CHANNEL="${CONTABASE_CHANNEL:-}"
 REPO_ROOT="$(pwd -P)"
 
@@ -95,9 +107,267 @@ read_version_file() {
   tr -d '[:space:]' < VERSION
 }
 
+# === VERSION_POLICY_BLOCK_BEGIN ===
+# canonicalize_version <version>
+#   Parses vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.N into a canonical
+#   5-tuple: major minor patch release_rank beta_number
+#   release_rank: 0 = beta, 1 = stable; beta_number: 0 for stable.
+#   Returns 0 on success, 1 on invalid/ambiguous format.
+canonicalize_version() {
+  local version="$1"
+  local major minor patch base prerelease beta_num
+
+  [ -n "$version" ] || return 1
+  [[ "$version" =~ ^v[0-9] ]] || return 1
+  case "$version" in
+    *$'\n'*|*$'\r'*) return 1 ;;
+  esac
+
+  base="${version#v}"
+
+  if [[ "$base" == *-* ]]; then
+    prerelease="${base#*-}"
+    base="${base%%-*}"
+    [ -n "$prerelease" ] || return 1
+  else
+    prerelease=""
+  fi
+
+  IFS='.' read -r major minor patch <<< "$base"
+  [[ "$major" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+  [[ "$minor" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+  [[ "$patch" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
+
+  if [ -z "$prerelease" ]; then
+    printf '%s %s %s 1 0' "$major" "$minor" "$patch"
+    return 0
+  fi
+
+  if [[ "$prerelease" =~ ^beta\.(0|[1-9][0-9]*)$ ]]; then
+    beta_num="${BASH_REMATCH[1]}"
+    printf '%s %s %s 0 %s' "$major" "$minor" "$patch" "$beta_num"
+    return 0
+  fi
+
+  return 1
+}
+
+# compare_decimal <left> <right>
+#   Compares two canonical non-negative decimal strings of arbitrary length
+#   without arithmetic on the values. Prints -1/0/1. Returns 2 on non-canonical.
+compare_decimal() {
+  local left="$1" right="$2"
+  local left_len right_len
+
+  [[ "$left" =~ ^(0|[1-9][0-9]*)$ ]] || return 2
+  [[ "$right" =~ ^(0|[1-9][0-9]*)$ ]] || return 2
+
+  left_len="${#left}"
+  right_len="${#right}"
+
+  if [ "$left_len" -lt "$right_len" ]; then printf '%s' "-1"; return 0; fi
+  if [ "$left_len" -gt "$right_len" ]; then printf '%s' "1"; return 0; fi
+  if [ "$left" = "$right" ]; then printf '%s' "0"; return 0; fi
+
+  if LC_ALL=C [ "$left" \< "$right" ]; then
+    printf '%s' "-1"
+    return 0
+  fi
+  printf '%s' "1"
+  return 0
+}
+
+# compare_canonical <major1> <minor1> <patch1> <rank1> <beta1> \
+#                  <major2> <minor2> <patch2> <rank2> <beta2>
+#   Prints -1 if v1 < v2, 0 if equal, 1 if v1 > v2. Returns 2 on error.
+compare_canonical() {
+  local major1="$1" minor1="$2" patch1="$3" rank1="$4" beta1="$5"
+  local major2="$6" minor2="$7" patch2="$8" rank2="$9" beta2="${10}"
+  local cmp
+
+  cmp="$(compare_decimal "$major1" "$major2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  cmp="$(compare_decimal "$minor1" "$minor2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  cmp="$(compare_decimal "$patch1" "$patch2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  cmp="$(compare_decimal "$rank1" "$rank2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  cmp="$(compare_decimal "$beta1" "$beta2")" || return 2
+  [ "$cmp" = "0" ] || { printf '%s' "$cmp"; return 0; }
+
+  printf '%s' "0"
+  return 0
+}
+# === VERSION_POLICY_BLOCK_END ===
+
+version_decision() {
+  local current="$1" target="$2"
+  local cc tc cmp
+
+  if [ -z "$current" ]; then
+    echo "Versao instalada nao encontrada ou vazia." >&2
+    return 3
+  fi
+  if [ -z "$target" ]; then
+    echo "Versao alvo nao encontrada ou vazia." >&2
+    return 3
+  fi
+
+  cc="$(canonicalize_version "$current")" || {
+    echo "Versao instalada invalida ou ambigua: ${current}" >&2
+    return 3
+  }
+  tc="$(canonicalize_version "$target")" || {
+    echo "Versao alvo invalida ou ambigua: ${target}" >&2
+    return 3
+  }
+
+  cmp="$(compare_canonical $cc $tc)" || {
+    echo "Erro interno ao comparar versoes: ${current} vs ${target}" >&2
+    return 3
+  }
+
+  case "$cmp" in
+    "-1") return 0 ;;
+    "0")  return 2 ;;
+    "1")  return 1 ;;
+    *)    return 3 ;;
+  esac
+}
+
+resolve_current_version() {
+  local persisted=""
+
+  if [ -f "$STATE_FILE" ]; then
+    persisted="$(awk -F= '$1 == "CONTABASE_INSTALLED_VERSION" { v = substr($0, index($0, "=") + 1); gsub(/[[:space:]]/, "", v); print v; exit }' "$STATE_FILE")"
+  fi
+
+  PERSISTED_VERSION="$persisted"
+  CURRENT_VERSION=""
+
+  if [ -n "$CONFIRMED_RUNTIME_VERSION" ]; then
+    CURRENT_VERSION="$CONFIRMED_RUNTIME_VERSION"
+    PREVIOUS_VERSION="$CONFIRMED_RUNTIME_VERSION"
+    if [ "$CURRENT_VERSION" = "$TARGET_VERSION" ] \
+      && { [ "$persisted" != "$CURRENT_VERSION" ] || [ "$CHECKOUT_VERSION_BEFORE" != "$CURRENT_VERSION" ]; }; then
+      RECOVERY_FINALIZE_ONLY=true
+    fi
+    return 0
+  fi
+
+  if [ -n "$persisted" ] && [ -n "$PREVIOUS_VERSION" ] \
+    && [ "$PREVIOUS_VERSION" != "desconhecida" ] && [ "$PREVIOUS_VERSION" != "unknown" ] \
+    && [ "$persisted" != "$PREVIOUS_VERSION" ]; then
+    echo "Erro: contradicao de versao: estado persistido=${persisted} checkout=${PREVIOUS_VERSION}."
+    return 1
+  fi
+
+  if [ -n "$persisted" ]; then
+    CURRENT_VERSION="$persisted"
+  elif [ -n "$PREVIOUS_VERSION" ] && [ "$PREVIOUS_VERSION" != "desconhecida" ] && [ "$PREVIOUS_VERSION" != "unknown" ]; then
+    CURRENT_VERSION="$PREVIOUS_VERSION"
+  fi
+  return 0
+}
+
+enforce_version_policy() {
+  local decision_rc=0
+  version_decision "$CURRENT_VERSION" "$TARGET_VERSION" || decision_rc=$?
+  case "$decision_rc" in
+    0) return 0 ;;
+    2)
+      if [ "$RECOVERY_FINALIZE_ONLY" = true ]; then
+        return 0
+      fi
+      echo "ContaBase ja esta em ${CURRENT_VERSION}; nenhuma atualizacao necessaria."
+      exit 0
+      ;;
+    1)
+      echo "Downgrade recusado: instalado=${CURRENT_VERSION} oferecido=${TARGET_VERSION}."
+      echo "O updater normal nao realiza downgrade."
+      exit 1
+      ;;
+    3)
+      exit 1
+      ;;
+  esac
+}
+
+enforce_clean_worktree() {
+  local staged tracked untracked
+  staged="$(git diff --cached --name-only 2>/dev/null || true)"
+  tracked="$(git diff --name-only 2>/dev/null || true)"
+  untracked="$(git ls-files --others --exclude-standard 2>/dev/null || true)"
+
+  if [ -n "$staged" ] || [ -n "$tracked" ] || [ -n "$untracked" ]; then
+    echo "Erro: working tree nao esta limpo. Resolva manualmente o estado local antes do update."
+    if [ -n "$staged" ]; then
+      echo "Mudancas staged:"
+      printf '%s\n' "$staged"
+    fi
+    if [ -n "$tracked" ]; then
+      echo "Mudancas tracked:"
+      printf '%s\n' "$tracked"
+    fi
+    if [ -n "$untracked" ]; then
+      echo "Arquivos untracked nao ignorados:"
+      printf '%s\n' "$untracked"
+    fi
+    return 1
+  fi
+  return 0
+}
+
+create_canonical_build_snapshot() {
+  local snapshot_version
+  CANONICAL_BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/contabase-build-snapshot.XXXXXX")" || return 1
+  if ! git archive --format=tar "$TARGET_OID" | tar -xf - -C "$CANONICAL_BUILD_DIR"; then
+    echo "Erro: falha ao materializar o snapshot canonico do alvo ${TARGET_OID}."
+    return 1
+  fi
+  if [ ! -f "$CANONICAL_BUILD_DIR/VERSION" ]; then
+    echo "Erro: snapshot canonico sem VERSION."
+    return 1
+  fi
+  snapshot_version="$(tr -d '[:space:]' < "$CANONICAL_BUILD_DIR/VERSION")"
+  if [ "$snapshot_version" != "$TARGET_VERSION" ]; then
+    echo "Erro: VERSION do snapshot (${snapshot_version}) diverge do alvo (${TARGET_VERSION})."
+    return 1
+  fi
+  if [ ! -f "$CANONICAL_BUILD_DIR/Dockerfile" ]; then
+    echo "Erro: snapshot canonico sem Dockerfile."
+    return 1
+  fi
+  return 0
+}
+
+create_canonical_compose_override() {
+  CANONICAL_COMPOSE_OVERRIDE="$(mktemp "${TMPDIR:-/tmp}/contabase-compose-override.XXXXXX")" || return 1
+  cat > "$CANONICAL_COMPOSE_OVERRIDE" <<EOF
+services:
+  contabase:
+    build:
+      context: ${CANONICAL_BUILD_DIR}
+      dockerfile: ${CANONICAL_BUILD_DIR}/Dockerfile
+      args:
+        VERSION: ${TARGET_VERSION}
+EOF
+}
+
 cleanup_update_tmp() {
   if [ -n "$CANONICAL_BACKUP_HELPER_TMP" ] && [ -f "$CANONICAL_BACKUP_HELPER_TMP" ]; then
     rm -f "$CANONICAL_BACKUP_HELPER_TMP"
+  fi
+  if [ -n "$CANONICAL_COMPOSE_OVERRIDE" ] && [ -f "$CANONICAL_COMPOSE_OVERRIDE" ]; then
+    rm -f "$CANONICAL_COMPOSE_OVERRIDE"
+  fi
+  if [ -n "$CANONICAL_BUILD_DIR" ] && [ -d "$CANONICAL_BUILD_DIR" ]; then
+    rm -rf "$CANONICAL_BUILD_DIR"
   fi
 }
 trap cleanup_update_tmp EXIT
@@ -232,28 +502,227 @@ resolve_health_url() {
   HEALTH_URL="http://127.0.0.1:${health_port}/health"
 }
 
-wait_for_healthcheck() {
-  local attempt max_attempts health container_id docker_health
+compose_container_ids() {
+  local compose_context="$1"
+
+  case "$compose_context" in
+    operational)
+      docker compose $COMPOSE_ARGS ps -q "$COMPOSE_SERVICE"
+      ;;
+    build)
+      VERSION="$TARGET_VERSION" docker compose "${COMPOSE_BUILD_ARGS[@]}" ps -q "$COMPOSE_SERVICE"
+      ;;
+    *)
+      echo "Erro: contexto Compose desconhecido ao resolver container: $compose_context."
+      return 1
+      ;;
+  esac
+}
+
+resolve_effective_container() {
+  local compose_context="$1"
+  local allow_absent="${2:-false}"
+  local ids line container_id="" count=0 actual_id service_label project_label working_dir_label resolved_working_dir
+
+  RESOLVED_CONTAINER_ID=""
+  RESOLVED_COMPOSE_PROJECT=""
+  if ! ids="$(compose_container_ids "$compose_context" 2>/dev/null)"; then
+    echo "Erro: nao foi possivel resolver o container do servico ${COMPOSE_SERVICE}."
+    return 1
+  fi
+
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    count=$((count + 1))
+    container_id="$line"
+  done <<EOF
+$ids
+EOF
+
+  if [ "$count" -eq 0 ]; then
+    if [ "$allow_absent" = true ]; then
+      return 0
+    fi
+    echo "Erro: o Compose nao retornou container para o servico ${COMPOSE_SERVICE}."
+    return 1
+  fi
+  if [ "$count" -ne 1 ]; then
+    echo "Erro: o Compose retornou ${count} containers para ${COMPOSE_SERVICE}; identidade ambigua."
+    return 1
+  fi
+
+  actual_id="$(docker inspect "$container_id" --format '{{.Id}}' 2>/dev/null)" || {
+    echo "Erro: nao foi possivel inspecionar o container ${container_id}."
+    return 1
+  }
+  [ -n "$actual_id" ] && [ "$actual_id" = "$container_id" ] || {
+    echo "Erro: identidade inspecionada do container diverge do Compose."
+    return 1
+  }
+
+  service_label="$(docker inspect "$container_id" --format '{{ index .Config.Labels "com.docker.compose.service" }}' 2>/dev/null)" || return 1
+  project_label="$(docker inspect "$container_id" --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null)" || return 1
+  [ "$service_label" = "<no value>" ] && service_label=""
+  [ "$project_label" = "<no value>" ] && project_label=""
+  [ "$service_label" = "$COMPOSE_SERVICE" ] || {
+    echo "Erro: container ${container_id} declara servico Compose '${service_label:-ausente}', esperado '${COMPOSE_SERVICE}'."
+    return 1
+  }
+  [ -n "$project_label" ] || {
+    echo "Erro: container ${container_id} nao possui label de projeto Compose."
+    return 1
+  }
+
+  working_dir_label="$(docker inspect "$container_id" --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null)" || return 1
+  [ "$working_dir_label" = "<no value>" ] && working_dir_label=""
+  if [ -n "$working_dir_label" ]; then
+    [ -d "$working_dir_label" ] || {
+      echo "Erro: working_dir Compose do container nao existe: $working_dir_label"
+      return 1
+    }
+    resolved_working_dir="$(cd "$working_dir_label" && pwd -P)"
+    [ "$resolved_working_dir" = "$REPO_ROOT" ] || {
+      echo "Erro: container pertence a outro working_dir Compose: $resolved_working_dir"
+      return 1
+    }
+  fi
+
+  RESOLVED_CONTAINER_ID="$container_id"
+  RESOLVED_COMPOSE_PROJECT="$project_label"
+}
+
+assert_effective_container_unchanged() {
+  local compose_context="$1"
+  local expected_id="$2"
+
+  resolve_effective_container "$compose_context" false || return 1
+  [ "$RESOLVED_CONTAINER_ID" = "$expected_id" ] || {
+    echo "Erro: container efetivo mudou durante a verificacao (${expected_id} -> ${RESOLVED_CONTAINER_ID})."
+    return 1
+  }
+}
+
+validate_runtime_mounts() {
+  local container_id="$1"
+  local destinations destination
+
+  destinations="$(docker inspect "$container_id" --format '{{range .Mounts}}{{println .Destination}}{{end}}' 2>/dev/null)" || {
+    echo "Erro: nao foi possivel auditar mounts do container ${container_id}."
+    return 1
+  }
+
+  while IFS= read -r destination; do
+    [ -n "$destination" ] || continue
+    case "$destination" in
+      /app/data|/app/data/*)
+        ;;
+      /|/app|/app/VERSION|/app/server|/app/server/*|/app/admin|/app/admin/*|/app/templates|/app/templates/*|/app/assets|/app/assets/*)
+        echo "Erro: mount operacional proibido shadowa runtime canonico em ${destination}."
+        return 1
+        ;;
+    esac
+  done <<EOF
+$destinations
+EOF
+}
+
+read_container_runtime_version() {
+  local container_id="$1"
+  local runtime_with_sentinel runtime_version sentinel=$'\034'
+
+  if ! runtime_with_sentinel="$(docker exec "$container_id" cat /app/VERSION 2>/dev/null && printf '%s' "$sentinel")"; then
+    echo "Erro: nao foi possivel ler /app/VERSION do container ${container_id}." >&2
+    return 1
+  fi
+  case "$runtime_with_sentinel" in
+    *"$sentinel") runtime_version="${runtime_with_sentinel%"$sentinel"}" ;;
+    *) return 1 ;;
+  esac
+  case "$runtime_version" in
+    *$'\n') runtime_version="${runtime_version%$'\n'}" ;;
+  esac
+  canonicalize_version "$runtime_version" >/dev/null 2>&1 || {
+    echo "Erro: /app/VERSION ausente, vazia ou invalida no container ${container_id}." >&2
+    return 1
+  }
+  printf '%s' "$runtime_version"
+}
+
+detect_confirmed_runtime_version() {
+  local container_id runtime_version health docker_health restart_before restart_after
+  CONFIRMED_RUNTIME_VERSION=""
+
+  resolve_effective_container operational true || return 1
+  container_id="$RESOLVED_CONTAINER_ID"
+  [ -n "$container_id" ] || return 0
+  validate_runtime_mounts "$container_id" || return 1
+  docker_health="$(docker inspect "$container_id" --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null)" || return 1
+  [ "$docker_health" = "healthy" ] || return 0
+  resolve_health_url
+  health="$(curl -fsS --max-time 3 "$HEALTH_URL" 2>/dev/null || true)"
+  [ "$health" = '{"status":"healthy"}' ] || return 0
+  restart_before="$(docker inspect "$container_id" --format '{{.RestartCount}}' 2>/dev/null)" || return 1
+  runtime_version="$(read_container_runtime_version "$container_id")" || return 1
+  assert_effective_container_unchanged operational "$container_id" || return 1
+  docker_health="$(docker inspect "$container_id" --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null)" || return 1
+  restart_after="$(docker inspect "$container_id" --format '{{.RestartCount}}' 2>/dev/null)" || return 1
+  [ "$docker_health" = "healthy" ] && [ "$restart_after" = "$restart_before" ] || return 0
+
+  CONFIRMED_RUNTIME_VERSION="$runtime_version"
+  echo "Runtime Docker saudavel comprova versao instalada ${CONFIRMED_RUNTIME_VERSION}."
+}
+
+confirm_target_runtime_identity() {
+  local attempt max_attempts health container_id docker_health runtime_version restart_before restart_after
   max_attempts="${HEALTHCHECK_ATTEMPTS:-30}"
+  resolve_effective_container build false || return 1
+  container_id="$RESOLVED_CONTAINER_ID"
+  validate_runtime_mounts "$container_id" || return 1
   resolve_health_url
 
   for attempt in $(seq 1 "$max_attempts"); do
-    if command -v curl >/dev/null 2>&1; then
+    assert_effective_container_unchanged build "$container_id" || return 1
+    docker_health="$(docker inspect "$container_id" --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null)" || {
+      echo "Erro: falha ao consultar health do container ${container_id}."
+      return 1
+    }
+    [ -n "$docker_health" ] || {
+      echo "Erro: container ${container_id} nao possui Docker HEALTHCHECK observavel."
+      return 1
+    }
+
+    if [ "$docker_health" = "healthy" ]; then
       health="$(curl -fsS --max-time 3 "$HEALTH_URL" 2>/dev/null || true)"
       if [ "$health" = '{"status":"healthy"}' ]; then
+        restart_before="$(docker inspect "$container_id" --format '{{.RestartCount}}' 2>/dev/null)" || return 1
+        runtime_version="$(read_container_runtime_version "$container_id")" || return 1
+        [ "$runtime_version" = "$TARGET_VERSION" ] || {
+          echo "Erro: runtime do container ${container_id} esta em ${runtime_version}, mas o alvo congelado e ${TARGET_VERSION}."
+          return 1
+        }
+        assert_effective_container_unchanged build "$container_id" || return 1
+        docker_health="$(docker inspect "$container_id" --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null)" || return 1
+        restart_after="$(docker inspect "$container_id" --format '{{.RestartCount}}' 2>/dev/null)" || return 1
+        [ "$docker_health" = "healthy" ] || {
+          echo "Erro: container perdeu health durante a verificacao de identidade."
+          return 1
+        }
+        [ "$restart_after" = "$restart_before" ] || {
+          echo "Erro: container reiniciou durante a verificacao de identidade."
+          return 1
+        }
+        health="$(curl -fsS --max-time 3 "$HEALTH_URL" 2>/dev/null || true)"
+        [ "$health" = '{"status":"healthy"}' ] || {
+          echo "Erro: health HTTP deixou de responder durante a verificacao de identidade."
+          return 1
+        }
+        CONFIRMED_RUNTIME_VERSION="$runtime_version"
+        echo "Runtime Docker confirmado: projeto=${RESOLVED_COMPOSE_PROJECT} servico=${COMPOSE_SERVICE} container=${container_id} versao=${runtime_version}."
         return 0
-      fi
-    else
-      container_id="$(docker compose $COMPOSE_ARGS ps -q contabase 2>/dev/null || true)"
-      if [ -n "$container_id" ]; then
-        docker_health="$(docker inspect "$container_id" --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null || true)"
-        if [ "$docker_health" = "healthy" ]; then
-          return 0
-        fi
       fi
     fi
 
-    echo "Aguardando healthcheck: tentativa ${attempt}/${max_attempts}..."
+    echo "Aguardando identidade/health do runtime: tentativa ${attempt}/${max_attempts}..."
     sleep 2
   done
 
@@ -334,13 +803,13 @@ validate_persistent_state() {
 
 prepare_canonical_backup_helper() {
   local target_blob actual_blob
-  target_blob="$(git rev-parse "${TARGET_REF}:scripts/ops/backup.sh" 2>/dev/null)" || {
-    echo "Erro: o alvo ${TARGET_REF} nao contem scripts/ops/backup.sh."
+  target_blob="$(git rev-parse "${TARGET_OID}:scripts/ops/backup.sh" 2>/dev/null)" || {
+    echo "Erro: o alvo ${TARGET_OID} nao contem scripts/ops/backup.sh."
     return 1
   }
   CANONICAL_BACKUP_HELPER_TMP="$(mktemp "${TMPDIR:-/tmp}/contabase-backup-helper.XXXXXX")"
-  if ! git show "${TARGET_REF}:scripts/ops/backup.sh" > "$CANONICAL_BACKUP_HELPER_TMP"; then
-    echo "Erro: nao foi possivel materializar o helper canonico do alvo ${TARGET_REF}."
+  if ! git show "${TARGET_OID}:scripts/ops/backup.sh" > "$CANONICAL_BACKUP_HELPER_TMP"; then
+    echo "Erro: nao foi possivel materializar o helper canonico do alvo ${TARGET_OID}."
     return 1
   fi
   actual_blob="$(git hash-object "$CANONICAL_BACKUP_HELPER_TMP")"
@@ -350,7 +819,7 @@ prepare_canonical_backup_helper() {
   }
   chmod 0700 "$CANONICAL_BACKUP_HELPER_TMP"
   CANONICAL_BACKUP_HELPER="$CANONICAL_BACKUP_HELPER_TMP"
-  echo "Helper canonico vinculado ao alvo ${TARGET_REF} (blob ${target_blob})."
+  echo "Helper canonico vinculado ao alvo ${TARGET_OID} (blob ${target_blob})."
 }
 
 validate_backup_package() {
@@ -426,7 +895,9 @@ rollback_runtime() {
   fi
 
   STACK_STOPPED=false
-  if wait_for_healthcheck; then
+  if detect_confirmed_runtime_version \
+    && [ -n "$CONFIRMED_RUNTIME_VERSION" ] \
+    && [ "$CONFIRMED_RUNTIME_VERSION" = "$PREVIOUS_VERSION" ]; then
     echo "Rollback do runtime concluido: imagem anterior saudavel em $HEALTH_URL."
     echo "Codigo local pode permanecer atualizado; dados nao foram restaurados."
     docker image rm "$PREVIOUS_ROLLBACK_TAG" >/dev/null 2>&1 || true
@@ -443,7 +914,9 @@ fail_with_rollback() {
   echo ""
   echo "ERRO: $message"
 
-  if [ "$NEW_RUNTIME_STARTED" = true ]; then
+  if [ "$RUNTIME_CONFIRMED" = true ]; then
+    echo "Runtime alvo confirmado e saudavel; mantendo-o ativo para finalizar checkout/estado no retry."
+  elif [ "$NEW_RUNTIME_STARTED" = true ]; then
     docker compose $COMPOSE_ARGS down >/dev/null 2>&1 || true
     STACK_STOPPED=true
     print_post_start_failure
@@ -462,7 +935,9 @@ handle_signal() {
   trap - INT TERM
   echo ""
   echo "Atualizacao interrompida por sinal."
-  if [ "$NEW_RUNTIME_STARTED" = true ]; then
+  if [ "$RUNTIME_CONFIRMED" = true ]; then
+    echo "Runtime alvo confirmado; checkout/estado serao finalizados na proxima execucao."
+  elif [ "$NEW_RUNTIME_STARTED" = true ]; then
     docker compose $COMPOSE_ARGS down >/dev/null 2>&1 || true
     print_post_start_failure
   elif [ "$STACK_STOPPED" = true ]; then
@@ -475,6 +950,7 @@ trap handle_signal INT TERM
 
 PREVIOUS_VERSION="$(read_version_file 2>/dev/null || true)"
 PREVIOUS_VERSION="${PREVIOUS_VERSION:-desconhecida}"
+CHECKOUT_VERSION_BEFORE="$PREVIOUS_VERSION"
 
 echo "=== ContaBase — Atualização Docker ==="
 echo ""
@@ -528,6 +1004,8 @@ if ! validate_env_secrets "$ENV_FILE_DOCKER"; then
 fi
 echo "Secrets validados: todos presentes e preenchidos."
 
+detect_confirmed_runtime_version
+
 # Dry-run: validate everything, simulate, exit without changes
 # Must run BEFORE env_backup and git fetch to guarantee zero mutations.
 if [ "$DRY_RUN" = true ]; then
@@ -545,47 +1023,123 @@ if [ "$DRY_RUN" = true ]; then
   echo "  1. Materializar o helper canonico vinculado ao alvo Git"
   echo "  2. Parar a stack e criar o pacote canonico pre-update"
   echo "  3. Backup e ajuste compativel do .env.docker"
-  echo "  4. Atualizar codigo (git pull --ff-only)"
-  echo "  5. Reconstruir e subir containers"
+  echo "  4. Materializar snapshot canonico e override compose sem avancar o checkout normal"
+  echo "  5. Reconstruir e subir containers a partir do snapshot"
   echo "  6. Validar healthcheck"
-  echo "  7. Antes do novo runtime: rollback de runtime; depois: parar e orientar restore"
+  echo "  7. Finalizar checkout e estado instalado"
+  echo "  8. Antes do health: rollback de runtime; depois: preservar runtime saudavel para retry"
   echo ""
   echo "NENHUMA ALTERACAO FOI FEITA."
   exit 0
 fi
 
-# --- Fetch ---
+if [ "$(id -u)" -ne 0 ] && ! command -v sudo >/dev/null 2>&1; then
+  echo "Erro: root ou sudo e obrigatorio para confirmar estado e comando global do update."
+  exit 1
+fi
+
+# --- Fetch único e congelamento do OID ---
+if [ "$SKIP_PULL" = true ] && [ "$FORCE_RESET" = true ]; then
+  echo "Erro: --force-reset --skip-pull e uma combinacao contraditoria."
+  exit 1
+fi
+
+CURRENT_BRANCH="$(git branch --show-current)"
+[ -n "$CURRENT_BRANCH" ] || { echo "Erro: HEAD destacado nao e suportado para update."; exit 1; }
+
 if [ "$SKIP_PULL" = false ]; then
+  if [ "$FORCE_RESET" = false ]; then
+    enforce_clean_worktree || exit 1
+  fi
   echo "Buscando atualizações..."
-  git fetch origin
-  COMMITS_AHEAD=$(git rev-list HEAD..origin/"$(git branch --show-current)" --count 2>/dev/null || echo "0")
+  git fetch --no-tags origin "refs/heads/${CURRENT_BRANCH}"
+  TARGET_OID="$(git rev-parse --verify 'FETCH_HEAD^{commit}')" || {
+    echo "Erro: nao foi possivel congelar o alvo a partir do FETCH_HEAD."
+    exit 1
+  }
+  COMMITS_AHEAD=$(git rev-list HEAD.."$TARGET_OID" --count 2>/dev/null || echo "0")
   if [ "$COMMITS_AHEAD" -gt 0 ]; then
     echo ""
     echo "Commits pendentes: $COMMITS_AHEAD"
-    git log --oneline HEAD..origin/"$(git branch --show-current)"
+    git log --oneline HEAD.."$TARGET_OID"
   else
     echo "Nenhum commit novo. Prosseguindo apenas com rebuild."
   fi
 else
-  echo "Pulando atualização Git (--skip-pull)."
+  enforce_clean_worktree || exit 1
+  TARGET_OID="$(git rev-parse --verify 'HEAD^{commit}')" || {
+    echo "Erro: nao foi possivel resolver o HEAD atual."
+    exit 1
+  }
   COMMITS_AHEAD=0
 fi
+[ -n "$TARGET_OID" ] || { echo "Erro: TARGET_OID vazio."; exit 1; }
+echo "Alvo congelado: $TARGET_OID"
 
-CURRENT_BRANCH="$(git branch --show-current)"
-if [ "$SKIP_PULL" = true ] && [ "$FORCE_RESET" = false ]; then
-  TARGET_REF="HEAD"
-else
-  TARGET_REF="origin/${CURRENT_BRANCH}"
+TARGET_REF="$TARGET_OID"
+TARGET_VERSION="$(git show "${TARGET_OID}:VERSION" 2>/dev/null | tr -d '[:space:]')"
+[ -n "$TARGET_VERSION" ] || { echo "Erro: VERSION ausente ou vazia no alvo ${TARGET_OID}."; exit 1; }
+canonicalize_version "$TARGET_VERSION" >/dev/null 2>&1 || {
+  echo "Erro: VERSION invalida ou ambigua no alvo ${TARGET_OID}: ${TARGET_VERSION}."
+  exit 1
+}
+if [ -n "${CONTABASE_VERSION:-}" ] && [ "${CONTABASE_VERSION}" != "$TARGET_VERSION" ]; then
+  echo "Erro: TARGET_PROVENANCE_MISMATCH: versao solicitada (${CONTABASE_VERSION}) diverge do VERSION do alvo ${TARGET_OID} (${TARGET_VERSION})."
+  exit 1
 fi
-TARGET_VERSION="$(git show "${TARGET_REF}:VERSION" 2>/dev/null | tr -d '[:space:]')"
-[ -n "$TARGET_VERSION" ] || { echo "Erro: VERSION ausente ou vazia no alvo ${TARGET_REF}."; exit 1; }
+resolve_current_version || exit 1
+enforce_version_policy
+
+if [ "$RECOVERY_FINALIZE_ONLY" = true ]; then
+  [ "$CONFIRMED_RUNTIME_VERSION" = "$TARGET_VERSION" ] || {
+    echo "Erro: finalizacao de recovery sem runtime comprovado na versao alvo."
+    exit 1
+  }
+  RUNTIME_CONFIRMED=true
+fi
+
+if [ "$RECOVERY_FINALIZE_ONLY" = false ]; then
 prepare_canonical_backup_helper || exit 1
 validate_persistent_state || exit 1
+
+# --- Snapshot canonico e override compose, sem avancar o checkout normal ---
+if ! create_canonical_build_snapshot; then
+  echo "Erro: falha ao materializar o snapshot canonico."
+  exit 1
+fi
+if ! create_canonical_compose_override; then
+  echo "Erro: falha ao criar o override compose canonico."
+  exit 1
+fi
+
+COMPOSE_BUILD_FILES=()
+if [ -n "$COMPOSE_FILE" ]; then
+  COMPOSE_BUILD_FILES+=("$COMPOSE_FILE")
+else
+  [ -f "$CANONICAL_BUILD_DIR/docker-compose.yml" ] || {
+    echo "Erro: snapshot canonico sem docker-compose.yml."
+    exit 1
+  }
+  COMPOSE_BUILD_FILES+=("$CANONICAL_BUILD_DIR/docker-compose.yml")
+  if [ -f "docker-compose.override.yml" ]; then
+    COMPOSE_BUILD_FILES+=("docker-compose.override.yml")
+  fi
+fi
+COMPOSE_BUILD_FILES+=("$CANONICAL_COMPOSE_OVERRIDE")
+COMPOSE_BUILD_ARGS=("--project-directory" "$REPO_ROOT")
+for f in "${COMPOSE_BUILD_FILES[@]}"; do
+  COMPOSE_BUILD_ARGS+=("-f" "$f")
+done
+
+if ! VERSION="$TARGET_VERSION" docker compose "${COMPOSE_BUILD_ARGS[@]}" config >/dev/null; then
+  echo "Erro: Compose canonico do TARGET_OID e invalido."
+  exit 1
+fi
 
 # --- Confirmação ---
 if [ "$FORCE_RESET" = true ]; then
   echo "ATENÇÃO: modo --force-reset ativado."
-  echo "Será executado: git reset --hard origin/$(git branch --show-current) + git clean -fd"
+  echo "Será executado: git reset --hard $TARGET_OID + git clean -fd"
   echo "Seus arquivos LOCAIS (.env.docker, compose.local.yaml, data/) serão PRESERVADOS."
   echo "Demais arquivos modificados localmente podem ser PERDIDOS."
   echo ""
@@ -597,7 +1151,7 @@ RESUMO="Resumo:
   Compose:      ${COMPOSE_FILE:-"docker-compose.yml + overrides"}
   Reset forçado: $FORCE_RESET
   Backup seguro: $( [ "$STATE_PRESENT" = true ] && echo "obrigatorio (pacote canonico, stack parada)" || echo "nao aplicavel (sem estado)" )
-  Helper alvo:   $TARGET_REF
+  Helper alvo:   $TARGET_OID
   Versao alvo:   $TARGET_VERSION
 "
 
@@ -637,9 +1191,9 @@ fi
 
 # --- Atualizar código ---
 if [ "$FORCE_RESET" = true ]; then
-  echo "--- Reset forçado ---"
+  echo "--- Reset forçado para o OID congelado ---"
 
-  if ! git reset --hard origin/"$(git branch --show-current)"; then
+  if ! git reset --hard "$TARGET_OID"; then
     fail_with_rollback "reset do codigo falhou."
   fi
 
@@ -661,64 +1215,54 @@ if [ "$FORCE_RESET" = true ]; then
 
   echo ""
   echo "Código atualizado para: $(git log --oneline -1)"
-elif [ "$SKIP_PULL" = false ]; then
-  echo "--- Atualizando código (git pull --ff-only) ---"
-  if ! git pull --ff-only origin "$(git branch --show-current)"; then
-    fail_with_rollback "git pull --ff-only falhou."
-  fi
-  echo "Código atualizado para: $(git log --oneline -1)"
 fi
 
-# --- Versao efetiva apos atualizar o codigo ---
-VERSION_FILE_VALUE="$(read_version_file 2>/dev/null || true)"
-if [ -z "$VERSION_FILE_VALUE" ]; then
-  fail_with_rollback "VERSION ausente ou vazia apos atualizar o codigo."
+if { [ "$FORCE_RESET" = true ] || [ "$SKIP_PULL" = true ]; } \
+  && [ "$(git rev-parse --verify 'HEAD^{commit}')" != "$TARGET_OID" ]; then
+  fail_with_rollback "HEAD diverge do OID congelado apos a transicao."
 fi
 
-APP_VERSION="${CONTABASE_VERSION:-$VERSION_FILE_VALUE}"
-if [ -z "$APP_VERSION" ]; then
-  fail_with_rollback "versao efetiva vazia apos atualizar o codigo."
-fi
+APP_VERSION="$TARGET_VERSION"
 
 echo "Versão anterior: $PREVIOUS_VERSION"
-echo "Versão nova após atualização do código: $APP_VERSION"
+echo "Versão alvo do snapshot: $APP_VERSION"
 
 # --- Rebuild ---
 echo ""
 echo "--- Reconstruindo contêineres ---"
 NEW_RUNTIME_STARTED=true
-if ! VERSION="$APP_VERSION" docker compose $COMPOSE_ARGS up -d --build --remove-orphans; then
+if ! VERSION="$APP_VERSION" docker compose "${COMPOSE_BUILD_ARGS[@]}" up -d --build --remove-orphans; then
   fail_with_rollback "build ou subida da nova imagem falhou."
 fi
 
-if ! wait_for_healthcheck; then
+if ! confirm_target_runtime_identity; then
   docker compose $COMPOSE_ARGS logs --tail 100 contabase || true
-  fail_with_rollback "healthcheck da nova imagem falhou."
+  fail_with_rollback "identidade ou health da nova imagem nao foi comprovado."
 fi
 
+[ "$CONFIRMED_RUNTIME_VERSION" = "$TARGET_VERSION" ] || {
+  fail_with_rollback "runtime confirmado diverge da versao alvo antes da promocao."
+}
+RUNTIME_CONFIRMED=true
 STACK_STOPPED=false
 if [ -n "$PREVIOUS_ROLLBACK_TAG" ]; then
   docker image rm "$PREVIOUS_ROLLBACK_TAG" >/dev/null 2>&1 || true
 fi
-
-echo ""
-echo "Healthcheck saudavel: $HEALTH_URL"
-echo "Backup preventivo: ${BACKUP_PATH:-nao criado}"
-echo "Backup ID:         ${BACKUP_ID:-nao aplicavel}"
-echo "Backup .env:       ${ENV_BACKUP_PATH:-nao criado}"
-echo "=== Atualizacao concluida ==="
+fi
 
 # ==============================================================================
 # Global update command (backfill for existing installs)
 # ==============================================================================
 
 backfill_update_command() {
-  local update_wrapper="/usr/local/bin/contabase-update"
-  local mode_file="/etc/contabase/install-mode"
-  local repo_path installed_channel wrapper_source
+  local update_wrapper="${CONTABASE_UPDATE_WRAPPER:-/usr/local/bin/contabase-update}"
+  local update_alias="${CONTABASE_UPDATE_ALIAS:-/usr/local/bin/cb-update}"
+  local mode_file="${CONTABASE_MODE_FILE:-/etc/contabase/install-mode}"
+  local repo_path installed_channel wrapper_source state_dir
   repo_path="$(pwd)"
   installed_channel="$(infer_install_channel "$APP_VERSION")"
   wrapper_source="${repo_path}/scripts/lib/contabase-update-wrapper.sh"
+  state_dir="$(dirname "$STATE_FILE")"
   local has_priv=false
 
   if [ "$(id -u)" -eq 0 ]; then
@@ -729,11 +1273,8 @@ backfill_update_command() {
 
   if [ "$has_priv" = false ]; then
     echo ""
-    echo "Aviso: permissao root/sudo necessaria para instalar o comando global contabase-update."
-    echo "Execute manualmente como root:"
-    echo "  sudo ./scripts/update-contabase-docker.sh"
-    echo "Ou continue usando o script manual: ./scripts/update-contabase-docker.sh"
-    return 0
+    echo "Erro: permissao root/sudo e obrigatoria para confirmar o estado instalado."
+    return 1
   fi
 
   run_priv() {
@@ -744,44 +1285,51 @@ backfill_update_command() {
     fi
   }
 
-  if ! run_priv mkdir -p /etc/contabase 2>/dev/null; then
-    echo "Aviso: nao foi possivel criar /etc/contabase/ (sudo necessario)."
-    return 0
+  commit_install_state() {
+    local state_tmp
+    state_tmp="$(mktemp "${TMPDIR:-/tmp}/contabase-install-state.XXXXXX")" || return 1
+    {
+      printf 'CONTABASE_STATE_VERSION=1\n'
+      printf 'CONTABASE_INSTALL_METHOD=docker\n'
+      printf 'CONTABASE_CHANNEL=%s\n' "$installed_channel"
+      printf 'CONTABASE_INSTALLED_VERSION=%s\n' "$APP_VERSION"
+      printf 'CONTABASE_REPO_PATH=%s\n' "$repo_path"
+    } > "$state_tmp"
+    if ! run_priv install -m 0644 "$state_tmp" "$STATE_FILE"; then
+      rm -f "$state_tmp"
+      echo "Erro: nao foi possivel confirmar $STATE_FILE."
+      return 1
+    fi
+    rm -f "$state_tmp"
+  }
+
+  if ! run_priv mkdir -p "$state_dir" 2>/dev/null; then
+    echo "Erro: nao foi possivel criar ${state_dir} (sudo necessario)."
+    return 1
   fi
 
-  {
-    printf 'CONTABASE_STATE_VERSION=1\n'
-    printf 'CONTABASE_INSTALL_METHOD=docker\n'
-    printf 'CONTABASE_CHANNEL=%s\n' "$installed_channel"
-    printf 'CONTABASE_INSTALLED_VERSION=%s\n' "$APP_VERSION"
-    printf 'CONTABASE_REPO_PATH=%s\n' "$repo_path"
-  } | run_priv tee "$STATE_FILE" >/dev/null 2>/dev/null || {
-    echo "Aviso: nao foi possivel escrever $STATE_FILE."
-    return 0
-  }
-  run_priv chmod 0644 "$STATE_FILE" 2>/dev/null || true
-
   if ! printf 'docker\n%s\n' "$repo_path" | run_priv tee "$mode_file" >/dev/null 2>/dev/null; then
-    echo "Aviso: nao foi possivel escrever $mode_file."
-    return 0
+    echo "Erro: nao foi possivel escrever $mode_file."
+    return 1
   fi
   run_priv chmod 0644 "$mode_file" 2>/dev/null || true
 
   if [ -f "$wrapper_source" ]; then
     run_priv install -m 0755 "$wrapper_source" "$update_wrapper" 2>/dev/null || {
-      echo "Aviso: nao foi possivel instalar $update_wrapper."
-      return 0
+      echo "Erro: nao foi possivel instalar $update_wrapper."
+      return 1
     }
-    if [ ! -e /usr/local/bin/cb-update ]; then
-      run_priv ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
+    if [ ! -e "$update_alias" ]; then
+      run_priv ln -s "$(basename "$update_wrapper")" "$update_alias" 2>/dev/null || true
     fi
+    commit_install_state || return 1
     echo "OK: contabase-update atualizado."
     return 0
   fi
 
   if ! run_priv tee "$update_wrapper" >/dev/null 2>/dev/null; then
-    echo "Aviso: nao foi possivel instalar $update_wrapper."
-    return 0
+    echo "Erro: nao foi possivel instalar $update_wrapper."
+    return 1
   else
     cat <<'WRAPPER_EOF' | run_priv tee "$update_wrapper" >/dev/null 2>/dev/null
 #!/usr/bin/env bash
@@ -914,11 +1462,13 @@ esac
 WRAPPER_EOF
   fi
 
-  run_priv chmod 0755 "$update_wrapper" 2>/dev/null || true
+  run_priv chmod 0755 "$update_wrapper" 2>/dev/null || return 1
 
-  if [ ! -e /usr/local/bin/cb-update ]; then
-    run_priv ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
+  if [ ! -e "$update_alias" ]; then
+    run_priv ln -s "$(basename "$update_wrapper")" "$update_alias" 2>/dev/null || true
   fi
+
+  commit_install_state || return 1
 
   echo ""
   echo "Comando global de atualizacao instalado:"
@@ -927,4 +1477,39 @@ WRAPPER_EOF
   echo "  sudo contabase-update --help"
 }
 
-backfill_update_command || true
+finalize_confirmed_checkout() {
+  local head_oid version_value
+
+  enforce_clean_worktree || return 1
+  head_oid="$(git rev-parse --verify 'HEAD^{commit}')" || return 1
+  if [ "$head_oid" != "$TARGET_OID" ]; then
+    git merge-base --is-ancestor "$head_oid" "$TARGET_OID" || {
+      echo "Erro: checkout atual nao pode avancar em fast-forward para o runtime confirmado ${TARGET_OID}."
+      return 1
+    }
+    git merge --ff-only "$TARGET_OID" || return 1
+  fi
+
+  [ "$(git rev-parse --verify 'HEAD^{commit}')" = "$TARGET_OID" ] || return 1
+  version_value="$(read_version_file 2>/dev/null || true)"
+  [ "$version_value" = "$TARGET_VERSION" ] || {
+    echo "Erro: VERSION do checkout (${version_value:-ausente}) diverge do runtime confirmado (${TARGET_VERSION})."
+    return 1
+  }
+  APP_VERSION="$TARGET_VERSION"
+}
+
+if ! finalize_confirmed_checkout; then
+  fail_with_rollback "runtime alvo esta saudavel, mas checkout nao foi finalizado; retry permanece seguro."
+fi
+if ! backfill_update_command; then
+  fail_with_rollback "runtime alvo esta saudavel, mas estado/update command nao foram confirmados; retry permanece seguro."
+fi
+
+echo ""
+echo "Healthcheck saudavel: $HEALTH_URL"
+echo "Backup preventivo: ${BACKUP_PATH:-nao criado}"
+echo "Backup ID:         ${BACKUP_ID:-nao aplicavel}"
+echo "Backup .env:       ${ENV_BACKUP_PATH:-nao criado}"
+echo "Commit logico concluido: runtime, checkout e estado em ${APP_VERSION}."
+echo "=== Atualizacao concluida ==="

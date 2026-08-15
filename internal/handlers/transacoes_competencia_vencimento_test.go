@@ -75,8 +75,8 @@ func TestBusinessListagemAgrupaPorDueDate(t *testing.T) {
 			if !tx.UsesDueDate {
 				t.Fatalf("UsesDueDate = false, want true")
 			}
-			if tx.DateLabel != "15 Ago" {
-				t.Fatalf("DateLabel = %q, want %q", tx.DateLabel, "15 Ago")
+			if tx.DateLabel != "Hoje" && tx.DateLabel != "Ontem" && !strings.HasPrefix(tx.DateLabel, "15 Ago") {
+				t.Fatalf("DateLabel = %q, want label derived from due_date 15/08/2026", tx.DateLabel)
 			}
 			if tx.CompetenciaDateLabel != "01/08/2026" && tx.CompetenciaDateLabel != "01/08" {
 				t.Fatalf("CompetenciaDateLabel = %q, want competence label", tx.CompetenciaDateLabel)
@@ -227,10 +227,10 @@ func TestBusinessFormEditCarregaCompetenciaEVencimento(t *testing.T) {
 	))
 
 	handler := TransactionHandler{
-		DB:        db,
-		Templates: tpl,
+		DB:          db,
+		Templates:   tpl,
 		WorkspaceID: "ws-test",
-		UserID:    "user-test",
+		UserID:      "user-test",
 	}
 
 	rr := httptest.NewRecorder()

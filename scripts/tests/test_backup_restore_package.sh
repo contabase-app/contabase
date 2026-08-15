@@ -12,14 +12,19 @@ REAL_CHMOD="$(command -v chmod)"
 REAL_STAT="$(command -v stat)"
 REAL_LN="$(command -v ln)"
 
+[ "$(id -u)" -ne 0 ] || {
+  echo "erro: a matriz canonica deve executar como usuario nao-root" >&2
+  exit 1
+}
+
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/contabase-br-test.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
 SCENARIOS=0
 ASSERTIONS=0
 FAILED_ASSERTIONS=0
-EXPECTED_SCENARIOS=36
-EXPECTED_ASSERTIONS=114
+EXPECTED_SCENARIOS=41
+EXPECTED_ASSERTIONS=149
 
 scenario() {
   SCENARIOS=$((SCENARIOS + 1))
@@ -60,6 +65,17 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local label="$1" needle="$2" file="$3"
+  ASSERTIONS=$((ASSERTIONS + 1))
+  if grep -Fq "$needle" "$file"; then
+    printf '  FAIL: %s (conteudo inesperado: %s)\n' "$label" "$needle" >&2
+    FAILED_ASSERTIONS=$((FAILED_ASSERTIONS + 1))
+  else
+    printf '  PASS: %s\n' "$label"
+  fi
+}
+
 new_dir() {
   local dir="$TEST_ROOT/$1"
   mkdir -p "$dir"
@@ -74,10 +90,29 @@ sha_file() {
   fi
 }
 
-file_size() { stat -f '%z' "$1" 2>/dev/null || stat -c '%s' "$1"; }
-file_mode() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
-file_uid() { stat -f '%u' "$1" 2>/dev/null || stat -c '%u' "$1"; }
-file_gid() { stat -f '%g' "$1" 2>/dev/null || stat -c '%g' "$1"; }
+test_stat_value() {
+  local kind="$1" bsd_format="$2" gnu_format="$3" path="$4" value
+  if value="$(stat -f "$bsd_format" "$path" 2>/dev/null)"; then
+    case "$kind:$value" in decimal:|decimal:*[!0-9]*|octal:|octal:*[!0-7]*) return 1 ;; esac
+    printf '%s\n' "$value"
+    return 0
+  fi
+  if value="$(stat -c "$gnu_format" "$path" 2>/dev/null)"; then
+    case "$kind:$value" in decimal:|decimal:*[!0-9]*|octal:|octal:*[!0-7]*) return 1 ;; esac
+    printf '%s\n' "$value"
+    return 0
+  fi
+  return 1
+}
+
+file_size() { test_stat_value decimal '%z' '%s' "$1"; }
+file_mode() { test_stat_value octal '%Lp' '%a' "$1"; }
+file_uid() { test_stat_value decimal '%u' '%u' "$1"; }
+file_gid() { test_stat_value decimal '%g' '%g' "$1"; }
+file_nlink() { test_stat_value decimal '%l' '%h' "$1"; }
+
+is_decimal() { case "$1" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
+is_octal() { case "$1" in ''|*[!0-7]*) return 1 ;; *) return 0 ;; esac; }
 
 init_test_db() {
   local db="$1" marker="${2:-source}"
@@ -310,6 +345,137 @@ SHIM
   chmod +x "$dir/chmod" "$dir/chown"
 }
 
+make_stat_shim() {
+  local dir="$1"
+  cat > "$dir/stat" <<'SHIM'
+#!/usr/bin/env bash
+set -u
+
+if [ -n "${CB_STAT_AUDIT_LOG:-}" ]; then
+  printf 'call:' >> "$CB_STAT_AUDIT_LOG"
+  printf ' %s' "$@" >> "$CB_STAT_AUDIT_LOG"
+  printf '\n' >> "$CB_STAT_AUDIT_LOG"
+fi
+
+native_stat() {
+  local format="${2:-}" path="${3:-}" translated
+  if "$CB_REAL_STAT" -c '%s' "$path" >/dev/null 2>&1; then
+    exec "$CB_REAL_STAT" "$@"
+  fi
+  case "$format" in
+    %s) translated=%z ;;
+    %a) translated=%Lp ;;
+    %u) translated=%u ;;
+    %g) translated=%g ;;
+    %h) translated=%l ;;
+    *) exit 96 ;;
+  esac
+  exec "$CB_REAL_STAT" -f "$translated" "$path"
+}
+
+case "$CB_STAT_SHIM_MODE" in
+  contaminate-first)
+    if [ "${1:-}" = -f ]; then
+      printf '%s\n' 'PARTIAL-STAT-STDOUT'
+      printf '%s\n' 'PARTIAL-STAT-STDERR' >&2
+      exit 97
+    fi
+    [ "${1:-}" = -c ] || exit 96
+    native_stat "$@"
+    ;;
+  fail-all)
+    printf '%s\n' 'PARTIAL-STAT-STDOUT'
+    printf '%s\n' 'PARTIAL-STAT-STDERR' >&2
+    exit 98
+    ;;
+  invalid-success)
+    if [ "${1:-}" = -f ]; then
+      printf '%s\n' '12invalid'
+      exit 0
+    fi
+    [ "${1:-}" = -c ] || exit 96
+    native_stat "$@"
+    ;;
+  *) exit 96 ;;
+esac
+SHIM
+  chmod +x "$dir/stat"
+}
+
+# Portabilidade de stat e falhas de leitura devem ser exercitadas antes da
+# matriz historica de manifest, staging e rollback.
+scenario "banco ausente bloqueia backup sem pacote parcial"
+missing_db_root="$(new_dir 'missing database')"; mkdir -p "$missing_db_root/data/uploads" "$missing_db_root/dest"
+missing_db_rc=0
+APP_VERSION=v-test DATA_DIR="$missing_db_root/data" DB_FILE="$missing_db_root/data/missing database.sqlite" UPLOADS_DIR="$missing_db_root/data/uploads" "$BACKUP_SCRIPT" "$missing_db_root/dest" > "$missing_db_root/out" 2> "$missing_db_root/err" || missing_db_rc=$?
+assert_true "banco ausente retornou erro" test "$missing_db_rc" -ne 0
+assert_contains "diagnostico identifica banco ausente" "banco nao encontrado" "$missing_db_root/err"
+assert_eq "banco ausente nao finalizou pacote" 0 "$(find "$missing_db_root/dest" -maxdepth 1 -type d -name 'backup-*' | wc -l | tr -d ' ')"
+
+scenario "fallback GNU isolado descarta stdout parcial da tentativa BSD"
+portable_root="$(new_dir 'portable stat with spaces')"; mkdir -p "$portable_root/data/uploads" "$portable_root/dest" "$portable_root/shim" "$portable_root/target/uploads"
+init_test_db "$portable_root/data/contabase.db" portable-source
+printf portable-upload > "$portable_root/data/uploads/file with space.txt"
+init_test_db "$portable_root/target/contabase.db" portable-old
+printf old-upload > "$portable_root/target/uploads/old.txt"
+make_stat_shim "$portable_root/shim"
+: > "$portable_root/stat.audit"
+portable_backup_rc=0
+PATH="$portable_root/shim:$PATH" CB_REAL_STAT="$REAL_STAT" CB_STAT_SHIM_MODE=contaminate-first CB_STAT_AUDIT_LOG="$portable_root/stat.audit" APP_VERSION=v-test DATA_DIR="$portable_root/data" DB_FILE="$portable_root/data/contabase.db" UPLOADS_DIR="$portable_root/data/uploads" "$BACKUP_SCRIPT" "$portable_root/dest" > "$portable_root/backup.out" 2> "$portable_root/backup.err" || portable_backup_rc=$?
+portable_pkg="$(sed -n '1p' "$portable_root/backup.out")"
+portable_manifest_size="$(sed -n 's/^database_size=//p' "$portable_pkg/manifest.txt")"
+assert_eq "backup com primeira tentativa contaminada passou" 0 "$portable_backup_rc"
+assert_not_contains "stdout parcial nao vazou para output do backup" PARTIAL-STAT "$portable_root/backup.out"
+assert_true "pacote portavel foi finalizado" test -d "$portable_pkg"
+assert_true "database_size do manifest e decimal estrito" is_decimal "$portable_manifest_size"
+assert_eq "database_size corresponde ao arquivo logico" "$(file_size "$portable_pkg/database.sqlite")" "$portable_manifest_size"
+portable_restore_rc=0
+PATH="$portable_root/shim:$PATH" CB_REAL_STAT="$REAL_STAT" CB_STAT_SHIM_MODE=contaminate-first CB_STAT_AUDIT_LOG="$portable_root/stat.audit" run_restore "$portable_pkg" "$portable_root/target" "$portable_root/restore" || portable_restore_rc=$?
+assert_eq "restore com primeira tentativa contaminada passou" 0 "$portable_restore_rc"
+assert_eq "DB restaurado preserva payload" portable-source "$(sqlite3 "$portable_root/target/contabase.db" 'SELECT v FROM t WHERE id=1;')"
+assert_true "path de upload com espaco foi restaurado" test -f "$portable_root/target/uploads/file with space.txt"
+assert_not_contains "stdout parcial nao contaminou snapshot do restore" PARTIAL-STAT "$portable_root/restore.err"
+assert_true "size restaurado e decimal" is_decimal "$(file_size "$portable_root/target/contabase.db")"
+assert_true "mode restaurado e octal" is_octal "$(file_mode "$portable_root/target/contabase.db")"
+assert_true "uid restaurado e decimal" is_decimal "$(file_uid "$portable_root/target/contabase.db")"
+assert_true "gid restaurado e decimal" is_decimal "$(file_gid "$portable_root/target/contabase.db")"
+assert_eq "nlink restaurado e unitario" 1 "$(file_nlink "$portable_root/target/contabase.db")"
+assert_contains "fallback de nlink GNU foi exercitado" "call: -c %h" "$portable_root/stat.audit"
+
+scenario "saida bem-sucedida nao numerica falha sem fallback permissivo"
+invalid_root="$(new_dir invalid-stat)"; mkdir -p "$invalid_root/data/uploads" "$invalid_root/dest" "$invalid_root/shim"; init_test_db "$invalid_root/data/contabase.db" invalid
+make_stat_shim "$invalid_root/shim"; : > "$invalid_root/stat.audit"; invalid_rc=0
+PATH="$invalid_root/shim:$PATH" CB_REAL_STAT="$REAL_STAT" CB_STAT_SHIM_MODE=invalid-success CB_STAT_AUDIT_LOG="$invalid_root/stat.audit" APP_VERSION=v-test DATA_DIR="$invalid_root/data" DB_FILE="$invalid_root/data/contabase.db" UPLOADS_DIR="$invalid_root/data/uploads" "$BACKUP_SCRIPT" "$invalid_root/dest" > "$invalid_root/out" 2> "$invalid_root/err" || invalid_rc=$?
+assert_true "saida nao numerica retornou erro" test "$invalid_rc" -ne 0
+assert_contains "saida nao numerica tem diagnostico deterministico" "nao foi possivel obter tamanho do banco" "$invalid_root/err"
+assert_eq "saida nao numerica nao finalizou pacote" 0 "$(find "$invalid_root/dest" -maxdepth 1 -type d -name 'backup-*' | wc -l | tr -d ' ')"
+assert_not_contains "sucesso invalido nao foi mascarado por fallback" "call: -c" "$invalid_root/stat.audit"
+
+scenario "ambas variantes de stat falham antes de qualquer mutacao"
+fail_stat_root="$(new_dir fail-stat)"; mkdir -p "$fail_stat_root/data/uploads" "$fail_stat_root/dest" "$fail_stat_root/shim" "$fail_stat_root/target/uploads"; init_test_db "$fail_stat_root/data/contabase.db" fail-stat
+make_stat_shim "$fail_stat_root/shim"; fail_stat_backup_rc=0
+PATH="$fail_stat_root/shim:$PATH" CB_REAL_STAT="$REAL_STAT" CB_STAT_SHIM_MODE=fail-all APP_VERSION=v-test DATA_DIR="$fail_stat_root/data" DB_FILE="$fail_stat_root/data/contabase.db" UPLOADS_DIR="$fail_stat_root/data/uploads" "$BACKUP_SCRIPT" "$fail_stat_root/dest" > "$fail_stat_root/backup.out" 2> "$fail_stat_root/backup.err" || fail_stat_backup_rc=$?
+assert_true "falha dupla de stat bloqueou backup" test "$fail_stat_backup_rc" -ne 0
+assert_contains "backup reportou falha de medicao" "nao foi possivel obter tamanho do banco" "$fail_stat_root/backup.err"
+assert_eq "falha dupla nao finalizou backup" 0 "$(find "$fail_stat_root/dest" -maxdepth 1 -type d -name 'backup-*' | wc -l | tr -d ' ')"
+assert_true "backup falho nao imprimiu caminho final" test ! -s "$fail_stat_root/backup.out"
+init_test_db "$fail_stat_root/target/contabase.db" fail-stat-old; printf old-upload > "$fail_stat_root/target/uploads/old.txt"; fail_stat_restore_rc=0
+PATH="$fail_stat_root/shim:$PATH" CB_REAL_STAT="$REAL_STAT" CB_STAT_SHIM_MODE=fail-all run_restore "$portable_pkg" "$fail_stat_root/target" "$fail_stat_root/restore" || fail_stat_restore_rc=$?
+assert_true "falha dupla de stat bloqueou restore" test "$fail_stat_restore_rc" -ne 0
+assert_contains "restore reportou metadado indisponivel" "nao foi possivel obter metadado mode" "$fail_stat_root/restore.err"
+assert_eq "restore falho preservou DB alvo" fail-stat-old "$(sqlite3 "$fail_stat_root/target/contabase.db" 'SELECT v FROM t WHERE id=1;')"
+assert_eq "restore falho preservou upload alvo" old-upload "$(cat "$fail_stat_root/target/uploads/old.txt")"
+assert_true "restore falho nao imprimiu sucesso" test ! -s "$fail_stat_root/restore.out"
+
+scenario "permission denied real como usuario nao-root permanece fail-closed"
+permission_root="$(new_dir permission-denied)"; mkdir -p "$permission_root/data/uploads" "$permission_root/dest"; init_test_db "$permission_root/data/contabase.db" denied; chmod 000 "$permission_root/data/contabase.db"; permission_rc=0
+APP_VERSION=v-test DATA_DIR="$permission_root/data" DB_FILE="$permission_root/data/contabase.db" UPLOADS_DIR="$permission_root/data/uploads" "$BACKUP_SCRIPT" "$permission_root/dest" > "$permission_root/out" 2> "$permission_root/err" || permission_rc=$?
+chmod 600 "$permission_root/data/contabase.db"
+assert_true "permission denied retornou erro" test "$permission_rc" -ne 0
+assert_contains "permission denied bloqueou sqlite backup" "sqlite3 .backup falhou" "$permission_root/err"
+assert_eq "permission denied nao finalizou pacote" 0 "$(find "$permission_root/dest" -maxdepth 1 -type d -name 'backup-*' | wc -l | tr -d ' ')"
+assert_true "permission denied nao imprimiu caminho final" test ! -s "$permission_root/out"
+
 # A. WAL realmente ativo durante o backup.
 scenario "backup valido com WAL realmente ativo"
 wal_root="$(new_dir wal-real)"; mkdir -p "$wal_root/data/uploads" "$wal_root/dest"
@@ -317,7 +483,7 @@ printf upload-wal > "$wal_root/data/uploads/file.txt"
 wal_db="$wal_root/data/contabase.db"; wal_fifo="$wal_root/sql.fifo"; mkfifo "$wal_fifo"
 sqlite3 "$wal_db" < "$wal_fifo" > "$wal_root/sql.out" 2> "$wal_root/sql.err" & wal_pid=$!
 exec 9> "$wal_fifo"
-printf '%s\n' 'PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE schema_migrations(version INTEGER NOT NULL); INSERT INTO schema_migrations VALUES(54); CREATE TABLE t(id INTEGER PRIMARY KEY,v TEXT); BEGIN; INSERT INTO t VALUES(1,"wal-committed"); COMMIT;' >&9
+printf '%s\n' "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE schema_migrations(version INTEGER NOT NULL); INSERT INTO schema_migrations VALUES(54); CREATE TABLE t(id INTEGER PRIMARY KEY,v TEXT); BEGIN; INSERT INTO t VALUES(1,'wal-committed'); COMMIT;" >&9
 for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$wal_db-wal" ] && break; sleep 0.1; done
 assert_true "WAL sidecar existia e tinha conteudo" test -s "$wal_db-wal"
 APP_VERSION=v-test DATA_DIR="$wal_root/data" DB_FILE="$wal_db" UPLOADS_DIR="$wal_root/data/uploads" "$BACKUP_SCRIPT" "$wal_root/dest" > "$wal_root/backup.out"
@@ -410,7 +576,7 @@ assert_true "upload divergente bloqueou" test "$upsha_rc" -ne 0
 assert_contains "diagnostico aponta upload" "checksum divergente: uploads/file.txt" "$upsha_target/log.err"
 
 scenario "entrada duplicada no checksums"
-pkg_dupsum="$(clone_package "$base_pkg" checksum-duplicate)"; grep 'database.sqlite$' "$pkg_dupsum/checksums.sha256" >> "$pkg_dupsum/checksums.sha256"; dupsum_target="$(new_dir checksum-duplicate-target)"; dupsum_rc=0
+pkg_dupsum="$(clone_package "$base_pkg" checksum-duplicate)"; duplicate_checksum_line="$(grep 'database.sqlite$' "$pkg_dupsum/checksums.sha256")"; printf '%s\n' "$duplicate_checksum_line" >> "$pkg_dupsum/checksums.sha256"; dupsum_target="$(new_dir checksum-duplicate-target)"; dupsum_rc=0
 run_restore "$pkg_dupsum" "$dupsum_target" "$dupsum_target/log" || dupsum_rc=$?
 assert_true "duplicata bloqueou" test "$dupsum_rc" -ne 0
 assert_contains "diagnostico da entrada duplicada" "entrada duplicada no checksums: database.sqlite" "$dupsum_target/log.err"

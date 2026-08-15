@@ -51,11 +51,38 @@ sha_file() {
   fi
 }
 
-stat_mode() { stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
-stat_uid() { stat -f '%u' "$1" 2>/dev/null || stat -c '%u' "$1"; }
-stat_gid() { stat -f '%g' "$1" 2>/dev/null || stat -c '%g' "$1"; }
-stat_size() { stat -f '%z' "$1" 2>/dev/null || stat -c '%s' "$1"; }
-stat_nlink() { stat -f '%l' "$1" 2>/dev/null || stat -c '%h' "$1"; }
+stat_value() {
+  local kind="$1" label="$2" bsd_format="$3" gnu_format="$4" path="$5" value
+
+  if value="$(stat -f "$bsd_format" "$path" 2>/dev/null)"; then
+    case "$kind:$value" in
+      decimal:|decimal:*[!0-9]*|octal:|octal:*[!0-7]*)
+        say_error "metadado $label invalido para: $path"
+        return 1
+        ;;
+    esac
+    printf '%s\n' "$value"
+    return 0
+  fi
+  if value="$(stat -c "$gnu_format" "$path" 2>/dev/null)"; then
+    case "$kind:$value" in
+      decimal:|decimal:*[!0-9]*|octal:|octal:*[!0-7]*)
+        say_error "metadado $label invalido para: $path"
+        return 1
+        ;;
+    esac
+    printf '%s\n' "$value"
+    return 0
+  fi
+  say_error "nao foi possivel obter metadado $label de: $path"
+  return 1
+}
+
+stat_mode() { stat_value octal mode '%Lp' '%a' "$1"; }
+stat_uid() { stat_value decimal uid '%u' '%u' "$1"; }
+stat_gid() { stat_value decimal gid '%g' '%g' "$1"; }
+stat_size() { stat_value decimal size '%z' '%s' "$1"; }
+stat_nlink() { stat_value decimal nlink '%l' '%h' "$1"; }
 
 is_sqlite_file() {
   local file="$1" header_hex

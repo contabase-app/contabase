@@ -38,34 +38,35 @@ func respondMetaFormError(w http.ResponseWriter, idPrefix string, message string
 }
 
 type MetasData struct {
-	Title                      string
-	UserName                   string
-	UserFirstName              string
-	UserInitials               string
-	ProfilePhotoURL            string
-	MonthLabel                 string
-	Aba                        string
-	ContentOOB                 bool
-	FabOOB                     bool
-	TotalLimits                MoneyDisplay
-	TotalAcumulado             MoneyDisplay
-	TotalAcumuladoNegativo     bool
-	RealBalance                MoneyDisplay
-	ReservedBalance            MoneyDisplay
-	FreeBalance                MoneyDisplay
-	FreeBalanceNegative        bool
-	ProgrammedContributions    MoneyDisplay
-	HasMonthlyPlanning         bool
-	Margin                     MoneyDisplay
-	HasMargin                  bool
-	CoverageText               string
-	HasCoverage                bool
-	LimitesCount               int
-	CaixinhasCount             int
-	Limites                    []LimiteCard
-	Caixinhas                  []CaixinhaCard
-	IsBusiness                 bool
-	ActiveWorkspaceName        string
+	Title                   string
+	UserName                string
+	UserFirstName           string
+	UserInitials            string
+	ProfilePhotoURL         string
+	MonthLabel              string
+	Aba                     string
+	ContentOOB              bool
+	FabOOB                  bool
+	TotalLimits             MoneyDisplay
+	TotalAcumulado          MoneyDisplay
+	TotalAcumuladoNegativo  bool
+	RealBalance             MoneyDisplay
+	ReservedBalance         MoneyDisplay
+	FreeBalance             MoneyDisplay
+	FreeBalanceNegative     bool
+	ProgrammedContributions MoneyDisplay
+	HasMonthlyPlanning      bool
+	Margin                  MoneyDisplay
+	HasMargin               bool
+	CoverageText            string
+	CoverageSourceText      string
+	HasCoverage             bool
+	LimitesCount            int
+	CaixinhasCount          int
+	Limites                 []LimiteCard
+	Caixinhas               []CaixinhaCard
+	IsBusiness              bool
+	ActiveWorkspaceName     string
 }
 
 type MetaFormData struct {
@@ -974,6 +975,7 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 		if monthlySnapshot.CoverageAvailable {
 			data.HasCoverage = true
 			data.CoverageText = formatCoverageText(monthlySnapshot.CoverageTenths)
+			data.CoverageSourceText = formatCoverageSourceText(monthlySnapshot.EssentialCostReferenceSource, monthlySnapshot.HistoricalMonths)
 		}
 	}
 
@@ -1289,10 +1291,24 @@ func formatCoverageText(tenths int64) string {
 	if frac < 0 {
 		frac = -frac
 	}
-	if whole == 0 || whole == 1 {
-		return fmt.Sprintf("%d,%d mês de custo essencial", whole, frac)
+	if whole == 0 {
+		return fmt.Sprintf("Cobre cerca de %d,%d mês", whole, frac)
 	}
-	return fmt.Sprintf("%d,%d meses de custo essencial", whole, frac)
+	if whole == 1 {
+		return fmt.Sprintf("Cobre cerca de %d,%d mês", whole, frac)
+	}
+	return fmt.Sprintf("Cobre cerca de %d,%d meses", whole, frac)
+}
+
+func formatCoverageSourceText(source services.MonthlyReferenceSource, historicalMonths int) string {
+	switch source {
+	case services.MonthlyReferenceSourceHistorical:
+		return fmt.Sprintf("Baseado na média dos custos essenciais dos últimos %d meses completos.", historicalMonths)
+	case services.MonthlyReferenceSourceManual:
+		return "Baseado no custo essencial mensal configurado."
+	default:
+		return "Estimativa baseada no custo essencial mensal de referência."
+	}
 }
 
 func normalizeMetaFormTab(tab string) string {
