@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/contabase-app/contabase/internal/models"
 )
 
 func TestLancamentosResumoStatusDefaultReflectsVisibleItems(t *testing.T) {
@@ -20,7 +22,7 @@ func TestLancamentosResumoStatusDefaultReflectsVisibleItems(t *testing.T) {
 	}
 
 	assertLancamentosSummary(t, data, "pago", 16000, 2)
-	assertLancamentosSummary(t, data, "pendente", 131000, 3)
+	assertLancamentosSummary(t, data, "pendente", 61000, 2)
 	assertLancamentosSummary(t, data, "vencido", 0, 0)
 	assertLancamentosSummary(t, data, "agendado", 33000, 1)
 }
@@ -62,7 +64,7 @@ func TestLancamentosResumoStatusRespectsCategoryAccountSearchAndType(t *testing.
 	if err != nil {
 		t.Fatalf("buildLancamentosData account: %v", err)
 	}
-	assertLancamentosSummary(t, byAccount, "pendente", 92000, 2)
+	assertLancamentosSummary(t, byAccount, "pendente", 22000, 1)
 	assertLancamentosSummary(t, byAccount, "agendado", 33000, 1)
 
 	bySearch, err := handler.buildLancamentosData("", 8, year, LancamentosFilters{Busca: "Card Purchase"})
@@ -76,7 +78,7 @@ func TestLancamentosResumoStatusRespectsCategoryAccountSearchAndType(t *testing.
 	if err != nil {
 		t.Fatalf("buildLancamentosData type: %v", err)
 	}
-	assertLancamentosSummary(t, byType, "pendente", 70000, 1)
+	assertLancamentosSummary(t, byType, "pendente", 0, 0)
 	assertLancamentosSummary(t, byType, "agendado", 0, 0)
 }
 
@@ -95,6 +97,24 @@ func TestLancamentosResumoStatusKeepsWorkspaceIsolation(t *testing.T) {
 	assertLancamentosSummary(t, data, "pendente", 99000, 1)
 	assertLancamentosSummary(t, data, "pago", 0, 0)
 	assertLancamentosSummary(t, data, "agendado", 0, 0)
+}
+
+func TestLancamentosResumoStatusClassifiesOnlyExpenses(t *testing.T) {
+	transactions := []TransactionRow{
+		{Type: models.TransactionTypeExpense, Amount: 1000, PaymentStatus: models.PaymentStatusPaid},
+		{Type: models.TransactionTypeExpense, Amount: 2000, IsPending: true},
+		{Type: models.TransactionTypeExpense, Amount: 3000, IsPending: true, IsOverdue: true},
+		{Type: models.TransactionTypeExpense, Amount: 4000, IsPending: true, IsScheduled: true},
+		{Type: models.TransactionTypeIncome, Amount: 100000, PaymentStatus: models.PaymentStatusPaid},
+		{Type: models.TransactionTypeIncome, Amount: 200000, IsPending: true, IsOverdue: true},
+		{Type: models.TransactionTypeTransfer, Amount: 300000, IsPending: true},
+	}
+	data := LancamentosData{ResumoStatus: buildLancamentosStatusSummary(transactions, nil)}
+
+	assertLancamentosSummary(t, data, "pago", 1000, 1)
+	assertLancamentosSummary(t, data, "pendente", 2000, 1)
+	assertLancamentosSummary(t, data, "vencido", 3000, 1)
+	assertLancamentosSummary(t, data, "agendado", 4000, 1)
 }
 
 func assertLancamentosSummary(t *testing.T, data LancamentosData, key string, amount int64, count int) {

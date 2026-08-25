@@ -23,6 +23,7 @@ func TestHandlePagarFaturaLiquidaFaturaDebitaContaECriaProxima(t *testing.T) {
 	defer db.Close()
 
 	seedInvoicePaymentScenario(t, db)
+	scenario := moveSeedInvoiceScenarioToFuture(t, db)
 
 	templates := template.Must(template.New("test").Parse(`
 {{define "faturas-content"}}<main id="faturas-content">{{template "invoice-summary" .}}{{template "invoice-transactions" .}}</main>{{end}}
@@ -101,7 +102,7 @@ func TestHandlePagarFaturaLiquidaFaturaDebitaContaECriaProxima(t *testing.T) {
 	var nextStatus string
 	if err := db.QueryRow(`
 		SELECT status FROM invoices WHERE account_id = ? AND reference = ?
-	`, "card-test", "2026-09").Scan(&nextStatus); err != nil {
+	`, "card-test", scenario.NextRef).Scan(&nextStatus); err != nil {
 		t.Fatalf("next invoice query: %v", err)
 	}
 	if nextStatus != "OPEN" {
@@ -931,6 +932,7 @@ func TestHandleMoverFaturaAvulsaMoveParaProximaFatura(t *testing.T) {
 	defer db.Close()
 
 	seedInvoicePaymentScenario(t, db)
+	scenario := moveSeedInvoiceScenarioToFuture(t, db)
 
 	handler := TransactionHandler{
 		DB:          db,
@@ -947,8 +949,8 @@ func TestHandleMoverFaturaAvulsaMoveParaProximaFatura(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
-	assertTransactionInvoiceReference(t, db, "purchase-test", "2026-09")
-	assertInvoiceExists(t, db, "card-test", "2026-09", "OPEN")
+	assertTransactionInvoiceReference(t, db, "purchase-test", scenario.NextRef)
+	assertInvoiceExists(t, db, "card-test", scenario.NextRef, "OPEN")
 	if !strings.Contains(rr.Body.String(), `id="invoice-summary"`) || !strings.Contains(rr.Body.String(), `id="dashboard-cards"`) {
 		t.Fatalf("expected invoice and dashboard OOB fragments, got %q", rr.Body.String())
 	}
@@ -960,6 +962,7 @@ func TestHandleMoverFaturaParceladaMoveCadeiaFuturaEmCascata(t *testing.T) {
 
 	seedInvoicePaymentScenario(t, db)
 	seedInstallmentMoveScenario(t, db)
+	keepOpenTestInvoicesFuture(t, db, "card-test")
 
 	handler := TransactionHandler{
 		DB:          db,
@@ -1019,6 +1022,7 @@ func TestInsertTransactionCriaNovaFaturaQuandoCompetenciaAtualJaFoiPaga(t *testi
 	defer db.Close()
 
 	seedInvoicePaymentScenario(t, db)
+	scenario := moveSeedInvoiceScenarioToFuture(t, db)
 	execTestSQL(t, db, `
 		UPDATE invoices
 		SET status = 'PAID', paid_at = ?, paid_amount = ?
@@ -1037,7 +1041,7 @@ func TestInsertTransactionCriaNovaFaturaQuandoCompetenciaAtualJaFoiPaga(t *testi
 		UserID:      "user-test",
 	}
 
-	txDate := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC).Unix()
+	txDate := scenario.Occurrence.AddDate(0, 1, 0).Unix()
 	_, err := handler.insertTransaction(
 		"EXPENSE",
 		12000,
@@ -1058,8 +1062,8 @@ func TestInsertTransactionCriaNovaFaturaQuandoCompetenciaAtualJaFoiPaga(t *testi
 		t.Fatalf("insert transaction: %v", err)
 	}
 
-	assertInvoiceExists(t, db, "card-test", "2026-09", "OPEN")
-	assertTransactionInvoiceReference(t, db, findTransactionByDescription(t, db, "Compra pos pagamento"), "2026-09")
+	assertInvoiceExists(t, db, "card-test", scenario.NextRef, "OPEN")
+	assertTransactionInvoiceReference(t, db, findTransactionByDescription(t, db, "Compra pos pagamento"), scenario.NextRef)
 }
 
 func TestBuildLancamentosDataExibeFaturaNoMesDaReferencia(t *testing.T) {
@@ -1879,9 +1883,9 @@ func seedInvoicePaymentScenario(t *testing.T, db *sql.DB) {
 
 	ref := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 	now := ref.Unix()
-	// Keep the fixture's OPEN-state boundary ahead of the real test clock.
-	openInvoiceClosing := time.Now().UTC().AddDate(0, 1, 0)
-	closingDate := openInvoiceClosing.Unix()
+	// Keep the fixture's OPEN-state boundary ahead of the real test clock while
+	// preserving its reference-month due date for reporting tests.
+	closingDate := time.Now().UTC().AddDate(0, 1, 0).Unix()
 	dueDate := ref.AddDate(0, 1, 10).Unix()
 	execTestSQL(t, db, `
 		INSERT INTO users (id, name, email, password_hash, created_at, updated_at)
@@ -1957,6 +1961,56 @@ func seedInstallmentMoveScenario(t *testing.T, db *sql.DB) {
 func testUnixDate(date string) int64 {
 	t, _ := time.Parse("2006-01-02", date)
 	return t.Unix()
+}
+
+func futureOpenInvoiceDatesForTest() (closingUnix, dueUnix int64) {
+	closing := time.Now().UTC().AddDate(5, 0, 0)
+	due := closing.AddDate(0, 1, 0)
+	return closing.Unix(), due.Unix()
+}
+
+type futureInvoiceScenarioForTest struct {
+	Occurrence time.Time
+	CurrentRef string
+	NextRef    string
+}
+
+func moveSeedInvoiceScenarioToFuture(t *testing.T, db *sql.DB) futureInvoiceScenarioForTest {
+	t.Helper()
+
+	base := time.Now().UTC().AddDate(1, 0, 0)
+	occurrence := time.Date(base.Year(), base.Month(), 25, 12, 0, 0, 0, time.UTC)
+	closingUnix, dueUnix, currentRef := calculateInvoiceDates(occurrence, 20, 10)
+	nextRef, err := nextInvoiceReference(currentRef)
+	if err != nil {
+		t.Fatalf("next future invoice reference: %v", err)
+	}
+	execTestSQL(t, db, `
+		UPDATE invoices
+		SET reference = ?, closing_date = ?, due_date = ?
+		WHERE id = 'invoice-2026-08' AND account_id = 'card-test'
+	`, currentRef, closingUnix, dueUnix)
+	execTestSQL(t, db, `
+		UPDATE transactions
+		SET date = ?, date_civil = ?
+		WHERE id = 'purchase-test' AND workspace_id = 'ws-test'
+	`, occurrence.Unix(), occurrence.Format("2006-01-02"))
+
+	return futureInvoiceScenarioForTest{
+		Occurrence: occurrence,
+		CurrentRef: currentRef,
+		NextRef:    nextRef,
+	}
+}
+
+func keepOpenTestInvoicesFuture(t *testing.T, db *sql.DB, accountID string) {
+	t.Helper()
+	closingUnix, dueUnix := futureOpenInvoiceDatesForTest()
+	execTestSQL(t, db, `
+		UPDATE invoices
+		SET status = 'OPEN', closing_date = ?, due_date = ?, paid_at = NULL, paid_amount = 0
+		WHERE account_id = ? AND status IN ('OPEN', 'CLOSED')
+	`, closingUnix, dueUnix, accountID)
 }
 
 func seedInvoiceLimitScenario(t *testing.T, db *sql.DB, creditLimit, expenseAmount int64) {

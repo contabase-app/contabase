@@ -135,7 +135,7 @@ func TestRecurringFuturePreflight_BlockedCurrentException(t *testing.T) {
 	_ = seq3ID
 }
 
-func TestRecurringFuturePreflight_BlockedCurrentHistory(t *testing.T) {
+func TestRecurringFuturePreflight_AllowsCurrentHistoryWhenStatusIsOccurrenceLocal(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	wsID, userID, ruleID, seriesID := pfSeedCheckingRule(t, db, "cur_hist")
@@ -143,8 +143,8 @@ func TestRecurringFuturePreflight_BlockedCurrentHistory(t *testing.T) {
 	now := time.Now().Unix()
 	execTestSQL(t, db, `INSERT INTO transaction_status_history (id, transaction_id, workspace_id, user_id, previous_status, new_status, created_at) VALUES ('h-pf-cur', ?, ?, ?, 'paid', 'pending', ?)`, seq2ID, wsID, userID, now)
 	rr := pfRequest(t, wsID, userID, seq2ID, db, nil)
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status=%d, want 409", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q, want 200", rr.Code, rr.Body.String())
 	}
 	_ = seq3ID
 }
@@ -190,7 +190,7 @@ func TestRecurringFuturePreflight_BlockedFutureException(t *testing.T) {
 	}
 }
 
-func TestRecurringFuturePreflight_BlockedFutureHistory(t *testing.T) {
+func TestRecurringFuturePreflight_AllowsFutureHistoryWhenStatusIsPreserved(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	wsID, userID, ruleID, seriesID := pfSeedCheckingRule(t, db, "fut_hist")
@@ -198,8 +198,8 @@ func TestRecurringFuturePreflight_BlockedFutureHistory(t *testing.T) {
 	now := time.Now().Unix()
 	execTestSQL(t, db, `INSERT INTO transaction_status_history (id, transaction_id, workspace_id, user_id, previous_status, new_status, created_at) VALUES ('h-pf-fut', ?, ?, ?, 'pending', 'paid', ?)`, seq3ID, wsID, userID, now)
 	rr := pfRequest(t, wsID, userID, seq2ID, db, nil)
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status=%d, want 409", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q, want 200", rr.Code, rr.Body.String())
 	}
 }
 

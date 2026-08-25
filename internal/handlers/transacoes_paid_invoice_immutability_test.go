@@ -777,8 +777,7 @@ func seedPaidInvoiceImmutabilityScenario(t *testing.T, db *sql.DB) {
 		VALUES ('pay-legacy-08', 'ws-test', 'invoice-2026-08', 'checking-test', 'payment-paid-invoice-08', 25000, ?, 'manual', 'user-test', ?)
 	`, now, now)
 
-	openClosing := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC).Unix()
-	openDue := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC).Unix()
+	openClosing, openDue := futureOpenInvoiceDatesForTest()
 	execTestSQL(t, db, `
 		INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, created_at)
 		VALUES ('invoice-2026-09', 'card-test', '2026-09', ?, ?, 'OPEN', ?)

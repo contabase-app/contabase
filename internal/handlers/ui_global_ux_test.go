@@ -102,6 +102,54 @@ func TestProfileDropdownMobileTouchTargets(t *testing.T) {
 	}
 }
 
+func TestPrimaryNavigationOrderMatchesDesktopAndMobile(t *testing.T) {
+	raw, err := os.ReadFile(resolveTemplatePath(t, "templates/layout.html"))
+	if err != nil {
+		t.Fatalf("read layout.html: %v", err)
+	}
+	body := string(raw)
+	expected := []string{
+		`href="/"`,
+		`href="/lancamentos"`,
+		`href="/metas"`,
+		`href="/contas"`,
+		`href="/contatos"`,
+		`href="/relatorios"`,
+	}
+
+	desktopStart := strings.Index(body, `aria-label="Navegação principal"`)
+	if desktopStart < 0 {
+		t.Fatal("desktop primary navigation not found")
+	}
+	desktopEnd := strings.Index(body[desktopStart:], `</nav>`)
+	if desktopEnd < 0 {
+		t.Fatal("desktop primary navigation closing tag not found")
+	}
+	assertOrderedNavigationMarkers(t, "desktop", body[desktopStart:desktopStart+desktopEnd], expected)
+
+	mobileStart := strings.Index(body, `<nav data-bottom-nav`)
+	if mobileStart < 0 {
+		t.Fatal("mobile bottom navigation not found")
+	}
+	mobileEnd := strings.Index(body[mobileStart:], `</nav>`)
+	if mobileEnd < 0 {
+		t.Fatal("mobile bottom navigation closing tag not found")
+	}
+	assertOrderedNavigationMarkers(t, "mobile", body[mobileStart:mobileStart+mobileEnd], expected)
+}
+
+func assertOrderedNavigationMarkers(t *testing.T, navigation string, body string, expected []string) {
+	t.Helper()
+	cursor := 0
+	for _, marker := range expected {
+		index := strings.Index(body[cursor:], marker)
+		if index < 0 {
+			t.Fatalf("%s navigation missing %s", navigation, marker)
+		}
+		cursor += index + len(marker)
+	}
+}
+
 func TestDashboardMobileSectionSpacing(t *testing.T) {
 	raw, err := os.ReadFile(resolveTemplatePath(t, "assets/css/dashboard.css"))
 	if err != nil {

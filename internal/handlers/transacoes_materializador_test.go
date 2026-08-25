@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 )
@@ -371,6 +372,141 @@ func TestEnsureRecurringMaterializedPreservesManualException(t *testing.T) {
 	}
 	if desc2 != "Assinatura Materializador Manual" || amount != 9999 {
 		t.Fatalf("exception tx altered: desc=%q amount=%d", desc2, amount)
+	}
+}
+
+func TestEnsureRecurringMaterializedAcceptsLegacyExceptionWithoutCivilDate(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	const desc = "Assinatura Materializador Legacy"
+	ruleID, seriesID := seedRecurringSeriesInfiniteChecking(t, db, desc, "2026-06-05")
+	now := time.Now().Unix()
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, date_civil, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, is_recurring_exception, recurring_exception_reason, created_at, updated_at)
+		VALUES ('tx-mat-legacy-exc-2', 'ws-test', 'user-test', 'checking-test', 'cat-expense-rec', 'EXPENSE', 9999, ?, NULL, ?, 'pending', 1, 1, ?, 2, ?, 1, 'manual_edit', ?, ?)
+	`, MustCivilWriteDate("2026-07-05").LegacyUnix(), desc, ruleID, seriesID, now, now)
+
+	runMaterializer(t, db, MustCivilWriteDate("2027-09-05"))
+
+	var amount int64
+	var dateCivil sql.NullString
+	if err := db.QueryRow(`SELECT amount, date_civil FROM transactions WHERE id = 'tx-mat-legacy-exc-2' AND workspace_id = 'ws-test'`).Scan(&amount, &dateCivil); err != nil {
+		t.Fatalf("query legacy exception: %v", err)
+	}
+	if amount != 9999 || dateCivil.Valid {
+		t.Fatalf("legacy exception changed: amount=%d date_civil=%v", amount, dateCivil)
+	}
+}
+
+func TestEnsureRecurringMaterializedAcceptsLegacyFirstOccurrenceBeforeRuleAnchor(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	const desc = "Assinatura Materializador Legacy Anchor"
+	_, seriesID := seedRecurringSeriesInfiniteChecking(t, db, desc, "2026-07-05")
+	execTestSQL(t, db, `
+		UPDATE transactions
+		SET date = ?, date_civil = '2026-07-02'
+		WHERE id = 'tx-mat-inf-1' AND workspace_id = 'ws-test'
+	`, MustCivilWriteDate("2026-07-02").LegacyUnix())
+
+	runMaterializer(t, db, MustCivilWriteDate("2026-09-05"))
+
+	var firstDate string
+	var firstException int
+	if err := db.QueryRow(`SELECT date_civil, is_recurring_exception FROM transactions WHERE id = 'tx-mat-inf-1' AND workspace_id = 'ws-test'`).Scan(&firstDate, &firstException); err != nil {
+		t.Fatalf("query legacy first occurrence: %v", err)
+	}
+	if firstDate != "2026-07-02" || firstException != 0 {
+		t.Fatalf("legacy first occurrence changed: date=%q exception=%d", firstDate, firstException)
+	}
+
+	var secondDate string
+	if err := db.QueryRow(`SELECT date_civil FROM transactions WHERE workspace_id = 'ws-test' AND series_id = ? AND recurrence_sequence = 2`, seriesID).Scan(&secondDate); err != nil {
+		t.Fatalf("query second occurrence: %v", err)
+	}
+	if secondDate != "2026-08-05" {
+		t.Fatalf("second occurrence date=%q, want 2026-08-05", secondDate)
+	}
+}
+
+func TestEnsureRecurringMaterializedAcceptsLegacyFirstOccurrenceAccountOverride(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	const desc = "Assinatura Materializador Legacy Account"
+	_, seriesID := seedRecurringSeriesInfiniteChecking(t, db, desc, "2026-07-05")
+	now := time.Now().Unix()
+	execTestSQL(t, db, `
+		INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at)
+		VALUES ('checking-mat-legacy-alt', 'ws-test', 'Conta Legacy Alternativa', 'CHECKING', 0, 0, ?, ?)
+	`, now, now)
+	execTestSQL(t, db, `
+		UPDATE transactions
+		SET account_id = 'checking-mat-legacy-alt'
+		WHERE id = 'tx-mat-inf-1' AND workspace_id = 'ws-test'
+	`)
+
+	runMaterializer(t, db, MustCivilWriteDate("2026-09-05"))
+
+	var firstAccount string
+	if err := db.QueryRow(`SELECT account_id FROM transactions WHERE id = 'tx-mat-inf-1' AND workspace_id = 'ws-test'`).Scan(&firstAccount); err != nil {
+		t.Fatalf("query legacy first account: %v", err)
+	}
+	if firstAccount != "checking-mat-legacy-alt" {
+		t.Fatalf("legacy first account=%q, want checking-mat-legacy-alt", firstAccount)
+	}
+
+	var secondAccount string
+	if err := db.QueryRow(`SELECT account_id FROM transactions WHERE workspace_id = 'ws-test' AND series_id = ? AND recurrence_sequence = 2`, seriesID).Scan(&secondAccount); err != nil {
+		t.Fatalf("query second account: %v", err)
+	}
+	if secondAccount != "checking-test" {
+		t.Fatalf("second account=%q, want checking-test", secondAccount)
+	}
+}
+
+func TestEnsureRecurringMaterializedRejectsLaterOccurrenceAccountDivergence(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	const desc = "Assinatura Materializador Later Account"
+	ruleID, seriesID := seedRecurringSeriesInfiniteChecking(t, db, desc, "2026-07-05")
+	now := time.Now().Unix()
+	execTestSQL(t, db, `
+		INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at)
+		VALUES ('checking-mat-later-alt', 'ws-test', 'Conta Posterior Alternativa', 'CHECKING', 0, 0, ?, ?)
+	`, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, date_civil, description, status, installment_number, total_installments, recurring_rule_id, recurrence_sequence, series_id, created_at, updated_at)
+		VALUES ('tx-mat-later-account-2', 'ws-test', 'user-test', 'checking-mat-later-alt', 'cat-expense-rec', 'EXPENSE', 15000, ?, '2026-08-05', ?, 'pending', 1, 1, ?, 2, ?, ?, ?)
+	`, MustCivilWriteDate("2026-08-05").LegacyUnix(), desc, ruleID, seriesID, now, now)
+
+	err := EnsureRecurringMaterialized(db, "ws-test", MustCivilWriteDate("2026-09-05"))
+	if err == nil || !strings.Contains(err.Error(), "divergent account_id at seq 2") {
+		t.Fatalf("materialization error=%v, want seq 2 account divergence", err)
+	}
+}
+
+func TestEnsureRecurringMaterializedRejectsLegacyFirstOccurrenceCivilMismatch(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	const desc = "Assinatura Materializador Legacy Invalid"
+	_, seriesID := seedRecurringSeriesInfiniteChecking(t, db, desc, "2026-07-05")
+	execTestSQL(t, db, `
+		UPDATE transactions
+		SET date = ?, date_civil = '2026-07-03'
+		WHERE id = 'tx-mat-inf-1' AND workspace_id = 'ws-test'
+	`, MustCivilWriteDate("2026-07-02").LegacyUnix())
+
+	err := EnsureRecurringMaterialized(db, "ws-test", MustCivilWriteDate("2026-09-05"))
+	if err == nil || !strings.Contains(err.Error(), "date/date_civil mismatch at seq 1") {
+		t.Fatalf("materialization error=%v, want seq 1 civil mismatch", err)
+	}
+
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE workspace_id = 'ws-test' AND series_id = ?`, seriesID).Scan(&count); err != nil {
+		t.Fatalf("count transactions after rejected materialization: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("transaction count=%d, want 1 after rollback", count)
 	}
 }
 

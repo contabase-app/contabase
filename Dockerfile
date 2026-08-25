@@ -43,9 +43,7 @@ WORKDIR /app
 COPY --from=builder /app/server .
 COPY --from=builder /app/admin .
 COPY --from=builder /app/templates ./templates
-COPY --from=builder /app/assets/js ./assets/js
-COPY --from=builder /app/assets/css ./assets/css
-COPY --from=builder /app/assets/fonts ./assets/fonts
+COPY --from=builder /app/assets ./assets
 COPY --from=builder /app/VERSION /app/VERSION
 
 RUN addgroup -g 1000 appgroup && \

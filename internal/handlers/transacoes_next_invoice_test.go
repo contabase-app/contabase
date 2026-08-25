@@ -19,6 +19,7 @@ func TestInsertTransactionNextInvoiceCreatesInvoiceForCreditCard(t *testing.T) {
 	defer db.Close()
 
 	seedInvoicePaymentScenario(t, db)
+	scenario := moveSeedInvoiceScenarioToFuture(t, db)
 
 	handler := TransactionHandler{
 		DB:          db,
@@ -26,7 +27,7 @@ func TestInsertTransactionNextInvoiceCreatesInvoiceForCreditCard(t *testing.T) {
 		UserID:      "user-test",
 	}
 
-	date := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC).Unix()
+	date := scenario.Occurrence.Unix()
 
 	_, err := handler.insertTransaction(
 		"EXPENSE",
@@ -50,8 +51,8 @@ func TestInsertTransactionNextInvoiceCreatesInvoiceForCreditCard(t *testing.T) {
 
 	txID := findTransactionByDescription(t, db, "Compra Proxima Fatura")
 
-	assertTransactionInvoiceReference(t, db, txID, "2026-09")
-	assertInvoiceExists(t, db, "card-test", "2026-09", "OPEN")
+	assertTransactionInvoiceReference(t, db, txID, scenario.NextRef)
+	assertInvoiceExists(t, db, "card-test", scenario.NextRef, "OPEN")
 }
 
 func TestInsertTransactionNextInvoiceReusesExistingNextInvoice(t *testing.T) {
@@ -59,8 +60,9 @@ func TestInsertTransactionNextInvoiceReusesExistingNextInvoice(t *testing.T) {
 	defer db.Close()
 
 	seedInvoicePaymentScenario(t, db)
+	scenario := moveSeedInvoiceScenarioToFuture(t, db)
 
-	seedNextInvoiceForTest(t, db, "card-test", "2026-09")
+	seedNextInvoiceForTest(t, db, "card-test", scenario.NextRef)
 
 	handler := TransactionHandler{
 		DB:          db,
@@ -68,7 +70,7 @@ func TestInsertTransactionNextInvoiceReusesExistingNextInvoice(t *testing.T) {
 		UserID:      "user-test",
 	}
 
-	date := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC).Unix()
+	date := scenario.Occurrence.Unix()
 
 	_, err := handler.insertTransaction(
 		"EXPENSE",
@@ -92,9 +94,9 @@ func TestInsertTransactionNextInvoiceReusesExistingNextInvoice(t *testing.T) {
 
 	txID := findTransactionByDescription(t, db, "Compra Proxima Fatura Existente")
 
-	assertTransactionInvoiceReference(t, db, txID, "2026-09")
+	assertTransactionInvoiceReference(t, db, txID, scenario.NextRef)
 
-	assertInvoiceCount(t, db, "card-test", "2026-09", 1)
+	assertInvoiceCount(t, db, "card-test", scenario.NextRef, 1)
 }
 
 func TestInsertTransactionAutoRejectsPaidInvoiceWithinCycle(t *testing.T) {
@@ -338,8 +340,9 @@ func TestInsertTransactionAutoAfterClosingGoesToNextInvoice(t *testing.T) {
 	defer db.Close()
 
 	seedInvoicePaymentScenario(t, db)
+	scenario := moveSeedInvoiceScenarioToFuture(t, db)
 	setInvoiceStatusForTest(t, db, "invoice-2026-08", "PAID")
-	seedInvoiceForStatusTest(t, db, "card-test", "2026-09", "OPEN")
+	seedInvoiceForStatusTest(t, db, "card-test", scenario.NextRef, "OPEN")
 
 	handler := TransactionHandler{
 		DB:          db,
@@ -347,7 +350,7 @@ func TestInsertTransactionAutoAfterClosingGoesToNextInvoice(t *testing.T) {
 		UserID:      "user-test",
 	}
 
-	date := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC).Unix()
+	date := scenario.Occurrence.AddDate(0, 1, 0).Unix()
 	_, err := handler.insertTransaction(
 		"EXPENSE",
 		15000,
@@ -369,7 +372,7 @@ func TestInsertTransactionAutoAfterClosingGoesToNextInvoice(t *testing.T) {
 	}
 
 	txID := findTransactionByDescription(t, db, "Compra Apos Fechamento")
-	assertTransactionInvoiceReference(t, db, txID, "2026-09")
+	assertTransactionInvoiceReference(t, db, txID, scenario.NextRef)
 }
 
 func TestInsertTransactionNextPaidReferencePreservesStateMachineBlock(t *testing.T) {
@@ -420,8 +423,9 @@ func TestHandleAtualizarTransacaoRespeitaFaturaOffsetNext(t *testing.T) {
 	defer db.Close()
 
 	seedInvoicePaymentScenario(t, db)
+	scenario := moveSeedInvoiceScenarioToFuture(t, db)
 	seedExpenseCategoryForInvoiceResolutionTest(t, db)
-	seedInvoiceForStatusTest(t, db, "card-test", "2026-09", "OPEN")
+	seedInvoiceForStatusTest(t, db, "card-test", scenario.NextRef, "OPEN")
 
 	handler := TransactionHandler{
 		DB:          db,
@@ -435,7 +439,7 @@ func TestHandleAtualizarTransacaoRespeitaFaturaOffsetNext(t *testing.T) {
 	for key, value := range map[string]string{
 		"valor":            "150,00",
 		"descricao":        "Compra Editada Proxima",
-		"data":             "2026-07-10",
+		"data":             scenario.Occurrence.Format("2006-01-02"),
 		"tipo":             "despesa",
 		"origem_conta_id":  "card-test",
 		"categoria_id":     "cat-expense",
@@ -459,7 +463,7 @@ func TestHandleAtualizarTransacaoRespeitaFaturaOffsetNext(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
-	assertTransactionInvoiceReference(t, db, "purchase-test", "2026-09")
+	assertTransactionInvoiceReference(t, db, "purchase-test", scenario.NextRef)
 }
 
 func TestHandleResolverDestinoFaturaUsaFaturaPagaNoCiclo(t *testing.T) {
@@ -501,6 +505,7 @@ func TestInsertTransactionNextInvoiceSkipsForNonFirstInstallment(t *testing.T) {
 	defer db.Close()
 
 	seedInvoicePaymentScenario(t, db)
+	scenario := moveSeedInvoiceScenarioToFuture(t, db)
 
 	handler := TransactionHandler{
 		DB:          db,
@@ -508,7 +513,7 @@ func TestInsertTransactionNextInvoiceSkipsForNonFirstInstallment(t *testing.T) {
 		UserID:      "user-test",
 	}
 
-	date := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC).Unix()
+	date := scenario.Occurrence.Unix()
 
 	_, err := handler.insertTransaction(
 		"EXPENSE",
@@ -538,7 +543,11 @@ func TestInsertTransactionNextInvoiceSkipsForNonFirstInstallment(t *testing.T) {
 		t.Fatalf("find first installment: %v", err)
 	}
 
-	assertTransactionInvoiceReference(t, db, parentID, "2026-09")
+	assertTransactionInvoiceReference(t, db, parentID, scenario.NextRef)
+	nextNextRef, err := nextInvoiceReference(scenario.NextRef)
+	if err != nil {
+		t.Fatalf("second future invoice reference: %v", err)
+	}
 
 	var count int
 	if err := db.QueryRow(`
@@ -551,8 +560,8 @@ func TestInsertTransactionNextInvoiceSkipsForNonFirstInstallment(t *testing.T) {
 		t.Fatalf("expected 2 installment children, got %d", count)
 	}
 
-	assertInvoiceExists(t, db, "card-test", "2026-09", "OPEN")
-	assertInvoiceExists(t, db, "card-test", "2026-10", "OPEN")
+	assertInvoiceExists(t, db, "card-test", scenario.NextRef, "OPEN")
+	assertInvoiceExists(t, db, "card-test", nextNextRef, "OPEN")
 
 	var install2Ref, install3Ref string
 	_ = db.QueryRow(`
@@ -566,11 +575,11 @@ func TestInsertTransactionNextInvoiceSkipsForNonFirstInstallment(t *testing.T) {
 		WHERE t.parent_id = ? AND t.installment_number = 3 AND t.workspace_id = 'ws-test'
 	`, parentID).Scan(&install3Ref)
 
-	if install2Ref != "2026-09" {
-		t.Fatalf("installment 2 reference = %q, want 2026-09", install2Ref)
+	if install2Ref != scenario.NextRef {
+		t.Fatalf("installment 2 reference = %q, want %s", install2Ref, scenario.NextRef)
 	}
-	if install3Ref != "2026-10" {
-		t.Fatalf("installment 3 reference = %q, want 2026-10", install3Ref)
+	if install3Ref != nextNextRef {
+		t.Fatalf("installment 3 reference = %q, want %s", install3Ref, nextNextRef)
 	}
 }
 
@@ -623,11 +632,12 @@ func TestInsertTransactionNextInvoiceFailsForNonCreditCardAccount(t *testing.T) 
 func seedNextInvoiceForTest(t *testing.T, db *sql.DB, accountID, reference string) {
 	t.Helper()
 	now := time.Now().Unix()
+	closingUnix, dueUnix := futureOpenInvoiceDatesForTest()
 	id := "invoice-" + reference
 	execTestSQL(t, db, `
 		INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, created_at)
 		VALUES (?, ?, ?, ?, ?, 'OPEN', ?)
-	`, id, accountID, reference, testUnixDate("2026-08-20"), testUnixDate("2026-09-10"), now)
+	`, id, accountID, reference, closingUnix, dueUnix, now)
 }
 
 func seedInvoiceForStatusTest(t *testing.T, db *sql.DB, accountID, reference, status string) {
@@ -638,6 +648,9 @@ func seedInvoiceForStatusTest(t *testing.T, db *sql.DB, accountID, reference, st
 		t.Fatalf("parse reference: %v", err)
 	}
 	closingUnix, dueUnix := invoiceDatesForReference(year, month, 20, 10)
+	if status == "OPEN" {
+		closingUnix, dueUnix = futureOpenInvoiceDatesForTest()
+	}
 	execTestSQL(t, db, `
 		INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, paid_at, paid_amount, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)

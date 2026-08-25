@@ -837,7 +837,7 @@ func TestRecurringEditBroadScopeRespondsWithListRefreshHeaders(t *testing.T) {
 	}
 }
 
-func TestRecurringEditAllScopeUpdatesAllOccurrenceStatuses(t *testing.T) {
+func TestRecurringEditAllScopeKeepsFutureOccurrenceStatuses(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
@@ -892,8 +892,8 @@ func TestRecurringEditAllScopeUpdatesAllOccurrenceStatuses(t *testing.T) {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
 
-	assertRecurringStatusesByDescription(t, db, "Recorrencia All Status", []string{"paid", "paid", "paid"})
-	assertRecurringRuleDefaultStatus(t, db, "Recorrencia All Status", "PAID")
+	assertRecurringStatusesByDescription(t, db, "Recorrencia All Status", []string{"paid", "pending", "pending"})
+	assertRecurringRuleDefaultStatus(t, db, "Recorrencia All Status", "PENDING")
 }
 
 func TestRecurringEditFutureScopeDoesNotChangePastOccurrence(t *testing.T) {
@@ -970,7 +970,7 @@ func TestRecurringEditFutureScopeDoesNotChangePastOccurrence(t *testing.T) {
 	}{
 		{ids[0], "Recorrencia Future Scope", "pending"},
 		{ids[1], "Recorrencia Future Scope Atualizada", "paid"},
-		{ids[2], "Recorrencia Future Scope Atualizada", "paid"},
+		{ids[2], "Recorrencia Future Scope Atualizada", "pending"},
 	})
 
 	var sourceActive int
@@ -1096,7 +1096,7 @@ func TestRecurringEditAllScopeDoesNotChangeOtherWorkspace(t *testing.T) {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
 
-	assertRecurringStatusesByDescription(t, db, "Recorrencia Workspace Local", []string{"paid", "paid", "paid"})
+	assertRecurringStatusesByDescription(t, db, "Recorrencia Workspace Local", []string{"paid", "pending", "pending"})
 	assertOtherWorkspaceRecurringUnchanged(t, db)
 }
 

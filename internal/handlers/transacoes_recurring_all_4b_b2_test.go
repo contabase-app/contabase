@@ -686,7 +686,7 @@ func TestRecurringAll4BB2ExceptionAllowsCalendarAndStaysIntact(t *testing.T) {
 	}
 }
 
-func TestRecurringAll4BB2PaidClearsDueAndIsIdempotent(t *testing.T) {
+func TestRecurringAll4BB2PaidIsOccurrenceLocalAndIdempotent(t *testing.T) {
 	offset := int64(10)
 	f := newRecurringAll4BB2Fixture(t, true, "2026-01-10", &offset)
 	defer f.close()
@@ -696,23 +696,27 @@ func TestRecurringAll4BB2PaidClearsDueAndIsIdempotent(t *testing.T) {
 	recurringAll4BB2AssertStatus(t, rr, http.StatusOK)
 	var balanceAfter int64
 	_ = f.db.QueryRow(`SELECT current_balance FROM accounts WHERE id='checking-test'`).Scan(&balanceAfter)
-	if balanceBefore-balanceAfter != 60000 {
-		t.Fatalf("paid balance delta = %d, want 60000", balanceBefore-balanceAfter)
+	if balanceBefore-balanceAfter != 20000 {
+		t.Fatalf("paid balance delta = %d, want 20000", balanceBefore-balanceAfter)
 	}
-	for _, id := range f.ids {
+	for index, id := range f.ids {
 		var status string
 		var due, paidAt sql.NullInt64
 		var paidCivil sql.NullString
 		_ = f.db.QueryRow(`SELECT status, due_date, paid_at, paid_date_civil FROM transactions WHERE id=?`, id).Scan(&status, &due, &paidAt, &paidCivil)
-		if status != "paid" || due.Valid || paidAt.Valid || paidCivil.Valid {
+		wantStatus := "pending"
+		if index == 0 {
+			wantStatus = "paid"
+		}
+		if status != wantStatus || !due.Valid || paidAt.Valid || paidCivil.Valid {
 			t.Fatalf("%s status=%q due=%v paid_at=%v paid_civil=%v", id, status, due, paidAt, paidCivil)
 		}
 	}
 	var ruleStatus string
 	var ruleOffset, rulePolicy sql.NullString
 	_ = f.db.QueryRow(`SELECT default_payment_status, CAST(due_date_offset_days AS TEXT), due_date_policy FROM recurring_rules WHERE id=?`, f.ruleID).Scan(&ruleStatus, &ruleOffset, &rulePolicy)
-	if ruleStatus != "PAID" || ruleOffset.Valid || rulePolicy.Valid {
-		t.Fatalf("rule paid state = %q offset=%v policy=%v", ruleStatus, ruleOffset, rulePolicy)
+	if ruleStatus != "PENDING" || !ruleOffset.Valid || ruleOffset.String != "10" || rulePolicy.Valid {
+		t.Fatalf("rule recurring state = %q offset=%v policy=%v", ruleStatus, ruleOffset, rulePolicy)
 	}
 
 	rr = f.request(t, 1, map[string]string{"status_pagamento": "paid"})
@@ -733,8 +737,8 @@ func TestRecurringAll4BB2PaidClearsDueAndIsIdempotent(t *testing.T) {
 	if err := f.db.QueryRow(`SELECT status, due_date, paid_at FROM transactions WHERE series_id=? AND recurrence_sequence=4`, f.seriesID).Scan(&status, &due, &paidAt); err != nil {
 		t.Fatalf("load materialized paid occurrence: %v", err)
 	}
-	if status != "paid" || due.Valid || paidAt.Valid {
-		t.Fatalf("materialized paid status=%q due=%v paid_at=%v", status, due, paidAt)
+	if status != "pending" || !due.Valid || paidAt.Valid {
+		t.Fatalf("materialized status=%q due=%v paid_at=%v", status, due, paidAt)
 	}
 }
 
@@ -1276,7 +1280,7 @@ func TestRecurringAll4BB2TransferBalanceAtomicAndIdempotent(t *testing.T) {
 		var originAfter, destinationAfter int64
 		_ = f.db.QueryRow(`SELECT current_balance FROM accounts WHERE id='checking-test'`).Scan(&originAfter)
 		_ = f.db.QueryRow(`SELECT current_balance FROM accounts WHERE id='checking-alt-b2'`).Scan(&destinationAfter)
-		if originBefore-originAfter != 60000 || destinationAfter-destinationBefore != 60000 {
+		if originBefore-originAfter != 20000 || destinationAfter-destinationBefore != 20000 {
 			t.Fatalf("transfer effect origin=%d destination=%d", originBefore-originAfter, destinationAfter-destinationBefore)
 		}
 		rr = f.request(t, 1, fields)
@@ -2055,7 +2059,7 @@ func TestRecurringAll4BB2MaterializationAfterMetadataUsesActiveRule(t *testing.T
 	}
 }
 
-func TestRecurringAll4BB2PaidInChainRequiresNoExistingDue(t *testing.T) {
+func TestRecurringAll4BB2PaidInChainPreservesExistingDue(t *testing.T) {
 	t.Run("already_without_due_allowed", func(t *testing.T) {
 		f := newRecurringAll4BB2Fixture(t, false, "2026-01-10", nil)
 		defer f.close()
@@ -2063,17 +2067,21 @@ func TestRecurringAll4BB2PaidInChainRequiresNoExistingDue(t *testing.T) {
 		rr := f.request(t, 2, map[string]string{"status_pagamento": "paid"})
 		recurringAll4BB2AssertStatus(t, rr, http.StatusOK)
 	})
-	t.Run("existing_due_conflict", func(t *testing.T) {
+	t.Run("existing_due_preserved", func(t *testing.T) {
 		offset := int64(10)
 		f := newRecurringAll4BB2Fixture(t, true, "2026-01-10", &offset)
 		defer f.close()
 		recurringAll4BB2MakeChain(t, f)
 		execTestSQL(t, f.db, `UPDATE recurring_rules SET due_date_offset_days=10, contact_id='contact-b2' WHERE id='rule-all-b2-active'`)
-		before := recurringAll4BB2Snapshot(t, f.db, f.seriesID)
 		rr := f.request(t, 2, map[string]string{"status_pagamento": "paid"})
-		recurringAll4BB2AssertStatus(t, rr, http.StatusConflict)
-		if recurringAll4BB2Snapshot(t, f.db, f.seriesID) != before {
-			t.Fatal("implicit due clearing in chain performed writes")
+		recurringAll4BB2AssertStatus(t, rr, http.StatusOK)
+		var selectedStatus string
+		var selectedDue sql.NullInt64
+		if err := f.db.QueryRow(`SELECT status, due_date FROM transactions WHERE id=?`, f.ids[1]).Scan(&selectedStatus, &selectedDue); err != nil {
+			t.Fatal(err)
+		}
+		if selectedStatus != "paid" || !selectedDue.Valid {
+			t.Fatalf("selected status=%q due=%v, want paid with preserved due", selectedStatus, selectedDue)
 		}
 	})
 }
@@ -2908,6 +2916,27 @@ func TestRecurringAll4BB2DeleteFutureStructuralValidation(t *testing.T) {
 		h.HandleDeletarTransacao(rr, req, f.ids[1])
 		if rr.Code != http.StatusOK {
 			t.Fatalf("delete future from inactive B: status=%d body=%q", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("delete_future_from_stale_ancestor_owner", func(t *testing.T) {
+		f := newRecurringAll4BB2DiskFixture(t, false, "2026-01-10", nil)
+		defer f.close()
+
+		execTestSQL(t, f.db, `UPDATE recurring_rules SET active = 0, effective_end_sequence = 1 WHERE id = ?`, f.ruleID)
+		makeChain(t, f.db, f.seriesID, []chainRule{
+			{id: "rule-del-stale-B", parent: f.ruleID, active: 0, start: 2, end: int64Ptr4BB2(3)},
+			{id: "rule-del-stale-C", parent: "rule-del-stale-B", active: 1, start: 4, end: nil},
+		})
+
+		// Simula um vínculo legado/stale: a ocorrência está na série e na cadeia
+		// correta, mas ainda aponta para o ancestral cuja faixa já terminou.
+
+		h := deleteHandler(t, f.db)
+		req, rr := newDeleteRequest(t, f.ids[1], "future")
+		h.HandleDeletarTransacao(rr, req, f.ids[1])
+		if rr.Code != http.StatusOK {
+			t.Fatalf("delete future from stale ancestor: status=%d body=%q", rr.Code, rr.Body.String())
 		}
 	})
 

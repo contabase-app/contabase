@@ -1257,6 +1257,9 @@ func TestHandleResolverDestinoFaturaIncludeOptionsNoHang(t *testing.T) {
 	for _, r := range refs {
 		closeUnix := parseTestDate(t, r.closeDate).Unix()
 		dueUnix := parseTestDate(t, r.dueDate).Unix()
+		if r.status == "OPEN" {
+			closeUnix, dueUnix = futureOpenInvoiceDatesForTest()
+		}
 		execTestSQL(t, db, `
 			INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, created_at)
 			VALUES (?, 'card-test', ?, ?, ?, ?, ?)

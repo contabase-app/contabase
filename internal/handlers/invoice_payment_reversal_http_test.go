@@ -398,7 +398,7 @@ func TestHandleReverseInvoicePaymentConcurrentAfterPaymentIsSerializable(t *test
 	seedInvoicePaymentReversalFixture(t, dbA, reversalFixtureOptions{
 		InvoiceTotal: 100000,
 		Payments:     []reversalPaymentSeed{{ID: paymentID, TxID: transactionID, Amount: 40000, PaidAt: paidAt, CreatedAt: paidAt}},
-		ClosingCivil: "2026-08-20", InvoiceStatus: "OPEN", LegacyPaid: 40000, InitialBalance: 200000,
+		ClosingCivil: time.Now().UTC().AddDate(5, 0, 0).Format("2006-01-02"), InvoiceStatus: "OPEN", LegacyPaid: 40000, InitialBalance: 200000,
 	})
 	paymentWriterHeld := make(chan struct{})
 	releasePayment := make(chan struct{})

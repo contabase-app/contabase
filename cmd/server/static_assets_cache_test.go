@@ -5,8 +5,40 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestDockerRuntimeImageCopiesCompleteAssetsTree(t *testing.T) {
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	dockerfilePath := filepath.Join(repoRoot, "Dockerfile")
+	raw, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+
+	const completeAssetsCopy = "COPY --from=builder /app/assets ./assets"
+	if !strings.Contains(string(raw), completeAssetsCopy) {
+		t.Fatalf("Docker runtime stage must copy the complete assets tree with %q", completeAssetsCopy)
+	}
+
+	for _, required := range []string{
+		"assets/contabase-monogram.svg",
+		"assets/favicon.ico",
+		"assets/manifest.json",
+		"assets/pwa-icon-dark-192x192.png",
+		"assets/pwa-icon-dark-512x512.png",
+		"assets/pwa-icon-dark-maskable-512x512.png",
+	} {
+		info, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(required)))
+		if err != nil {
+			t.Fatalf("required runtime asset %s: %v", required, err)
+		}
+		if !info.Mode().IsRegular() || info.Size() == 0 {
+			t.Fatalf("required runtime asset %s must be a non-empty regular file", required)
+		}
+	}
+}
 
 func TestStaticAssetsCacheControlHeader(t *testing.T) {
 	dir := t.TempDir()

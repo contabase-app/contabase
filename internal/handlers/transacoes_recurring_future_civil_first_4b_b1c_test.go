@@ -338,8 +338,8 @@ func TestRecurringFutureCivilFirstSetUsesSignedOffset(t *testing.T) {
 	}
 }
 
-func TestRecurringFutureCivilFirstPaidClearsDueContract(t *testing.T) {
-	t.Run("Business valid due is validated but cleared", func(t *testing.T) {
+func TestRecurringFutureCivilFirstPaidStatusIsOccurrenceLocal(t *testing.T) {
+	t.Run("Business due change propagates while paid stays selected", func(t *testing.T) {
 		db := openTestDB(t)
 		defer db.Close()
 		ruleID, series, _ := versionedSeedProducedRule(t, db, "business", "B1c-Paid-Business", "2026-06-05", "2026-06-15", "contact-b1c-paid", 5)
@@ -353,7 +353,7 @@ func TestRecurringFutureCivilFirstPaidClearsDueContract(t *testing.T) {
 			t.Fatalf("status=%d body=%q", rr.Code, rr.Body.String())
 		}
 		childID, policy, offset, _, _, _, _ := b1cActiveRule(t, db, series)
-		if childID == ruleID || policy.Valid || offset.Valid {
+		if childID == ruleID || policy.Valid || !offset.Valid || offset.Int64 != 10 {
 			t.Fatalf("child=%q source=%q policy=%v offset=%v", childID, ruleID, policy, offset)
 		}
 		var sourcePolicy, sourceContact sql.NullString
@@ -371,20 +371,25 @@ func TestRecurringFutureCivilFirstPaidClearsDueContract(t *testing.T) {
 			if err := db.QueryRow(`SELECT status, paid_at, paid_date_civil FROM transactions WHERE workspace_id='ws-test' AND series_id=? AND recurrence_sequence=?`, series, seq).Scan(&status, &paidAt, &paidCivil); err != nil {
 				t.Fatalf("status seq%d: %v", seq, err)
 			}
-			if status != "paid" || paidAt.Valid || paidCivil.Valid {
-				t.Fatalf("seq%d status=%q paid_at=%v paid_civil=%v, want paid without payment timestamp", seq, status, paidAt, paidCivil)
+			wantStatus := "pending"
+			if seq == 2 {
+				wantStatus = "paid"
 			}
-			b1cAssertDuePair(t, db, series, seq, "")
+			if status != wantStatus || paidAt.Valid || paidCivil.Valid {
+				t.Fatalf("seq%d status=%q paid_at=%v paid_civil=%v, want %s without payment timestamp", seq, status, paidAt, paidCivil, wantStatus)
+			}
+			wantDue := map[int64]string{2: "2026-07-20", 3: "2026-08-20", 4: "2026-09-20"}[seq]
+			b1cAssertDuePair(t, db, series, seq, wantDue)
 		}
 		execTestSQL(t, db, `DELETE FROM transactions WHERE workspace_id='ws-test' AND series_id=? AND recurrence_sequence=4`, series)
 		if err := EnsureRecurringMaterialized(db, "ws-test", MustCivilWriteDate("2027-12-31")); err != nil {
 			t.Fatalf("rematerialize paid gap: %v", err)
 		}
-		b1cAssertDuePair(t, db, series, 4, "")
+		b1cAssertDuePair(t, db, series, 4, "2026-09-20")
 		var rebuiltStatus string
 		db.QueryRow(`SELECT status FROM transactions WHERE workspace_id='ws-test' AND series_id=? AND recurrence_sequence=4`, series).Scan(&rebuiltStatus)
-		if rebuiltStatus != "paid" {
-			t.Fatalf("rematerialized status=%q want paid", rebuiltStatus)
+		if rebuiltStatus != "pending" {
+			t.Fatalf("rematerialized status=%q want pending", rebuiltStatus)
 		}
 		if err := EnsureRecurringMaterialized(db, "ws-test", MustCivilWriteDate("2027-12-31")); err != nil {
 			t.Fatalf("second paid materialization: %v", err)
@@ -409,19 +414,24 @@ func TestRecurringFutureCivilFirstPaidClearsDueContract(t *testing.T) {
 		if childID == ruleID {
 			t.Fatal("future paid reused source rule")
 		}
-		rows, err := db.Query(`SELECT status, due_date, due_date_civil, contact_id, paid_at, paid_date_civil FROM transactions WHERE workspace_id='ws-test' AND series_id=? AND recurrence_sequence>=2`, series)
+		rows, err := db.Query(`SELECT recurrence_sequence, status, due_date, due_date_civil, contact_id, paid_at, paid_date_civil FROM transactions WHERE workspace_id='ws-test' AND series_id=? AND recurrence_sequence>=2`, series)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer rows.Close()
 		for rows.Next() {
+			var sequence int64
 			var status string
 			var due, paidAt sql.NullInt64
 			var dueCivil, contact, paidCivil sql.NullString
-			if err := rows.Scan(&status, &due, &dueCivil, &contact, &paidAt, &paidCivil); err != nil {
+			if err := rows.Scan(&sequence, &status, &due, &dueCivil, &contact, &paidAt, &paidCivil); err != nil {
 				t.Fatal(err)
 			}
-			if status != "paid" || due.Valid || dueCivil.Valid || contact.Valid || paidAt.Valid || paidCivil.Valid {
+			wantStatus := "pending"
+			if sequence == 2 {
+				wantStatus = "paid"
+			}
+			if status != wantStatus || due.Valid || dueCivil.Valid || contact.Valid || paidAt.Valid || paidCivil.Valid {
 				t.Fatalf("Personal paid row status=%q due=%v civil=%v contact=%v paid_at=%v paid_civil=%v", status, due, dueCivil, contact, paidAt, paidCivil)
 			}
 		}

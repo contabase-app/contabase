@@ -26,7 +26,7 @@
             </button>
         </div>
         <div class="flex-1 min-h-0 overflow-y-auto scrollbar-hide px-4 pb-4 pt-2 sm:px-6" data-form-scroll>
-        <form id="lancamento-form" {{if and .IsEdit .ReturnInvoiceID}}hx-post="/transacoes/{{.EditID}}/salvar" hx-swap="none"{{else if .IsEdit}}hx-put="/transacoes/{{.EditID}}" hx-target="#tx-{{.EditID}}" hx-swap="outerHTML"{{else}}hx-post="/transacoes" hx-swap="none"{{end}} hx-indicator="#htmx-indicator" class="sheet-form space-y-3" data-series-edit="{{if .IsSeriesEdit}}true{{else}}false{{end}}" enctype="multipart/form-data">
+        <form id="lancamento-form" {{if and .IsEdit .ReturnInvoiceID}}hx-post="/transacoes/{{.EditID}}/salvar" hx-swap="none"{{else if .IsEdit}}hx-put="/transacoes/{{.EditID}}" hx-target="#tx-{{.EditID}}" hx-swap="outerHTML"{{else}}hx-post="/transacoes" hx-swap="none"{{end}} hx-indicator="#htmx-indicator" class="sheet-form space-y-3" data-series-edit="{{if .IsSeriesEdit}}true{{else}}false{{end}}" data-is-edit="{{if .IsEdit}}true{{else}}false{{end}}" data-initial-type="{{if .TipoInicial}}{{.TipoInicial}}{{else}}despesa{{end}}" data-initial-origin-id="{{.OrigemContaID}}" data-initial-date="{{.DataPreenchida}}" data-initial-status="{{if .StatusInicial}}{{.StatusInicial}}{{else}}paid{{end}}" enctype="multipart/form-data">
             <input id="tipoLancamento" type="hidden" name="tipo" value="{{if .TipoInicial}}{{.TipoInicial}}{{else}}despesa{{end}}">
             {{if .ReturnInvoiceID}}<input type="hidden" name="return_invoice_id" value="{{.ReturnInvoiceID}}">{{end}}
             <input id="origemContaId" type="hidden" name="origem_conta_id" value="{{.OrigemContaID}}">
@@ -81,7 +81,7 @@
                         <span class="sheet-control-icon pointer-events-none absolute inset-y-0 left-4 flex items-center">
                             <i data-lucide="calendar" class="h-4 w-4"></i>
                         </span>
-                        <input id="dataLancamento" type="date" name="data" value="{{.DataPreenchida}}" data-auto-payment-default="{{if .IsEdit}}false{{else}}true{{end}}"
+                        <input id="dataLancamento" type="date" name="data" value="{{.DataPreenchida}}" data-auto-payment-default="{{if .IsEdit}}false{{else}}true{{end}}" data-today-civil="{{.TodayCivil}}"
                             data-onclick-el="showPicker"
                             class="sheet-control h-14 w-full rounded-xl border px-11 text-sm font-semibold outline-none transition-all">
                         <span class="sheet-control-icon pointer-events-none absolute inset-y-0 right-4 flex items-center">
@@ -89,6 +89,14 @@
                         </span>
                     </span>
                 </label>
+            </div>
+
+            <div id="paymentScheduleNotice" class="hidden items-start gap-3 rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2.5 text-left text-xs text-violet-700 dark:text-violet-200" role="status" aria-live="polite">
+                <i data-lucide="calendar-clock" class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true"></i>
+                <p class="leading-relaxed">
+                    <span class="block font-semibold">Confirmação agendada</span>
+                    <span id="paymentScheduleNoticeText">Como a data é futura, este lançamento continuará pendente e será confirmado automaticamente na data escolhida.</span>
+                </p>
             </div>
 
             {{if .IsBusiness}}

@@ -10,7 +10,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -1152,8 +1151,13 @@ func startSQLiteRuntimeJobs(parent context.Context, db *sql.DB, dbPath string, h
 		}()
 	}
 
-	start("auto_backup", 24*time.Hour, func(context.Context) {
-		if err := createRotatingBackup(db, dbPath, 5); err != nil {
+	start("auto_backup", automaticBackupCheckInterval, func(context.Context) {
+		loc, err := resolveCivilRepairTimezone()
+		if err != nil {
+			log.Printf("auto backup timezone failed: %v", err)
+			return
+		}
+		if err := ensureDailyAutomaticBackup(db, dbPath, paths.BackupsDir(), time.Now().In(loc), AutomaticBackupRetentionDays); err != nil {
 			log.Printf("auto backup failed: %v", err)
 		}
 	})
@@ -1400,54 +1404,6 @@ func materializeMonthlyBoxRecharges(ctx context.Context, db *sql.DB, civilNow ti
 		return fmt.Errorf("monthly box recharge commit: %w", err)
 	}
 	committed = true
-	return nil
-}
-
-func createRotatingBackup(db *sql.DB, dbPath string, retain int) error {
-	if retain < 1 {
-		retain = 1
-	}
-	if _, err := os.Stat(dbPath); err != nil {
-		return err
-	}
-	backupDir := paths.BackupsDir()
-	if err := os.MkdirAll(backupDir, 0o755); err != nil {
-		return err
-	}
-	dest, err := nextBackupPath(backupDir, "contabase")
-	if err != nil {
-		return err
-	}
-	if err := CreateSQLiteBackupFile(db, dbPath, dest); err != nil {
-		return err
-	}
-	entries, err := os.ReadDir(backupDir)
-	if err != nil {
-		return err
-	}
-	type item struct {
-		name string
-		time time.Time
-	}
-	var files []item
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".db") {
-			continue
-		}
-		info, err := e.Info()
-		if err != nil {
-			continue
-		}
-		files = append(files, item{name: filepath.Join(backupDir, e.Name()), time: info.ModTime()})
-	}
-	sort.Slice(files, func(i, j int) bool { return files[i].time.Before(files[j].time) })
-	for len(files) > retain {
-		if err := os.Remove(files[0].name); err != nil {
-			log.Printf("backup retention remove failed: %v", err)
-			break
-		}
-		files = files[1:]
-	}
 	return nil
 }
 

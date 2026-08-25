@@ -12,7 +12,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
-    <link rel="manifest" href="/assets/manifest.json">
+    <link rel="manifest" href="{{assetPath "/assets/manifest.json"}}">
 
     <link rel="stylesheet" href="{{assetPath "/assets/css/style.css"}}">
     <link rel="stylesheet" href="/assets/css/geist-sans.css">
@@ -29,6 +29,10 @@
 
     <main class="relative mx-auto flex min-h-screen max-w-md items-center px-5 py-10">
         <section class="fade-up w-full rounded-3xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-2xl p-7 shadow-2xl shadow-black/60">
+            <div class="mb-5 flex items-center justify-center gap-2.5 text-white">
+                <img src="/assets/contabase-monogram.svg" alt="" aria-hidden="true" class="h-9 w-9 rounded-lg shrink-0">
+                <span class="font-['Geist_Sans',sans-serif] text-xl font-bold tracking-tight select-none">ContaBase</span>
+            </div>
             <!-- Ícone de Segurança -->
             <div class="mb-7 text-center">
                 <div class="pulse-icon mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600/30 to-violet-600/30 border border-indigo-500/30">

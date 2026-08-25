@@ -40,9 +40,16 @@ Acesse o canal público de instalação em https://get-contabase.pages.dev/ e si
 - [Segurança](SECURITY.md)
 - [Privacidade](PRIVACY.md)
 - [Termos de uso](TERMS.md)
+- [Candidata v1.0.0-beta.1 — publicação beta em andamento](docs/releases/v1.0.0-beta.1.md)
 - [Notas da Beta.9 publicada](docs/releases/v0.1.0-beta.9.md)
 - [Última beta publicada](docs/releases/v0.1.0-beta.9.md)
 - [Histórico da primeira beta](docs/releases/v0.1.0-beta.1.md)
+
+## Destaques da candidata v1.0.0-beta.1
+
+- Ao criar ou editar uma receita ou despesa com data futura e confirmar o status como pago, o formulário informa que a confirmação será agendada para aquela data. O lançamento permanece pendente até a execução e não altera o saldo antecipadamente; datas futuras mantidas como pendentes continuam sem mudança de comportamento.
+- A área administrativa de Backups identifica o local lógico `DATA_DIR/backups/` e mostra até sete snapshots diários protegidos. A rotina cria no máximo um arquivo por dia civil, nunca substitui o snapshot daquele dia após importações ou reinícios e mantém backups pré-restore em uma área separada. A presença de um arquivo não substitui o teste periódico de restauração.
+- O PWA usa ícones instaláveis com fundo grafite integral e uma variante `maskable` dentro da zona segura. O manifest recebe versão por conteúdo para evitar a reutilização dos ícones antigos pelo navegador.
 
 ## Avisos da Beta
 

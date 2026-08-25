@@ -161,6 +161,7 @@ type FormTransacaoData struct {
 	ScheduledPaymentDisplay string
 	CompetenciaDisplay      string
 	VencimentoDisplay       string
+	TodayCivil              string
 	StatusHistory           []TransactionStatusEvent
 }
 
@@ -468,7 +469,7 @@ func (h *TransactionHandler) HandleSalvarTransacao(w http.ResponseWriter, r *htt
 	perfStep(reqID, "SalvarTransacao", "parse+validate", time.Since(t0))
 	tInsert := time.Now()
 	dbB := dbSnap(h.DB)
-	assignedInvoiceID, err := h.insertTransaction(tipo, amountCents, descricao, anotacoes, attachmentPath, civilDate, origemContaID, destinoContaID, categoriaID, totalInstallments, paymentStatus, fixo, recorrencia, contactID, dueDate, totalOccurrences, invoiceIDOverride, allowBoxOverdraft)
+	assignedInvoiceID, err := h.insertTransactionFromForm(tipo, amountCents, descricao, anotacoes, attachmentPath, civilDate, origemContaID, destinoContaID, categoriaID, totalInstallments, paymentStatus, fixo, recorrencia, contactID, dueDate, totalOccurrences, invoiceIDOverride, allowBoxOverdraft)
 	dbA := dbSnap(h.DB)
 	perfStep(reqID, "SalvarTransacao", "insertTransaction", time.Since(tInsert))
 	perfDBDelta(reqID, "SalvarTransacao", "insertTransaction", dbB, dbA)
@@ -546,6 +547,18 @@ func (h *TransactionHandler) HandleSalvarTransacao(w http.ResponseWriter, r *htt
 }
 
 func (h *TransactionHandler) insertTransaction(tipo string, amountCents int64, descricao string, anotacoes string, attachmentPath string, date CivilWriteDate, origemContaID string, destinoContaID string, categoriaID string, totalInstallments int64, paymentStatus string, fixed bool, recurrenceFrequency string, contactID string, dueDate OptionalCivilWriteDate, totalOccurrences *int64, invoiceIDOverride string, allowBoxOverdraft bool) (string, error) {
+	return h.insertTransactionWithOptions(tipo, amountCents, descricao, anotacoes, attachmentPath, date, origemContaID, destinoContaID, categoriaID, totalInstallments, paymentStatus, fixed, recurrenceFrequency, contactID, dueDate, totalOccurrences, invoiceIDOverride, allowBoxOverdraft, insertTransactionOptions{})
+}
+
+type insertTransactionOptions struct {
+	scheduleFuturePaid bool
+}
+
+func (h *TransactionHandler) insertTransactionFromForm(tipo string, amountCents int64, descricao string, anotacoes string, attachmentPath string, date CivilWriteDate, origemContaID string, destinoContaID string, categoriaID string, totalInstallments int64, paymentStatus string, fixed bool, recurrenceFrequency string, contactID string, dueDate OptionalCivilWriteDate, totalOccurrences *int64, invoiceIDOverride string, allowBoxOverdraft bool) (string, error) {
+	return h.insertTransactionWithOptions(tipo, amountCents, descricao, anotacoes, attachmentPath, date, origemContaID, destinoContaID, categoriaID, totalInstallments, paymentStatus, fixed, recurrenceFrequency, contactID, dueDate, totalOccurrences, invoiceIDOverride, allowBoxOverdraft, insertTransactionOptions{scheduleFuturePaid: true})
+}
+
+func (h *TransactionHandler) insertTransactionWithOptions(tipo string, amountCents int64, descricao string, anotacoes string, attachmentPath string, date CivilWriteDate, origemContaID string, destinoContaID string, categoriaID string, totalInstallments int64, paymentStatus string, fixed bool, recurrenceFrequency string, contactID string, dueDate OptionalCivilWriteDate, totalOccurrences *int64, invoiceIDOverride string, allowBoxOverdraft bool, options insertTransactionOptions) (string, error) {
 	if err := date.validate(); err != nil {
 		return "", fmt.Errorf("invalid civil competence date: %w", err)
 	}
@@ -562,6 +575,10 @@ func (h *TransactionHandler) insertTransaction(tipo string, amountCents int64, d
 	var accType string
 	if err := tx.QueryRow(`SELECT type FROM accounts WHERE id = ? AND workspace_id = ? AND archived_at IS NULL`, origemContaID, h.WorkspaceID).Scan(&accType); err != nil {
 		return "", fmt.Errorf("conta de origem arquivada ou não encontrada: %w", err)
+	}
+	scheduleFirstPayment := options.scheduleFuturePaid && shouldScheduleFutureFormPayment(date, paymentStatus, tipo, accType)
+	if scheduleFirstPayment {
+		paymentStatus = models.PaymentStatusPending
 	}
 	if err := ensureAccountInWorkspaceTx(tx, destinoContaID, h.WorkspaceID); err != nil {
 		return "", err
@@ -697,6 +714,14 @@ func (h *TransactionHandler) insertTransaction(tipo string, amountCents int64, d
 		if contactID != "" {
 			contactRef = contactID
 		}
+		var scheduledPaymentAt interface{}
+		var scheduledPaymentDateCivil interface{}
+		var scheduledPaymentCreatedBy interface{}
+		if scheduleFirstPayment && i == 1 {
+			scheduledPaymentAt = installmentDate.LegacyUnix()
+			scheduledPaymentDateCivil = installmentDate.Civil()
+			scheduledPaymentCreatedBy = h.UserID
+		}
 
 		var invoiceID interface{}
 		var invoiceOverrideRef interface{}
@@ -766,9 +791,9 @@ func (h *TransactionHandler) insertTransaction(tipo string, amountCents int64, d
 		}
 
 		err = execOneTx(tx, `
-			INSERT INTO transactions (id, workspace_id, user_id, account_id, destination_account_id, category_id, invoice_id, invoice_override_id, type, amount, date, date_civil, description, notes, attachment_path, installment_number, total_installments, parent_id, recurring_rule_id, recurrence_sequence, series_id, status, due_date, due_date_civil, contact_id, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, id, h.WorkspaceID, h.UserID, origemContaID, destID, catID, invoiceID, invoiceOverrideRef, tipo, amount, installmentDate.LegacyUnix(), installmentDate.Civil(), descricao, anotacoes, attachmentPath, i, totalInstallments, pid, recurringRuleID, recurrenceSequence(i, fixed), recurringSeriesID, installmentStatus, installmentDueDate.LegacyValue(), installmentDueDate.CivilValue(), contactRef, now, now)
+			INSERT INTO transactions (id, workspace_id, user_id, account_id, destination_account_id, category_id, invoice_id, invoice_override_id, type, amount, date, date_civil, description, notes, attachment_path, installment_number, total_installments, parent_id, recurring_rule_id, recurrence_sequence, series_id, status, due_date, due_date_civil, contact_id, scheduled_payment_at, scheduled_payment_date_civil, scheduled_payment_created_by, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, id, h.WorkspaceID, h.UserID, origemContaID, destID, catID, invoiceID, invoiceOverrideRef, tipo, amount, installmentDate.LegacyUnix(), installmentDate.Civil(), descricao, anotacoes, attachmentPath, i, totalInstallments, pid, recurringRuleID, recurrenceSequence(i, fixed), recurringSeriesID, installmentStatus, installmentDueDate.LegacyValue(), installmentDueDate.CivilValue(), contactRef, scheduledPaymentAt, scheduledPaymentDateCivil, scheduledPaymentCreatedBy, now, now)
 		if err != nil {
 			return "", fmt.Errorf("insert transaction: %w", err)
 		}
@@ -801,6 +826,35 @@ func (h *TransactionHandler) insertTransaction(tipo string, amountCents int64, d
 	}
 
 	return assignedInvoiceID, nil
+}
+
+func shouldScheduleFutureFormPayment(date CivilWriteDate, paymentStatus, transactionType, accountType string) bool {
+	if paymentStatus != models.PaymentStatusPaid {
+		return false
+	}
+	if transactionType != models.TransactionTypeExpense && transactionType != models.TransactionTypeIncome {
+		return false
+	}
+	if accountType == models.AccountTypeCreditCard {
+		return false
+	}
+	today := civildate.CivilDateToday(appTimeLocation())
+	return civildate.CivilDateDaysBetween(today, date.date) > 0
+}
+
+func (h *TransactionHandler) scheduleFormPaymentTx(tx *sql.Tx, id string, date CivilWriteDate, now int64) error {
+	return execOneTx(tx, `
+		UPDATE transactions
+		SET status = 'pending',
+		    paid_at = NULL,
+		    paid_date_civil = NULL,
+		    scheduled_payment_at = ?,
+		    scheduled_payment_date_civil = ?,
+		    scheduled_payment_created_by = ?,
+		    scheduled_payment_executed_at = NULL,
+		    updated_at = CASE WHEN updated_at >= ? THEN updated_at + 1 ELSE ? END
+		WHERE id = ? AND workspace_id = ? AND status = 'pending'
+	`, date.LegacyUnix(), date.Civil(), h.UserID, now, now, id, h.WorkspaceID)
 }
 
 func (h *TransactionHandler) consumeBoxReserveOnExpenseCreationTx(tx *sql.Tx, transactionType, categoryID string, amount int64, transactionID string, referenceDate int64, now int64, allowBoxOverdraft bool) error {
@@ -1794,31 +1848,51 @@ func (h *TransactionHandler) validateSequenceExistingRow(tx *sql.Tx, existing st
 		return fmt.Errorf("invalid due_date at seq %d: %d (must be positive or NULL)", seq, existing.dueDate.Int64)
 	}
 
-	// --- exception: validate civil integrity, allow controlled divergence ---
-	if isException {
+	// A sequência 1 é o lançamento-base da série. Em dados legados ela pode
+	// preservar escolhas locais (competência, conta, tipo e vencimento) diferentes
+	// da regra que passou a governar as ocorrências seguintes. Trate-a como uma
+	// exceção controlada sem alterar o registro; identidade, integridade civil e
+	// invariantes de fatura continuam obrigatórias. Sequências 2+ seguem estritas.
+	allowControlledDivergence := isException || seq == 1
+	if allowControlledDivergence {
+		if seq == 1 && !isException {
+			if !existing.accountID.Valid || strings.TrimSpace(existing.accountID.String) == "" {
+				return fmt.Errorf("null account_id at seq %d", seq)
+			}
+			var accountExists int
+			if err := tx.QueryRow(`
+				SELECT EXISTS (
+					SELECT 1 FROM accounts WHERE id = ? AND workspace_id = ?
+				)
+			`, existing.accountID.String, workspaceID).Scan(&accountExists); err != nil {
+				return fmt.Errorf("validate account_id at seq %d: %w", seq, err)
+			}
+			if accountExists != 1 {
+				return fmt.Errorf("account_id outside workspace at seq %d", seq)
+			}
+		}
 		if !existing.date.Valid || existing.date.Int64 == 0 {
-			return fmt.Errorf("null date in exception at seq %d", seq)
+			return fmt.Errorf("null date in controlled occurrence at seq %d", seq)
 		}
-		if !existing.dateCivil.Valid {
-			return fmt.Errorf("null date_civil in exception at seq %d", seq)
-		}
-		if _, parseErr := ParseCivilDateInput(existing.dateCivil.String); parseErr != nil {
-			return fmt.Errorf("invalid date_civil in exception at seq %d: %w", seq, parseErr)
+		if existing.dateCivil.Valid {
+			if _, parseErr := ParseCivilDateInput(existing.dateCivil.String); parseErr != nil {
+				return fmt.Errorf("invalid date_civil in controlled occurrence at seq %d: %w", seq, parseErr)
+			}
 		}
 		derivedFromLegacy := civildate.LegacyUnixToCivilDateUTC(existing.date.Int64).String()
-		if existing.dateCivil.String != derivedFromLegacy {
-			return fmt.Errorf("date/date_civil mismatch in exception at seq %d: date→%q date_civil=%q", seq, derivedFromLegacy, existing.dateCivil.String)
+		if existing.dateCivil.Valid && existing.dateCivil.String != derivedFromLegacy {
+			return fmt.Errorf("date/date_civil mismatch at seq %d: date→%q date_civil=%q", seq, derivedFromLegacy, existing.dateCivil.String)
 		}
 		if existing.dueDateCivil.Valid {
 			if _, parseErr := ParseCivilDateInput(existing.dueDateCivil.String); parseErr != nil {
-				return fmt.Errorf("invalid due_date_civil in exception at seq %d: %w", seq, parseErr)
+				return fmt.Errorf("invalid due_date_civil in controlled occurrence at seq %d: %w", seq, parseErr)
 			}
 			if !existing.dueDate.Valid || existing.dueDate.Int64 <= 0 {
-				return fmt.Errorf("due_date NULL or invalid with due_date_civil SET in exception at seq %d: due=%v", seq, existing.dueDate)
+				return fmt.Errorf("due_date NULL or invalid with due_date_civil SET in controlled occurrence at seq %d: due=%v", seq, existing.dueDate)
 			}
 			derivedDue := civildate.LegacyUnixToCivilDateUTC(existing.dueDate.Int64).String()
 			if existing.dueDateCivil.String != derivedDue {
-				return fmt.Errorf("due_date/due_date_civil mismatch in exception at seq %d: due→%q due_civil=%q", seq, derivedDue, existing.dueDateCivil.String)
+				return fmt.Errorf("due_date/due_date_civil mismatch at seq %d: due→%q due_civil=%q", seq, derivedDue, existing.dueDateCivil.String)
 			}
 		}
 		return nil
@@ -2569,6 +2643,7 @@ func newFormTransacaoData(accounts []FormAccount, categories []FormCategory) For
 		DestinoIcon:         "wallet",
 		DestinoColor:        "#6366F1",
 		DestinoProviderMark: "",
+		TodayCivil:          civildate.CivilDateToday(appTimeLocation()).String(),
 	}
 
 	if acc, ok := preferredFormAccount(accounts, "CDB Principal", "conta"); ok {
@@ -3183,6 +3258,9 @@ func buildLancamentosStatusSummary(transactions []TransactionRow, invoices []Inv
 		b.count++
 	}
 	for _, row := range transactions {
+		if row.Type != models.TransactionTypeExpense {
+			continue
+		}
 		add(lancamentosTransactionStatusKey(row), row.Amount)
 	}
 	for _, inv := range invoices {
@@ -6471,6 +6549,23 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 		return
 	}
 
+	scheduleFormPayment := false
+	paymentIntentChanged := oldPaymentStatus != models.PaymentStatusPaid ||
+		oldDateCivilValue != newDateCivil || oldTrType != tipo || oldAccountID != origemContaID
+	if paymentIntentChanged && !invoiceID.Valid {
+		var requestedAccountType string
+		if err := tx.QueryRow(`SELECT type FROM accounts WHERE id = ? AND workspace_id = ? AND archived_at IS NULL`, origemContaID, h.WorkspaceID).Scan(&requestedAccountType); err == nil {
+			scheduleFormPayment = shouldScheduleFutureFormPayment(civilDate, newStatus, tipo, requestedAccountType)
+			if scheduleFormPayment {
+				newStatus = models.PaymentStatusPending
+			}
+		}
+	}
+	if scheduleFormPayment && totalInstallments > 1 && scope != "single" && !recurringRuleID.Valid {
+		http.Error(w, "para agendar, aplique a alteração apenas a este lançamento", http.StatusUnprocessableEntity)
+		return
+	}
+
 	if isBusiness && fixo && !recurringRuleID.Valid && !dueDateProvided && newStatus != "paid" {
 		// PRESERVE: derive dueDateWrite from persisted transaction pair.
 		// Must validate full pair coherence before creating rule/projection.
@@ -6562,11 +6657,7 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 			http.Error(w, "recorrencia sem sequencia valida", http.StatusConflict)
 			return
 		}
-		validationDueIntent := futureDueIntent
-		if newStatus == models.PaymentStatusPaid {
-			validationDueIntent = clearFutureOptionalCivilIntent()
-		}
-		if err := h.validateRecurringFutureCivilIntentTx(tx, recurringRuleID.String, oldSeriesID.String, oldRecurrenceSequence.Int64, oldDateCivilValue, civilDate, validationDueIntent, isBusiness); err != nil {
+		if err := h.validateRecurringFutureCivilIntentTx(tx, recurringRuleID.String, oldSeriesID.String, oldRecurrenceSequence.Int64, oldDateCivilValue, civilDate, futureDueIntent, isBusiness); err != nil {
 			if errors.Is(err, errRecurringFutureCivilConflict) {
 				http.Error(w, "não é possível preservar o vencimento após alterar a competência", http.StatusConflict)
 				return
@@ -6626,6 +6717,12 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 				http.Error(w, "erro ao atualizar série", http.StatusInternalServerError)
 			}
 			return
+		}
+		if scheduleFormPayment {
+			if err := h.scheduleFormPaymentTx(tx, id, civilDate, now); err != nil {
+				http.Error(w, "erro ao agendar lançamento", http.StatusInternalServerError)
+				return
+			}
 		}
 		if err := reconcileInvoicesForTransactionsTx(tx, h.WorkspaceID, touchedIDs, now); err != nil {
 			respondInvoiceCompositionError(w, err)
@@ -6738,6 +6835,12 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 			log.Printf("split future recurring rule error: %v", err)
 			http.Error(w, "erro ao atualizar recorrencias futuras", http.StatusInternalServerError)
 			return
+		}
+		if scheduleFormPayment {
+			if err := h.scheduleFormPaymentTx(tx, id, civilDate, now); err != nil {
+				http.Error(w, "erro ao agendar lançamento", http.StatusInternalServerError)
+				return
+			}
 		}
 		if err := reconcileInvoicesForTransactionsTx(tx, h.WorkspaceID, touchedIDs, now); err != nil {
 			respondInvoiceCompositionError(w, err)
@@ -7088,6 +7191,12 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 	if err != nil {
 		http.Error(w, "erro ao atualizar", http.StatusInternalServerError)
 		return
+	}
+	if scheduleFormPayment {
+		if err := h.scheduleFormPaymentTx(tx, id, civilDate, now); err != nil {
+			http.Error(w, "erro ao agendar lançamento", http.StatusInternalServerError)
+			return
+		}
 	}
 	if newRecurringProjectionRule != nil {
 		if err := h.generateRecurrenceProjection(tx, *newRecurringProjectionRule, now); err != nil {
@@ -7681,9 +7790,6 @@ func recurringFuturePreflightItemIsProtected(it recurringFuturePreflightItem) bo
 		return true
 	}
 	if it.InvoiceID.Valid {
-		return true
-	}
-	if it.HasStatusHistory {
 		return true
 	}
 	return false
@@ -8688,7 +8794,7 @@ func recurringAllPostRuleState(preflight *recurringAllPreflight, params recurrin
 		startDate:            start,
 		startsAt:             startsAt,
 		frequency:            frequency,
-		defaultPaymentStatus: strings.ToUpper(params.Status),
+		defaultPaymentStatus: active.defaultPaymentStatus,
 		dueDatePolicy:        active.dueDatePolicy,
 		dueDateOffsetDays:    active.dueDateOffsetDays,
 	}
@@ -8702,18 +8808,13 @@ func recurringAllPostRuleState(preflight *recurringAllPreflight, params recurrin
 		post.dueDatePolicy = sql.NullString{}
 		post.dueDateOffsetDays = sql.NullInt64{}
 	}
-	if params.Status == models.PaymentStatusPaid {
+	switch dueIntent.state {
+	case recurringAllDueClear:
 		post.dueDatePolicy = sql.NullString{}
 		post.dueDateOffsetDays = sql.NullInt64{}
-	} else {
-		switch dueIntent.state {
-		case recurringAllDueClear:
-			post.dueDatePolicy = sql.NullString{}
-			post.dueDateOffsetDays = sql.NullInt64{}
-		case recurringAllDueSet:
-			post.dueDatePolicy = sql.NullString{}
-			post.dueDateOffsetDays = dueDateOffsetDays(dueIntent.value, params.Date)
-		}
+	case recurringAllDueSet:
+		post.dueDatePolicy = sql.NullString{}
+		post.dueDateOffsetDays = dueDateOffsetDays(dueIntent.value, params.Date)
 	}
 	return post, nil
 }
@@ -8825,17 +8926,6 @@ func (h *TransactionHandler) updateAllRecurringSeries4BB2Tx(tx *sql.Tx, params r
 	dateChanged := preflight.selected.validatedDate.Civil() != params.Date.Civil()
 	frequencyChanged := preflight.selectedRule.frequency != params.Frequency
 	dueChange := dueIntent.state == recurringAllDueClear || dueIntent.state == recurringAllDueSet
-	if params.Status == models.PaymentStatusPaid {
-		if preflight.activeRule.dueDateOffsetDays.Valid || preflight.activeRule.dueDatePolicy.Valid {
-			dueChange = true
-		}
-		for _, item := range preflight.items {
-			if !item.protected && item.validatedDueDate.Valid() {
-				dueChange = true
-				break
-			}
-		}
-	}
 	calendarChanged := dateChanged || frequencyChanged || dueChange
 	if calendarChanged && (preflight.selected.recurrenceSequence != 1 || len(preflight.rules) != 1 || !preflight.selectedRule.active) {
 		return nil, nil, recurringAllConflictf("calendar changes require sequence one of an unversioned series")
@@ -8874,9 +8964,9 @@ func (h *TransactionHandler) updateAllRecurringSeries4BB2Tx(tx *sql.Tx, params r
 				return nil, nil, recurringAllConflictf("occurrence date cannot be calculated")
 			}
 		}
-		if !params.IsBusiness || params.Status == models.PaymentStatusPaid {
+		if !params.IsBusiness {
 			plan.due = OptionalCivilWriteDate{}
-			plan.writeDue = item.validatedDueDate.Valid() || params.Status == models.PaymentStatusPaid
+			plan.writeDue = item.validatedDueDate.Valid()
 		} else {
 			switch dueIntent.state {
 			case recurringAllDueClear:
@@ -8977,6 +9067,13 @@ func (h *TransactionHandler) updateAllRecurringSeries4BB2Tx(tx *sql.Tx, params r
 	oldInvoiceIDs := make([]string, 0)
 	for _, plan := range mutablePlans {
 		item := plan.item
+		itemStatus := item.paymentStatus
+		if item.id == params.CurrentID {
+			itemStatus = params.Status
+		}
+		if post.trType == models.TransactionTypeExpense && newAccountType == models.AccountTypeCreditCard {
+			itemStatus = models.PaymentStatusPaid
+		}
 
 		if err := h.adjustReserveForSingleTransactionUpdateTx(tx, item.id, item.trType, item.categoryID, item.amount, post.trType, post.categoryID, post.amount, plan.date.LegacyUnix(), params.Now, params.AllowBoxOverdraft); err != nil {
 			return nil, nil, err
@@ -9011,7 +9108,7 @@ func (h *TransactionHandler) updateAllRecurringSeries4BB2Tx(tx *sql.Tx, params r
 			WHERE id = ? AND workspace_id = ? AND series_id = ?
 			  AND recurring_rule_id = ? AND recurrence_sequence = ? AND updated_at = ?
 		`, post.trType, post.accountID, destRef, post.amount,
-			post.description, categoryRef, params.Status, invoiceRef,
+			post.description, categoryRef, itemStatus, invoiceRef,
 			plan.writeDate, plan.date.LegacyUnix(), plan.writeDate, plan.date.Civil(),
 			plan.writeDue, plan.due.LegacyValue(), plan.writeDue, plan.due.CivilValue(),
 			plan.contactWrite, plan.contact,
@@ -9028,8 +9125,8 @@ func (h *TransactionHandler) updateAllRecurringSeries4BB2Tx(tx *sql.Tx, params r
 		if affected != 1 {
 			return nil, nil, recurringAllConflictf("occurrence concurrency guard lost")
 		}
-		if params.Status == models.PaymentStatusPaid {
-			if err := services.ApplyBalanceEffect(tx, h.WorkspaceID, post.trType, newAccountType, params.Status, post.amount, post.accountID, post.destinationID, params.Now); err != nil {
+		if itemStatus == models.PaymentStatusPaid {
+			if err := services.ApplyBalanceEffect(tx, h.WorkspaceID, post.trType, newAccountType, itemStatus, post.amount, post.accountID, post.destinationID, params.Now); err != nil {
 				return nil, nil, err
 			}
 		}
@@ -9585,7 +9682,8 @@ func validateRecurringSeriesChainAndFindActiveLeafTx(tx *sql.Tx, workspaceID, se
 // Semântica:
 //   - Garante series_id via EnsureRecurringSeriesForRuleTx.
 //   - Encontra a regra ativa da mesma series_id/workspace que cobre currentSequence.
-//   - Se não houver regra ativa cobrindo currentSequence, retorna erro sem deletar nada.
+//   - Se um vínculo legado apontar para um ancestral encerrado, valida a cadeia
+//     linear completa e usa a folha ativa descendente.
 //   - Encerra essa regra em currentSequence-1 e desativa (active=0).
 //   - Apaga fisicamente apenas transações futuras deletáveis (recurrence_sequence >= currentSequence),
 //     preservando pagas sem fatura, faturas CLOSED/PAID e exceções manuais.
@@ -9618,16 +9716,12 @@ func (h *TransactionHandler) deleteFutureRecurringSeriesVersionedTx(tx *sql.Tx, 
 		}
 		ownerRecorded := ruleID
 		var ownerStart int64
-		var ownerEnd sql.NullInt64
 		if err := tx.QueryRow(`
-			SELECT effective_start_sequence, effective_end_sequence
+			SELECT effective_start_sequence
 			FROM recurring_rules
 			WHERE id = ? AND workspace_id = ?
-		`, ownerRecorded, h.WorkspaceID).Scan(&ownerStart, &ownerEnd); err != nil {
+		`, ownerRecorded, h.WorkspaceID).Scan(&ownerStart); err != nil {
 			return nil, nil, err
-		}
-		if currentSequence < ownerStart || (ownerEnd.Valid && currentSequence > ownerEnd.Int64) {
-			return nil, nil, fmt.Errorf("nenhuma regra ativa cobre a sequencia atual")
 		}
 		activeDescendantID, activeStart, err := validateRecurringSeriesChainAndFindActiveLeafTx(tx, h.WorkspaceID, seriesID, ownerRecorded)
 		if err != nil {
@@ -9747,23 +9841,21 @@ func (h *TransactionHandler) splitFutureRecurringRuleTx(tx *sql.Tx, params recur
 		newStatus = "paid"
 	}
 	appliedDueDateIntent := params.DueDateIntent
-	if newStatus == models.PaymentStatusPaid {
-		appliedDueDateIntent = clearFutureOptionalCivilIntent()
-	}
 
 	var ruleUserID sql.NullString
 	var ruleSeriesID sql.NullString
 	var effectiveStartSequence int64
 	var sourceEffectiveEnd sql.NullInt64
 	var totalOccurrences sql.NullInt64
+	var ruleDefaultPaymentStatus string
 	var ruleDueDatePolicy sql.NullString
 	var ruleDueDateOffsetDays sql.NullInt64
 	if err := tx.QueryRow(`
 		SELECT user_id, series_id, COALESCE(effective_start_sequence, 1), effective_end_sequence,
-		       total_occurrences, due_date_policy, due_date_offset_days
+		       total_occurrences, default_payment_status, due_date_policy, due_date_offset_days
 		FROM recurring_rules
 		WHERE id = ? AND workspace_id = ?
-	`, params.RuleID, h.WorkspaceID).Scan(&ruleUserID, &ruleSeriesID, &effectiveStartSequence, &sourceEffectiveEnd, &totalOccurrences, &ruleDueDatePolicy, &ruleDueDateOffsetDays); err != nil {
+	`, params.RuleID, h.WorkspaceID).Scan(&ruleUserID, &ruleSeriesID, &effectiveStartSequence, &sourceEffectiveEnd, &totalOccurrences, &ruleDefaultPaymentStatus, &ruleDueDatePolicy, &ruleDueDateOffsetDays); err != nil {
 		return "", nil, nil, err
 	}
 
@@ -9863,7 +9955,10 @@ func (h *TransactionHandler) splitFutureRecurringRuleTx(tx *sql.Tx, params recur
 	}
 	ruleContactRef := recurringFutureSplitContactRef(currentItem, params.ContactID, params.ContactProvided, params.IsBusiness)
 	projectionContactID, _ := ruleContactRef.(string)
-	ruleStatus := strings.ToUpper(newStatus)
+	ruleStatus := strings.ToUpper(strings.TrimSpace(ruleDefaultPaymentStatus))
+	if ruleStatus == "" {
+		ruleStatus = "PENDING"
+	}
 	targetRuleID := uuid.NewString()
 	var previousEndDate interface{}
 	var previousEndDateCivil interface{}
@@ -9953,6 +10048,13 @@ func (h *TransactionHandler) splitFutureRecurringRuleTx(tx *sql.Tx, params recur
 		if !recurringFutureSplitItemMutable(item) {
 			continue
 		}
+		itemStatus := item.paymentStatus
+		if item.id == params.CurrentID {
+			itemStatus = newStatus
+		}
+		if params.Type == models.TransactionTypeExpense && newAccType == models.AccountTypeCreditCard {
+			itemStatus = models.PaymentStatusPaid
+		}
 		if item.invoiceID.Valid && item.invoiceID.String != "" {
 			oldInvoiceIDs = append(oldInvoiceIDs, item.invoiceID.String)
 		}
@@ -10011,12 +10113,12 @@ func (h *TransactionHandler) splitFutureRecurringRuleTx(tx *sql.Tx, params recur
 			    series_id = ?,
 			    updated_at = ?
 			WHERE id = ? AND workspace_id = ?
-		`, params.Type, params.AccountID, destID, params.Amount, newItemDate, newItemCivilDate.Civil(), params.Description, params.Notes, params.AttachmentPath, catID, newStatus, dueDateRef, dueDateCivilRef, contactRef, invoiceID, targetRuleID, item.recurrenceSequence, seriesID, params.Now, item.id, h.WorkspaceID); err != nil {
+		`, params.Type, params.AccountID, destID, params.Amount, newItemDate, newItemCivilDate.Civil(), params.Description, params.Notes, params.AttachmentPath, catID, itemStatus, dueDateRef, dueDateCivilRef, contactRef, invoiceID, targetRuleID, item.recurrenceSequence, seriesID, params.Now, item.id, h.WorkspaceID); err != nil {
 			return "", nil, nil, err
 		}
 
-		if newStatus == "paid" {
-			if err := services.ApplyBalanceEffect(tx, h.WorkspaceID, params.Type, newAccType, newStatus, params.Amount, params.AccountID, params.DestinationID, params.Now); err != nil {
+		if itemStatus == "paid" {
+			if err := services.ApplyBalanceEffect(tx, h.WorkspaceID, params.Type, newAccType, itemStatus, params.Amount, params.AccountID, params.DestinationID, params.Now); err != nil {
 				return "", nil, nil, err
 			}
 		}

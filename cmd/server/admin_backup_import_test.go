@@ -308,12 +308,13 @@ func TestAdminBackupImportRateLimitResponseIsFriendly(t *testing.T) {
 		t.Fatalf("load templates: %v", err)
 	}
 	h := handlers.ConfiguracoesHandler{
-		DB:           db,
-		Templates:    tpl,
-		WorkspaceID:  "workspace-rbac",
-		UserID:       "admin-user",
-		ActorRole:    models.RoleAdmin,
-		SessionToken: "session-token",
+		DB:                  db,
+		Templates:           tpl,
+		AutomaticBackupsDir: t.TempDir(),
+		WorkspaceID:         "workspace-rbac",
+		UserID:              "admin-user",
+		ActorRole:           models.RoleAdmin,
+		SessionToken:        "session-token",
 	}
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/admin/backups/importar", nil)
@@ -390,6 +391,8 @@ func TestAdminBackupImportFormPreventsDuplicateSubmits(t *testing.T) {
 		"data-backup-dropzone",
 		`data-lucide="download"`,
 		`data-lucide="upload"`,
+		`cb-button cb-button-primary`,
+		`DATA_DIR/backups/`,
 	} {
 		if !strings.Contains(markup, want) {
 			t.Fatalf("expected backup import form markup to contain %q", want)
@@ -397,6 +400,9 @@ func TestAdminBackupImportFormPreventsDuplicateSubmits(t *testing.T) {
 	}
 	if strings.Contains(markup, `method="post"`) {
 		t.Fatalf("backup import form should not mix native POST with hx-post")
+	}
+	if strings.Contains(markup, `class="cb-card-muted border-[var(--cb-danger)]/20`) {
+		t.Fatalf("backup import form must keep danger styling limited to warning copy")
 	}
 }
 

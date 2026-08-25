@@ -11,6 +11,35 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
+## [v1.0.0-beta.1] — 2026-08-25
+
+### Adicionado
+- **Lançamentos — confirmação futura:** ao criar ou editar uma receita ou despesa fora de cartão com data futura e status pago, o formulário avisa que a confirmação será agendada para a competência escolhida. O registro é persistido como pendente com agendamento, sem efeito antecipado no saldo; lançamentos futuros mantidos como pendentes continuam inalterados.
+- **Backups — snapshots diários protegidos:** o painel do administrador global passa a informar o local lógico `DATA_DIR/backups/` e a listar nome, data/hora e tamanho de até sete backups diários. A rotina verifica a cobertura a cada hora, cria no máximo um snapshot por dia civil e publica o arquivo como somente leitura sem substituir um snapshot já existente.
+
+### Alterado
+- **Identidade visual:** o monograma `CB` aprovado passa a representar o ContaBase no cabeçalho, autenticação, configuração inicial, indicador global de carregamento, favicons e assets do PWA. A identidade visual principal deixa de remeter a cifrão ou dinheiro.
+- **Recorrências — status por ocorrência:** em "Este e futuros" e "Toda a recorrência", valor, descrição, conta, categoria, competência e demais propriedades da regra continuam sendo aplicados conforme o escopo, mas o status de pagamento informado fica restrito ao lançamento selecionado. As demais ocorrências preservam o próprio status e novas projeções usam o status padrão da regra.
+- **Backups — hierarquia das ações:** o botão "Importar e Sobrescrever Banco" usa novamente a cor violeta das ações primárias. O vermelho fica reservado ao bloco textual que alerta sobre a substituição do banco e a preservação separada de uploads e segredos.
+
+### Corrigido
+- **Docker — recursos visuais:** a imagem final volta a incluir a árvore completa de `assets/`, evitando respostas 404 para monograma, favicons, manifesto e ícones do PWA após rebuilds e atualizações de instalações existentes.
+- **PWA — ícone instalado:** os ícones instaláveis usam fundo grafite integral; a variante `maskable` mantém o monograma dentro da zona central segura e o manifest recebe versão por conteúdo para impedir a reutilização dos assets antigos em cache.
+- **Lançamentos — resumo financeiro:** os totais Pago, Pendente, Vencido e Agendado passam a considerar apenas despesas e obrigações de fatura visíveis, sem misturar receitas ou transferências.
+- **Recorrências — edição futura:** ocorrências pendentes com histórico de status podem receber alterações futuras sem propagar o status de pagamento nem alterar evidências protegidas.
+- **Recorrências — exclusão futura:** a exclusão aceita vínculos legados que ainda apontam para um ancestral encerrado, desde que a cadeia completa da mesma série e workspace seja linear e possua uma única folha ativa válida.
+- **Materialização recorrente — compatibilidade legada:** exceções antigas sem `date_civil` deixam de interromper a projeção quando a data inteira é válida. A primeira ocorrência também pode preservar conta, tipo, competência ou vencimento locais diferentes da regra, enquanto as sequências seguintes continuam estritas e seguem a regra ativa.
+- **Testes de faturas — calendário:** fixtures de faturas abertas, roteamento para a próxima competência, recorrências e relatórios deixam de depender de agosto/setembro de 2026 ainda estarem no futuro. Estados financeiros explícitos continuam sendo exercitados sem alterar as regras de produção.
+
+### Segurança/Confiabilidade
+- A compatibilidade da primeira ocorrência não altera dados automaticamente: identidade da regra, workspace da conta, integridade dos pares de datas civis e invariantes de fatura continuam obrigatórias.
+- Lançamentos pagos, exceções manuais e itens protegidos por fatura permanecem fora de mutações recorrentes incompatíveis.
+- A confirmação visual de backups é somente leitura, restrita ao administrador global e limitada a metadados de arquivos regulares `contabase-daily-*.db`; não expõe caminho absoluto, conteúdo nem cria uma nova rota de download. A listagem confirma presença, não integridade ou restaurabilidade.
+- Na transição, o backup automático legado mais antigo de cada dia retido é adotado como snapshot diário e duplicatas do mesmo dia são removidas somente depois da publicação protegida. Backups `pre-restore` e `pre-migration` permanecem separados e fora dessa retenção.
+
+### Release pipeline
+- A candidata entra no fluxo público somente por gates separados: export revisado, Release Preflight no SHA exato, tag imutável, draft prerelease, validação de artifacts/checksums/GHCR e smokes antes da publicação da Release e da atualização do canal Beta.
+
 ## [v0.1.0-beta.9] — HOTFIX — 2026-08-15
 
 ### Adicionado

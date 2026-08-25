@@ -19,7 +19,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16x16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
-    <link rel="manifest" href="/assets/manifest.json">
+    <link rel="manifest" href="{{assetPath "/assets/manifest.json"}}">
 
     <!-- Fontes self-hosted -->
 
@@ -37,7 +37,7 @@
 </head>
 <body class="bg-[var(--cb-bg)] text-[var(--cb-text-main)] font-sans antialiased min-h-screen w-full max-w-full overflow-x-hidden transition-colors duration-200">
     <div id="htmx-indicator" class="htmx-indicator fixed top-3 left-1/2 z-[200] -translate-x-1/2 flex items-center gap-2 rounded-full border border-zinc-200 bg-white/95 px-4 py-2 text-xs font-medium text-zinc-700 shadow-xl backdrop-blur-md dark:border-white/10 dark:bg-zinc-900/95 dark:text-white/80">
-        <span class="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-violet-500 border-t-transparent"></span>
+        <img src="/assets/contabase-monogram.svg" alt="" aria-hidden="true" class="h-4 w-4 rounded shrink-0">
         Processando...
     </div>
     <div id="global-feedback" class="pointer-events-none fixed left-1/2 top-16 z-[210] hidden -translate-x-1/2 rounded-2xl border px-4 py-2.5 text-sm font-medium shadow-xl backdrop-blur-md border-rose-300/50 bg-rose-50 text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/15 dark:text-rose-50"></div>
@@ -45,10 +45,9 @@
     <header class="sticky top-0 z-30 bg-[var(--cb-surface-overlay)] backdrop-blur-xl border-b border-[var(--cb-border-subtle)] shadow-sm transition-colors duration-200">
         <div class="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3 md:px-6 lg:px-8">
             <!-- Brand / Logo Section -->
-            <a href="/" class="flex items-center shrink-0 btn-tactile" hx-get="/" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">
-                <span class="font-['Geist_Sans',sans-serif] font-bold text-2xl tracking-tight select-none">
-                    <span class="text-[#7107E6] dark:text-[#A78BFA]">Conta</span><span class="text-[#4c4c4c] dark:text-white">Base</span>
-                </span>
+            <a href="/" class="flex items-center gap-2 shrink-0 btn-tactile" hx-get="/" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" aria-label="ContaBase — Dashboard">
+                <img src="/assets/contabase-monogram.svg" alt="" aria-hidden="true" class="h-8 w-8 rounded-lg shrink-0">
+                <span class="font-['Geist_Sans',sans-serif] font-bold text-lg tracking-tight text-[var(--cb-text-main)] select-none">ContaBase</span>
             </a>
 
             <!-- Navigation links -->
@@ -61,22 +60,22 @@
                     hx-get="/lancamentos" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">
                     <i data-lucide="list" class="h-4 w-4"></i><span data-role-lancamentos>Lançamentos</span>
                 </a>
-                <a href="/relatorios" data-preserve-month class="nav-link flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs lg:text-sm font-medium transition-all btn-tactile {{if eq .Title "Relatórios"}}is-active{{else}}text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]{{end}}"
-                    hx-get="/relatorios" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">
-                    <i data-lucide="trending-up" class="h-4 w-4"></i><span>Relatórios</span>
-                </a>
                 <a id="desktop-nav-metas" href="/metas" class="nav-link flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs lg:text-sm font-medium transition-all btn-tactile {{if eq .Title "Metas"}}is-active{{else}}text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]{{end}}"
                     hx-get="/metas" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
                     title="Metas">
                     <i data-lucide="target" class="h-4 w-4"></i><span>Metas</span>
                 </a>
+                <a id="desktop-nav-contas-pr" href="/contas" data-preserve-month class="nav-link flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs lg:text-sm font-medium transition-all btn-tactile {{if eq .Title "Contas"}}is-active{{else}}text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]{{end}}"
+                    hx-get="/contas" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">
+                    <i data-lucide="file-text" class="h-4 w-4"></i><span>Contas</span>
+                </a>
                 <a id="desktop-nav-contatos" href="/contatos" class="hidden nav-link flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs lg:text-sm font-medium transition-all btn-tactile {{if eq .Title "Contatos"}}is-active{{else}}text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]{{end}}"
                     hx-get="/contatos" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">
                     <i data-lucide="users-round" class="h-4 w-4"></i><span>Contatos</span>
                 </a>
-                <a id="desktop-nav-contas-pr" href="/contas" data-preserve-month class="nav-link flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs lg:text-sm font-medium transition-all btn-tactile {{if eq .Title "Contas"}}is-active{{else}}text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]{{end}}"
-                    hx-get="/contas" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">
-                    <i data-lucide="file-text" class="h-4 w-4"></i><span>Contas</span>
+                <a href="/relatorios" data-preserve-month class="nav-link flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs lg:text-sm font-medium transition-all btn-tactile {{if eq .Title "Relatórios"}}is-active{{else}}text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]{{end}}"
+                    hx-get="/relatorios" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">
+                    <i data-lucide="trending-up" class="h-4 w-4"></i><span>Relatórios</span>
                 </a>
             </nav>
 

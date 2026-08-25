@@ -57,8 +57,11 @@ func TestContasPayablesIncludesCardInvoices(t *testing.T) {
 			t.Errorf("expected to find invoice closed 2026-08 row")
 		} else if row.Amount != 40000 {
 			t.Errorf("invoice closed 2026-08 amount = %d, want 40000", row.Amount)
-		} else if row.IsOverdue {
-			t.Errorf("invoice closed 2026-08 (vence 2026-08-20) should not be overdue hoje=2026-08-10")
+		} else {
+			wantOverdue := businessDayStartUnix(time.Now()) > testUnixDate("2026-08-20")
+			if row.IsOverdue != wantOverdue {
+				t.Errorf("invoice closed overdue = %v, want %v for due date 2026-08-20", row.IsOverdue, wantOverdue)
+			}
 		}
 	})
 

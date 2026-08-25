@@ -98,6 +98,109 @@ func TestConfiguracoesAdminSectionsRenderForAdmin(t *testing.T) {
 	}
 }
 
+func TestConfiguracoesAdminBackupsShowsSafeAutomaticBackupMetadata(t *testing.T) {
+	handler := newConfiguracoesRenderTestHandler(t)
+	t.Setenv("CONTABASE_TIMEZONE", "UTC")
+	backupName := "contabase-daily-20260825.db"
+	backupPath := filepath.Join(handler.AutomaticBackupsDir, backupName)
+	if err := os.WriteFile(backupPath, []byte("sqlite-backup"), 0o600); err != nil {
+		t.Fatalf("write automatic backup fixture: %v", err)
+	}
+	createdAt := time.Date(2026, 8, 25, 14, 25, 0, 0, time.UTC)
+	if err := os.Chtimes(backupPath, createdAt, createdAt); err != nil {
+		t.Fatalf("set automatic backup fixture time: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/backups", nil)
+	req.Header.Set("HX-Request", "true")
+	rr := httptest.NewRecorder()
+	handler.HandleConfiguracoesSection(rr, req, "admin-backups")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for _, want := range []string{
+		`DATA_DIR/backups/`,
+		`retenção: últimos 7 dias`,
+		`Backups diários protegidos`,
+		backupName,
+		`25/08/2026 14:25`,
+		`13 B`,
+		`A presença do arquivo não substitui a validação periódica de restauração.`,
+	} {
+		assertContains(t, body, want)
+	}
+	if strings.Contains(body, handler.AutomaticBackupsDir) {
+		t.Fatalf("backup page must not expose the absolute directory %q", handler.AutomaticBackupsDir)
+	}
+	if strings.Contains(body, `href="`+backupName) {
+		t.Fatalf("automatic backup metadata must not create a download link")
+	}
+}
+
+func TestListAutomaticBackupRowsFiltersSortsAndCaps(t *testing.T) {
+	t.Setenv("CONTABASE_TIMEZONE", "UTC")
+	dir := t.TempDir()
+	names := []string{
+		"contabase-daily-20260818.db",
+		"contabase-daily-20260819.db",
+		"contabase-daily-20260820.db",
+		"contabase-daily-20260821.db",
+		"contabase-daily-20260822.db",
+		"contabase-daily-20260823.db",
+		"contabase-daily-20260824.db",
+		"contabase-daily-20260825.db",
+	}
+	base := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	for i, name := range names {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(strings.Repeat("x", 2048)), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		modTime := base.AddDate(0, 0, i)
+		if err := os.Chtimes(path, modTime, modTime); err != nil {
+			t.Fatalf("set time %s: %v", name, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manual.db"), []byte("manual"), 0o600); err != nil {
+		t.Fatalf("write unrelated db: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "contabase-note.txt"), []byte("note"), 0o600); err != nil {
+		t.Fatalf("write unrelated text: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "contabase-directory.db"), 0o700); err != nil {
+		t.Fatalf("create unrelated directory: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(dir, names[7]), filepath.Join(dir, "contabase-daily-20260826.db")); err != nil {
+		t.Logf("symlink fixture unavailable: %v", err)
+	}
+
+	rows, err := listAutomaticBackupRows(dir, 7)
+	if err != nil {
+		t.Fatalf("list automatic backups: %v", err)
+	}
+	if len(rows) != 7 {
+		t.Fatalf("rows = %d, want 7: %+v", len(rows), rows)
+	}
+	if rows[0].Name != names[7] || rows[6].Name != names[1] {
+		t.Fatalf("unexpected order/cap: %+v", rows)
+	}
+	if rows[0].CreatedAt != "25/08/2026 12:00" || rows[0].Size != "2.0 KB" {
+		t.Fatalf("unexpected metadata: %+v", rows[0])
+	}
+	for _, row := range rows {
+		if filepath.Base(row.Name) != row.Name || row.Name == "contabase-daily-20260826.db" {
+			t.Fatalf("unsafe backup name returned: %+v", row)
+		}
+	}
+
+	missingRows, err := listAutomaticBackupRows(filepath.Join(dir, "missing"), 7)
+	if err != nil || len(missingRows) != 0 {
+		t.Fatalf("missing directory = (%+v, %v), want empty without error", missingRows, err)
+	}
+}
+
 func TestConfiguracoesAdminUsersRenderWorkspaceRoleControls(t *testing.T) {
 	handler := newConfiguracoesRenderTestHandler(t)
 	now := time.Now().Unix()
@@ -412,13 +515,14 @@ func newConfiguracoesRenderTestHandler(t *testing.T) ConfiguracoesHandler {
 	`, now)
 
 	return ConfiguracoesHandler{
-		DB:             db,
-		Templates:      testConfiguracoesRenderTemplates(t),
-		WorkspaceID:    "config-workspace",
-		UserID:         "config-user",
-		ActorRole:      models.RoleAdmin,
-		CanConfigRead:  true,
-		CanConfigWrite: true,
+		DB:                  db,
+		Templates:           testConfiguracoesRenderTemplates(t),
+		AutomaticBackupsDir: t.TempDir(),
+		WorkspaceID:         "config-workspace",
+		UserID:              "config-user",
+		ActorRole:           models.RoleAdmin,
+		CanConfigRead:       true,
+		CanConfigWrite:      true,
 	}
 }
 

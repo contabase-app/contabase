@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -452,15 +453,17 @@ func TestHandleExportarCaixaPDFPrevisaoUsaModoETitulo(t *testing.T) {
 	seedCaixaPDFScenario(t, db)
 
 	now := time.Now().Unix()
-	julhoDate := testUnixDate("2026-07-10")
-	agostoDue := testUnixDate("2026-08-15")
+	targetMonth := time.Now().UTC().AddDate(0, 1, 0)
+	targetMonth = time.Date(targetMonth.Year(), targetMonth.Month(), 1, 12, 0, 0, 0, time.UTC)
+	accountingDate := targetMonth.AddDate(0, -1, 9).Unix()
+	targetDue := targetMonth.AddDate(0, 0, 14).Unix()
 	execTestSQL(t, db, `
 		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, due_date, description, status, paid_at, installment_number, total_installments, created_at, updated_at) VALUES
 		('tx-pdf-caixa-prev', 'ws-pdf-caixa', 'u-pdf-caixa', 'acc-pdf-caixa', 'cat-pdf-caixa-admin', 'EXPENSE', 25000, ?, ?, 'Banco previsto agosto', 'pending', NULL, 1, 1, ?, ?)
-	`, julhoDate, agostoDue, now, now)
+	`, accountingDate, targetDue, now, now)
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-caixa", UserID: "u-pdf-caixa"}
-	req := httptest.NewRequest(http.MethodGet, "/relatorios/caixa.pdf?modo=previsao&mes=8&ano=2026", nil)
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/relatorios/caixa.pdf?modo=previsao&mes=%d&ano=%d", targetMonth.Month(), targetMonth.Year()), nil)
 	rr := httptest.NewRecorder()
 
 	handler.HandleExportarCaixaPDF(rr, req)
@@ -468,7 +471,8 @@ func TestHandleExportarCaixaPDFPrevisaoUsaModoETitulo(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
 	}
-	if got := rr.Header().Get("Content-Disposition"); !strings.Contains(got, `filename="caixa-previsao-2026-08.pdf"`) {
+	wantFilename := fmt.Sprintf(`filename="caixa-previsao-%04d-%02d.pdf"`, targetMonth.Year(), targetMonth.Month())
+	if got := rr.Header().Get("Content-Disposition"); !strings.Contains(got, wantFilename) {
 		t.Fatalf("Content-Disposition = %q, want caixa-previsao filename", got)
 	}
 	body := rr.Body.String()

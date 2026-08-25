@@ -207,6 +207,7 @@ func TestSeriesFutureCardExpenseKeepsCompetencyReserveConsumption(t *testing.T) 
 	seedBoxConsumeCreationScenario(t, db)
 
 	_, secondID, thirdID := createInstallmentSeriesForReserveTest(t, db, "Serie Future Cartao", "card-test", "cat-expense-direct", 3000, 3)
+	keepOpenTestInvoicesFuture(t, db, "card-test")
 
 	handler := testPaidInvoiceMutationHandler(db)
 	rr := updateTransactionForReserveScopeTest(t, handler, secondID, "future", map[string]string{

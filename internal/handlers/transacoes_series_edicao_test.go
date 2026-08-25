@@ -256,19 +256,18 @@ func recurringRuleCountBySeries(t *testing.T, db *sql.DB, seriesID string) int {
 func seedAdditionalCardOccurrences(t *testing.T, db *sql.DB, ruleID, seriesID, description string) (middleID, futureID string) {
 	t.Helper()
 	now := time.Now().Unix()
+	closingUnix, dueUnix := futureOpenInvoiceDatesForTest()
 	for _, inv := range []struct {
 		id        string
 		reference string
-		closeDate string
-		dueDate   string
 	}{
-		{"invoice-2026-09", "2026-09", "2026-08-20", "2026-09-10"},
-		{"invoice-2026-10", "2026-10", "2026-09-20", "2026-10-10"},
+		{"invoice-2026-09", "2026-09"},
+		{"invoice-2026-10", "2026-10"},
 	} {
 		execTestSQL(t, db, `
 			INSERT OR IGNORE INTO invoices (id, account_id, reference, closing_date, due_date, status, created_at)
 			VALUES (?, 'card-test', ?, ?, ?, 'OPEN', ?)
-		`, inv.id, inv.reference, testUnixDate(inv.closeDate), testUnixDate(inv.dueDate), now)
+		`, inv.id, inv.reference, closingUnix, dueUnix, now)
 	}
 	middleID = "tx-p51-card-2"
 	futureID = "tx-p51-card-3"
@@ -1357,6 +1356,7 @@ func TestInstallmentAllScopeOnInvoiceDoesNotRegress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert installment: %v", err)
 	}
+	keepOpenTestInvoicesFuture(t, db, "card-test")
 	if got := seriesCountByDescription(t, db, desc); got != 3 {
 		t.Fatalf("precondition count = %d, want 3", got)
 	}
@@ -1397,6 +1397,7 @@ func TestInstallmentFutureScopeOnInvoiceDoesNotRegress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert installment: %v", err)
 	}
+	keepOpenTestInvoicesFuture(t, db, "card-test")
 
 	ids := recurringIDsByDescription(t, db, desc)
 	h := deleteHandler(t, db)
@@ -1924,7 +1925,50 @@ func TestRecurringAllVersionedPersonalKeepsContactNull(t *testing.T) {
 	}
 }
 
-func TestRecurringAllVersionedStatusPaidAdjustsBalance(t *testing.T) {
+func TestRecurringFutureVersionedStatusPaidChangesOnlySelectedOccurrence(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	const desc = "Assinatura P51"
+	const series = "series-p51-future-local-status"
+	ruleID, firstID := seedRecurringSeriesOnChecking(t, db, desc, "2026-06-05", 3)
+	attachRecurringSeriesIdentity(t, db, ruleID, series)
+	middleID, futureID := seedAdditionalCheckingOccurrences(t, db, ruleID, series, desc)
+
+	balanceBefore := accountBalance(t, db, "checking-test")
+	h := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test", Templates: testOOBTemplatesSeries(t)}
+	req, rr := seriesEditRequest(t, middleID, "2026-07-05", "future", "checking-test", "paid")
+	h.HandleAtualizarTransacao(rr, req, middleID)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	}
+
+	if got := accountBalance(t, db, "checking-test") - balanceBefore; got != -15000 {
+		t.Fatalf("balance delta = %d, want -15000", got)
+	}
+	wantStatuses := map[string]string{
+		firstID:  "pending",
+		middleID: "paid",
+		futureID: "pending",
+	}
+	for txID, wantStatus := range wantStatuses {
+		var status string
+		if err := db.QueryRow(`SELECT status FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, txID).Scan(&status); err != nil {
+			t.Fatalf("query status for %s: %v", txID, err)
+		}
+		if status != wantStatus {
+			t.Fatalf("%s status = %q, want %q", txID, status, wantStatus)
+		}
+	}
+	var defaultStatus string
+	if err := db.QueryRow(`SELECT default_payment_status FROM recurring_rules WHERE workspace_id = 'ws-test' AND series_id = ? AND active = 1`, series).Scan(&defaultStatus); err != nil {
+		t.Fatalf("query active rule default status: %v", err)
+	}
+	if defaultStatus != "PENDING" {
+		t.Fatalf("active rule default status = %q, want PENDING", defaultStatus)
+	}
+}
+
+func TestRecurringAllVersionedStatusPaidChangesOnlySelectedOccurrence(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	const desc = "Assinatura P51"
@@ -1953,18 +1997,30 @@ func TestRecurringAllVersionedStatusPaidAdjustsBalance(t *testing.T) {
 	}
 
 	balanceAfter := accountBalance(t, db, "checking-test")
-	var wantDelta int64 = -30000
+	var wantDelta int64 = -10000
 	if got := balanceAfter - balanceBefore; got != wantDelta {
 		t.Fatalf("balance delta = %d, want %d", got, wantDelta)
 	}
-	for _, txID := range []string{firstID, middleID, futureID} {
+	wantStatuses := map[string]string{
+		firstID:  "paid",
+		middleID: "pending",
+		futureID: "pending",
+	}
+	for txID, wantStatus := range wantStatuses {
 		var status string
 		if err := db.QueryRow(`SELECT status FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, txID).Scan(&status); err != nil {
 			t.Fatalf("query status for %s: %v", txID, err)
 		}
-		if status != "paid" {
-			t.Fatalf("%s status = %q, want paid", txID, status)
+		if status != wantStatus {
+			t.Fatalf("%s status = %q, want %q", txID, status, wantStatus)
 		}
+	}
+	var defaultStatus string
+	if err := db.QueryRow(`SELECT default_payment_status FROM recurring_rules WHERE id = ?`, ruleID).Scan(&defaultStatus); err != nil {
+		t.Fatalf("query rule default status: %v", err)
+	}
+	if defaultStatus != "PENDING" {
+		t.Fatalf("rule default status = %q, want PENDING", defaultStatus)
 	}
 }
 

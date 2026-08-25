@@ -546,6 +546,51 @@
 
     // --- Payment status bridge (Phase D.5.3.9.b.1) ---
 
+    function formatCivilDateLabel(value) {
+        var parts = (value || '').split('-');
+        if (parts.length !== 3) return value || '';
+        return parts[2] + '/' + parts[1] + '/' + parts[0];
+    }
+
+    ns.updatePaymentScheduleNotice = function() {
+        var notice = document.getElementById('paymentScheduleNotice');
+        if (!notice) return;
+
+        var form = document.getElementById('lancamento-form');
+        var dateInput = document.getElementById('dataLancamento');
+        var statusInput = document.getElementById('statusPagamentoHidden');
+        var typeInput = document.getElementById('tipoLancamento');
+        var originIDInput = document.getElementById('origemContaId');
+        var originTypeInput = document.getElementById('origemTipo');
+        var dateValue = dateInput ? dateInput.value : '';
+        var todayCivil = dateInput ? dateInput.dataset.todayCivil || '' : '';
+        var isIncomeOrExpense = typeInput && (typeInput.value === 'receita' || typeInput.value === 'despesa');
+        var isEligibleAccount = !originTypeInput || originTypeInput.value !== 'cartao';
+        var paymentIntentChanged = true;
+
+        if (form && form.dataset.isEdit === 'true') {
+            paymentIntentChanged = form.dataset.initialStatus !== 'paid' ||
+                form.dataset.initialDate !== dateValue ||
+                form.dataset.initialType !== (typeInput ? typeInput.value : '') ||
+                form.dataset.initialOriginId !== (originIDInput ? originIDInput.value : '');
+        }
+
+        var shouldShow = Boolean(
+            dateValue && todayCivil && dateValue > todayCivil &&
+            statusInput && statusInput.value === 'paid' &&
+            isIncomeOrExpense && isEligibleAccount && paymentIntentChanged
+        );
+
+        notice.classList.toggle('hidden', !shouldShow);
+        notice.classList.toggle('flex', shouldShow);
+        if (shouldShow) {
+            var text = document.getElementById('paymentScheduleNoticeText');
+            if (text) {
+                text.textContent = 'Como a data é futura, este lançamento continuará pendente e será confirmado automaticamente em ' + formatCivilDateLabel(dateValue) + '.';
+            }
+        }
+    };
+
     ns.syncPaymentStatusUI = function() {
         var hidden = document.getElementById('statusPagamentoHidden');
         if (!hidden) return;
@@ -570,6 +615,8 @@
             dueSection.classList.toggle('hidden', isPaid);
             dueSection.setAttribute('aria-hidden', isPaid ? 'true' : 'false');
         }
+
+        ns.updatePaymentScheduleNotice();
     };
 
     ns.applyPaymentStatus = function(isPaid) {
@@ -1612,6 +1659,7 @@
             }
             updateInvoiceNotice();
             updateBoxOverdraftWarning();
+            ns.updatePaymentScheduleNotice();
         }
 
         qsa.querySelectorAll('.origin-option').forEach(function(o) {
@@ -1658,11 +1706,13 @@
         if (dateInput) {
             dateInput.addEventListener('change', function() {
                 updateInvoiceNotice();
+                ns.updatePaymentScheduleNotice();
             });
         }
 
         setType((transactionType && transactionType.value) || 'despesa');
         syncPaymentStatusUI();
+        ns.updatePaymentScheduleNotice();
         if (ns.syncAllowBoxOverdraftInput) ns.syncAllowBoxOverdraftInput();
         updateBoxOverdraftWarning();
         var csrfInput = findInRoot(root, '#csrfToken');

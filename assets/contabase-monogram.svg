@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Monograma ContaBase</title>
+  <desc id="desc">As letras C e B formam um bloco geométrico branco e violeta sobre fundo grafite.</desc>
+  <rect width="256" height="256" fill="#0A0B0F"/>
+  <path fill="#F7F7F8" d="M112 38 34 78v124h82v-40H74v-61l38-19V38Z"/>
+  <path fill="#7C5CFF" d="m120 38 86 40v124h-86V38Zm31 55v74h27v-30l-13-7 13-8v-18l-27-11Z" fill-rule="evenodd"/>
+</svg>

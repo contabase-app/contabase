@@ -18,6 +18,20 @@ Esse backup inclui os dados do banco, mas nao inclui os arquivos de upload nem o
 
 Use quando quiser uma copia rapida do banco.
 
+Na mesma tela, o administrador global ve o local logico `DATA_DIR/backups/` e
+os metadados de ate sete snapshots diarios: nome base, data/hora e tamanho. A
+rotina verifica a cobertura a cada hora, cria no maximo um arquivo por dia civil
+e nunca substitui o snapshot daquele dia depois de reinicios ou imports. O
+arquivo publicado fica somente leitura. Backups pre-restore e pre-migration
+continuam em subdiretorios separados e fora dessa rotacao.
+
+Na transicao, o backup automatico legado mais antigo de cada dia retido e
+adotado como snapshot diario. As duplicatas legadas do mesmo dia so sao
+removidas depois que o arquivo protegido existe. A interface nao abre conteudo,
+nao revela o caminho absoluto do servidor e nao cria links adicionais. A
+presenca na lista nao comprova integridade nem substitui um teste periodico de
+restore. Dias em que a aplicacao ficou desligada nao podem ser recriados.
+
 ## Backup operacional
 
 O pacote operacional canonico reune, em um unico diretorio versionado:

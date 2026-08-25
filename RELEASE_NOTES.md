@@ -3,9 +3,29 @@
 Este documento é o índice principal das notas de lançamento do ContaBase.
 Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
-## Em preparação
+## Candidata atual
 
-Nenhuma nova versão pública está em preparação neste documento.
+- **v1.0.0-beta.1 — publicação beta em andamento — 25 de agosto de 2026** — *Primeira candidata da linha 1.0*
+
+  Esta candidata inicia a preparação da futura versão estável `v1.0.0`. O foco atual é consolidar identidade visual, leitura correta dos resumos de despesas e segurança das operações sobre recorrências antes do congelamento funcional.
+
+  A identidade do ContaBase passa a usar o monograma `CB` no sistema, PWA, favicons, autenticação e carregamentos. O ícone instalado mantém fundo grafite integral, variante `maskable` dentro da zona segura e manifest versionado por conteúdo para evitar o cache da identidade anterior. Em `/lancamentos`, Pago, Pendente, Vencido e Agendado passam a representar somente despesas e obrigações de fatura visíveis.
+
+  O formulário de lançamentos passa a explicar a confirmação futura no momento da entrada: receitas e despesas fora de cartão, com data futura e status pago, são registradas com pagamento agendado para a data escolhida e sem movimentar o saldo antes dela. Manter o status pendente preserva exatamente o fluxo atual.
+
+  Em Configurações → Backups, o administrador global pode confirmar o local lógico `DATA_DIR/backups/` e consultar até sete snapshots diários protegidos. A rotina verifica a cobertura a cada hora, mas publica apenas um arquivo por dia civil: reinícios e imports não substituem o snapshot daquele dia. Na atualização, o arquivo automático legado mais antigo de cada dia é preservado e as duplicatas só são removidas depois da adoção protegida. Backups pré-restore continuam separados. A visualização não abre os arquivos nem revela caminhos absolutos; existência ainda não equivale a um restore validado. A ação de importar usa o violeta do sistema, deixando o vermelho para os avisos de risco.
+
+  Nas recorrências, o status de pagamento torna-se local à ocorrência selecionada mesmo quando o usuário escolhe "Este e futuros" ou "Toda a recorrência". Os demais campos continuam seguindo o escopo escolhido. A única regra estrutural preservada é a de despesas vinculadas a cartão de crédito, cuja liquidação individual é representada pela fatura.
+
+  O materializador passa a reconhecer de forma controlada primeiras ocorrências legadas com propriedades locais diferentes da regra e exceções antigas sem `date_civil`, sem reparar ou sobrescrever dados automaticamente. Divergências em sequências posteriores, associações entre workspaces e inconsistências de fatura continuam falhando de forma fechada.
+
+  **Upgrade pretendido:** `v0.1.0-beta.9` → `v1.0.0-beta.1`. Esse caminho ainda precisa passar pelos gates completos e por smoke real antes de ser declarado suportado.
+
+  **Validação local:** a suíte canônica completa em `TZ=UTC`, a matriz financeira/recorrente repetida, `go vet`, build, política do atualizador e validações de sintaxe estão verdes. Os testes de fatura foram estabilizados para não dependerem de datas fixas de agosto/setembro de 2026.
+
+  **Distribuição:** a candidata só será disponibilizada depois do Release Preflight no SHA público exato, criação da tag imutável, validação dos packages Linux e checksums, imagem GHCR fixa e smokes previstos no runbook.
+
+  **Canal:** permanece em `v0.1.0-beta.9` durante os gates e só poderá avançar para `v1.0.0-beta.1` depois da validação da Release e dos caminhos de instalação/atualização.
 
 ## Histórico
 

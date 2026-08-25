@@ -47,6 +47,7 @@ type ConfiguracoesHandler struct {
 	DB                  *sql.DB
 	Templates           TemplateEngine
 	AuthService         *auth.Service
+	AutomaticBackupsDir string
 	WorkspaceID         string
 	UserID              string
 	ActorRole           string
@@ -94,6 +95,8 @@ type ConfiguracoesData struct {
 	AdminWorkspaces           []AdminWorkspaceRow
 	BackupTicker              string
 	BackupRetention           int
+	AutomaticBackups          []AutomaticBackupRow
+	BackupListUnavailable     bool
 	SystemWorkspaces          []ConfigWorkspaceRow
 	CurrentWorkspace          string
 	ProfileWorkspaces         []ConfigWorkspaceRow
@@ -112,6 +115,12 @@ type ConfiguracoesData struct {
 	AuditSeverityFilter       string
 	PasswordAreaError         string
 	PasswordAreaSuccess       string
+}
+
+type AutomaticBackupRow struct {
+	Name      string
+	CreatedAt string
+	Size      string
 }
 
 type ConfigCategoryRow struct {
@@ -2501,8 +2510,8 @@ func (h *ConfiguracoesHandler) newConfigData(section, errMsg, okMsg string) Conf
 		CanManageMembers:      h.ActorRole == models.RoleAdmin,
 		CanManageGlobal:       h.ActorRole == models.RoleAdmin,
 		CurrentWorkspace:      h.WorkspaceID,
-		BackupTicker:          "24h",
-		BackupRetention:       5,
+		BackupTicker:          "diário",
+		BackupRetention:       database.AutomaticBackupRetentionDays,
 		AccountProviders:      accountProviderOptions(),
 		AuditEventFilter:      normalizeAuditEventFilter(h.AuditEventFilter),
 		AuditSeverityFilter:   normalizeAuditSeverityFilter(h.AuditSeverityFilter),
@@ -2630,12 +2639,57 @@ func (h *ConfiguracoesHandler) loadConfigSectionData(data *ConfiguracoesData, sh
 			return err
 		}
 		data.AdminWorkspaces = workspaces
+	case "admin-backups":
+		backupDir := h.AutomaticBackupsDir
+		if backupDir == "" {
+			backupDir = paths.BackupsDir()
+		}
+		backups, err := listAutomaticBackupRows(backupDir, data.BackupRetention)
+		if err != nil {
+			data.BackupListUnavailable = true
+			break
+		}
+		data.AutomaticBackups = backups
 	case "admin-auditoria":
 		if err := h.loadAdminAuditoriaData(data); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func listAutomaticBackupRows(dir string, limit int) ([]AutomaticBackupRow, error) {
+	items, err := database.ListDailyAutomaticBackups(dir, limit)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]AutomaticBackupRow, 0, len(items))
+	for _, item := range items {
+		rows = append(rows, AutomaticBackupRow{
+			Name:      item.Name,
+			CreatedAt: FormatAppTime(item.CreatedAt).DateTime,
+			Size:      formatBackupFileSize(item.Size),
+		})
+	}
+	return rows, nil
+}
+
+func formatBackupFileSize(size int64) string {
+	const (
+		kib = int64(1024)
+		mib = 1024 * kib
+		gib = 1024 * mib
+	)
+	switch {
+	case size >= gib:
+		return fmt.Sprintf("%.1f GB", float64(size)/float64(gib))
+	case size >= mib:
+		return fmt.Sprintf("%.1f MB", float64(size)/float64(mib))
+	case size >= kib:
+		return fmt.Sprintf("%.1f KB", float64(size)/float64(kib))
+	default:
+		return fmt.Sprintf("%d B", size)
+	}
 }
 
 func (h *ConfiguracoesHandler) buildConfigData(section, errMsg, okMsg string) (ConfiguracoesData, error) {
@@ -2653,8 +2707,8 @@ func (h *ConfiguracoesHandler) buildConfigData(section, errMsg, okMsg string) (C
 		CanManageGlobal:           h.ActorRole == models.RoleAdmin,
 		CanManageWorkspaceProfile: workspaceType(h.DB, h.WorkspaceID) == models.WorkspaceTypeBusiness && h.CanConfigWrite,
 		CurrentWorkspace:          h.WorkspaceID,
-		BackupTicker:              "24h",
-		BackupRetention:           5,
+		BackupTicker:              "diário",
+		BackupRetention:           database.AutomaticBackupRetentionDays,
 		AccountProviders:          accountProviderOptions(),
 		AuditEventFilter:          normalizeAuditEventFilter(h.AuditEventFilter),
 		AuditSeverityFilter:       normalizeAuditSeverityFilter(h.AuditSeverityFilter),

@@ -8,25 +8,19 @@
   "description": "Sua base financeira privada.",
   "icons": [
     {
-      "src": "/assets/android-chrome-192x192.png",
+      "src": "/assets/pwa-icon-dark-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/assets/android-chrome-512x512.png",
+      "src": "/assets/pwa-icon-dark-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/assets/pwa-logo.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/assets/maskable-512x512.png",
+      "src": "/assets/pwa-icon-dark-maskable-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
