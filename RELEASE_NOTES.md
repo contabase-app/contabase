@@ -5,7 +5,7 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Candidata atual
 
-- **v1.0.0-beta.1 — publicação beta em andamento — 25 de agosto de 2026** — *Primeira candidata da linha 1.0*
+- **v1.0.0-beta.2 — publicação beta em andamento — 25 de agosto de 2026** — *Segunda candidata da linha 1.0*
 
   Esta candidata inicia a preparação da futura versão estável `v1.0.0`. O foco atual é consolidar identidade visual, leitura correta dos resumos de despesas e segurança das operações sobre recorrências antes do congelamento funcional.
 
@@ -15,17 +15,19 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
   Em Configurações → Backups, o administrador global pode confirmar o local lógico `DATA_DIR/backups/` e consultar até sete snapshots diários protegidos. A rotina verifica a cobertura a cada hora, mas publica apenas um arquivo por dia civil: reinícios e imports não substituem o snapshot daquele dia. Na atualização, o arquivo automático legado mais antigo de cada dia é preservado e as duplicatas só são removidas depois da adoção protegida. Backups pré-restore continuam separados. A visualização não abre os arquivos nem revela caminhos absolutos; existência ainda não equivale a um restore validado. A ação de importar usa o violeta do sistema, deixando o vermelho para os avisos de risco.
 
+  Esta candidata também corrige a exclusão "Este e os próximos" para séries legadas: ela encerra regras futuras mesmo quando a cadeia histórica não pode ser validada linearmente e remove ocorrências comuns já marcadas como pagas, revertendo o saldo na mesma transação. Faturas fechadas ou pagas, pagamentos vinculados a fatura e exceções manuais permanecem protegidos. Em `/lancamentos`, toda a área informativa do card abre a edição no mobile, e o resumo de faturas separa título e valores para impedir sobreposição em telas estreitas.
+
   Nas recorrências, o status de pagamento torna-se local à ocorrência selecionada mesmo quando o usuário escolhe "Este e futuros" ou "Toda a recorrência". Os demais campos continuam seguindo o escopo escolhido. A única regra estrutural preservada é a de despesas vinculadas a cartão de crédito, cuja liquidação individual é representada pela fatura.
 
   O materializador passa a reconhecer de forma controlada primeiras ocorrências legadas com propriedades locais diferentes da regra e exceções antigas sem `date_civil`, sem reparar ou sobrescrever dados automaticamente. Divergências em sequências posteriores, associações entre workspaces e inconsistências de fatura continuam falhando de forma fechada.
 
-  **Upgrade pretendido:** `v0.1.0-beta.9` → `v1.0.0-beta.1`. Esse caminho ainda precisa passar pelos gates completos e por smoke real antes de ser declarado suportado.
+  **Upgrade pretendido:** `v0.1.0-beta.9` → `v1.0.0-beta.2`. Esse caminho ainda precisa passar pelos gates completos e por smoke real antes de ser declarado suportado.
 
-  **Validação local:** a suíte canônica completa em `TZ=UTC`, a matriz financeira/recorrente repetida, `go vet`, build, política do atualizador e validações de sintaxe estão verdes. Os testes de fatura foram estabilizados para não dependerem de datas fixas de agosto/setembro de 2026.
+  **Validação local:** a suíte canônica completa em `TZ=UTC`, a matriz financeira/recorrente repetida, `go vet`, build e validações de sintaxe estão verdes. A execução integral da matriz de política do atualizador e os smokes reais continuam como gates da candidata. Os testes de fatura foram estabilizados para não dependerem de datas fixas de agosto/setembro de 2026.
 
   **Distribuição:** a candidata só será disponibilizada depois do Release Preflight no SHA público exato, criação da tag imutável, validação dos packages Linux e checksums, imagem GHCR fixa e smokes previstos no runbook.
 
-  **Canal:** permanece em `v0.1.0-beta.9` durante os gates e só poderá avançar para `v1.0.0-beta.1` depois da validação da Release e dos caminhos de instalação/atualização.
+  **Canal:** permanece em `v1.0.0-beta.1` durante os gates e só poderá avançar para `v1.0.0-beta.2` depois da validação da Release e dos caminhos de instalação/atualização.
 
 ## Histórico
 

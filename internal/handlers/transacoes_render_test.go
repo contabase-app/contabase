@@ -601,6 +601,8 @@ func TestTransactionRowConfirmTexts(t *testing.T) {
 			t.Fatalf("failed to execute lancamento-row: %v", err)
 		}
 		html := buf.String()
+		assertContains(t, html, `class="tx-edit-trigger`)
+		assertContains(t, html, `aria-label="Editar `)
 		assertContains(t, html, `data-payment-confirm`)
 		assertContains(t, html, `data-swipe-right-payment-confirm="true"`)
 		assertContains(t, html, `data-payment-post-url="/transacoes/tx-123/status-pagamento"`)
@@ -611,6 +613,31 @@ func TestTransactionRowConfirmTexts(t *testing.T) {
 			t.Fatal("pending transaction row must not post payment status directly from swipe")
 		}
 		assertContains(t, html, `data-lucide="clock"`)
+	})
+
+	t.Run("renders invoice columns with isolated financial summary", func(t *testing.T) {
+		var buf bytes.Buffer
+		data := InvoiceRow{
+			ID:                "invoice-mobile",
+			AccountName:       "Cartão com nome muito extenso",
+			ReferenceLabel:    "Agosto de 2026",
+			DateLabel:         "25/08/2026",
+			ItemCount:         12,
+			FaturaURL:         "/cartoes/faturas/invoice-mobile",
+			PendingMoney:      MoneyDisplay{Reais: "1.234", Cents: ",56"},
+			TotalMoney:        MoneyDisplay{Reais: "2.000", Cents: ",00"},
+			PaidMoney:         MoneyDisplay{Reais: "765", Cents: ",44"},
+			HasPartialPayment: true,
+			BadgeLabel:        "Parcial",
+		}
+		if err := tplRow.ExecuteTemplate(&buf, "invoice-row", data); err != nil {
+			t.Fatalf("failed to execute invoice-row: %v", err)
+		}
+		html := buf.String()
+		assertContains(t, html, `class="invoice-content`)
+		assertContains(t, html, `class="invoice-copy`)
+		assertContains(t, html, `class="invoice-summary`)
+		assertContains(t, html, `<span>Total R$ 2.000,00</span><span>Pago R$ 765,44</span>`)
 	})
 }
 

@@ -9681,13 +9681,12 @@ func validateRecurringSeriesChainAndFindActiveLeafTx(tx *sql.Tx, workspaceID, se
 
 // Semântica:
 //   - Garante series_id via EnsureRecurringSeriesForRuleTx.
-//   - Encontra a regra ativa da mesma series_id/workspace que cobre currentSequence.
-//   - Se um vínculo legado apontar para um ancestral encerrado, valida a cadeia
-//     linear completa e usa a folha ativa descendente.
-//   - Encerra essa regra em currentSequence-1 e desativa (active=0).
-//   - Apaga fisicamente apenas transações futuras deletáveis (recurrence_sequence >= currentSequence),
-//     preservando pagas sem fatura, faturas CLOSED/PAID e exceções manuais.
-//   - Reconcilia faturas OPEN afetadas.
+//   - Encerra todas as regras da mesma série cuja faixa alcance currentSequence.
+//     Isso torna a exclusão futura recuperável para séries legadas cuja cadeia
+//     versionada não seja mais linear, sem tentar reescrever seu histórico.
+//   - Apaga fisicamente ocorrências da série a partir de currentSequence,
+//     inclusive as marcadas como pagas sem vínculo de fatura.
+//   - Preserva faturas CLOSED/PAID e exceções manuais, e reconcilia faturas OPEN.
 //   - Não consolida cadeia de regras; não apaga regras antigas encerradas.
 func (h *TransactionHandler) deleteFutureRecurringSeriesVersionedTx(tx *sql.Tx, ruleID string, currentSequence int64, now int64) ([]string, []string, error) {
 	if currentSequence <= 0 {
@@ -9699,63 +9698,19 @@ func (h *TransactionHandler) deleteFutureRecurringSeriesVersionedTx(tx *sql.Tx, 
 		return nil, nil, err
 	}
 
-	var activeRuleID string
-	var effectiveStartSequence int64
-	var effectiveEndSequence sql.NullInt64
-	if err := tx.QueryRow(`
-		SELECT id, effective_start_sequence, effective_end_sequence
-		FROM recurring_rules
-		WHERE workspace_id = ? AND series_id = ? AND active = 1
-		  AND effective_start_sequence <= ?
-		  AND (effective_end_sequence IS NULL OR effective_end_sequence >= ?)
-		ORDER BY effective_start_sequence DESC
-		LIMIT 1
-	`, h.WorkspaceID, seriesID, currentSequence, currentSequence).Scan(&activeRuleID, &effectiveStartSequence, &effectiveEndSequence); err != nil {
-		if err != sql.ErrNoRows {
-			return nil, nil, err
-		}
-		ownerRecorded := ruleID
-		var ownerStart int64
-		if err := tx.QueryRow(`
-			SELECT effective_start_sequence
-			FROM recurring_rules
-			WHERE id = ? AND workspace_id = ?
-		`, ownerRecorded, h.WorkspaceID).Scan(&ownerStart); err != nil {
-			return nil, nil, err
-		}
-		activeDescendantID, activeStart, err := validateRecurringSeriesChainAndFindActiveLeafTx(tx, h.WorkspaceID, seriesID, ownerRecorded)
-		if err != nil {
-			return nil, nil, err
-		}
-		activeRuleID = activeDescendantID
-		effectiveStartSequence = activeStart
-		if activeDescendantID != ownerRecorded {
-			closeOwnerEnd := currentSequence - 1
-			if closeOwnerEnd < ownerStart {
-				closeOwnerEnd = 0
-			}
-			if _, err := tx.Exec(`
-				UPDATE recurring_rules
-				SET effective_end_sequence = ?, updated_at = ?
-				WHERE id = ? AND workspace_id = ? AND series_id = ?
-			`, closeOwnerEnd, now, ownerRecorded, h.WorkspaceID, seriesID); err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-
-	newEndSequence := currentSequence - 1
-	if newEndSequence < effectiveStartSequence {
-		newEndSequence = 0
-	}
 	if _, err := tx.Exec(`
 		UPDATE recurring_rules
-		SET effective_end_sequence = ?,
+		SET effective_end_sequence = CASE
+				WHEN effective_start_sequence < ? THEN ?
+				ELSE 0
+			END,
 		    active = 0,
 		    updated_at = ?
-		WHERE id = ? AND workspace_id = ? AND series_id = ?
-	`, newEndSequence, now, activeRuleID, h.WorkspaceID, seriesID); err != nil {
-		return nil, nil, fmt.Errorf("encerrar regra ativa: %w", err)
+		WHERE workspace_id = ?
+		  AND series_id = ?
+		  AND (active = 1 OR effective_end_sequence IS NULL OR effective_end_sequence >= ?)
+	`, currentSequence, currentSequence-1, now, h.WorkspaceID, seriesID, currentSequence); err != nil {
+		return nil, nil, fmt.Errorf("encerrar regras da recorrência: %w", err)
 	}
 
 	rows, err := tx.Query(`
@@ -9791,13 +9746,16 @@ func (h *TransactionHandler) deleteFutureRecurringSeriesVersionedTx(tx *sql.Tx, 
 	var idsToDelete []string
 	var oldInvoiceIDs []string
 	for _, item := range items {
-		if !recurringAllVersionedItemMutable(item) {
+		if !recurringFutureDeleteItemMutable(item) {
 			continue
 		}
 		idsToDelete = append(idsToDelete, item.id)
 		if item.invoiceID.Valid && item.invoiceID.String != "" {
 			oldInvoiceIDs = append(oldInvoiceIDs, item.invoiceID.String)
 		}
+	}
+	if err := h.ensureTransactionsNotInvoicePaymentsTx(tx, idsToDelete); err != nil {
+		return nil, nil, err
 	}
 
 	if len(idsToDelete) > 0 {
@@ -9807,6 +9765,20 @@ func (h *TransactionHandler) deleteFutureRecurringSeriesVersionedTx(tx *sql.Tx, 
 	}
 
 	return idsToDelete, dedupeIDs(oldInvoiceIDs), nil
+}
+
+func recurringFutureDeleteItemMutable(item recurringAllVersionedItem) bool {
+	if item.isException != 0 {
+		return false
+	}
+	if !item.invoiceID.Valid {
+		return true
+	}
+	if !item.invoiceStatus.Valid {
+		return false
+	}
+	status := strings.ToUpper(strings.TrimSpace(item.invoiceStatus.String))
+	return status != "CLOSED" && status != "PAID"
 }
 
 func (h *TransactionHandler) splitFutureRecurringRuleTx(tx *sql.Tx, params recurringFutureSplitParams) (string, []string, []string, error) {

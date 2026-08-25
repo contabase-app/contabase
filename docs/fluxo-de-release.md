@@ -17,8 +17,8 @@ O ContaBase usa SemVer. A tag pública, o arquivo `VERSION`, o changelog e a not
 
 ## Candidata em publicação
 
-- `v1.0.0-beta.1` — primeira candidata da linha 1.0, submetida aos gates separados de branch pública, Release Preflight, tag, draft prerelease, artifacts, GHCR, smokes e canal.
-- `v0.1.0-beta.9` continua sendo a versão pública recomendada até a conclusão de todos os gates e a atualização validada do canal Beta.
+- `v1.0.0-beta.2` — candidata da linha 1.0, submetida aos gates separados de branch pública, Release Preflight, tag, draft prerelease, artifacts, GHCR, smokes e canal.
+- `v1.0.0-beta.1` continua sendo a versão materializada no canal Beta até a conclusão de todos os gates e a atualização validada do canal Beta.
 
 ## Processo de publicação
 
@@ -128,7 +128,7 @@ O update por release artifact segue o mesmo contrato de segurança (backup canô
 - [Release Notes](../RELEASE_NOTES.md)
 - [GitHub Releases](https://github.com/contabase-app/contabase/releases)
 - [GHCR](https://github.com/contabase-app/contabase/pkgs/container/contabase)
-- [Nota da v1.0.0-beta.1 — candidata](releases/v1.0.0-beta.1.md)
+- [Nota da v1.0.0-beta.2 — candidata](releases/v1.0.0-beta.2.md)
 - [Nota da v0.1.0-beta.9](releases/v0.1.0-beta.9.md)
 - [Nota da v0.1.0-beta.8](releases/v0.1.0-beta.8.md)
 - [Nota da v0.1.0-beta.7](releases/v0.1.0-beta.7.md)

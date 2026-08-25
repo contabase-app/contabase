@@ -22,6 +22,9 @@
 .swipe-icon{width:1.25rem;height:1.25rem;color:#fff}
 .tx-content{position:relative;z-index:10;display:flex;align-items:center;gap:.625rem;border-radius:.75rem;border:1px solid var(--cb-border-subtle);background:var(--cb-surface-1);padding:.625rem .75rem;cursor:pointer}
 .tx-content:hover{background:var(--cb-surface-2)}
+.tx-edit-trigger{min-height:44px;border-radius:.5rem;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.tx-edit-trigger:focus-visible{outline:2px solid var(--cb-border-focus);outline-offset:2px}
+.tx-edit-trigger:active{background:var(--cb-surface-2)}
 .tx-status{width:2rem;height:2rem;border-radius:.625rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .tx-status-warning,.tx-row.pending .tx-status{background:color-mix(in srgb, var(--cb-warning) 12%, transparent);color:color-mix(in srgb, var(--cb-warning) 80%, var(--cb-text-main))}
 .tx-status-danger,.tx-row.overdue .tx-status{background:color-mix(in srgb, var(--cb-danger) 12%, transparent);color:color-mix(in srgb, var(--cb-danger) 80%, var(--cb-text-main))}
@@ -33,6 +36,14 @@
 .tx-action-btn{display:flex;height:1.75rem;width:1.75rem;align-items:center;justify-content:center;border-radius:.5rem;color:var(--cb-text-muted);transition:all .15s}
 .tx-action-btn:hover{color:var(--cb-text-main);background:var(--cb-surface-3)}
 .tx-action-btn-danger:hover{color:var(--cb-danger);background:color-mix(in srgb, var(--cb-danger) 12%, transparent)}
+
+/* === INVOICE ROW === */
+.invoice-content{display:grid;grid-template-columns:2.25rem minmax(0,1fr) minmax(6rem,42%);align-items:center;gap:.75rem}
+.invoice-copy{overflow:hidden}
+.invoice-summary{min-width:0;max-width:100%;text-align:right;font-variant-numeric:tabular-nums}
+.invoice-summary-primary{max-width:100%;white-space:nowrap}
+.invoice-summary-detail{display:flex;max-width:100%;flex-wrap:wrap;justify-content:flex-end;gap:.125rem .375rem;line-height:1.2}
+.invoice-summary-detail>span{min-width:0;overflow-wrap:anywhere}
 
 .tx-row.overdue .tx-content button i {
     animation: pulse-overdue-icon 2s infinite;
@@ -157,6 +168,11 @@
 @media (max-width: 640px) {
     .tx-content { padding: 8px 10px; gap: .5rem; }
     .invoice-content { padding: .625rem .75rem; }
+    .invoice-summary-detail { flex-direction: column; align-items: flex-end; gap: 0; }
+}
+
+@media (pointer: coarse) {
+    .tx-status { width: 2.75rem; height: 2.75rem; }
 }
 
 /* === LINE CLAMP FALLBACK (Tailwind utility depends on build) === */

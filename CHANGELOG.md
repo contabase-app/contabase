@@ -11,6 +11,16 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
+## [v1.0.0-beta.2] — 2026-08-25
+
+### Corrigido
+- **Recorrências — exclusão futura:** "Este e os próximos" volta a encerrar uma série mesmo quando registros legados possuem uma cadeia versionada incompleta ou inconsistente. Ocorrências comuns marcadas como pagas sem vínculo de fatura também são removidas na ação explícita, com reversão do efeito no saldo na mesma transação. Pagamentos de fatura, faturas fechadas ou pagas e exceções manuais continuam protegidos.
+- **Lançamentos — edição no mobile:** valor, data, descrição e metadados passam a integrar o mesmo alvo de toque que abre o editor. O botão tem área mínima de 44px e mantém o ícone de status como ação independente.
+- **Faturas em lançamentos:** o card da fatura separa ícone, título e resumo financeiro em colunas responsivas. Nomes longos passam a truncar antes de alcançar os valores; em pagamentos parciais, Total e Pago se empilham em telas estreitas.
+
+### Release pipeline
+- Esta candidata sucede a versão materializada `v1.0.0-beta.1`; a numeração avança para preservar a imutabilidade de tags, artifacts e canais já distribuídos.
+
 ## [v1.0.0-beta.1] — 2026-08-25
 
 ### Adicionado

@@ -2499,7 +2499,7 @@ func TestRecurringDeleteFutureFromSequenceTwoRemovesCurrentAndFuture(t *testing.
 	}
 }
 
-func TestRecurringDeleteFuturePreservesPaidWithoutInvoice(t *testing.T) {
+func TestRecurringDeleteFutureRemovesPaidWithoutInvoice(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	const desc = "Assinatura P51"
@@ -2525,13 +2525,12 @@ func TestRecurringDeleteFuturePreservesPaidWithoutInvoice(t *testing.T) {
 			t.Fatalf("%s should be deleted, count = %d", txID, count)
 		}
 	}
-	assertRecurringTxSummary(t, db, futureID, desc, 15000, 3)
-	var status string
-	if err := db.QueryRow(`SELECT status FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, futureID).Scan(&status); err != nil {
-		t.Fatalf("query status: %v", err)
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, futureID).Scan(&count); err != nil {
+		t.Fatalf("query paid future: %v", err)
 	}
-	if status != "paid" {
-		t.Fatalf("future status = %q, want paid", status)
+	if count != 0 {
+		t.Fatalf("paid future should be deleted, count = %d", count)
 	}
 }
 
@@ -2803,7 +2802,7 @@ func TestRecurringDeleteFutureLegacyRuleEnsuresSeries(t *testing.T) {
 	}
 }
 
-func TestRecurringDeleteFutureMissingActiveRuleFailsSafely(t *testing.T) {
+func TestRecurringDeleteFutureClosesLegacySeriesWithoutActiveRule(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	const desc = "Assinatura P51"
@@ -2816,8 +2815,8 @@ func TestRecurringDeleteFutureMissingActiveRuleFailsSafely(t *testing.T) {
 	h := deleteHandler(t, db)
 	req, rr := newDeleteRequest(t, firstID, "future")
 	h.HandleDeletarTransacao(rr, req, firstID)
-	if rr.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
 
 	for _, txID := range []string{firstID, "tx-p51-chk-2", "tx-p51-chk-3"} {
@@ -2825,8 +2824,8 @@ func TestRecurringDeleteFutureMissingActiveRuleFailsSafely(t *testing.T) {
 		if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE id = ? AND workspace_id = 'ws-test'`, txID).Scan(&count); err != nil {
 			t.Fatalf("query %s: %v", txID, err)
 		}
-		if count != 1 {
-			t.Fatalf("%s should not be deleted, count = %d", txID, count)
+		if count != 0 {
+			t.Fatalf("%s should be deleted, count = %d", txID, count)
 		}
 	}
 }
