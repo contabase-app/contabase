@@ -11,6 +11,7 @@ func TestDashboardHealthBusinessUsesCanonicalAndLegacyCostMacroGroups(t *testing
 
 	now := time.Now().UTC()
 	createdAt := now.Unix()
+	transactionDate := CivilDateToLegacyUnixNoonUTC(civilDateAt(now, appTimeLocation()))
 
 	execTestSQL(t, db, `INSERT INTO users (id, name, email, password_hash, created_at, updated_at) VALUES ('u-health', 'Health User', 'health@test.com', 'hash', ?, ?)`, createdAt, createdAt)
 	execTestSQL(t, db, `INSERT INTO workspaces (id, name, type, created_at, updated_at) VALUES ('ws-health', 'Health WS', 'business', ?, ?)`, createdAt, createdAt)
@@ -30,8 +31,8 @@ func TestDashboardHealthBusinessUsesCanonicalAndLegacyCostMacroGroups(t *testing
 			('tx-cost-canonical', 'ws-health', 'u-health', 'acc-health', 'cat-cost-canonical', 'EXPENSE', 30000, ?, 'Custo canonico', 'paid', ?, ?),
 			('tx-cost-legacy', 'ws-health', 'u-health', 'acc-health', 'cat-cost-legacy', 'EXPENSE', 20000, ?, 'Custo legado', 'paid', ?, ?),
 			('tx-admin', 'ws-health', 'u-health', 'acc-health', 'cat-admin', 'EXPENSE', 10000, ?, 'Administrativo', 'paid', ?, ?)
-	`, createdAt, createdAt, createdAt, createdAt, createdAt, createdAt, createdAt, createdAt, createdAt, createdAt, createdAt, createdAt)
+	`, transactionDate, createdAt, createdAt, transactionDate, createdAt, createdAt, transactionDate, createdAt, createdAt, transactionDate, createdAt, createdAt)
 
-	health := queryDashboardHealth(db, "ws-health", 0, true)
+	health := queryDashboardHealth(db, "ws-health", 0, true, now)
 	assertMoneyDisplay(t, "gross profit", health.GrossProfit, "500", ",00")
 }

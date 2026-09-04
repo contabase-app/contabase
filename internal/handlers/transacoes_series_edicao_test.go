@@ -854,7 +854,7 @@ func TestRecurringFutureSplitLegacyRuleEnsuresSeriesAndIsIdempotent(t *testing.T
 	}
 }
 
-func TestRecurringFutureSplitCurrentPaidTransactionWithoutInvoiceIsBlocked(t *testing.T) {
+func TestRecurringFutureSplitCurrentPaidTransactionWithoutInvoiceIsUpdatedSafely(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	const desc = "Assinatura P51"
@@ -866,7 +866,7 @@ func TestRecurringFutureSplitCurrentPaidTransactionWithoutInvoiceIsBlocked(t *te
 	h := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test", Templates: testOOBTemplatesSeries(t)}
 	req := newMultipartUpdateRequest(t, "/transacoes/"+firstID, map[string]string{
 		"valor":            "270,00",
-		"descricao":        "Assinatura P51 Blocked",
+		"descricao":        "Assinatura P51 Atualizada",
 		"data":             "2026-06-05",
 		"tipo":             "despesa",
 		"origem_conta_id":  "checking-test",
@@ -876,12 +876,19 @@ func TestRecurringFutureSplitCurrentPaidTransactionWithoutInvoiceIsBlocked(t *te
 	})
 	rr := httptest.NewRecorder()
 	h.HandleAtualizarTransacao(rr, req, firstID)
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status = %d, body = %q; want 409", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q; want 200", rr.Code, rr.Body.String())
 	}
-	assertRecurringTxSummary(t, db, firstID, desc, 15000, 1)
-	if got := recurringRuleCountBySeries(t, db, "series-p51-current-paid"); got != 1 {
-		t.Fatalf("rules by series = %d, want 1 after blocked split", got)
+	assertRecurringTxSummary(t, db, firstID, "Assinatura P51 Atualizada", 27000, 1)
+	var selectedStatus string
+	if err := db.QueryRow(`SELECT status FROM transactions WHERE id=? AND workspace_id='ws-test'`, firstID).Scan(&selectedStatus); err != nil {
+		t.Fatalf("query selected status: %v", err)
+	}
+	if selectedStatus != "paid" {
+		t.Fatalf("selected status=%q, want paid preserved", selectedStatus)
+	}
+	if got := recurringRuleCountBySeries(t, db, "series-p51-current-paid"); got != 2 {
+		t.Fatalf("rules by series = %d, want 2 after versioned split", got)
 	}
 }
 

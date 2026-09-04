@@ -40,18 +40,18 @@ Acesse o canal público de instalação em https://get-contabase.pages.dev/ e si
 - [Segurança](SECURITY.md)
 - [Privacidade](PRIVACY.md)
 - [Termos de uso](TERMS.md)
-- [Candidata v1.0.0-beta.2 — publicação beta em andamento](docs/releases/v1.0.0-beta.2.md)
+- [Candidata v1.0.0-beta.3 — preparação local](docs/releases/v1.0.0-beta.3.md)
 - [Notas da Beta.9 publicada](docs/releases/v0.1.0-beta.9.md)
-- [Última beta publicada](docs/releases/v0.1.0-beta.9.md)
+- [Última beta publicada](docs/releases/v1.0.0-beta.2.md)
 - [Histórico da primeira beta](docs/releases/v0.1.0-beta.1.md)
 
-## Destaques da candidata v1.0.0-beta.2
+## Destaques da candidata v1.0.0-beta.3
 
-- Ao criar ou editar uma receita ou despesa com data futura e confirmar o status como pago, o formulário informa que a confirmação será agendada para aquela data. O lançamento permanece pendente até a execução e não altera o saldo antecipadamente; datas futuras mantidas como pendentes continuam sem mudança de comportamento.
-- A área administrativa de Backups identifica o local lógico `DATA_DIR/backups/` e mostra até sete snapshots diários protegidos. A rotina cria no máximo um arquivo por dia civil, nunca substitui o snapshot daquele dia após importações ou reinícios e mantém backups pré-restore em uma área separada. A presença de um arquivo não substitui o teste periódico de restauração.
-- O PWA usa ícones instaláveis com fundo grafite integral e uma variante `maskable` dentro da zona segura. O manifest recebe versão por conteúdo para evitar a reutilização dos ícones antigos pelo navegador.
-- Em recorrências, a exclusão "Este e os próximos" encerra futuras ocorrências comuns mesmo se foram marcadas como pagas ou a cadeia legada está inconsistente; faturas protegidas e exceções manuais permanecem intactas.
-- No mobile, valor e data fazem parte do toque que abre a edição; os resumos de fatura isolam título e valores para evitar sobreposição.
+- Todas as páginas autenticadas usam o mesmo shell nas rotas definitivas, com navegação compacta e responsiva para workspaces pessoais e Business.
+- Contas e cartões usam um catálogo global de instituições, seletor pesquisável e logos uniformes em Dashboard, Configurações, Faturas e formulários.
+- Os cards de cartões e faturas seguem o mesmo estilo nos temas claro e escuro, com status, vencimento e limite legíveis.
+- Compras no dia de fechamento entram na próxima fatura conforme a timezone configurada, inclusive desde o início do dia civil.
+- A edição "Este e futuros" pode alterar a ocorrência atual paga e a cauda mutável, preservando histórico e proteções financeiras.
 
 ## Avisos da Beta
 

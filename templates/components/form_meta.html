@@ -4,7 +4,7 @@
     <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto">
         <article class="sheet-in cb-modal relative flex h-[85vh] max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl shadow-2xl shadow-black/80 md:mx-auto md:my-12 md:h-auto md:max-h-[calc(100vh-6rem)] md:max-w-md md:rounded-2xl md:shadow-2xl" data-meta-form-root data-open-tab="{{if eq .OpenTab "caixinha"}}caixinha{{else}}limite{{end}}">
         <div class="absolute right-4 top-4 z-[110]">
-            <button type="button" class="cb-button cb-button-secondary h-8 w-8 flex items-center justify-center rounded-full p-0" data-onclick="closeBottomSheet">
+            <button type="button" class="cb-button cb-button-secondary h-8 w-8 flex items-center justify-center rounded-full p-0" data-onclick="closeBottomSheet" aria-label="Fechar formulário">
                 <i data-lucide="x" class="h-4 w-4"></i>
             </button>
         </div>
@@ -18,8 +18,8 @@
 
         {{if eq .Mode "create"}}
         <div class="mb-5 mx-6 cb-segmented grid grid-cols-2">
-            <button type="button" id="tab-limite" class="cb-segmented-option" data-onclick-tab="toggleMetaTab" data-tab="limite">Limites</button>
-            <button type="button" id="tab-caixinha" class="cb-segmented-option" data-onclick-tab="toggleMetaTab" data-tab="caixinha">Reservas</button>
+            <button type="button" id="tab-limite" class="cb-segmented-option" data-meta-tab="limite">Limites</button>
+            <button type="button" id="tab-caixinha" class="cb-segmented-option" data-meta-tab="caixinha">Reservas</button>
         </div>
         {{end}}
         <div class="flex-1 overflow-y-auto px-6 pt-4 pb-4">

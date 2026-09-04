@@ -1,18 +1,82 @@
 {{define "faturas-page"}}
-{{template "layout-start" .}}
-{{template "faturas-content" .}}
-{{template "layout-end" .}}
+{{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/faturas.css"}}">
+{{template "app-v2-document-head-end" .}}
+<main id="main-content" class="cb-v2-main cb-v2-faturas-main" data-page-section="invoice" data-page-title="{{.Title}}">
+    {{template "app-v2-appbar" .}}
+    <div class="cb-v2-content cb-v2-faturas-content">
+        <header class="cb-v2-faturas-header">
+            <div>
+                <p class="cb-v2-eyebrow">Cartões e faturas</p>
+                <h1>Fatura</h1>
+                <p>Consulte a composição da fatura e acompanhe os pagamentos do período.</p>
+            </div>
+            <a class="cb-v2-faturas-back" href="/faturas"><i data-lucide="arrow-left"></i><span>Faturas</span></a>
+        </header>
+        {{template "faturas-content" .}}
+    </div>
+</main>
+{{template "app-v2-shell-after-main" .}}
+{{template "lancamentos-global-overlays" .}}
+<script src="/assets/js/swipe.js"></script>
+<script src="/assets/js/predictive-description.js"></script>
+<script src="/assets/js/modals-global.js"></script>
+<script src="{{assetPath "/assets/js/payment-confirm.js"}}"></script>
+<script src="{{assetPath "/assets/js/faturas.js"}}"></script>
+{{template "app-v2-document-end" .}}
+{{end}}
+
+{{define "faturas-empty-page"}}
+{{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/faturas.css"}}">
+{{template "app-v2-document-head-end" .}}
+<main id="main-content" class="cb-v2-main cb-v2-faturas-main" data-page-section="invoice" data-page-title="{{.Title}}">
+    {{template "app-v2-appbar" .}}
+    <div class="cb-v2-content cb-v2-faturas-content">
+        <header class="cb-v2-faturas-header">
+            <div>
+                <p class="cb-v2-eyebrow">Cartões e faturas</p>
+                <h1>Fatura</h1>
+                <p>Consulte a composição da fatura e acompanhe os pagamentos do período.</p>
+            </div>
+            <a class="cb-v2-faturas-back" href="/faturas"><i data-lucide="arrow-left"></i><span>Faturas</span></a>
+        </header>
+        {{template "faturas-empty-content" .}}
+    </div>
+</main>
+{{template "app-v2-shell-after-main" .}}
+{{template "lancamentos-global-overlays" .}}
+<script src="/assets/js/swipe.js"></script>
+<script src="/assets/js/predictive-description.js"></script>
+<script src="/assets/js/modals-global.js"></script>
+<script src="{{assetPath "/assets/js/payment-confirm.js"}}"></script>
+<script src="{{assetPath "/assets/js/faturas.js"}}"></script>
+{{template "app-v2-document-end" .}}
+{{end}}
+
+{{define "faturas-empty-content"}}
+<section id="faturas-content" class="cb-v2-faturas-empty" aria-labelledby="faturas-empty-title">
+    <div class="cb-v2-faturas-empty-icon"><i data-lucide="calendar-search" aria-hidden="true"></i></div>
+    <p class="cb-v2-eyebrow">{{.PeriodLabel}}</p>
+    <h2 id="faturas-empty-title">Nenhuma fatura para este período</h2>
+    <p>Não há uma fatura aberta para <strong>{{.CardName}}</strong>. Você pode consultar outro mês ou criar esta competência manualmente.</p>
+    <div class="cb-v2-faturas-empty-navigation">
+        <a href="{{.PreviousURL}}"><i data-lucide="chevron-left"></i>Mês anterior</a>
+        <a href="{{.NextURL}}">Mês seguinte<i data-lucide="chevron-right"></i></a>
+    </div>
+    <form hx-post="{{.OpenInvoiceURL}}" hx-target="#faturas-content" hx-swap="outerHTML" hx-push-url="{{if .IsFaturasIndex}}false{{else}}true{{end}}">
+        <button type="submit" class="cb-v2-faturas-empty-create"><i data-lucide="plus"></i>Abrir fatura</button>
+    </form>
+</section>
 {{end}}
 
 {{define "faturas-content"}}
-<link rel="stylesheet" href="/assets/css/faturas.css">
-<main id="faturas-content" class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative">
-    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
+<section id="faturas-content" class="cb-v2-faturas-panels">
 
 {{template "invoice-summary" .}}
 
     {{template "invoice-transactions" .}}
-</main>
+</section>
 {{end}}
 
 {{define "invoice-summary"}}
@@ -22,7 +86,10 @@
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div class="flex items-center gap-4">
                 <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.CardColor}}">
-                    {{if .CardProviderMark}}
+                    {{if .CardProviderLogoPath}}
+                    <img src="{{assetPath .CardProviderLogoPath}}" alt="" class="institution-logo" data-avatar-fallback>
+                    <span class="hidden text-xs font-black uppercase text-white tracking-tighter" data-avatar-text>{{.CardProviderMark}}</span>
+                    {{else if .CardProviderMark}}
                     <span class="text-xs font-black uppercase text-white tracking-tighter">{{.CardProviderMark}}</span>
                     {{else}}
                     <i data-lucide="{{if .CardIcon}}{{.CardIcon}}{{else}}credit-card{{end}}" class="w-5 h-5 icon-colored" style="--ic: var(--emblem-color, {{.CardColor}})"></i>
@@ -61,7 +128,7 @@
         <div class="flex flex-wrap items-center gap-1.5 mt-4 pt-3 border-t border-[var(--cb-border-subtle)]">
             <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Filtro:</span>
             <span class="cb-status-chip cb-status-chip-info">{{.FilterLabel}}</span>
-            <a href="{{.ClearFiltersURL}}" hx-get="{{.ClearFiltersURL}}" hx-target="#main-content" hx-select="#main-content" class="inline-flex items-center gap-0.5 rounded-full bg-[var(--cb-surface-2)] hover:bg-[var(--cb-surface-3)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--cb-text-muted)] transition-colors">
+            <a href="{{.ClearFiltersURL}}" class="inline-flex items-center gap-0.5 rounded-full bg-[var(--cb-surface-2)] hover:bg-[var(--cb-surface-3)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--cb-text-muted)] transition-colors">
                 <i data-lucide="x" class="w-2.5 h-2.5"></i>Limpar
             </a>
         </div>
@@ -171,6 +238,23 @@
                 </div>
                 {{end}}
             </div>
+
+            {{if .HasGeneralRefunds}}
+            <div class="mt-4 md:mt-6 border-t border-[var(--cb-border-subtle)] pt-3 md:pt-5">
+                <h4 class="cb-section-title mb-3">Reembolsos gerais</h4>
+                <div class="space-y-1.5">
+                    {{range .GeneralRefunds}}
+                    <div class="flex items-center justify-between gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-2.5 md:p-3">
+                        <div class="min-w-0">
+                            <p class="truncate text-xs font-bold text-[var(--cb-text-main)]">{{.Description}}</p>
+                            <p class="cb-text-micro mt-0.5 text-[var(--cb-text-muted)]">{{.DateLabel}}</p>
+                        </div>
+                        <span class="shrink-0 text-xs font-extrabold text-[var(--cb-success)]" data-sensitive>- R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+            {{end}}
         </div>
 
         <!-- Payment Actions Card (Col Span 1) -->
@@ -180,16 +264,24 @@
                 <div class="space-y-3">
                     <h3 class="cb-section-title">Ações da Fatura</h3>
 
-                    <div class="flex flex-col gap-3 pt-1">
+                    <div class="grid grid-cols-1 gap-2.5 pt-1 md:grid-cols-3 md:gap-2">
                         <button type="button" data-open-settle-payment {{if not .CanSubmitPayment}}disabled{{end}}
-                            class="cb-button cb-button-primary btn-tactile flex h-11 w-full items-center justify-center gap-2 rounded-xl text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed">
-                            {{if .CanSubmitPayment}}<i data-lucide="badge-check" class="h-4 w-4"></i>Quitar fatura{{else}}{{.PaymentDisabledReason}}{{end}}
+                            class="cb-button cb-button-primary cb-invoice-action btn-tactile min-w-0 w-full rounded-xl disabled:cursor-not-allowed disabled:opacity-50">
+                            {{if .CanSubmitPayment}}<i data-lucide="badge-check" class="shrink-0"></i><span class="cb-invoice-action-label"><span>Quitar</span><span>fatura</span></span>{{else}}<span class="px-2 text-center">{{.PaymentDisabledReason}}</span>{{end}}
                         </button>
 
                         <button type="button" {{if not .CanSubmitPayment}}disabled{{end}}
-                            class="cb-button cb-button-secondary btn-tactile flex h-11 w-full items-center justify-center gap-2 rounded-xl text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                            class="cb-button cb-button-secondary cb-invoice-action btn-tactile min-w-0 w-full rounded-xl disabled:cursor-not-allowed disabled:opacity-50"
                             data-onclick="openPartialPaymentModal">
-                            <i data-lucide="coins" class="h-4 w-4 text-[var(--cb-text-muted)]"></i>Pagamento parcial
+                            <i data-lucide="coins" class="shrink-0 text-[var(--cb-text-muted)]"></i><span class="cb-invoice-action-label"><span>Pagamento</span><span>parcial</span></span>
+                        </button>
+
+                        <button type="button"
+                            hx-get="/cartoes/faturas/reembolso?invoice_id={{.InvoiceID}}"
+                            hx-target="#bottom-sheet-container"
+                            hx-swap="innerHTML"
+                            class="cb-button cb-button-secondary cb-invoice-action btn-tactile min-w-0 w-full rounded-xl">
+                            <i data-lucide="undo-2" class="shrink-0 text-[var(--cb-success)]"></i><span class="cb-invoice-action-label"><span>Reembolso</span><span>geral</span></span>
                         </button>
                     </div>
                 </div>
@@ -211,6 +303,10 @@
                         <div class="flex items-start gap-2">
                             <i data-lucide="coins" class="w-3.5 h-3.5 text-[var(--cb-warning)] shrink-0 mt-0.5"></i>
                             <p><strong class="font-bold text-[var(--cb-text-main)]">Pagamento parcial:</strong> Permite abater qualquer valor, mantendo a fatura aberta com o saldo restante.</p>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <i data-lucide="undo-2" class="w-3.5 h-3.5 text-[var(--cb-success)] shrink-0 mt-0.5"></i>
+                            <p><strong class="font-bold text-[var(--cb-text-main)]">Reembolso geral:</strong> Use quando o crédito corresponde a uma compra de outra fatura. Ele reduz o saldo atual sem criar receita.</p>
                         </div>
                     </div>
                 </div>
@@ -308,7 +404,7 @@
                 <input type="hidden" name="payment_mode" value="partial">
                 <label class="block">
                     <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Valor</span>
-                    <input type="text" name="payment_amount" inputmode="decimal" autocomplete="off" placeholder="R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}" data-partial-payment-amount data-money-mask
+                    <input type="text" name="payment_amount" inputmode="numeric" autocomplete="off" placeholder="R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}" data-partial-payment-amount data-money-mask
                         class="mt-1 h-11 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-sm font-semibold text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]">
                 </label>
                 <label class="block">
@@ -335,32 +431,34 @@
         </div>
     </div>
     {{end}}
-    <div class="cb-card-dense px-4 py-3 md:p-5">
+    {{if not .HideMonthNavigation}}<div class="cb-card-dense px-4 py-3 md:p-5">
         <h3 class="cb-section-title mb-2 md:mb-3.5">Faturas do cartão</h3>
-        <div class="flex items-center gap-3 w-full">
-            <a href="{{.MesAnteriorURL}}" hx-get="{{.MesAnteriorURL}}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
-                class="btn-tactile h-9 w-9 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] hover:bg-[var(--cb-surface-3)] flex items-center justify-center text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] shrink-0 transition-all">
+        <div id="monthSelector" data-month-selector class="w-full">
+            <a href="{{.MesAnteriorURL}}"
+                class="month-control btn-tactile flex items-center justify-center"
+                aria-label="Mês anterior">
                 <i data-lucide="chevron-left" class="w-4 h-4"></i>
             </a>
-            <div id="month-selector-container" class="overflow-x-auto scrollbar-hide flex-1">
-                <div class="flex items-center gap-2 min-w-max md:min-w-0 md:w-full py-0.5">
+            <div id="month-selector-container" data-month-rail-viewport class="scrollbar-hide">
+                <div id="monthRail" data-month-rail>
                     {{range .MonthOptions}}
-                    <a href="{{.URL}}" hx-get="{{.URL}}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
+                    <a href="{{.URL}}"
                         {{if .IsActive}}data-month-active="true"{{end}}
-                        class="btn-tactile rounded-xl px-3 py-1.5 text-center transition-all shrink-0 md:shrink md:flex-1 min-w-[4.5rem] xs:min-w-[5rem] md:min-w-[5.5rem]
-                            {{if .IsActive}}bg-[var(--cb-accent-solid)] text-white{{else if .IsCurrent}}border border-[var(--cb-accent)]/20 bg-[var(--cb-accent-soft)] text-[var(--cb-accent-solid)] hover:bg-[var(--cb-accent)]/15{{else}}border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] hover:bg-[var(--cb-surface-3)] text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
-                        <p class="text-[11px] font-extrabold leading-none">{{.Label}}</p>
-                        <p class="text-[8px] font-medium opacity-75 mt-0.5">{{.Year}}</p>
+                        {{if .IsCurrent}}data-month-current="true"{{end}}
+                        class="month-btn btn-tactile">
+                        <span>{{.Label}}</span>
+                        <span>{{.Year}}</span>
                     </a>
                     {{end}}
                 </div>
             </div>
-            <a href="{{.MesSeguinteURL}}" hx-get="{{.MesSeguinteURL}}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
-                class="btn-tactile h-9 w-9 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] hover:bg-[var(--cb-surface-3)] flex items-center justify-center text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] shrink-0 transition-all">
+            <a href="{{.MesSeguinteURL}}"
+                class="month-control btn-tactile flex items-center justify-center"
+                aria-label="Mês seguinte">
                 <i data-lucide="chevron-right" class="w-4 h-4"></i>
             </a>
         </div>
-    </div>
+    </div>{{end}}
 </section>
 {{end}}
 
@@ -373,19 +471,11 @@
         </div>
         <div class="flex w-full md:w-auto rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-1">
             <a href="{{.SortRecentURL}}"
-                hx-get="{{.SortRecentURL}}"
-                hx-target="#main-content"
-                hx-select="#main-content"
-                hx-replace-url="true"
                 class="flex-1 md:flex-none flex items-center justify-center text-center rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all duration-150 {{if eq .SortOrder "desc"}}bg-[var(--cb-accent-solid)] text-white{{else}}text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
                 <span class="block sm:hidden">Recentes</span>
                 <span class="hidden sm:block">Compras recentes</span>
             </a>
             <a href="{{.SortChronologicalURL}}"
-                hx-get="{{.SortChronologicalURL}}"
-                hx-target="#main-content"
-                hx-select="#main-content"
-                hx-replace-url="true"
                 class="flex-1 md:flex-none flex items-center justify-center text-center rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all duration-150 {{if eq .SortOrder "asc"}}bg-[var(--cb-accent-solid)] text-white{{else}}text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
                 <span class="block sm:hidden">Cronológica</span>
                 <span class="hidden sm:block">Ordem cronológica</span>
@@ -393,8 +483,10 @@
         </div>
     </div>
     {{if .Transactions}}
-        <div class="space-y-5" data-show-more-group="faturas" data-show-more-initial="{{.InitialVisibleItems}}" data-show-more-total="{{len .Transactions}}" data-show-more-one-way>
-        {{$invoiceID := .InvoiceID}}
+		<div class="space-y-5" data-show-more-group="faturas" data-show-more-initial="{{.InitialVisibleItems}}" data-show-more-total="{{len .Transactions}}" data-show-more-one-way>
+		{{$invoiceID := .InvoiceID}}
+		{{$nextReference := .NextReference}}
+		{{$canMutateItems := .CanMutateItems}}
         {{range .TransactionGroups}}
             <section data-show-more-item="{{.FirstIndex}}" class="space-y-3">
                 <div class="sticky top-[8.75rem] z-[1] flex items-center gap-2.5 mb-2.5 md:top-[8.25rem]">
@@ -438,7 +530,8 @@
                         data-swipe-left-confirm="Remover este lançamento?"
                         data-swipe-right-url="/transacoes/{{.ID}}/mover-fatura"
                         data-swipe-right-method="POST"
-                        data-swipe-right-swap="none">
+                        data-swipe-right-swap="none"
+                        data-swipe-right-vals='{"expected_invoice_id":"{{$invoiceID}}","expected_destination_reference":"{{$nextReference}}","expected_updated_at":"{{.UpdatedAt}}","expected_move_scope":"{{if .IsSeries}}chain{{else}}single{{end}}"}'>
                         <div data-swipe-bg-left class="absolute inset-y-0 left-0 flex w-28 origin-left items-center justify-start rounded-l-xl bg-[var(--cb-danger)] px-6 opacity-0 pointer-events-none">
                             <i data-lucide="trash-2" class="w-5 h-5 text-white"></i>
                         </div>
@@ -474,21 +567,41 @@
                                                     {{if and .IsSeries (le .TotalInstallments 1)}}Recorrente{{else}}{{.InstallmentNumber}}/{{.TotalInstallments}}{{end}}
                                                 </span>
                                                 {{end}}
+                                                {{if .HasRefund}}
+                                                <span class="cb-status-chip cb-status-chip-success" title="{{.RefundDescriptions}}">
+                                                    Reembolso {{.RefundedAmountDisplay}}
+                                                </span>
+                                                {{end}}
                                             </div>
                                         </span>
                                         <span class="text-right flex-shrink-0">
                                             <p class="text-sm font-black {{.AmountClass}}" data-sensitive>{{.AmountDisplay}}</p>
+                                            {{if .HasRefund}}<p class="cb-text-micro font-semibold text-[var(--cb-success)]" data-sensitive>Líquido {{.EffectiveAmountDisplay}}</p>{{end}}
                                             <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">{{.TimeDisplay}}</p>
                                         </span>
                                     </div>
                                 </span>
                             </button>
+                            {{if $canMutateItems}}
+                            <button type="button"
+                                hx-get="/transacoes/{{.ID}}/reembolso"
+                                hx-target="#bottom-sheet-container"
+                                hx-swap="innerHTML"
+                                class="btn-tactile inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] text-[var(--cb-success)] transition-colors hover:bg-emerald-500/10"
+                                data-tooltip-hover
+                                data-tooltip-text="Informar reembolso"
+                                aria-label="Informar reembolso para {{.Description}}">
+                                <i data-lucide="undo-2" class="h-4 w-4"></i>
+                            </button>
+                            {{end}}
                             <button type="button"
                                 hx-post="/transacoes/{{.ID}}/mover-fatura"
+                                hx-vals='{"expected_invoice_id":"{{$invoiceID}}","expected_destination_reference":"{{$nextReference}}","expected_updated_at":"{{.UpdatedAt}}","expected_move_scope":"{{if .IsSeries}}chain{{else}}single{{end}}"}'
                                 hx-swap="none"
                                 hx-indicator="#htmx-indicator"
                                 class="btn-tactile hidden md:inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] text-[var(--cb-accent)] transition-colors hover:bg-[var(--cb-accent-soft)]"
-                                title="Mover para próxima fatura"
+                                data-tooltip-hover
+                                data-tooltip-text="Mover para próxima fatura"
                                 aria-label="Mover para próxima fatura">
                                 <i data-lucide="calendar-plus" class="h-4 w-4"></i>
                             </button>
@@ -517,7 +630,7 @@
         <i data-lucide="help-circle" class="w-4 h-4 shrink-0 text-[var(--cb-accent)] mt-0.5"></i>
         <span>
             <strong class="font-bold text-[var(--cb-text-main)]">Dica de Navegação:</strong>
-            Arraste o lançamento para a Esquerda (&larr;) para apagar o registro | Arraste para a Direita (&rarr;) para mover a cobrança para a próxima fatura.
+            Arraste o lançamento para a Esquerda (&larr;) para mover a cobrança para a próxima fatura | Arraste para a Direita (&rarr;) para apagar o registro.
         </span>
     </aside>
 </section>

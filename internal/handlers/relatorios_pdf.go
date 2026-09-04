@@ -117,9 +117,9 @@ func (h *RelatoriosHandler) HandleExportarExtratoPDF(w http.ResponseWriter, r *h
 
 	var pdfBytes []byte
 	if tipo == "extrato-movimentos" {
-		pdfBytes, err = buildExtratoMovimentosPDFReport(data, identity, h.WorkspaceID, periodLabel, mes, ano, time.Now())
+		pdfBytes, err = buildExtratoMovimentosPDFReport(data, identity, h.WorkspaceID, periodLabel, mes, ano, appTime(time.Now()))
 	} else {
-		pdfBytes, err = buildExtratoDiarioPDFReport(data, identity, h.WorkspaceID, periodLabel, mes, ano, time.Now())
+		pdfBytes, err = buildExtratoDiarioPDFReport(data, identity, h.WorkspaceID, periodLabel, mes, ano, appTime(time.Now()))
 	}
 	if err != nil {
 		http.Error(w, "erro ao gerar pdf", http.StatusInternalServerError)
@@ -157,7 +157,7 @@ func (h *RelatoriosHandler) HandleExportarDREPDF(w http.ResponseWriter, r *http.
 		return
 	}
 
-	pdfBytes, err := buildDREPDFReport(data, identity, h.WorkspaceID, mes, ano, revenueCategories, expenseCategories, time.Now())
+	pdfBytes, err := buildDREPDFReport(data, identity, h.WorkspaceID, mes, ano, revenueCategories, expenseCategories, appTime(time.Now()))
 	if err != nil {
 		http.Error(w, "erro ao gerar pdf", http.StatusInternalServerError)
 		return
@@ -196,7 +196,7 @@ func (h *RelatoriosHandler) HandleExportarCaixaPDF(w http.ResponseWriter, r *htt
 		return
 	}
 
-	pdfBytes, err := buildCaixaPDFReport(data, identity, h.WorkspaceID, mes, ano, revenueCategories, expenseCategories, time.Now())
+	pdfBytes, err := buildCaixaPDFReport(data, identity, h.WorkspaceID, mes, ano, revenueCategories, expenseCategories, appTime(time.Now()))
 	if err != nil {
 		http.Error(w, "erro ao gerar pdf", http.StatusInternalServerError)
 		return
@@ -237,7 +237,7 @@ func (h *RelatoriosHandler) HandleExportarContabilPDF(w http.ResponseWriter, r *
 		return
 	}
 
-	pdfBytes, err := buildContabilPDFReport(data, identity, h.WorkspaceID, mes, ano, time.Now())
+	pdfBytes, err := buildContabilPDFReport(data, identity, h.WorkspaceID, mes, ano, appTime(time.Now()))
 	if err != nil {
 		http.Error(w, "erro ao gerar pdf", http.StatusInternalServerError)
 		return
@@ -251,7 +251,7 @@ func (h *RelatoriosHandler) HandleExportarContabilPDF(w http.ResponseWriter, r *
 }
 
 func parseDREPDFPeriod(r *http.Request) (int, int, error) {
-	now := time.Now().UTC()
+	now := appTime(time.Now())
 	mes := int(now.Month())
 	ano := now.Year()
 
@@ -340,7 +340,7 @@ func queryDREPDFCategorySummary(db *sql.DB, workspaceID, txType string, start, e
 	rows, err := db.Query(`
 		SELECT
 			COALESCE(NULLIF(TRIM(COALESCE(c.name, p.name, '')), ''), 'Sem categoria') AS category_name,
-			COALESCE(SUM(t.amount), 0) AS total
+			COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) AS total
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id

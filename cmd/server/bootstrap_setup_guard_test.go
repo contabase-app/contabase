@@ -147,10 +147,10 @@ func TestSetupTokenStillConfiguredNoticeRequiresTokenAndAdminRole(t *testing.T) 
 	}
 }
 
-func TestLayoutSetupTokenNoticeDoesNotRenderTokenValue(t *testing.T) {
+func TestAppShellSetupTokenNoticeDoesNotRenderTokenValue(t *testing.T) {
 	t.Setenv(bootstrapSetupTokenEnv, testBootstrapSetupToken)
 
-	tpl := template.Must(template.New("layout-test").Funcs(buildFuncMap()).ParseFiles("../../templates/layout.html"))
+	tpl := template.Must(template.New("app-shell-test").Funcs(buildFuncMap()).ParseFiles("../../templates/components/app_shell.html"))
 	data := struct {
 		Title     string
 		ActorRole string
@@ -159,8 +159,8 @@ func TestLayoutSetupTokenNoticeDoesNotRenderTokenValue(t *testing.T) {
 		ActorRole: "ADMIN",
 	}
 	var out bytes.Buffer
-	if err := tpl.ExecuteTemplate(&out, "layout-start", data); err != nil {
-		t.Fatalf("execute layout-start: %v", err)
+	if err := tpl.ExecuteTemplate(&out, "app-v2-setup-token-notice", data); err != nil {
+		t.Fatalf("execute app shell setup notice: %v", err)
 	}
 	body := out.String()
 	if !strings.Contains(body, "token local de setup ainda está ativo") {
@@ -177,26 +177,16 @@ func TestLayoutSetupTokenNoticeDoesNotRenderTokenValue(t *testing.T) {
 	}
 }
 
-func TestLayoutFooterRendersAppCurrentTime(t *testing.T) {
+func TestAppShellFooterRendersAppCurrentTime(t *testing.T) {
 	t.Setenv(bootstrapSetupTokenEnv, testBootstrapSetupToken)
 	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
 	t.Setenv("TZ", "UTC")
 
-	tpl := template.New("layout-test").Funcs(buildFuncMap())
-	for _, p := range []string{
-		"../../templates/layout.html",
-		"../../templates/pages/*.html",
-		"../../templates/components/*.html",
-	} {
-		template.Must(tpl.ParseGlob(p))
-	}
+	tpl := template.Must(template.New("app-shell-test").Funcs(buildFuncMap()).ParseFiles("../../templates/components/app_shell.html"))
 
 	var out bytes.Buffer
-	if err := tpl.ExecuteTemplate(&out, "layout-start", nil); err != nil {
-		t.Fatalf("execute layout-start with nil: %v", err)
-	}
-	if err := tpl.ExecuteTemplate(&out, "layout-end", nil); err != nil {
-		t.Fatalf("execute layout-end with nil: %v", err)
+	if err := tpl.ExecuteTemplate(&out, "app-v2-footer", nil); err != nil {
+		t.Fatalf("execute app shell footer: %v", err)
 	}
 	body := out.String()
 

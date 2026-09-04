@@ -12,26 +12,27 @@ import (
 const customAccountProviderSlug = "custom"
 
 type AccountProviderOption struct {
-	Slug  string
-	Name  string
-	Color string
-	Icon  string
-	Mark  string
+	Slug     string
+	Name     string
+	Color    string
+	Icon     string
+	Mark     string
+	LogoPath string
 }
 
 var accountProviderCatalog = []AccountProviderOption{
-	{Slug: "nubank", Name: "Nubank", Color: "#820AD1", Icon: "landmark", Mark: "Nu"},
-	{Slug: "itau", Name: "Itaú", Color: "#EC7000", Icon: "building-2", Mark: "Itaú"},
-	{Slug: "inter", Name: "Inter", Color: "#FF6B00", Icon: "building-2", Mark: "Inter"},
-	{Slug: "bb", Name: "Banco do Brasil", Color: "#0056A4", Icon: "building-2", Mark: "BB"},
-	{Slug: "caixa", Name: "Caixa Econômica", Color: "#005CA9", Icon: "building-2", Mark: "CAIXA"},
-	{Slug: "picpay", Name: "PicPay", Color: "#11C76F", Icon: "wallet-cards", Mark: "P"},
-	{Slug: "mercadopago", Name: "Mercado Pago", Color: "#00A6FF", Icon: "wallet-cards", Mark: "MP"},
-	{Slug: "bradesco", Name: "Bradesco", Color: "#CC092F", Icon: "building-2", Mark: "B"},
-	{Slug: "santander", Name: "Santander", Color: "#EC0000", Icon: "building-2", Mark: "S"},
-	{Slug: "c6", Name: "C6 Bank", Color: "#111111", Icon: "credit-card", Mark: "C6"},
-	{Slug: "xp", Name: "XP Investimentos", Color: "#000000", Icon: "building-2", Mark: "XP"},
-	{Slug: "pagbank", Name: "PagBank", Color: "#FFE72D", Icon: "building-2", Mark: "Pag"},
+	{Slug: "nubank", Name: "Nubank", Color: "#820AD1", Icon: "landmark", Mark: "Nu", LogoPath: "institutions/nubank.png"},
+	{Slug: "itau", Name: "Itaú", Color: "#EC7000", Icon: "building-2", Mark: "Itaú", LogoPath: "institutions/itau.png"},
+	{Slug: "inter", Name: "Inter", Color: "#FF6B00", Icon: "building-2", Mark: "Inter", LogoPath: "institutions/inter.png"},
+	{Slug: "bb", Name: "Banco do Brasil", Color: "#0056A4", Icon: "building-2", Mark: "BB", LogoPath: "institutions/bb.png"},
+	{Slug: "caixa", Name: "Caixa Econômica", Color: "#005CA9", Icon: "building-2", Mark: "CAIXA", LogoPath: "institutions/caixa.png"},
+	{Slug: "picpay", Name: "PicPay", Color: "#11C76F", Icon: "wallet-cards", Mark: "P", LogoPath: "institutions/picpay.png"},
+	{Slug: "mercadopago", Name: "Mercado Pago", Color: "#00A6FF", Icon: "wallet-cards", Mark: "MP", LogoPath: "institutions/mercadopago.png"},
+	{Slug: "bradesco", Name: "Bradesco", Color: "#CC092F", Icon: "building-2", Mark: "B", LogoPath: "institutions/bradesco.png"},
+	{Slug: "santander", Name: "Santander", Color: "#EC0000", Icon: "building-2", Mark: "S", LogoPath: "institutions/santander.png"},
+	{Slug: "c6", Name: "C6 Bank", Color: "#111111", Icon: "credit-card", Mark: "C6", LogoPath: "institutions/c6.png"},
+	{Slug: "xp", Name: "XP Investimentos", Color: "#000000", Icon: "building-2", Mark: "XP", LogoPath: "institutions/xp.png"},
+	{Slug: "pagbank", Name: "PagBank", Color: "#FFE72D", Icon: "building-2", Mark: "Pag", LogoPath: "institutions/pagbank.png"},
 }
 
 var (
@@ -70,6 +71,12 @@ func identifyAlias(name string) string {
 	if strings.Contains(lower, "inter") {
 		return "inter"
 	}
+	if strings.Contains(lower, "itaú") || strings.Contains(lower, "itau") {
+		return "itau"
+	}
+	if strings.Contains(lower, "banco do brasil") {
+		return "bb"
+	}
 	if strings.Contains(lower, "caixa") {
 		return "caixa"
 	}
@@ -84,6 +91,18 @@ func identifyAlias(name string) string {
 	}
 	if strings.Contains(lower, "pagbank") {
 		return "pagbank"
+	}
+	if strings.Contains(lower, "picpay") {
+		return "picpay"
+	}
+	if strings.Contains(lower, "bradesco") {
+		return "bradesco"
+	}
+	if strings.Contains(lower, "santander") {
+		return "santander"
+	}
+	if strings.Contains(lower, "c6") {
+		return "c6"
 	}
 	return ""
 }
@@ -121,6 +140,9 @@ func deterministicColor(name string) string {
 }
 
 func resolveAccountProviderInput(rawSlug, rawCustomName, rawColor string) (name, providerSlug, color string, err error) {
+	if strings.TrimSpace(rawSlug) == "" {
+		return "", "", "", fmt.Errorf("selecione uma instituição")
+	}
 	providerSlug = normalizeAccountProviderSlug(rawSlug)
 	if provider, ok := accountProviderBySlugOrCustom(providerSlug); ok {
 		return provider.Name, provider.Slug, provider.Color, nil
@@ -167,6 +189,23 @@ func accountProviderName(providerSlug string) string {
 		return provider.Name
 	}
 	return ""
+}
+
+func accountProviderLogoPath(providerSlug string) string {
+	if provider, ok := accountProviderBySlugOrCustom(providerSlug); ok {
+		return provider.LogoPath
+	}
+	return ""
+}
+
+// accountProviderLogoPathForAccount keeps legacy seed accounts recognizable even
+// when they were created before provider_slug was introduced. It is display-only
+// and never mutates the stored provider selection.
+func accountProviderLogoPathForAccount(providerSlug, accountName string) string {
+	if path := accountProviderLogoPath(providerSlug); path != "" {
+		return path
+	}
+	return accountProviderLogoPath(identifyAlias(accountName))
 }
 
 func accountProviderMark(providerSlug, accountName string) string {

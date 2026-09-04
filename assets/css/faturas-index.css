@@ -1,0 +1,133 @@
+.cb-v2-faturas-index-content {
+    padding-bottom: 44px;
+}
+
+.cb-v2-faturas-index-header {
+    margin-bottom: 18px;
+}
+
+.cb-faturas-index-period {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 22px;
+    padding: 12px;
+    border: 1px solid var(--cb-border-subtle);
+    border-radius: 16px;
+    background: var(--cb-surface-1);
+}
+
+.cb-faturas-index-period-button {
+    display: inline-flex;
+    width: 36px;
+    height: 36px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--cb-border-subtle);
+    border-radius: 10px;
+    color: var(--cb-text-muted);
+    background: var(--cb-surface-2);
+    transition: color .16s ease, background .16s ease, border-color .16s ease;
+}
+
+.cb-faturas-index-period-button:hover,
+.cb-faturas-index-period-button:focus-visible {
+    border-color: var(--cb-border-focus);
+    color: var(--cb-text-main);
+    background: var(--cb-surface-3);
+    outline: none;
+}
+
+.cb-faturas-index-months {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 5px;
+    min-width: 0;
+}
+
+.cb-faturas-index-month {
+    display: grid;
+    min-width: 0;
+    width: 100%;
+    padding: 7px 8px;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--cb-text-muted);
+    line-height: 1.05;
+    transition: color .16s ease, background .16s ease, border-color .16s ease;
+}
+
+.cb-faturas-index-month strong { font-size: 11px; }
+.cb-faturas-index-month small { margin-top: 3px; font-size: 9px; opacity: .75; }
+.cb-faturas-index-month:hover { color: var(--cb-text-main); background: var(--cb-surface-2); }
+.cb-faturas-index-month.is-current { border-color: color-mix(in srgb, var(--cb-accent) 42%, transparent); color: var(--cb-accent); }
+.cb-faturas-index-month.is-active { border-color: var(--cb-accent-solid); color: white; background: var(--cb-accent-solid); }
+
+.cb-faturas-index-card-section { margin-bottom: 24px; }
+.cb-faturas-index-card-section .cb-v2-section-heading { margin-bottom: 12px; }
+.cb-faturas-index-card-section .cb-v2-section-heading h2 { margin: 2px 0 0; }
+.cb-faturas-index-card-section .cb-v2-eyebrow { margin-bottom: 0; }
+
+.cb-v2-faturas-index-main .cb-v2-card-rail {
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+    overflow-x: auto;
+    padding: 2px 2px 10px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+}
+
+.cb-v2-faturas-index-main .cb-v2-card-rail::-webkit-scrollbar { display: none; }
+
+.cb-v2-faturas-index-main .cb-v2-credit-card {
+    flex: 0 0 min(342px, calc((100% - 32px) / 3));
+    width: min(342px, calc((100% - 32px) / 3));
+    min-width: 276px;
+    scroll-snap-align: start;
+}
+
+.cb-v2-faturas-index-main .cb-v2-credit-card.is-selected {
+    border-color: var(--cb-accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--cb-accent) 38%, transparent);
+}
+
+.cb-v2-faturas-index-main .cb-v2-credit-card:focus-visible {
+    outline: 2px solid var(--cb-accent);
+    outline-offset: 3px;
+}
+
+.cb-faturas-index-detail { min-height: 200px; }
+.cb-faturas-index-detail[aria-busy="true"] { opacity: .58; pointer-events: none; transition: opacity .16s ease; }
+.cb-faturas-index-empty { margin-top: 16px; }
+
+@media (max-width: 767px) {
+    .cb-v2-faturas-index-content { padding-bottom: 100px; }
+    .cb-v2-faturas-index-header { align-items: flex-start; gap: 14px; }
+    .cb-v2-faturas-index-header .cb-v2-faturas-back span { display: none; }
+    .cb-v2-faturas-index-header .cb-v2-faturas-back { width: 40px; justify-content: center; }
+    .cb-faturas-index-period { margin-left: -2px; margin-right: -2px; padding: 9px; gap: 7px; }
+    .cb-faturas-index-period-button { width: 34px; height: 34px; flex: 0 0 34px; }
+    .cb-faturas-index-months {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        scroll-behavior: smooth;
+        scrollbar-width: none;
+    }
+    .cb-faturas-index-months::-webkit-scrollbar { display: none; }
+    .cb-faturas-index-month { flex: 0 0 50px; min-width: 50px; padding: 6px; }
+    .cb-v2-faturas-index-main .cb-v2-card-rail { gap: 12px; margin-right: -16px; padding-right: 16px; }
+    .cb-v2-faturas-index-main .cb-v2-credit-card {
+        flex: 0 0 min(86vw, 324px);
+        width: min(86vw, 324px);
+        min-width: 0;
+    }
+    .cb-faturas-index-card-section .cb-v2-carousel-dots { display: flex; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cb-v2-faturas-index-main .cb-v2-card-rail { scroll-behavior: auto; }
+}

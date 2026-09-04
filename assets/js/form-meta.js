@@ -67,6 +67,16 @@
         });
     }
 
+    function initMetaTabs(root) {
+        if (!root) return;
+        root.querySelectorAll('[data-meta-tab]:not([data-meta-tab-ready])').forEach(function(tabButton) {
+            tabButton.dataset.metaTabReady = 'true';
+            tabButton.addEventListener('click', function() {
+                window.toggleMetaTab(tabButton.dataset.metaTab || 'limite');
+            });
+        });
+    }
+
     function clearMetaCategory(suffix) {
         var catIdEl = document.getElementById('categoriaId' + suffix);
         if (catIdEl) catIdEl.value = '';
@@ -100,6 +110,7 @@
         initMonthPicker();
 
         var article = document.querySelector('[data-meta-form-root]');
+        initMetaTabs(article);
         var openTab = article ? article.getAttribute('data-open-tab') : null;
         window.toggleMetaTab(openTab || 'limite');
     }

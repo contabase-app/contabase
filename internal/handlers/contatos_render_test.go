@@ -3,16 +3,35 @@ package handlers
 import (
 	"bytes"
 	"html/template"
-	"os"
-	"path/filepath"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestRespondContatoFormErrorPreservesHTMXTarget(t *testing.T) {
+	rr := httptest.NewRecorder()
+	respondContatoFormError(rr, "nome e tipo são obrigatórios")
+
+	if rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusUnprocessableEntity)
+	}
+	if !strings.Contains(rr.Body.String(), "nome e tipo são obrigatórios") {
+		t.Fatalf("response missing validation message: %s", rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), `hx-swap-oob`) {
+		t.Fatalf("validation response must not replace an unrelated HTMX target: %s", rr.Body.String())
+	}
+}
 
 func TestContatosRenderContracts(t *testing.T) {
 	tpl := testContatosRenderTemplates(t)
 	data := ContatosData{
 		Title:                     "Contatos",
+		UserName:                  "Vitor Ferreira",
+		UserInitials:              "VF",
+		ActiveWorkspaceName:       "Empresa",
+		IsBusiness:                true,
 		Query:                     "ana",
 		Tipo:                      "client",
 		TipoLabel:                 "Clientes",
@@ -34,8 +53,16 @@ func TestContatosRenderContracts(t *testing.T) {
 	}
 	pageHTML := page.String()
 	for _, want := range []string{
+		`data-app-shell`,
+		`data-page-section="contacts"`,
+		`data-v2-nav-section="contacts"`,
+		`cb-v2-contatos-header`,
 		`data-page-title="Contatos"`,
 		`id="contatos-list"`,
+		`data-contact-create`,
+		`role="dialog"`,
+		`aria-modal="true"`,
+		`id="contato-form-error"`,
 		`hx-post="/contatos"`,
 		`hx-target="#contatos-list"`,
 		`hx-swap="outerHTML"`,
@@ -44,10 +71,15 @@ func TestContatosRenderContracts(t *testing.T) {
 		`hx-get="/contatos?tipo=client&partial=lista"`,
 		`hx-select="#contatos-grid"`,
 		`hx-push-url="/contatos?tipo=client"`,
+		`/assets/css/contatos.css?v=test`,
+		`/assets/js/contatos-modal.js?v=test`,
 	} {
 		if !strings.Contains(pageHTML, want) {
 			t.Fatalf("contatos-page missing %q\nbody:\n%s", want, pageHTML)
 		}
+	}
+	if strings.Contains(pageHTML, `{{template "layout-start"`) {
+		t.Fatal("contatos page must use the global app shell, not the legacy layout")
 	}
 
 	var list bytes.Buffer
@@ -142,7 +174,8 @@ func testContatosRenderTemplates(t *testing.T) *template.Template {
 	t.Helper()
 
 	funcs := template.FuncMap{
-		"upper": strings.ToUpper,
+		"assetPath": func(path string) string { return path + "?v=test" },
+		"upper":     strings.ToUpper,
 		"slice": func(s string, start, end int) string {
 			r := []rune(s)
 			if start < 0 {
@@ -158,27 +191,9 @@ func testContatosRenderTemplates(t *testing.T) *template.Template {
 		},
 	}
 
-	stubs := `
-{{define "layout-start"}}<html><body><div id="main-content">{{end}}
-{{define "layout-end"}}</div></body></html>{{end}}
-`
-
-	pagePath := resolveTemplatePath(t, "templates/pages/contatos.html")
-	contactsPath := resolveTemplatePath(t, "templates/components/contatos.html")
-	fabPath := resolveTemplatePath(t, "templates/components/fab.html")
-
-	pageBytes, err := os.ReadFile(filepath.Clean(pagePath))
-	if err != nil {
-		t.Fatalf("read contatos page template: %v", err)
-	}
-	contactsBytes, err := os.ReadFile(filepath.Clean(contactsPath))
-	if err != nil {
-		t.Fatalf("read contatos component template: %v", err)
-	}
-	fabBytes, err := os.ReadFile(filepath.Clean(fabPath))
-	if err != nil {
-		t.Fatalf("read fab component template: %v", err)
-	}
-
-	return template.Must(template.New("contatos-test").Funcs(funcs).Parse(stubs + string(pageBytes) + string(contactsBytes) + string(fabBytes)))
+	return template.Must(template.New("contatos-test").Funcs(withAppShellTestFuncs(funcs)).ParseFiles(
+		resolveTemplatePath(t, "templates/pages/contatos.html"),
+		resolveTemplatePath(t, "templates/components/contatos.html"),
+		resolveTemplatePath(t, "templates/components/app_shell.html"),
+	))
 }

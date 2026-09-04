@@ -1,5 +1,5 @@
 // HTMX Lifecycle Handlers
-// Extracted from layout.html — Fase 9.9.5e
+// HTMX lifecycle hooks shared by authenticated pages.
 // Phase C — Lifecycle optimization: debounced icons, deduped initAppShell, scoped roots
 
 try { localStorage.removeItem('htmx-history-cache'); } catch (e) {}
@@ -97,6 +97,7 @@ window.initAppShell = function(root) {
     runAppShellTask('initDashboardTabs', window.initDashboardTabs, [scope]);
     runAppShellTask('initPrivacyToggle', window.initPrivacyToggle, [scope]);
     runAppShellTask('initClickTooltips', window.initClickTooltips, [scope]);
+    runAppShellTask('initHoverTooltips', window.initHoverTooltips, [scope]);
     runAppShellTask('centerActiveMonth', window.centerActiveMonth);
     runAppShellTask('refreshWorkspaceTypeUI', refreshWorkspaceContextThrottled);
 };

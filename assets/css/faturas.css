@@ -6,7 +6,6 @@
 .btn-tactile { transition: all 0.15s ease; }
 .btn-tactile:active { transform: scale(0.97); }
 
-.blob-colored { background-color: var(--ic, #8b5cf6); }
 .emblem-wrap-solid { background-color: var(--ic, #8b5cf6); }
 .icon-colored { color: var(--ic, #8b5cf6); }
 
@@ -18,4 +17,182 @@
 /* Date separator line between transaction date groups */
 .cb-date-separator-line {
     background: linear-gradient(90deg, var(--cb-border-subtle) 0%, transparent 100%);
+}
+
+/* Faturas inside the global V2 shell. The financial components keep their
+   existing markup and behavior; these aliases only adopt shared tokens. */
+.cb-v2-faturas-main {
+    --cb-bg: var(--v2-canvas);
+    --cb-bg-soft: var(--v2-detail-surface);
+    --cb-surface-1: var(--v2-surface);
+    --cb-surface-2: var(--v2-surface-raised);
+    --cb-surface-3: var(--v2-surface-hover);
+    --cb-surface-overlay: var(--v2-surface);
+    --cb-border-subtle: var(--v2-border);
+    --cb-border-strong: var(--v2-border-strong);
+    --cb-border-focus: var(--v2-accent);
+    --cb-text-main: var(--v2-text);
+    --cb-text-muted: var(--v2-muted);
+    --cb-text-subtle: var(--v2-subtle);
+    --cb-accent: var(--v2-accent);
+    --cb-accent-solid: var(--v2-accent);
+    --cb-accent-hover: var(--v2-fab-hover);
+    --cb-accent-soft: var(--v2-accent-soft);
+    --cb-success: var(--v2-positive);
+    --cb-danger: var(--v2-danger);
+    --cb-warning: var(--v2-warning);
+    --cb-info: var(--v2-info);
+}
+
+.cb-v2-faturas-content {
+    width: min(100%, 1180px);
+    margin: 0 auto;
+    padding: 30px 0 28px;
+}
+
+.cb-v2-faturas-header {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 24px;
+}
+
+.cb-v2-faturas-header h1 {
+    margin: 3px 0 5px;
+    color: var(--v2-text);
+    font-size: 31px;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1.08;
+}
+
+.cb-v2-faturas-header > div > p:last-child {
+    max-width: 54ch;
+    margin: 0;
+    color: var(--v2-muted);
+    font-size: 13px;
+}
+
+.cb-v2-faturas-back {
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    gap: 7px;
+    padding: 0 12px;
+    border: 1px solid var(--v2-border);
+    border-radius: 10px;
+    color: var(--v2-muted);
+    font-size: 12px;
+    font-weight: 650;
+    transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+}
+
+.cb-v2-faturas-back:hover {
+    border-color: var(--v2-border-strong);
+    background: var(--v2-surface-hover);
+    color: var(--v2-text);
+}
+
+.cb-v2-faturas-back svg { width: 16px; height: 16px; }
+
+.cb-v2-faturas-panels .cb-card-dense,
+.cb-v2-faturas-panels #invoice-transactions {
+    border-color: var(--v2-border);
+    background: var(--v2-surface);
+}
+
+.cb-v2-faturas-panels .cb-card-dense,
+.cb-v2-faturas-panels #invoice-transactions { border-radius: 12px; }
+
+.cb-v2-faturas-panels [data-swipe-content] {
+    border-color: var(--v2-border);
+    background: var(--v2-surface-raised);
+}
+
+.cb-v2-faturas-panels [data-swipe-content]:hover {
+    border-color: var(--v2-border-strong);
+    background: var(--v2-surface-hover);
+}
+
+.cb-v2-faturas-empty {
+    display: grid;
+    justify-items: start;
+    gap: 12px;
+    max-width: 560px;
+    padding: 28px;
+    border: 1px solid var(--v2-border);
+    border-radius: 12px;
+    background: var(--v2-surface);
+}
+
+.cb-v2-faturas-empty-icon {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    border-radius: 10px;
+    background: var(--v2-accent-soft);
+    color: var(--v2-accent-strong);
+}
+
+.cb-v2-faturas-empty-icon svg { width: 19px; height: 19px; }
+.cb-v2-faturas-empty .cb-v2-eyebrow { margin: 2px 0 0; }
+.cb-v2-faturas-empty h2 {
+    margin: 0;
+    color: var(--v2-text);
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+}
+.cb-v2-faturas-empty > p:not(.cb-v2-eyebrow) {
+    max-width: 50ch;
+    margin: -4px 0 4px;
+    color: var(--v2-muted);
+    font-size: 13px;
+    line-height: 1.55;
+}
+.cb-v2-faturas-empty > p strong { color: var(--v2-text); }
+
+.cb-v2-faturas-empty-navigation {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.cb-v2-faturas-empty-navigation a,
+.cb-v2-faturas-empty-create {
+    display: inline-flex;
+    min-height: 38px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 11px;
+    border: 1px solid var(--v2-border);
+    border-radius: 9px;
+    background: var(--v2-surface-raised);
+    color: var(--v2-muted);
+    font-size: 12px;
+    font-weight: 650;
+    transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+}
+.cb-v2-faturas-empty-navigation a:hover {
+    border-color: var(--v2-border-strong);
+    background: var(--v2-surface-hover);
+    color: var(--v2-text);
+}
+.cb-v2-faturas-empty-navigation svg,
+.cb-v2-faturas-empty-create svg { width: 15px; height: 15px; }
+.cb-v2-faturas-empty-create {
+    border-color: var(--v2-fab-border);
+    background: var(--v2-accent);
+    color: #fff;
+}
+.cb-v2-faturas-empty-create:hover { background: var(--v2-fab-hover); }
+
+@media (max-width: 767px) {
+    .cb-v2-faturas-content { padding-top: 20px; }
+    .cb-v2-faturas-header { margin-bottom: 18px; align-items: start; }
+    .cb-v2-faturas-header h1 { font-size: 23px; }
+    .cb-v2-faturas-header > div > p:last-child { font-size: 12px; }
+    .cb-v2-faturas-back { min-height: 36px; padding: 0 10px; }
 }

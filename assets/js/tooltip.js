@@ -58,3 +58,26 @@ function initClickTooltips(root) {
         });
     });
 }
+
+function initHoverTooltips(root) {
+    (root || document).querySelectorAll('[data-tooltip-hover]').forEach(function(trigger) {
+        if (trigger.dataset.tooltipHoverInit === 'true') return;
+        trigger.dataset.tooltipHoverInit = 'true';
+
+        trigger.addEventListener('pointerenter', function() {
+            showGlobalTooltip(trigger, resolveTooltipText(trigger));
+        });
+        trigger.addEventListener('pointerleave', function() {
+            hideGlobalTooltip();
+        });
+        trigger.addEventListener('focus', function() {
+            showGlobalTooltip(trigger, resolveTooltipText(trigger));
+        });
+        trigger.addEventListener('blur', function() {
+            hideGlobalTooltip();
+        });
+        trigger.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') hideGlobalTooltip();
+        });
+    });
+}

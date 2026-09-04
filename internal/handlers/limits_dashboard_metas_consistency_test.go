@@ -92,7 +92,7 @@ func TestDashboardAndMetasLimitsDoNotIncludeUnrelatedOrForeignWorkspaceExpenses(
 
 func seedLimitsConsistencyScenario(t *testing.T, db *sql.DB) {
 	t.Helper()
-	now := time.Now().UTC()
+	now := appTime(time.Now())
 	nowUnix := now.Unix()
 	currentMonth := time.Date(now.Year(), now.Month(), 10, 12, 0, 0, 0, time.UTC).Unix()
 

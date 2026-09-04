@@ -1,31 +1,7 @@
 {{define "configuracoes-contas-page"}}
-{{template "layout-start" .}}
-<div class="w-full max-w-7xl mx-auto px-0 md:px-6 lg:px-8 pb-28 pt-5 md:pb-10 md:pt-8 relative">
-    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
-
-    <!-- Desktop View: SaaS Split Layout -->
-    <div class="hidden md:flex gap-8 w-full max-w-full">
-        <!-- Sidebar Navigation -->
-        <aside class="md:w-64 flex-none border-r border-[var(--cb-border-subtle)] pr-6">
-            <div class="mb-6">
-                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
-                <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Painel de Controle</h2>
-            </div>
-            {{template "configuracoes-sidebar" .}}
-        </aside>
-
-        <!-- Dynamic Content Area -->
-        <div id="settings-content" class="flex-1 pl-4">
-            {{template "configuracoes-contas-content" .}}
-        </div>
-    </div>
-
-    <!-- Mobile View -->
-    <div class="block md:hidden">
-        {{template "configuracoes-contas-content" .}}
-    </div>
-</div>
-{{template "layout-end" .}}
+{{template "configuracoes-v2-section-start" .}}
+{{template "configuracoes-contas-content" .}}
+{{template "configuracoes-v2-section-end" .}}
 {{end}}
 
 {{define "configuracoes-contas-content"}}
@@ -55,16 +31,8 @@
 
         <div class="cb-card-dense p-4 md:p-6">
             <form data-provider-select class="cb-card-muted mb-6 p-4 md:p-5" hx-post="/configuracoes/contas" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
-                    <div>
-                        <span class="{{template "field-label" .}}">Banco / Carteira</span>
-                        <select name="provider_slug" data-provider-value class="{{template "field-class" .}}">
-                            {{range .AccountProviders}}
-                            <option value="{{.Slug}}">{{.Name}}</option>
-                            {{end}}
-                            <option value="custom">Outro / Personalizado</option>
-                        </select>
-                    </div>
+                {{template "provider-logo-picker" .}}
+                <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                     <div>
                         <span class="{{template "field-label" .}}">Tipo</span>
                         <select name="type" class="{{template "field-class" .}}">

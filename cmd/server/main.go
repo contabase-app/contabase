@@ -635,19 +635,25 @@ func main() {
 		}
 
 		data := struct {
+			handlers.AppShellAccess
 			Title               string
+			UserName            string
 			UserInitials        string
 			UserFirstName       string
+			NotificationCount   int
 			ActiveWorkspaceName string
 			ProfilePhotoURL     string
 			IsBusiness          bool
 		}{
 			Title:               "Ajuda",
+			UserName:            userName,
 			UserInitials:        userInitials,
 			UserFirstName:       userFirstName,
+			NotificationCount:   handlers.QueryDashboardNotificationCount(db, ctx.UserID, ctx.ActiveWorkspaceID),
 			ActiveWorkspaceName: activeWorkspaceName,
 			ProfilePhotoURL:     fullPhotoURL,
 			IsBusiness:          isBusiness,
+			AppShellAccess:      handlers.QueryAppShellAccess(db, ctx.ActiveWorkspaceID, ctx.UserID, isBusiness),
 		}
 
 		if err := tpl.ExecuteTemplate(w, "ajuda-page", data); err != nil {
@@ -770,6 +776,7 @@ func main() {
 		handlers.PerfStep(reqID, "Dashboard", "BuildDashboardData", time.Since(t0))
 
 		tR := time.Now()
+		handlers.SortDashboardCardsByPaymentPriority(data.Cards, time.Now())
 		if err := tpl.ExecuteTemplate(w, "dashboard-page", data); err != nil {
 			log.Printf("template error: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -1047,7 +1054,21 @@ func main() {
 		h := faturasBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
-		h.HandleFaturaConceito(w, r)
+		h.HandleFaturasIndex(w, r)
+	}))
+	mux.HandleFunc("/faturas/conteudo", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !hasPermission(ctx.Role, permTransactionsRead) {
+			respondForbidden(w, r)
+			return
+		}
+		h := faturasBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.HandleFaturasIndexContent(w, r)
 	}))
 
 	mux.HandleFunc("/cartoes/faturas/pagar", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1063,6 +1084,27 @@ func main() {
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
 		h.HandlePagarFatura(w, r)
+	}))
+	mux.HandleFunc("/cartoes/faturas/reembolso", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		h := faturasBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		switch r.Method {
+		case http.MethodGet:
+			if !hasPermission(ctx.Role, permTransactionsRead) {
+				respondForbidden(w, r)
+				return
+			}
+			h.HandleFormReembolsoGeral(w, r)
+		case http.MethodPost:
+			if !hasPermission(ctx.Role, permInvoicesStatusUpdate) {
+				respondForbidden(w, r)
+				return
+			}
+			h.HandleRegistrarReembolsoGeral(w, r)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
 	}))
 	mux.HandleFunc(invoicePaymentReversalPath, invoicePaymentReversalRoute(authService, csrfSigner, &faturasBase))
 
@@ -1194,6 +1236,25 @@ func main() {
 				return
 			}
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "reembolso" {
+			switch r.Method {
+			case http.MethodGet:
+				if !hasPermission(ctx.Role, permTransactionsRead) {
+					respondForbidden(w, r)
+					return
+				}
+				h.HandleFormReembolso(w, r, id)
+			case http.MethodPost:
+				if !hasPermission(ctx.Role, permTransactionsUpdate) {
+					respondForbidden(w, r)
+					return
+				}
+				h.HandleRegistrarReembolso(w, r, id)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
 			return
 		}
 		if len(parts) == 2 && parts[1] == "editar" {

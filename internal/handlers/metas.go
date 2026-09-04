@@ -38,15 +38,17 @@ func respondMetaFormError(w http.ResponseWriter, idPrefix string, message string
 }
 
 type MetasData struct {
+	AppShellAccess
 	Title                   string
 	UserName                string
 	UserFirstName           string
 	UserInitials            string
 	ProfilePhotoURL         string
+	NotificationCount       int
 	MonthLabel              string
 	Aba                     string
 	ContentOOB              bool
-	FabOOB                  bool
+	HeaderActionOOB         bool
 	TotalLimits             MoneyDisplay
 	TotalAcumulado          MoneyDisplay
 	TotalAcumuladoNegativo  bool
@@ -145,8 +147,8 @@ func (h *MetasHandler) HandleListarMetas(w http.ResponseWriter, r *http.Request)
 
 	templateName := "metas-page"
 	if r.Header.Get("HX-Request") != "" {
-		data.FabOOB = true
 		if r.URL.Query().Get("partial") == "conteudo" {
+			data.HeaderActionOOB = true
 			templateName = "metas-tabs"
 		}
 	}
@@ -179,7 +181,9 @@ func (h *MetasHandler) HandleMetasConceito(w http.ResponseWriter, r *http.Reques
 	data.Title = "Metas"
 
 	if r.Header.Get("HX-Request") != "" {
-		data.FabOOB = true
+		if r.URL.Query().Get("partial") == "conteudo" {
+			data.HeaderActionOOB = true
+		}
 	}
 
 	templateName := "metas-page"
@@ -689,7 +693,7 @@ func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	now := time.Now()
+	now := appTime(time.Now())
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Unix()
 	monthEnd := time.Date(now.Year(), now.Month()+1, 0, 23, 59, 59, 0, time.UTC).Unix()
 
@@ -881,7 +885,7 @@ func (h *MetasHandler) renderMetasMutationOOB(w http.ResponseWriter, reqID strin
 		return
 	}
 	data.ContentOOB = true
-	data.FabOOB = true
+	data.HeaderActionOOB = true
 
 	tR := time.Now()
 	var buf bytes.Buffer
@@ -929,7 +933,7 @@ func (h *MetasHandler) queryMetaCategories() ([]FormCategory, error) {
 
 func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, error) {
 	tS := time.Now()
-	now := time.Now()
+	now := appTime(time.Now())
 	months := []string{
 		"Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
 		"Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
@@ -964,6 +968,7 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 		IsBusiness:          renderMeta.IsBusiness,
 		ActiveWorkspaceName: renderMeta.ActiveWorkspaceName,
 	}
+	data.AppShellAccess = QueryAppShellAccess(h.DB, h.WorkspaceID, h.UserID, data.IsBusiness)
 
 	if snapshotErr == nil {
 		data.HasMonthlyPlanning = true
@@ -987,7 +992,7 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 			COALESCE(c.name, 'Sem categoria'),
 			COALESCE(c.icon, 'tag'),
 			COALESCE(c.color, '#6b7280'),
-			COALESCE(SUM(t.amount), 0) AS spent
+			COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) AS spent
 		FROM cost_limits cl
 		JOIN categories c ON c.id = cl.category_id
 		LEFT JOIN transactions t ON t.workspace_id = cl.workspace_id
@@ -1127,7 +1132,7 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 				if targetDate.Valid {
 					targetUnix = targetDate.Int64
 				}
-				required, _, ok := services.EstimateRequiredMonthlyContributionByTargetDate(balance, target, targetUnix, now.UTC())
+				required, _, ok := services.EstimateRequiredMonthlyContributionByTargetDate(balance, target, targetUnix, now)
 				if ok {
 					card.RequiredState = requiredStateValue
 					card.RequiredMonthly = MoneyMinor(required)
@@ -1178,7 +1183,7 @@ func (h *MetasHandler) resolveRechargeInputs(r *http.Request, boxID string, targ
 
 	monthsDesired := 0
 	if targetMonthRaw != "" {
-		monthsDesired = monthsUntilTargetMonth(targetMonthRaw, time.Now())
+		monthsDesired = monthsUntilTargetMonth(targetMonthRaw, appTime(time.Now()))
 	}
 
 	currentBalance := int64(0)
@@ -1323,7 +1328,7 @@ func monthsUntilTargetMonth(targetMonth string, now time.Time) int {
 	if err != nil {
 		return 0
 	}
-	currentMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	currentMonth := appMonthStartUTC(now)
 	target := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
 	if target.Before(currentMonth) {
 		return 0

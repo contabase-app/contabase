@@ -26,16 +26,13 @@ func TestConfiguracoesShellRenderContract(t *testing.T) {
 	body := rr.Body.String()
 	for _, want := range []string{
 		`id="main-content"`,
-		`data-user-name="Config Admin"`,
-		`data-user-initials="CA"`,
-		`data-workspace-name="Config Workspace"`,
-		`data-workspace-business="true"`,
+		`data-app-shell`,
+		`data-page-section="settings"`,
+		`/assets/css/configuracoes.css`,
 		`id="settings-dynamic-payload"`,
-		`data-config-section="perfil"`,
-		`hx-target="#settings-dynamic-payload"`,
-		`hx-select="#settings-dynamic-payload"`,
-		`hx-swap="outerHTML"`,
-		`hx-push-url="true"`,
+		`data-v2-nav-group-key="settings"`,
+		`data-v2-nav-group-key="administration"`,
+		`href="/configuracoes/perfil"`,
 	} {
 		assertContains(t, body, want)
 	}
@@ -57,7 +54,15 @@ func TestConfiguracoesSectionsPreserveFullAndHTMXContracts(t *testing.T) {
 			}
 			assertContains(t, fullRR.Body.String(), `id="main-content"`)
 			assertContains(t, fullRR.Body.String(), `id="settings-dynamic-payload"`)
-			assertContains(t, fullRR.Body.String(), `data-config-section="`+section+`"`)
+			assertContains(t, fullRR.Body.String(), `data-v2-nav-group-key="settings"`)
+			if strings.HasPrefix(section, "admin-") {
+				assertContains(t, fullRR.Body.String(), `data-v2-nav-group-key="administration"`)
+			} else {
+				assertContains(t, fullRR.Body.String(), `href="/configuracoes/`+section+`"`)
+			}
+			if section == "perfil" || section == "workspace" {
+				assertContains(t, fullRR.Body.String(), `data-app-shell`)
+			}
 
 			partialReq := httptest.NewRequest(http.MethodGet, "/configuracoes/"+section, nil)
 			partialReq.Header.Set("HX-Request", "true")
@@ -70,6 +75,43 @@ func TestConfiguracoesSectionsPreserveFullAndHTMXContracts(t *testing.T) {
 			assertContains(t, partialRR.Body.String(), `id="settings-dynamic-payload"`)
 			if strings.Contains(partialRR.Body.String(), `id="main-content"`) {
 				t.Fatalf("HTMX partial for %s must not render the full layout", section)
+			}
+		})
+	}
+}
+
+func TestConfiguracoesAccountAndCardFormsUseGlobalProviderLogoPicker(t *testing.T) {
+	for _, section := range []string{"contas", "cartoes"} {
+		t.Run(section, func(t *testing.T) {
+			handler := newConfiguracoesRenderTestHandler(t)
+			req := httptest.NewRequest(http.MethodGet, "/configuracoes/"+section, nil)
+			req.Header.Set("HX-Request", "true")
+			rr := httptest.NewRecorder()
+			handler.HandleConfiguracoesSection(rr, req, section)
+
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d, body = %q", rr.Code, http.StatusOK, rr.Body.String())
+			}
+			for _, want := range []string{
+				`data-provider-picker`,
+				`data-provider-open`,
+				`data-provider-dialog`,
+				`data-provider-search`,
+				`class="cb-provider-choice-check"`,
+				`data-provider-choice`,
+				`data-provider-slug="itau"`,
+				`src="institutions/itau.png?v=test"`,
+				`data-provider-slug="custom"`,
+				`name="provider_slug" data-provider-value`,
+				`<option value="" selected>Escolha a instituição</option>`,
+			} {
+				assertContains(t, rr.Body.String(), want)
+			}
+			body := rr.Body.String()
+			customIndex := strings.Index(body, `data-provider-custom-choice`)
+			itauIndex := strings.Index(body, `data-provider-slug="itau" data-provider-name="Itaú"`)
+			if customIndex < 0 || itauIndex < 0 || customIndex > itauIndex {
+				t.Fatalf("custom provider must be the first visual option")
 			}
 		})
 	}
@@ -529,11 +571,8 @@ func newConfiguracoesRenderTestHandler(t *testing.T) ConfiguracoesHandler {
 func testConfiguracoesRenderTemplates(t *testing.T) *template.Template {
 	t.Helper()
 
-	stubs := `
-{{define "layout-start"}}<html><body><div id="main-content" data-user-name="{{.UserName}}" data-user-initials="{{.UserInitials}}" data-workspace-name="{{.ActiveWorkspaceName}}" data-workspace-business="{{.IsBusiness}}">{{end}}
-{{define "layout-end"}}</div></body></html>{{end}}
-`
-	tpl := template.Must(template.New("configuracoes-test").Funcs(template.FuncMap{
+	tpl := template.New("configuracoes-test").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath": func(path string) string { return path + "?v=test" },
 		"filterCategories": func(categories []ConfigCategoryRow, typ string) []ConfigCategoryRow {
 			var filtered []ConfigCategoryRow
 			for _, category := range categories {
@@ -554,8 +593,9 @@ func testConfiguracoesRenderTemplates(t *testing.T) *template.Template {
 		"mapGet": func(m map[string]string, key string) string {
 			return m[key]
 		},
-	}).Parse(stubs))
+	}))
 	files := []string{
+		"templates/components/app_shell.html",
 		"templates/components/financial-emblem.html",
 		"templates/pages/configuracoes.html",
 		"templates/pages/configuracoes_components.html",

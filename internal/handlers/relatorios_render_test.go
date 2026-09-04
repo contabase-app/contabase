@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"html/template"
 	"net/http"
@@ -10,6 +11,53 @@ import (
 	"testing"
 	"time"
 )
+
+func TestRelatoriosPageUsesGlobalAppShell(t *testing.T) {
+	tpl := template.Must(template.New("relatorios-app-shell").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath":       func(path string) string { return path + "?v=test" },
+		"sub":             func(a, b int) int { return a - b },
+		"colorStyle":      func(_, _ string) template.CSS { return "" },
+		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
+		"dreMacroValue":   dreMacroValue,
+		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
+		"caixaMacroValue": caixaMacroValue,
+	})).ParseFiles(
+		resolveTemplatePath(t, "templates/pages/relatorios.html"),
+		resolveTemplatePath(t, "templates/components/app_shell.html"),
+		resolveTemplatePath(t, "templates/components/seletor_meses.html"),
+	))
+
+	data := RelatoriosData{
+		Title:               "Relatórios",
+		UserName:            "Vitor Ferreira",
+		UserInitials:        "VF",
+		ActiveWorkspaceName: "Família",
+		ActiveTab:           "extrato",
+		MesAtual:            8,
+		AnoAtual:            2026,
+	}
+	var out bytes.Buffer
+	if err := tpl.ExecuteTemplate(&out, "relatorios-page", data); err != nil {
+		t.Fatalf("render relatorios page: %v", err)
+	}
+
+	body := out.String()
+	for _, expected := range []string{
+		`data-app-shell`,
+		`data-page-section="reports"`,
+		`data-v2-nav-section="reports"`,
+		`cb-v2-relatorios-header`,
+		`id="relatorios-body"`,
+		`/assets/css/relatorios.css`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("relatorios page missing %q", expected)
+		}
+	}
+	if strings.Contains(body, `{{template "layout-start"`) {
+		t.Fatal("relatorios page must use the global app shell, not the legacy layout")
+	}
+}
 
 func testRelatoriosBranchTemplates(t *testing.T) *template.Template {
 	t.Helper()
@@ -216,6 +264,26 @@ func TestRelatoriosMonthSelectorPartialContract(t *testing.T) {
 	}
 }
 
+func TestRelatoriosMonthOptionsAreContinuousAroundSelection(t *testing.T) {
+	selected := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
+	options := buildRelatoriosMonthOptionsAt(2026, 9, "caixa", "movimentos", "previsao", selected)
+
+	if len(options) != 12 {
+		t.Fatalf("month options = %d, want 12", len(options))
+	}
+	if options[0].Label != "Abr" || options[0].Year != "2026" {
+		t.Fatalf("first rolling option = %+v, want Abr/2026", options[0])
+	}
+	if !options[5].IsActive || options[5].Label != "Set" {
+		t.Fatalf("selected month must remain in the sixth position: %+v", options[5])
+	}
+	for _, expected := range []string{"mes=3", "ano=2027", "tab=caixa", "modo=previsao"} {
+		if !strings.Contains(options[11].Query, expected) {
+			t.Fatalf("cross-year option lost %q in query %q", expected, options[11].Query)
+		}
+	}
+}
+
 func TestRelatoriosMonthSelectorPreservesTabAndView(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
@@ -353,8 +421,7 @@ func TestRelatoriosExtratoTemplateParsesAndRenders(t *testing.T) {
 	}
 
 	tpl := template.Must(template.New("relatorios-smoke").Funcs(funcs).Parse(string(raw)))
-	template.Must(tpl.New("layout-start").Parse("<html><body>"))
-	template.Must(tpl.New("layout-end").Parse("</body></html>"))
+	addAppShellTestStubs(tpl)
 	template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
 
 	data := RelatoriosData{
@@ -457,8 +524,7 @@ func TestRelatoriosCaixaTemplateNaoRenderizaPrevistoNemProximosVencimentos(t *te
 	}
 
 	tpl := template.Must(template.New("relatorios-caixa-smoke").Funcs(funcs).Parse(string(raw)))
-	template.Must(tpl.New("layout-start").Parse("<html><body>"))
-	template.Must(tpl.New("layout-end").Parse("</body></html>"))
+	addAppShellTestStubs(tpl)
 	template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
 
 	data := RelatoriosData{
@@ -530,8 +596,7 @@ func TestRelatoriosCaixaTemplatePrevisaoRenderizaSubmodo(t *testing.T) {
 	}
 
 	tpl := template.Must(template.New("relatorios-caixa-previsao-smoke").Funcs(funcs).Parse(string(raw)))
-	template.Must(tpl.New("layout-start").Parse("<html><body>"))
-	template.Must(tpl.New("layout-end").Parse("</body></html>"))
+	addAppShellTestStubs(tpl)
 	template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
 
 	data := RelatoriosData{
@@ -642,8 +707,7 @@ func TestRelatoriosCaixaTemplateRealizadoMantemMovimentosConfirmados(t *testing.
 	}
 
 	tpl := template.Must(template.New("relatorios-caixa-realizado-smoke").Funcs(funcs).Parse(string(raw)))
-	template.Must(tpl.New("layout-start").Parse("<html><body>"))
-	template.Must(tpl.New("layout-end").Parse("</body></html>"))
+	addAppShellTestStubs(tpl)
 	template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
 
 	data := RelatoriosData{
@@ -700,8 +764,7 @@ func TestRelatoriosPersonalNaoRenderizaCompetenciaOuPorLancamento(t *testing.T) 
 	}
 
 	tpl := template.Must(template.New("relatorios-personal-tabs").Funcs(funcs).Parse(string(raw)))
-	template.Must(tpl.New("layout-start").Parse("<html><body>"))
-	template.Must(tpl.New("layout-end").Parse("</body></html>"))
+	addAppShellTestStubs(tpl)
 	template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
 
 	data := RelatoriosData{
@@ -745,8 +808,7 @@ func TestRelatoriosBusinessRenderizaCompetencia(t *testing.T) {
 	}
 
 	tpl := template.Must(template.New("relatorios-business-tabs").Funcs(funcs).Parse(string(raw)))
-	template.Must(tpl.New("layout-start").Parse("<html><body>"))
-	template.Must(tpl.New("layout-end").Parse("</body></html>"))
+	addAppShellTestStubs(tpl)
 	template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
 
 	data := RelatoriosData{
@@ -788,8 +850,7 @@ func TestRelatoriosBusinessRenderizaContabil(t *testing.T) {
 	}
 
 	tpl := template.Must(template.New("relatorios-contabil-business").Funcs(funcs).Parse(string(raw)))
-	template.Must(tpl.New("layout-start").Parse("<html><body>"))
-	template.Must(tpl.New("layout-end").Parse("</body></html>"))
+	addAppShellTestStubs(tpl)
 	template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
 
 	data := RelatoriosData{
@@ -876,8 +937,7 @@ func TestRelatoriosContabilSaldoTotalCores(t *testing.T) {
 	render := func(t *testing.T, total int64, negative bool) string {
 		t.Helper()
 		tpl := template.Must(template.New("relatorios-contabil-cor").Funcs(funcs).Parse(string(raw)))
-		template.Must(tpl.New("layout-start").Parse("<html><body>"))
-		template.Must(tpl.New("layout-end").Parse("</body></html>"))
+		addAppShellTestStubs(tpl)
 		template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
 
 		data := RelatoriosData{
@@ -952,8 +1012,7 @@ func TestRelatoriosPersonalNaoRenderizaContabil(t *testing.T) {
 	}
 
 	tpl := template.Must(template.New("relatorios-contabil-personal").Funcs(funcs).Parse(string(raw)))
-	template.Must(tpl.New("layout-start").Parse("<html><body>"))
-	template.Must(tpl.New("layout-end").Parse("</body></html>"))
+	addAppShellTestStubs(tpl)
 	template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
 
 	data := RelatoriosData{

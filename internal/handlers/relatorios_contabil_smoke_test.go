@@ -396,8 +396,7 @@ func testRelatoriosContabilTemplate(t *testing.T) *template.Template {
 		"caixaMacroValue": caixaMacroValue,
 	}
 	tpl := template.Must(template.New("relatorios-contabil-smoke").Funcs(funcs).Parse(string(raw)))
-	template.Must(tpl.New("layout-start").Parse("<html><body>"))
-	template.Must(tpl.New("layout-end").Parse("</body></html>"))
+	addAppShellTestStubs(tpl)
 	template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))
 	return tpl
 }

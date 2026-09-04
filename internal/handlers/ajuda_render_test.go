@@ -12,18 +12,26 @@ import (
 func TestAjudaPageRenderContracts(t *testing.T) {
 	tpl := testAjudaRenderTemplates(t)
 	data := struct {
+		AppShellAccess
 		Title               string
+		UserName            string
 		UserInitials        string
 		UserFirstName       string
+		NotificationCount   int
 		ActiveWorkspaceName string
 		ProfilePhotoURL     string
 		IsBusiness          bool
 	}{
 		Title:               "Ajuda",
+		UserName:            "User Account",
 		UserInitials:        "UA",
 		UserFirstName:       "User",
 		ActiveWorkspaceName: "Workspace A",
 		IsBusiness:          true,
+		AppShellAccess: AppShellAccess{
+			CanManageOps:    true,
+			CanManageGlobal: true,
+		},
 	}
 
 	var out bytes.Buffer
@@ -33,9 +41,13 @@ func TestAjudaPageRenderContracts(t *testing.T) {
 
 	html := out.String()
 	for _, want := range []string{
+		`data-app-shell`,
 		`data-page-title="Ajuda"`,
+		`data-page-section="help"`,
 		`id="main-content"`,
 		`id="help-search"`,
+		`data-help-sections`,
+		`/assets/css/ajuda.css`,
 		`id="perfis-permissoes"`,
 		`id="como-funcionam-relatorios"`,
 		`id="relatorio-contabil-natureza-economica"`,
@@ -72,31 +84,41 @@ func TestAjudaPageRenderContracts(t *testing.T) {
 	}
 }
 
-func TestLayoutKeepsHelpSearchScriptReference(t *testing.T) {
-	layoutPath := resolveTemplatePath(t, "templates/layout.html")
-	content, err := os.ReadFile(filepath.Clean(layoutPath))
+func TestAjudaPageKeepsHelpSearchContracts(t *testing.T) {
+	pagePath := resolveTemplatePath(t, "templates/pages/ajuda.html")
+	content, err := os.ReadFile(filepath.Clean(pagePath))
 	if err != nil {
-		t.Fatalf("read layout template: %v", err)
+		t.Fatalf("read ajuda template: %v", err)
 	}
 
 	if !strings.Contains(string(content), `/assets/js/ajuda-search.js`) {
-		t.Fatalf("layout template missing help search script reference")
+		t.Fatalf("ajuda template missing help search script reference")
+	}
+	searchPath := resolveTemplatePath(t, "assets/js/ajuda-search.js")
+	search, err := os.ReadFile(filepath.Clean(searchPath))
+	if err != nil {
+		t.Fatalf("read help search script: %v", err)
+	}
+	if !strings.Contains(string(search), `[data-help-sections] > section`) {
+		t.Fatal("help search must target the stable V2 help sections selector")
 	}
 }
 
 func testAjudaRenderTemplates(t *testing.T) *template.Template {
 	t.Helper()
 
-	stubs := `
-{{define "layout-start"}}<html><body><div id="main-content">{{end}}
-{{define "layout-end"}}</div></body></html>{{end}}
-`
-
 	pagePath := resolveTemplatePath(t, "templates/pages/ajuda.html")
+	shellPath := resolveTemplatePath(t, "templates/components/app_shell.html")
 	pageBytes, err := os.ReadFile(filepath.Clean(pagePath))
 	if err != nil {
 		t.Fatalf("read ajuda page template: %v", err)
 	}
 
-	return template.Must(template.New("ajuda-test").Parse(stubs + string(pageBytes)))
+	shellBytes, err := os.ReadFile(filepath.Clean(shellPath))
+	if err != nil {
+		t.Fatalf("read app shell template: %v", err)
+	}
+	return template.Must(template.New("ajuda-test").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath": func(path string) string { return path + "?v=test" },
+	})).Parse(string(pageBytes) + string(shellBytes)))
 }

@@ -47,8 +47,6 @@ func testCategoriasTemplates(t *testing.T) *template.Template {
 	}).Parse(`
 {{define "configuracoes-categorias-content"}}<div id="settings-dynamic-payload">{{if .FlashError}}<div>{{.FlashError}}</div>{{end}}{{if .FlashSuccess}}<div>{{.FlashSuccess}}</div>{{end}}{{range .Categorias}}<div>{{.Name}}</div>{{end}}</div>{{end}}
 {{define "config-categorias-row"}}<article>{{.Name}}</article>{{end}}
-{{define "layout-start"}}<html><body>{{end}}
-{{define "layout-end"}}</body></html>{{end}}
 {{define "configuracoes-categorias-page"}}<html><body>{{template "configuracoes-categorias-content" .}}</body></html>{{end}}
 `))
 }
@@ -456,6 +454,7 @@ func TestConfiguracoesCategoriasTemplateUsesCanonicalBusinessDefaultMacro(t *tes
 		t.Fatalf("read components template: %v", err)
 	}
 	tpl := template.Must(template.New("categorias").Funcs(template.FuncMap{
+		"assetPath": func(path string) string { return path + "?v=test" },
 		"filterCategories": func(categories []ConfigCategoryRow, typ string) []ConfigCategoryRow {
 			var filtered []ConfigCategoryRow
 			for _, c := range categories {
@@ -1076,6 +1075,7 @@ func TestBusinessTemplateUsesDeduzoesImpostosWithAccent(t *testing.T) {
 		t.Fatalf("read components template: %v", err)
 	}
 	tpl := template.Must(template.New("categorias-accent").Funcs(template.FuncMap{
+		"assetPath": func(path string) string { return path + "?v=test" },
 		"filterCategories": func(categories []ConfigCategoryRow, typ string) []ConfigCategoryRow {
 			var filtered []ConfigCategoryRow
 			for _, c := range categories {

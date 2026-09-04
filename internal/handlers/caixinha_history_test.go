@@ -67,7 +67,8 @@ func TestHandleHistoricoLimiteShowsAccountContext(t *testing.T) {
 	defer db.Close()
 	seedHistoryScenario(t, db)
 
-	now := time.Now().UTC().Unix()
+	now := time.Now().Unix()
+	transactionDate := CivilDateToLegacyUnixNoonUTC(civilDateAt(time.Now(), appTimeLocation()))
 	execTestSQL(t, db, `
 		INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at)
 		VALUES ('a-card', 'ws-a', 'Cartão A', 'CREDIT_CARD', 0, 0, ?, ?)
@@ -79,7 +80,7 @@ func TestHandleHistoricoLimiteShowsAccountContext(t *testing.T) {
 	execTestSQL(t, db, `
 		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, created_at, updated_at)
 		VALUES ('tx-card', 'ws-a', 'user-a', 'a-card', 'a-cat', 'EXPENSE', 12500, ?, 'Compra no cartão', 'paid', ?, ?)
-	`, now, now, now)
+	`, transactionDate, now, now)
 
 	h := MetasHandler{
 		DB:          db,
@@ -391,9 +392,11 @@ func testHistoryTemplates(t *testing.T) TemplateEngine {
 	}
 
 	stubs := `
-{{define "layout-start"}}<html><body><div id="main-content">{{end}}
-{{define "layout-end"}}</div></body></html>{{end}}
 {{define "fab-metas-oob"}}<div id="fab-primary" hx-swap-oob="outerHTML">fab</div>{{end}}
 `
-	return template.Must(template.New("history-test").Parse(stubs + string(content)))
+	tpl := template.Must(template.New("history-test").Funcs(template.FuncMap{
+		"assetPath": func(path string) string { return path },
+	}).Parse(stubs + string(content)))
+	addAppShellTestStubs(tpl)
+	return tpl
 }

@@ -10,7 +10,7 @@ func TestDashboardMonthlyCashSummaryAndCompetenceLimits(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	now := time.Now().UTC()
+	now := appTime(time.Now())
 	seedDashboardMonthlyLimitsInvoicePaymentScenario(t, db, now)
 	execTestSQL(t, db, `
 		UPDATE transactions

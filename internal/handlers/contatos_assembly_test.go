@@ -12,6 +12,7 @@ func TestBuildContatosDataSeparatesPageMetadataFromList(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	seedTenantIsolationScenario(t, db)
+	execTestSQL(t, db, `UPDATE workspaces SET type = 'business' WHERE id = 'ws-a'`)
 
 	now := time.Now().UTC().Unix()
 	uploadRoot := t.TempDir()
@@ -69,12 +70,18 @@ func TestBuildContatosDataSeparatesPageMetadataFromList(t *testing.T) {
 	if pageData.UserInitials != "UA" {
 		t.Fatalf("page UserInitials = %q, want %q", pageData.UserInitials, "UA")
 	}
+	if pageData.UserName != "User A" {
+		t.Fatalf("page UserName = %q, want %q", pageData.UserName, "User A")
+	}
 	wantPhoto := fmt.Sprintf("/uploads/profile/user-a.png?v=%d", now)
 	if pageData.ProfilePhotoURL != wantPhoto {
 		t.Fatalf("page ProfilePhotoURL = %q, want %q", pageData.ProfilePhotoURL, wantPhoto)
 	}
 	if pageData.ActiveWorkspaceName != "Workspace A" {
 		t.Fatalf("page ActiveWorkspaceName = %q, want %q", pageData.ActiveWorkspaceName, "Workspace A")
+	}
+	if !pageData.IsBusiness {
+		t.Fatal("page IsBusiness = false, want true")
 	}
 	if pageData.TipoLabel != "Fornecedores" {
 		t.Fatalf("page TipoLabel = %q, want %q", pageData.TipoLabel, "Fornecedores")

@@ -1,9 +1,17 @@
 {{define "ajuda-page"}}
-{{template "layout-start" .}}
-<!-- Header removido: seção identificada pela navegação ativa e barra de workspace -->
-
-<main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 space-y-6 relative" data-page-title="Ajuda">
-    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
+{{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/ajuda.css"}}">
+{{template "app-v2-document-head-end" .}}
+<main id="main-content" class="cb-v2-main cb-v2-ajuda-main" data-page-section="help" data-page-title="{{.Title}}">
+    {{template "app-v2-appbar" .}}
+    <div class="cb-v2-content cb-v2-ajuda-content">
+        <header class="cb-v2-ajuda-header">
+            <div>
+                <p class="cb-v2-eyebrow">Suporte</p>
+                <h1>Central de ajuda</h1>
+                <p>Guias claros para usar o ContaBase com segurança e contexto.</p>
+            </div>
+        </header>
 
     <!-- Hero Banner -->
     <section class="cb-card-dense p-6 md:p-8">
@@ -25,7 +33,7 @@
     </section>
 
     <!-- Help Topics Bento Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div data-help-sections class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 
         <!-- Perfis e Permissões (card largo) -->
         <section id="perfis-permissoes"
@@ -286,6 +294,9 @@
         </section>
 
     </div>
+</div>
 </main>
-{{template "layout-end" .}}
+{{template "app-v2-shell-after-main" .}}
+<script src="{{assetPath "/assets/js/ajuda-search.js"}}"></script>
+{{template "app-v2-document-end" .}}
 {{end}}

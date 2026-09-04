@@ -23,14 +23,18 @@ type ContatosHandler struct {
 
 func respondContatoFormError(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `<div id="contato-form-error" hx-swap-oob="true" class="rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">%s</div>`, template.HTMLEscapeString(message))
+	w.WriteHeader(http.StatusUnprocessableEntity)
+	fmt.Fprintf(w, `<div class="cb-contact-response-error">%s</div>`, template.HTMLEscapeString(message))
 }
 
 type ContatosData struct {
+	AppShellAccess
 	Title                     string
+	UserName                  string
 	UserInitials              string
 	ProfilePhotoURL           string
+	NotificationCount         int
+	IsBusiness                bool
 	Query                     string
 	Tipo                      string
 	TipoLabel                 string
@@ -347,8 +351,11 @@ func (h *ContatosHandler) buildContatosPageData(query, tipo string, fabOOB bool)
 		return ContatosData{}, err
 	}
 	data.CustomClientIDPlaceholder = "CLI-001"
-	data.UserInitials = queryUserInitialsByID(h.DB, h.UserID)
+	data.UserName, data.UserInitials = queryDashboardUser(h.DB, h.UserID)
 	data.ProfilePhotoURL = queryUserProfilePhotoURL(h.DB, h.UserID)
+	data.NotificationCount = queryDashboardNotificationCount(h.DB, h.UserID, h.WorkspaceID)
+	data.IsBusiness = workspaceType(h.DB, h.WorkspaceID) == "business"
+	data.AppShellAccess = QueryAppShellAccess(h.DB, h.WorkspaceID, h.UserID, data.IsBusiness)
 	data.ActiveWorkspaceName = queryWorkspaceName(h.DB, h.WorkspaceID)
 	return data, nil
 }

@@ -1,15 +1,42 @@
 {{define "metas-page"}}
-{{template "layout-start" .}}
-{{template "metas-content" .}}
-{{template "layout-end" .}}
+{{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/metas.css"}}">
+{{template "app-v2-document-head-end" .}}
+<main id="main-content" class="cb-v2-main cb-v2-metas-main" data-page-section="goals" data-page-title="{{.Title}}">
+    {{template "app-v2-appbar" .}}
+    <div class="cb-v2-content cb-v2-metas-content">
+        <header class="cb-v2-metas-header">
+            <div>
+                <p class="cb-v2-eyebrow">Planejamento</p>
+                <h1>Metas e Reservas</h1>
+                <p>Defina limites de gastos e acompanhe suas reservas em um só lugar.</p>
+            </div>
+            {{template "metas-header-action" .}}
+        </header>
+        {{template "metas-content" .}}
+    </div>
+</main>
+{{template "app-v2-shell-after-main" .}}
+<script src="{{assetPath "/assets/js/metas-caixinhas.js"}}"></script>
+<script src="{{assetPath "/assets/js/form-meta.js"}}"></script>
+{{template "app-v2-document-end" .}}
+{{end}}
+
+{{define "metas-header-action"}}
+<button id="metas-primary-action" type="button" class="cb-v2-metas-new"
+    hx-get="/metas/novo?aba={{if eq .Aba "caixinhas"}}reserva{{else}}limite{{end}}"
+    hx-target="#bottom-sheet-container"
+    hx-swap="innerHTML"
+    hx-push-url="false"
+    {{if .HeaderActionOOB}}hx-swap-oob="outerHTML"{{end}}>
+    <i data-lucide="plus"></i><span>{{if eq .Aba "caixinhas"}}Nova reserva{{else if .IsBusiness}}Nova meta{{else}}Novo limite{{end}}</span>
+</button>
 {{end}}
 
 {{define "metas-content"}}
-<link rel="stylesheet" href="/assets/css/metas.css">
-<main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative" data-page-title="Metas">
-    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
+<section class="cb-v2-metas-panels" aria-label="Planejamento financeiro">
     {{template "metas-tabs" .}}
-</main>
+</section>
 {{end}}
 
 {{define "metas-tabs"}}
@@ -34,14 +61,14 @@
     <div id="aporte-form-error" class="hidden mb-4"></div>
     <div id="resgate-form-error" class="hidden mb-4"></div>
 
-    {{if eq .Aba "limites"}}
+{{if eq .Aba "limites"}}
     {{template "metas-limites-panel" .}}
-    {{else}}
+{{else}}
     {{template "metas-caixinhas-panel" .}}
-    {{end}}
+{{end}}
 </div>
-{{if .FabOOB}}
-{{template "fab-metas-oob" .}}
+{{if .HeaderActionOOB}}
+{{template "metas-header-action" .}}
 {{end}}
 {{end}}
 
@@ -118,14 +145,9 @@
                         class="cb-meta-menu-item">
                         <i data-lucide="pencil" class="w-3.5 h-3.5 cb-text-muted"></i>Editar
                     </button>
-                    <button type="button" data-ck-close
-                        hx-get="/lancamentos?categoria={{.CategoryID}}"
-                        hx-target="#main-content"
-                        hx-select="#main-content"
-                        hx-push-url="true"
-                        class="cb-meta-menu-item">
+                    <a href="/lancamentos?categoria={{.CategoryID}}" data-ck-close class="cb-meta-menu-item">
                         <i data-lucide="list" class="w-3.5 h-3.5 cb-text-muted"></i>Lançamentos
-                    </button>
+                    </a>
                 </div>
             </div>
         </div>
@@ -283,14 +305,9 @@
                         <i data-lucide="pencil" class="w-3.5 h-3.5 cb-text-muted"></i>Editar
                     </button>
                     {{if .CategoryID}}
-                    <button type="button" data-ck-close
-                        hx-get="/lancamentos?categoria={{.CategoryID}}"
-                        hx-target="#main-content"
-                        hx-select="#main-content"
-                        hx-push-url="true"
-                        class="cb-meta-menu-item">
+                    <a href="/lancamentos?categoria={{.CategoryID}}" data-ck-close class="cb-meta-menu-item">
                         <i data-lucide="list" class="w-3.5 h-3.5 cb-text-muted"></i>Lançamentos
-                    </button>
+                    </a>
                     {{else}}
                     <button type="button" disabled class="cb-meta-menu-item opacity-50 cursor-not-allowed">
                         <i data-lucide="list" class="w-3.5 h-3.5 cb-text-subtle"></i>Lançamentos

@@ -35,9 +35,12 @@ type invoicePaymentWriterTestHooks struct {
 }
 
 type FaturaData struct {
+	AppShellAccess
 	Title                   string
+	UserName                string
 	UserInitials            string
 	ProfilePhotoURL         string
+	NotificationCount       int
 	OOB                     bool
 	InvoiceID               string
 	CardName                string
@@ -45,11 +48,13 @@ type FaturaData struct {
 	CardColor               string
 	CardProviderSlug        string
 	CardProviderMark        string
+	CardProviderLogoPath    string
 	AccountID               string
 	HasActiveFilter         bool
 	FilterLabel             string
 	ClearFiltersURL         string
 	Reference               string
+	NextReference           string
 	Status                  string
 	StatusLabel             string
 	StatusIcon              string
@@ -82,6 +87,7 @@ type FaturaData struct {
 	DefaultPaymentAccountID string
 	CanAttemptPayment       bool
 	CanSubmitPayment        bool
+	CanMutateItems          bool
 	PaymentDisabledReason   string
 	InvoicePayments         []InvoicePaymentRow
 	TotalPaid               MoneyDisplay
@@ -91,10 +97,37 @@ type FaturaData struct {
 	HasPayments             bool
 	HasLegacyPaymentSummary bool
 	LegacyPaymentNotice     string
+	GeneralRefunds          []InvoiceGeneralRefundRow
+	HasGeneralRefunds       bool
 	IsBusiness              bool
 	ActiveWorkspaceName     string
 	ShowSensitiveWarning    bool
 	SensitiveWarningText    string
+	HideMonthNavigation     bool
+}
+
+// FaturasIndexData is the read-only workspace overview. It selects one card
+// and one competence, then renders the existing invoice content below it.
+// Financial mutations remain exclusively in the existing invoice handlers.
+type FaturasIndexData struct {
+	AppShellAccess
+	Title               string
+	UserName            string
+	UserInitials        string
+	ProfilePhotoURL     string
+	NotificationCount   int
+	IsBusiness          bool
+	ActiveWorkspaceName string
+	Cards               []CreditCardCard
+	SelectedCardID      string
+	PeriodLabel         string
+	MonthOptions        []MonthOption
+	PreviousURL         string
+	NextURL             string
+	RefreshCardsURL     string
+	HasSelectedInvoice  bool
+	SelectedFatura      FaturaData
+	SelectedEmpty       FaturaEmptyData
 }
 
 type InvoicePaymentRow struct {
@@ -103,6 +136,12 @@ type InvoicePaymentRow struct {
 	AccountName string
 	Source      string
 	Note        string
+}
+
+type InvoiceGeneralRefundRow struct {
+	DateLabel   string
+	Amount      MoneyDisplay
+	Description string
 }
 
 type InvoicePaymentAccountOption struct {
@@ -121,6 +160,297 @@ type TransactionDayGroup struct {
 	Transactions []TransactionRow
 }
 
+type FaturaEmptyData struct {
+	AppShellAccess
+	Title               string
+	UserName            string
+	UserInitials        string
+	ProfilePhotoURL     string
+	NotificationCount   int
+	IsBusiness          bool
+	ActiveWorkspaceName string
+	CardName            string
+	PeriodLabel         string
+	PreviousURL         string
+	NextURL             string
+	OpenInvoiceURL      string
+	IsFaturasIndex      bool
+}
+
+// populateFaturaShellData adds only the presentation context required by the
+// authenticated V2 shell. Invoice state, values and payment eligibility stay
+// exclusively in buildFaturaDataForInvoice.
+func (h *FaturasHandler) populateFaturaShellData(data *FaturaData) {
+	data.UserName, data.UserInitials = queryDashboardUser(h.DB, h.UserID)
+	data.ProfilePhotoURL = queryUserProfilePhotoURL(h.DB, h.UserID)
+	data.NotificationCount = queryDashboardNotificationCount(h.DB, h.UserID, h.WorkspaceID)
+	data.AppShellAccess = QueryAppShellAccess(h.DB, h.WorkspaceID, h.UserID, data.IsBusiness)
+}
+
+func (h *FaturasHandler) populateFaturasIndexShellData(data *FaturasIndexData) {
+	data.UserName, data.UserInitials = queryDashboardUser(h.DB, h.UserID)
+	data.ProfilePhotoURL = queryUserProfilePhotoURL(h.DB, h.UserID)
+	data.NotificationCount = queryDashboardNotificationCount(h.DB, h.UserID, h.WorkspaceID)
+	data.IsBusiness = workspaceType(h.DB, h.WorkspaceID) == models.WorkspaceTypeBusiness
+	data.ActiveWorkspaceName = queryWorkspaceName(h.DB, h.WorkspaceID)
+	data.AppShellAccess = QueryAppShellAccess(h.DB, h.WorkspaceID, h.UserID, data.IsBusiness)
+}
+
+// HandleFaturasIndex is the canonical workspace view for credit-card invoices.
+// The legacy detail routes remain available for deep links and mutations.
+func (h *FaturasHandler) HandleFaturasIndex(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildFaturasIndexData(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	h.populateFaturasIndexShellData(&data)
+
+	templateName := "faturas-index-page"
+	if r.URL.Query().Get("partial") == "cards" && r.Header.Get("HX-Request") != "" {
+		templateName = "faturas-index-card-rail"
+	}
+	var buf bytes.Buffer
+	if err := h.Templates.ExecuteTemplate(&buf, templateName, data); err != nil {
+		log.Printf("template faturas index error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
+}
+
+// HandleFaturasIndexContent swaps only the selected invoice, preserving the
+// card rail and its current scroll position.
+func (h *FaturasHandler) HandleFaturasIndexContent(w http.ResponseWriter, r *http.Request) {
+	data, err := h.buildFaturasIndexData(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if data.SelectedCardID == "" {
+		http.Error(w, "nenhum cartão encontrado", http.StatusNotFound)
+		return
+	}
+
+	var buf bytes.Buffer
+	if data.HasSelectedInvoice {
+		if err := h.Templates.ExecuteTemplate(&buf, "faturas-content", data.SelectedFatura); err != nil {
+			log.Printf("template faturas index content error: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+	} else if err := h.Templates.ExecuteTemplate(&buf, "faturas-empty-content", data.SelectedEmpty); err != nil {
+		log.Printf("template faturas index empty content error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	month, year, _ := faturasIndexPeriodFromRequest(r)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("HX-Push-Url", faturasIndexURL(data.SelectedCardID, month, year, faturaSortOrderFromRequest(r)))
+	_, _ = buf.WriteTo(w)
+}
+
+func (h *FaturasHandler) buildFaturasIndexData(r *http.Request) (FaturasIndexData, error) {
+	month, year, err := faturasIndexPeriodFromRequest(r)
+	if err != nil {
+		return FaturasIndexData{}, err
+	}
+	if err := autoCloseWorkspaceInvoices(h.DB, h.WorkspaceID); err != nil {
+		log.Printf("auto close workspace invoices on invoice hub error: %v", err)
+	}
+
+	cards, err := queryFaturasIndexCards(h.DB, h.WorkspaceID, year, time.Month(month))
+	if err != nil {
+		return FaturasIndexData{}, fmt.Errorf("carregar cartões: %w", err)
+	}
+	// Keep the carousel order identical to the Dashboard for the selected
+	// competence: overdue, upcoming, no due date, then paid/zero-value cards.
+	// The sort is stable, so the configured account order remains the tie-break.
+	SortDashboardCardsByPaymentPriority(cards, time.Now())
+
+	selectedCardID := strings.TrimSpace(r.URL.Query().Get("cartao"))
+	if selectedCardID == "" && len(cards) > 0 {
+		selectedCardID = cards[0].ID
+	}
+	selectedIndex := -1
+	for i := range cards {
+		cards[i].Href = faturasIndexURL(cards[i].ID, month, year, faturaSortOrderFromRequest(r))
+		cards[i].ContentURL = faturasIndexContentURL(cards[i].ID, month, year, faturaSortOrderFromRequest(r))
+		cards[i].IsFaturasIndex = true
+		cards[i].IsSelected = cards[i].ID == selectedCardID
+		if cards[i].IsSelected {
+			selectedIndex = i
+		}
+	}
+	if selectedIndex < 0 && selectedCardID != "" {
+		return FaturasIndexData{}, fmt.Errorf("cartão não encontrado")
+	}
+
+	selectedMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	prev := selectedMonth.AddDate(0, -1, 0)
+	next := selectedMonth.AddDate(0, 1, 0)
+	data := FaturasIndexData{
+		Title:           "Faturas",
+		Cards:           cards,
+		SelectedCardID:  selectedCardID,
+		PeriodLabel:     faturasIndexPeriodLabel(selectedMonth),
+		MonthOptions:    buildFaturasIndexMonthOptions(selectedCardID, selectedMonth, faturaSortOrderFromRequest(r)),
+		PreviousURL:     faturasIndexURL(selectedCardID, int(prev.Month()), prev.Year(), faturaSortOrderFromRequest(r)),
+		NextURL:         faturasIndexURL(selectedCardID, int(next.Month()), next.Year(), faturaSortOrderFromRequest(r)),
+		RefreshCardsURL: faturasIndexCardsURL(selectedCardID, month, year, faturaSortOrderFromRequest(r)),
+	}
+	if selectedIndex < 0 {
+		return data, nil
+	}
+
+	selectedCard := cards[selectedIndex]
+	if selectedCard.InvoiceID != "" {
+		fatura, err := buildFaturaDataForInvoice(h.DB, h.WorkspaceID, selectedCard.InvoiceID, faturaSortOrderFromRequest(r))
+		if err != nil {
+			return FaturasIndexData{}, fmt.Errorf("carregar fatura selecionada: %w", err)
+		}
+		configureFaturaForIndex(&fatura, selectedCardID, month, year)
+		data.HasSelectedInvoice = true
+		data.SelectedFatura = fatura
+		return data, nil
+	}
+
+	data.SelectedEmpty = faturasIndexEmptyData(selectedCard, month, year, faturaSortOrderFromRequest(r))
+	return data, nil
+}
+
+func queryFaturasIndexCards(db *sql.DB, workspaceID string, year int, month time.Month) ([]CreditCardCard, error) {
+	rows, err := db.Query(`
+		SELECT a.id, a.name, COALESCE(cc.closing_day, 0), COALESCE(cc.due_day, 0),
+			COALESCE(cc.credit_limit, 0), COALESCE(NULLIF(a.provider_slug, ''), 'custom'),
+			COALESCE(NULLIF(a.color, ''), '#6B7280'), COALESCE(NULLIF(a.icon, ''), '')
+		FROM accounts a
+		LEFT JOIN credit_cards cc ON cc.account_id = a.id
+		WHERE a.workspace_id = ? AND a.type = ? AND a.archived_at IS NULL
+		ORDER BY a.sort_order ASC, a.name ASC
+	`, workspaceID, models.AccountTypeCreditCard)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type cardSeed struct {
+		id, name, providerSlug, color, icon string
+		closingDay, dueDay, creditLimit     int64
+	}
+	var seeds []cardSeed
+	for rows.Next() {
+		var seed cardSeed
+		if err := rows.Scan(&seed.id, &seed.name, &seed.closingDay, &seed.dueDay, &seed.creditLimit, &seed.providerSlug, &seed.color, &seed.icon); err != nil {
+			return nil, err
+		}
+		seeds = append(seeds, seed)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	reference := fmt.Sprintf("%04d-%02d", year, int(month))
+	cards := make([]CreditCardCard, 0, len(seeds))
+	for _, seed := range seeds {
+		var invoiceID, status string
+		var closingUnix, dueUnix int64
+		err := db.QueryRow(`
+			SELECT i.id, i.status, i.closing_date, i.due_date
+			FROM invoices i
+			JOIN accounts a ON a.id = i.account_id
+			WHERE i.account_id = ? AND i.reference = ? AND a.workspace_id = ? AND a.type = ?
+		`, seed.id, reference, workspaceID, models.AccountTypeCreditCard).Scan(&invoiceID, &status, &closingUnix, &dueUnix)
+		if err != nil && err != sql.ErrNoRows {
+			return nil, err
+		}
+		if err == sql.ErrNoRows {
+			closingUnix, dueUnix = invoiceDatesForReference(year, month, seed.closingDay, seed.dueDay)
+		}
+
+		outstanding, err := sumCardOutstandingLimit(db, workspaceID, seed.id)
+		if err != nil {
+			return nil, err
+		}
+		available := seed.creditLimit - outstanding
+		if available < 0 {
+			available = 0
+		}
+		limitPercent := 0
+		if seed.creditLimit > 0 {
+			limitPercent = int((available * 100) / seed.creditLimit)
+		}
+		if limitPercent > 100 {
+			limitPercent = 100
+		}
+
+		amount := int64(0)
+		if invoiceID != "" {
+			amount, err = sumInvoiceTotal(db, workspaceID, invoiceID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		normalizedProvider := normalizeAccountProviderSlug(seed.providerSlug)
+		icon := seed.icon
+		if icon == "" {
+			icon = accountVisualByProvider(normalizedProvider, models.AccountTypeCreditCard)
+		}
+		dueCompact := "—"
+		if dueUnix > 0 {
+			months := []string{"jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"}
+			due := time.Unix(dueUnix, 0)
+			dueCompact = fmt.Sprintf("%d/%s", due.Day(), months[due.Month()-1])
+		}
+		statusLabel, statusIcon, statusBadgeClass := "Sem fatura", "calendar-search", "cb-status-chip-neutral"
+		if invoiceID != "" {
+			statusLabel = invoiceDisplayStatusLabel(status, dueUnix)
+			statusIcon, statusBadgeClass = invoiceStatusVisual(status, statusLabel)
+		}
+		closingLabel := "período selecionado"
+		if invoiceID != "" && closingUnix > 0 && status != models.InvoiceStatusPaid {
+			days := (closingUnix - appTime(time.Now()).Unix()) / 86400
+			switch {
+			case days < 0:
+				closingLabel = "fechada"
+			case days == 0:
+				closingLabel = "fecha hoje"
+			case days == 1:
+				closingLabel = "fecha em 1 dia"
+			default:
+				closingLabel = fmt.Sprintf("fecha em %d dias", days)
+			}
+		}
+
+		cards = append(cards, CreditCardCard{
+			ID:               seed.id,
+			InvoiceID:        invoiceID,
+			Name:             seed.name,
+			DueDay:           fmt.Sprintf("%d", seed.dueDay),
+			DueDateUnix:      dueUnix,
+			DueDateCompact:   dueCompact,
+			ClosingDaysLabel: closingLabel,
+			Reference:        reference,
+			Status:           status,
+			StatusLabel:      statusLabel,
+			StatusIcon:       statusIcon,
+			StatusBadgeClass: statusBadgeClass,
+			Amount:           amount,
+			Money:            MoneyMinor(amount),
+			LimitMoney:       MoneyMinor(available),
+			LimitPercent:     limitPercent,
+			Icon:             icon,
+			Color:            normalizeHexColor(seed.color, "#6B7280"),
+			ProviderSlug:     normalizedProvider,
+			ProviderMark:     accountProviderMark(normalizedProvider, seed.name),
+			ProviderLogoPath: accountProviderLogoPathForAccount(seed.providerSlug, seed.name),
+		})
+	}
+	return cards, nil
+}
+
 func (h *FaturasHandler) HandleExibirFatura(w http.ResponseWriter, r *http.Request) {
 	cartaoID := r.URL.Query().Get("cartao")
 	if cartaoID == "" {
@@ -134,7 +464,7 @@ func (h *FaturasHandler) HandleExibirFatura(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	data.ProfilePhotoURL = queryUserProfilePhotoURL(h.DB, h.UserID)
+	h.populateFaturaShellData(&data)
 
 	var buf bytes.Buffer
 	if err := h.Templates.ExecuteTemplate(&buf, "faturas-page", data); err != nil {
@@ -160,7 +490,7 @@ func (h *FaturasHandler) HandleFaturaConceito(w http.ResponseWriter, r *http.Req
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	data.ProfilePhotoURL = queryUserProfilePhotoURL(h.DB, h.UserID)
+	h.populateFaturaShellData(&data)
 	data.Title = "Fatura"
 
 	var buf bytes.Buffer
@@ -180,24 +510,34 @@ func (h *FaturasHandler) HandleFaturaConceitoPorID(w http.ResponseWriter, r *htt
 		return
 	}
 
-	data, err := buildFaturaDataForInvoice(h.DB, h.WorkspaceID, invoiceID, faturaSortOrderFromRequest(r))
+	// Keep invoice-id links valid, but make the invoice hub the only full-page
+	// destination. Resolving from the stored reference is essential here: a
+	// closed unpaid invoice may belong to the prior calendar month.
+	var accountID, reference string
+	err := h.DB.QueryRow(`
+		SELECT i.account_id, i.reference
+		FROM invoices i
+		JOIN accounts a ON a.id = i.account_id
+		WHERE i.id = ? AND a.workspace_id = ? AND a.type = ?
+	`, invoiceID, h.WorkspaceID, models.AccountTypeCreditCard).Scan(&accountID, &reference)
 	if err != nil {
-		log.Printf("build fatura by id error: %v", err)
+		log.Printf("resolve invoice hub redirect error: %v", err)
 		http.Error(w, "fatura nao encontrada", http.StatusNotFound)
 		return
 	}
-	data.ProfilePhotoURL = queryUserProfilePhotoURL(h.DB, h.UserID)
-	data.Title = "Fatura"
 
-	var buf bytes.Buffer
-	if err := h.Templates.ExecuteTemplate(&buf, "faturas-page", data); err != nil {
-		log.Printf("template faturas error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+	destination, err := faturasIndexURLForReference(accountID, reference, faturaSortOrderFromRequest(r))
+	if err != nil {
+		log.Printf("build invoice hub redirect error: %v", err)
+		http.Error(w, "fatura nao encontrada", http.StatusNotFound)
 		return
 	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	buf.WriteTo(w)
+	if r.Header.Get("HX-Request") != "" {
+		w.Header().Set("HX-Redirect", destination)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, destination, http.StatusSeeOther)
 }
 
 func (h *FaturasHandler) HandleExibirFaturaPorID(w http.ResponseWriter, r *http.Request, invoiceID string) {
@@ -226,7 +566,7 @@ func (h *FaturasHandler) HandleExibirFaturaPorID(w http.ResponseWriter, r *http.
 		http.Error(w, "fatura não encontrada", http.StatusNotFound)
 		return
 	}
-	data.ProfilePhotoURL = queryUserProfilePhotoURL(h.DB, h.UserID)
+	h.populateFaturaShellData(&data)
 
 	var buf bytes.Buffer
 	if err := h.Templates.ExecuteTemplate(&buf, "faturas-page", data); err != nil {
@@ -240,7 +580,7 @@ func (h *FaturasHandler) HandleExibirFaturaPorID(w http.ResponseWriter, r *http.
 }
 
 func (h *FaturasHandler) HandleExibirFaturaPorCartaoMes(w http.ResponseWriter, r *http.Request, accountID string, mes, ano int) {
-	if accountID == "" || mes < 1 || mes > 12 || ano < 2020 || ano > time.Now().Year()+10 {
+	if accountID == "" || mes < 1 || mes > 12 || ano < 2020 || ano > appTime(time.Now()).Year()+10 {
 		http.Error(w, "competência inválida", http.StatusBadRequest)
 		return
 	}
@@ -277,7 +617,7 @@ func (h *FaturasHandler) HandleExibirFaturaPorCartaoMes(w http.ResponseWriter, r
 		http.Error(w, "fatura não encontrada", http.StatusNotFound)
 		return
 	}
-	data.ProfilePhotoURL = queryUserProfilePhotoURL(h.DB, h.UserID)
+	h.populateFaturaShellData(&data)
 
 	var buf bytes.Buffer
 	if err := h.Templates.ExecuteTemplate(&buf, "faturas-page", data); err != nil {
@@ -291,7 +631,7 @@ func (h *FaturasHandler) HandleExibirFaturaPorCartaoMes(w http.ResponseWriter, r
 }
 
 func (h *FaturasHandler) HandleAbrirFaturaPorCartaoMes(w http.ResponseWriter, r *http.Request, accountID string, mes, ano int) {
-	if accountID == "" || mes < 1 || mes > 12 || ano < 2020 || ano > time.Now().Year()+10 {
+	if accountID == "" || mes < 1 || mes > 12 || ano < 2020 || ano > appTime(time.Now()).Year()+10 {
 		http.Error(w, "competência inválida", http.StatusBadRequest)
 		return
 	}
@@ -324,9 +664,15 @@ func (h *FaturasHandler) HandleAbrirFaturaPorCartaoMes(w http.ResponseWriter, r 
 		http.Error(w, "fatura não encontrada", http.StatusNotFound)
 		return
 	}
-	data.ProfilePhotoURL = queryUserProfilePhotoURL(h.DB, h.UserID)
+	h.populateFaturaShellData(&data)
 	var buf bytes.Buffer
-	if err := h.Templates.ExecuteTemplate(&buf, "faturas-page", data); err != nil {
+	templateName := "faturas-page"
+	if r.Header.Get("HX-Request") != "" {
+		configureFaturaForIndex(&data, accountID, mes, ano)
+		templateName = "faturas-content"
+		w.Header().Set("HX-Push-Url", faturasIndexURL(accountID, mes, ano, faturaSortOrderFromRequest(r)))
+	}
+	if err := h.Templates.ExecuteTemplate(&buf, templateName, data); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -353,7 +699,10 @@ func (h *FaturasHandler) HandleListarFaturasDisponiveis(w http.ResponseWriter, r
 
 	rows, err := h.DB.Query(`
 		SELECT i.id, i.reference, i.status, i.closing_date, i.due_date,
-			COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0) as total
+			COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount - COALESCE((
+				SELECT SUM(r.amount_cents) FROM transaction_refunds r
+				WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
+			), 0) ELSE 0 END), 0) - `+invoiceGeneralRefundTotalIASQL+` as total
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id AND a.workspace_id = ?
 		LEFT JOIN transactions t ON t.invoice_id = i.id AND t.workspace_id = ?
@@ -398,8 +747,7 @@ func (h *FaturasHandler) HandleListarFaturasDisponiveis(w http.ResponseWriter, r
 	}
 	rows.Close()
 
-	now := time.Now().UTC()
-	projected := projectedInvoiceMonths(time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC), 12, closingDay, dueDay)
+	projected := projectedInvoiceMonths(appMonthStartUTC(time.Now()), 12, closingDay, dueDay)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, `<option value="">Automático (sugerir pela data)</option>`)
@@ -656,6 +1004,7 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 	if err != nil {
 		return data, fmt.Errorf("fatura: %w", err)
 	}
+	data.NextReference, _ = nextInvoiceReference(data.Reference)
 
 	if data.DefaultPaymentAccountID != "" {
 		var validPaymentAccount string
@@ -688,6 +1037,7 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 
 	data.CardProviderSlug = normalizeAccountProviderSlug(providerSlug)
 	data.CardProviderMark = accountProviderMark(data.CardProviderSlug, data.CardName)
+	data.CardProviderLogoPath = accountProviderLogoPathForAccount(providerSlug, data.CardName)
 	data.CardIcon = accountVisualByProvider(data.CardProviderSlug, models.AccountTypeCreditCard)
 	data.CardColor = normalizeHexColor(cardColor, "#6B7280")
 	data.StatusLabel = invoiceDisplayStatusLabel(data.Status, dueUnix)
@@ -734,7 +1084,7 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 		}
 	}
 	data.PaymentAccounts = queryPaymentAccounts(db, workspaceID)
-	data.PaymentDateInput = time.Now().Format("2006-01-02")
+	data.PaymentDateInput = appTime(time.Now()).Format("2006-01-02")
 
 	pendingAmountRaw := CalculateInvoicePendingAmount(total, effectivePaid)
 	data.TotalPaid = MoneyMinor(effectivePaid)
@@ -751,12 +1101,19 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 		accountNameMap := paymentAccountNameMap(data.PaymentAccounts)
 		data.InvoicePayments = buildInvoicePaymentRows(payments, accountNameMap)
 	}
+	generalRefunds, err := queryActiveInvoiceGeneralRefunds(db, workspaceID, invoiceID)
+	if err != nil {
+		return data, err
+	}
+	data.GeneralRefunds = generalRefunds
+	data.HasGeneralRefunds = len(generalRefunds) > 0
 	for i := range data.PaymentAccounts {
 		data.PaymentAccounts[i].BalanceAfterPayment = MoneyMinor(data.PaymentAccounts[i].BalanceCents - pendingAmountRaw)
 	}
 
 	data.CanAttemptPayment = data.Status == models.InvoiceStatusOpen || data.Status == models.InvoiceStatusClosed
 	data.CanSubmitPayment = data.CanAttemptPayment && pendingAmountRaw > 0 && len(data.PaymentAccounts) > 0
+	data.CanMutateItems = data.Status != models.InvoiceStatusPaid
 
 	cycleBadge := computeCycleBadge(closingUnix, time.Now())
 	finBadge := computeFinancialBadge(pendingAmountRaw, effectivePaid)
@@ -783,7 +1140,7 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 	}
 
 	rows, err := db.Query(`
-		SELECT t.id, t.type, t.amount, t.date, t.created_at, t.description, t.status,
+		SELECT t.id, t.type, t.amount, t.date, t.created_at, t.updated_at, t.description, t.status,
 			COALESCE(c.name, 'Sem categoria'),
 			COALESCE(c.icon, 'tag'),
 			COALESCE(c.color, '#6b7280'),
@@ -791,7 +1148,15 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 			t.total_installments,
 			a.name,
 			COALESCE(u.name, 'Usuário removido'),
-			CASE WHEN t.total_installments > 1 OR t.recurring_rule_id IS NOT NULL THEN 1 ELSE 0 END
+			CASE WHEN t.total_installments > 1 OR t.recurring_rule_id IS NOT NULL THEN 1 ELSE 0 END,
+			COALESCE((
+				SELECT SUM(r.amount_cents) FROM transaction_refunds r
+				WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
+			), 0),
+			COALESCE((
+				SELECT GROUP_CONCAT(r.description, ' • ') FROM transaction_refunds r
+				WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
+			), '')
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
@@ -1151,7 +1516,7 @@ func materializeRecurringInvoiceOccurrenceTx(tx *sql.Tx, workspaceID, invoiceID,
 
 func invoiceReferenceForDate(t time.Time, closingDay int64) string {
 	year, month := t.Year(), t.Month()
-	if int64(t.Day()) > closingDay {
+	if int64(t.Day()) >= closingDay {
 		year, month = nextInvoiceMonth(year, month)
 	}
 	return fmt.Sprintf("%04d-%02d", year, int(month))
@@ -1161,7 +1526,7 @@ func calculateInvoiceDates(t time.Time, closingDay, dueDay int64) (closingUnix, 
 	year, month := t.Year(), t.Month()
 	effectiveClosing := clampDayToMonth(year, month, closingDay)
 
-	if int64(t.Day()) > int64(effectiveClosing) {
+	if int64(t.Day()) >= int64(effectiveClosing) {
 		year, month = nextInvoiceMonth(year, month)
 	}
 
@@ -1221,6 +1586,7 @@ func scanInvoiceTransactionRows(rows *sql.Rows) []TransactionRow {
 			&amount,
 			&dateUnix,
 			&row.CreatedAt,
+			&row.UpdatedAt,
 			&row.Description,
 			&row.PaymentStatus,
 			&catName,
@@ -1231,6 +1597,8 @@ func scanInvoiceTransactionRows(rows *sql.Rows) []TransactionRow {
 			&row.AccountName,
 			&row.Author,
 			&isSeries,
+			&row.RefundedAmount,
+			&row.RefundDescriptions,
 		); err != nil {
 			continue
 		}
@@ -1256,6 +1624,11 @@ func scanInvoiceTransactionRows(rows *sql.Rows) []TransactionRow {
 		row.AmountDisplay = "- R$ " + formatCurrencyCentsBase(amount)
 		row.AmountInput = formatCurrencyCentsBase(amount)
 		row.AmountClass = "text-[#FE414F]"
+		row.HasRefund = row.RefundedAmount > 0
+		if row.HasRefund {
+			row.RefundedAmountDisplay = "+ R$ " + formatCurrencyCentsBase(row.RefundedAmount)
+			row.EffectiveAmountDisplay = "R$ " + formatCurrencyCentsBase(amount-row.RefundedAmount)
+		}
 
 		list = append(list, row)
 	}
@@ -1306,8 +1679,7 @@ func invoiceStatusLabel(status string) string {
 
 func invoiceDisplayStatusLabel(status string, dueUnix int64) string {
 	if status != "PAID" && dueUnix > 0 {
-		now := time.Now().UTC()
-		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		today := AppCivilDateUTC(time.Now())
 		due := time.Unix(dueUnix, 0).UTC()
 		dueDate := time.Date(due.Year(), due.Month(), due.Day(), 0, 0, 0, 0, time.UTC)
 		if dueDate.Before(today) {
@@ -1451,12 +1823,21 @@ func autoSettleZeroInvoicesTx(tx *sql.Tx, workspaceID, accountID string, now int
 		        AND a.type = ?
 		  )
 		  AND COALESCE((
-		      SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END)
+			  SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount - COALESCE((
+			          SELECT SUM(r.amount_cents) FROM transaction_refunds r
+			          WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
+			      ), 0) ELSE 0 END)
 		      FROM transactions t
 		      WHERE t.workspace_id = ?
 		        AND t.invoice_id = invoices.id
+		  ), 0) - COALESCE((
+		      SELECT SUM(ir.amount_cents)
+		      FROM invoice_refunds ir
+		      WHERE ir.workspace_id = ?
+		        AND ir.invoice_id = invoices.id
+		        AND ir.reversed_at IS NULL
 		  ), 0) = 0
-	`, now, now, now, accountID, accountID, workspaceID, models.AccountTypeCreditCard, workspaceID)
+	`, now, now, now, accountID, accountID, workspaceID, models.AccountTypeCreditCard, workspaceID, workspaceID)
 	return err
 }
 
@@ -1623,10 +2004,13 @@ func queryInvoiceOptionsForAccount(db *sql.DB, workspaceID, accountID string) []
 			i.closing_date,
 			i.due_date,
 			COALESCE((
-				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END)
+				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount - COALESCE((
+					SELECT SUM(r.amount_cents) FROM transaction_refunds r
+					WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
+				), 0) ELSE 0 END)
 				FROM transactions t
 				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
-			), 0) AS total,
+			), 0) - `+invoiceGeneralRefundTotalIASQL+` AS total,
 			`+invoiceEffectivePaidSQLExpr+` AS effective_paid
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id
@@ -1743,25 +2127,29 @@ func parseMonthYearParams(r *http.Request) (mes int, ano int, ok bool) {
 		return 0, 0, false
 	}
 	ano, err = strconv.Atoi(anoStr)
-	if err != nil || ano < 2020 || ano > time.Now().Year()+10 {
+	if err != nil || ano < 2020 || ano > appTime(time.Now()).Year()+10 {
 		return 0, 0, false
 	}
 	return mes, ano, true
 }
 
 func buildFaturaMonthOptions(accountID string, selectedMonth time.Time, sortOrder string) []MonthOption {
+	return buildFaturaMonthOptionsAt(accountID, selectedMonth, sortOrder, time.Now())
+}
+
+func buildFaturaMonthOptionsAt(accountID string, selectedMonth time.Time, sortOrder string, now time.Time) []MonthOption {
 	shortMonths := []string{"Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"}
-	now := time.Now().UTC()
-	currentMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	currentMonth := appMonthStartUTC(now)
+	firstMonth := selectedMonth.AddDate(0, -5, 0)
 
 	options := make([]MonthOption, 0, 12)
-	for month := 1; month <= 12; month++ {
-		m := time.Date(selectedMonth.Year(), time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	for offset := 0; offset < 12; offset++ {
+		m := firstMonth.AddDate(0, offset, 0)
 		options = append(options, MonthOption{
 			Label:     shortMonths[int(m.Month())-1],
 			Year:      fmt.Sprintf("%d", m.Year()),
 			URL:       faturaMonthURL(accountID, int(m.Month()), m.Year(), sortOrder),
-			IsActive:  m.Month() == selectedMonth.Month(),
+			IsActive:  m.Equal(selectedMonth),
 			IsCurrent: m.Equal(currentMonth),
 		})
 	}
@@ -1776,6 +2164,155 @@ func faturaMonthURL(accountID string, mes, ano int, sortOrder string) string {
 		values.Set("ordem", "asc")
 	}
 	return "/cartoes/" + accountID + "/faturas?" + values.Encode()
+}
+
+func faturasIndexPeriodFromRequest(r *http.Request) (int, int, error) {
+	now := appTime(time.Now())
+	if r == nil {
+		return int(now.Month()), now.Year(), nil
+	}
+	monthRaw := strings.TrimSpace(r.URL.Query().Get("mes"))
+	yearRaw := strings.TrimSpace(r.URL.Query().Get("ano"))
+	if monthRaw == "" && yearRaw == "" {
+		return int(now.Month()), now.Year(), nil
+	}
+	month, monthErr := strconv.Atoi(monthRaw)
+	year, yearErr := strconv.Atoi(yearRaw)
+	if monthErr != nil || yearErr != nil || month < 1 || month > 12 || year < 2020 || year > now.Year()+10 {
+		return 0, 0, fmt.Errorf("competência inválida")
+	}
+	return month, year, nil
+}
+
+func faturasIndexURL(accountID string, mes, ano int, sortOrder string) string {
+	values := url.Values{}
+	if strings.TrimSpace(accountID) != "" {
+		values.Set("cartao", accountID)
+	}
+	values.Set("mes", strconv.Itoa(mes))
+	values.Set("ano", strconv.Itoa(ano))
+	if normalizeSortOrder(sortOrder, "desc") == "asc" {
+		values.Set("ordem", "asc")
+	}
+	return "/faturas?" + values.Encode()
+}
+
+// faturasIndexURLForReference keeps every navigation entrypoint aligned with
+// the invoice actually selected by the financial rules, rather than assuming
+// the browser's current calendar month.
+func faturasIndexURLForReference(accountID, reference, sortOrder string) (string, error) {
+	year, month, err := parseInvoiceReference(reference)
+	if err != nil {
+		return "", err
+	}
+	return faturasIndexURL(accountID, int(month), year, sortOrder), nil
+}
+
+func faturasIndexContentURL(accountID string, mes, ano int, sortOrder string) string {
+	values := url.Values{}
+	values.Set("cartao", accountID)
+	values.Set("mes", strconv.Itoa(mes))
+	values.Set("ano", strconv.Itoa(ano))
+	if normalizeSortOrder(sortOrder, "desc") == "asc" {
+		values.Set("ordem", "asc")
+	}
+	return "/faturas/conteudo?" + values.Encode()
+}
+
+func faturasIndexCardsURL(accountID string, mes, ano int, sortOrder string) string {
+	values := url.Values{}
+	if strings.TrimSpace(accountID) != "" {
+		values.Set("cartao", accountID)
+	}
+	values.Set("mes", strconv.Itoa(mes))
+	values.Set("ano", strconv.Itoa(ano))
+	values.Set("partial", "cards")
+	if normalizeSortOrder(sortOrder, "desc") == "asc" {
+		values.Set("ordem", "asc")
+	}
+	return "/faturas?" + values.Encode()
+}
+
+func buildFaturasIndexMonthOptions(accountID string, selectedMonth time.Time, sortOrder string) []MonthOption {
+	shortMonths := []string{"Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"}
+	currentMonth := appMonthStartUTC(time.Now())
+	options := make([]MonthOption, 0, 12)
+	// A rolling window keeps the selected competence near the center. Besides
+	// using the desktop width more naturally, it makes the year transition a
+	// continuous month sequence instead of an abrupt Jan–Dec reset.
+	firstMonth := selectedMonth.AddDate(0, -5, 0)
+	for offset := 0; offset < 12; offset++ {
+		m := firstMonth.AddDate(0, offset, 0)
+		options = append(options, MonthOption{
+			Label:     shortMonths[int(m.Month())-1],
+			Year:      strconv.Itoa(m.Year()),
+			URL:       faturasIndexURL(accountID, int(m.Month()), m.Year(), sortOrder),
+			IsActive:  m.Month() == selectedMonth.Month(),
+			IsCurrent: m.Equal(currentMonth),
+		})
+	}
+	return options
+}
+
+func faturasIndexPeriodLabel(selectedMonth time.Time) string {
+	months := []string{"Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"}
+	return fmt.Sprintf("%s de %d", months[selectedMonth.Month()-1], selectedMonth.Year())
+}
+
+func configureFaturaForIndex(data *FaturaData, accountID string, mes, ano int) {
+	if data == nil {
+		return
+	}
+	selected := time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC)
+	previous := selected.AddDate(0, -1, 0)
+	next := selected.AddDate(0, 1, 0)
+	data.HideMonthNavigation = true
+	data.MesAnteriorURL = faturasIndexURL(accountID, int(previous.Month()), previous.Year(), data.SortOrder)
+	data.MesSeguinteURL = faturasIndexURL(accountID, int(next.Month()), next.Year(), data.SortOrder)
+	data.MonthOptions = buildFaturasIndexMonthOptions(accountID, selected, data.SortOrder)
+	data.SortRecentURL = faturasIndexURL(accountID, mes, ano, "desc")
+	data.SortChronologicalURL = faturasIndexURL(accountID, mes, ano, "asc")
+}
+
+// configureFaturaForIndexRequest keeps an HTMX mutation inside the invoice hub
+// instead of reintroducing the detail page's second month navigator.
+func configureFaturaForIndexRequest(data *FaturaData, r *http.Request) {
+	if data == nil || r == nil {
+		return
+	}
+	currentURL := strings.TrimSpace(r.Header.Get("HX-Current-URL"))
+	if currentURL == "" {
+		currentURL = strings.TrimSpace(r.Referer())
+	}
+	u, err := url.Parse(currentURL)
+	if err != nil || u.Path != "/faturas" {
+		return
+	}
+	accountID := strings.TrimSpace(u.Query().Get("cartao"))
+	if accountID == "" || accountID != data.AccountID {
+		return
+	}
+	mes, mesErr := strconv.Atoi(u.Query().Get("mes"))
+	ano, anoErr := strconv.Atoi(u.Query().Get("ano"))
+	if mesErr != nil || anoErr != nil || mes < 1 || mes > 12 || ano < 2020 {
+		return
+	}
+	configureFaturaForIndex(data, accountID, mes, ano)
+}
+
+func faturasIndexEmptyData(card CreditCardCard, mes, ano int, sortOrder string) FaturaEmptyData {
+	selected := time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC)
+	prev := selected.AddDate(0, -1, 0)
+	next := selected.AddDate(0, 1, 0)
+	return FaturaEmptyData{
+		Title:          "Faturas",
+		CardName:       card.Name,
+		PeriodLabel:    fmt.Sprintf("%s/%d", []string{"Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"}[selected.Month()-1], selected.Year()),
+		PreviousURL:    faturasIndexURL(card.ID, int(prev.Month()), prev.Year(), sortOrder),
+		NextURL:        faturasIndexURL(card.ID, int(next.Month()), next.Year(), sortOrder),
+		OpenInvoiceURL: fmt.Sprintf("/cartoes/%s/faturas/abrir?mes=%d&ano=%d", url.PathEscape(card.ID), mes, ano),
+		IsFaturasIndex: true,
+	}
 }
 
 func faturaSortOrderFromRequest(r *http.Request) string {
@@ -1905,7 +2442,7 @@ func invoiceCycleBoundsForReference(year int, month time.Month, closingDay, dueD
 	currentClosingUnix, _ := invoiceDatesForReference(year, month, closingDay, dueDay)
 	prevYear, prevMonth := prevInvoiceMonth(year, month)
 	previousClosingUnix, _ := invoiceDatesForReference(prevYear, prevMonth, closingDay, dueDay)
-	return previousClosingUnix + 1, currentClosingUnix + 1
+	return previousClosingUnix, currentClosingUnix
 }
 
 func sumInvoiceTotal(db *sql.DB, workspaceID, invoiceID string) (int64, error) {
@@ -1914,9 +2451,15 @@ func sumInvoiceTotal(db *sql.DB, workspaceID, invoiceID string) (int64, error) {
 	}
 	var total int64
 	if err := db.QueryRow(`
-		SELECT COALESCE(SUM(amount), 0) FROM transactions
-		WHERE workspace_id = ? AND invoice_id = ? AND type = 'EXPENSE'
-	`, workspaceID, invoiceID).Scan(&total); err != nil {
+		SELECT COALESCE(SUM(t.amount - COALESCE((
+			SELECT SUM(r.amount_cents) FROM transaction_refunds r
+			WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
+		), 0)), 0) - COALESCE((
+			SELECT SUM(ir.amount_cents) FROM invoice_refunds ir
+			WHERE ir.workspace_id = ? AND ir.invoice_id = ? AND ir.reversed_at IS NULL
+		), 0) FROM transactions t
+		WHERE t.workspace_id = ? AND t.invoice_id = ? AND t.type = 'EXPENSE'
+	`, workspaceID, invoiceID, workspaceID, invoiceID).Scan(&total); err != nil {
 		return 0, err
 	}
 	return total, nil
@@ -1925,9 +2468,15 @@ func sumInvoiceTotal(db *sql.DB, workspaceID, invoiceID string) (int64, error) {
 func sumInvoiceTotalTx(tx *sql.Tx, workspaceID, invoiceID string) int64 {
 	var total int64
 	tx.QueryRow(`
-		SELECT COALESCE(SUM(amount), 0) FROM transactions
-		WHERE workspace_id = ? AND invoice_id = ? AND type = 'EXPENSE'
-	`, workspaceID, invoiceID).Scan(&total)
+		SELECT COALESCE(SUM(t.amount - COALESCE((
+			SELECT SUM(r.amount_cents) FROM transaction_refunds r
+			WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
+		), 0)), 0) - COALESCE((
+			SELECT SUM(ir.amount_cents) FROM invoice_refunds ir
+			WHERE ir.workspace_id = ? AND ir.invoice_id = ? AND ir.reversed_at IS NULL
+		), 0) FROM transactions t
+		WHERE t.workspace_id = ? AND t.invoice_id = ? AND t.type = 'EXPENSE'
+	`, workspaceID, invoiceID, workspaceID, invoiceID).Scan(&total)
 	return total
 }
 
@@ -1942,12 +2491,15 @@ func sumCardOutstandingLimit(db *sql.DB, workspaceID, cardAccountID string) (int
 	rows, err := db.Query(`
 		SELECT i.id, i.closing_date,
 		       COALESCE((
-		           SELECT SUM(t.amount)
+		           SELECT SUM(t.amount - COALESCE((
+		               SELECT SUM(r.amount_cents) FROM transaction_refunds r
+		               WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
+		           ), 0))
 		           FROM transactions t
 		           WHERE t.workspace_id = a.workspace_id
 		             AND t.invoice_id = i.id
 		             AND t.type = 'EXPENSE'
-		       ), 0) AS invoice_total,
+		       ), 0) - `+invoiceGeneralRefundTotalIASQL+` AS invoice_total,
 		       `+invoiceEffectivePaidSQLExpr+` AS invoice_paid
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id AND a.workspace_id = ?
@@ -2000,66 +2552,42 @@ func (h *FaturasHandler) renderNoInvoiceForPeriod(w http.ResponseWriter, r *http
 	months := []string{"Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"}
 	periodLabel := fmt.Sprintf("%s/%d", months[mes-1], ano)
 
-	isHX := r.Header.Get("HX-Request") != ""
+	data := FaturaEmptyData{
+		Title:               "Fatura",
+		IsBusiness:          workspaceType(h.DB, h.WorkspaceID) == models.WorkspaceTypeBusiness,
+		ActiveWorkspaceName: queryWorkspaceName(h.DB, h.WorkspaceID),
+		CardName:            cardName,
+		PeriodLabel:         periodLabel,
+		PreviousURL:         faturaMonthURL(accountID, int(prev.Month()), prev.Year(), faturaSortOrderFromRequest(r)),
+		NextURL:             faturaMonthURL(accountID, int(next.Month()), next.Year(), faturaSortOrderFromRequest(r)),
+		OpenInvoiceURL:      fmt.Sprintf("/cartoes/%s/faturas/abrir?mes=%d&ano=%d", url.PathEscape(accountID), mes, ano),
+	}
+	data.UserName, data.UserInitials = queryDashboardUser(h.DB, h.UserID)
+	data.ProfilePhotoURL = queryUserProfilePhotoURL(h.DB, h.UserID)
+	data.NotificationCount = queryDashboardNotificationCount(h.DB, h.UserID, h.WorkspaceID)
+	data.AppShellAccess = QueryAppShellAccess(h.DB, h.WorkspaceID, h.UserID, data.IsBusiness)
 
+	templateName := "faturas-empty-page"
+	if r.Header.Get("HX-Request") != "" {
+		templateName = "faturas-empty-content"
+	}
+	var buf bytes.Buffer
+	if err := h.Templates.ExecuteTemplate(&buf, templateName, data); err != nil {
+		log.Printf("template empty faturas error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-	if !isHX {
-		baseData := struct {
-			Title           string
-			IsBusiness      bool
-			ProfilePhotoURL string
-		}{
-			Title:           "Fatura Não Encontrada",
-			IsBusiness:      workspaceType(h.DB, h.WorkspaceID) == models.WorkspaceTypeBusiness,
-			ProfilePhotoURL: queryUserProfilePhotoURL(h.DB, h.UserID),
-		}
-		_ = h.Templates.ExecuteTemplate(w, "layout-start", baseData)
-	}
-
-	fmt.Fprintf(w, `<section id="main-content" class="mx-auto max-w-md px-4 pt-6 pb-28">
-<header class="mb-5 flex items-center gap-3">
-<a href="/" hx-get="/" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="w-9 h-9 rounded-xl bg-white border border-zinc-200 flex items-center justify-center hover:bg-zinc-100 active:scale-95 transition-all shrink-0 dark:bg-zinc-900/60 dark:border-zinc-800/50 dark:hover:bg-zinc-800/60">
-<i data-lucide="arrow-left" class="w-4 h-4 text-zinc-400 dark:text-zinc-400"></i>
-</a>
-<div>
-<p class="text-xs text-zinc-500 uppercase tracking-widest font-medium">FATURA</p>
-<h1 class="text-lg font-bold text-zinc-800 dark:text-white/95 truncate">%s</h1>
-</div>
-</header>
-<div class="rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800/50 dark:bg-zinc-900/50">
-<p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">%s</p>
-<h2 class="mt-2 text-lg font-bold text-zinc-800 dark:text-white/95">Nenhuma fatura para este período</h2>
-<p class="mt-2 text-sm text-zinc-500">Use "Abrir fatura" para criar manualmente esta competência ou navegue entre os meses.</p>
-<div class="mt-4 flex gap-2">
-<a href="%s" hx-get="%s" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="rounded-xl border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800/40 dark:text-zinc-400 dark:hover:bg-zinc-800/40">Mês anterior</a>
-<a href="%s" hx-get="%s" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="rounded-xl border border-zinc-200 px-3 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-800/40 dark:text-zinc-400 dark:hover:bg-zinc-800/40">Mês seguinte</a>
-</div>
-<form class="mt-3" hx-post="/cartoes/%s/faturas/abrir?mes=%d&ano=%d" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">
-<button type="submit" class="w-full rounded-xl bg-indigo-500 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-600 transition-colors">Abrir fatura</button>
-</form>
-</div>
-</section>`,
-		cardName,
-		periodLabel,
-		faturaMonthURL(accountID, int(prev.Month()), prev.Year(), faturaSortOrderFromRequest(r)),
-		faturaMonthURL(accountID, int(prev.Month()), prev.Year(), faturaSortOrderFromRequest(r)),
-		faturaMonthURL(accountID, int(next.Month()), next.Year(), faturaSortOrderFromRequest(r)),
-		faturaMonthURL(accountID, int(next.Month()), next.Year(), faturaSortOrderFromRequest(r)),
-		accountID, mes, ano,
-	)
-
-	if !isHX {
-		_ = h.Templates.ExecuteTemplate(w, "layout-end", nil)
-	}
+	buf.WriteTo(w)
 }
 
 func (h *FaturasHandler) renderDashboardOOB(w http.ResponseWriter) error {
 	data := BuildDashboardData(h.DB, h.UserID, h.WorkspaceID)
 	data.OOB = true
+	SortDashboardCardsByPaymentPriority(data.Cards, time.Now())
 
 	var buf bytes.Buffer
-	for _, templateName := range dashboardOOBTemplateNames() {
+	for _, templateName := range dashboardOOBTemplateNames(h.Templates) {
 		if h.Templates.Lookup(templateName) == nil {
 			continue
 		}
@@ -2079,6 +2607,7 @@ func (h *FaturasHandler) renderInvoiceAndDashboardOOB(w http.ResponseWriter, r *
 		return err
 	}
 	invoiceData.OOB = false
+	configureFaturaForIndexRequest(&invoiceData, r)
 
 	var buf bytes.Buffer
 	if err := h.Templates.ExecuteTemplate(&buf, "faturas-content", invoiceData); err != nil {
@@ -2087,7 +2616,8 @@ func (h *FaturasHandler) renderInvoiceAndDashboardOOB(w http.ResponseWriter, r *
 
 	dashboardData := BuildDashboardData(h.DB, h.UserID, h.WorkspaceID)
 	dashboardData.OOB = true
-	for _, templateName := range dashboardOOBTemplateNames() {
+	SortDashboardCardsByPaymentPriority(dashboardData.Cards, time.Now())
+	for _, templateName := range dashboardOOBTemplateNames(h.Templates) {
 		if h.Templates.Lookup(templateName) == nil {
 			continue
 		}
@@ -2121,6 +2651,36 @@ func buildInvoicePaymentRows(payments []models.InvoicePayment, nameMap map[strin
 		})
 	}
 	return rows
+}
+
+func queryActiveInvoiceGeneralRefunds(db *sql.DB, workspaceID, invoiceID string) ([]InvoiceGeneralRefundRow, error) {
+	rows, err := db.Query(`
+		SELECT amount_cents, description, created_at
+		FROM invoice_refunds
+		WHERE workspace_id = ?
+		  AND invoice_id = ?
+		  AND reversed_at IS NULL
+		ORDER BY created_at DESC, id DESC
+	`, workspaceID, invoiceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []InvoiceGeneralRefundRow
+	for rows.Next() {
+		var amount, createdAt int64
+		var description string
+		if err := rows.Scan(&amount, &description, &createdAt); err != nil {
+			return nil, err
+		}
+		result = append(result, InvoiceGeneralRefundRow{
+			DateLabel:   formatDateTimeLabel(createdAt),
+			Amount:      MoneyMinor(amount),
+			Description: description,
+		})
+	}
+	return result, rows.Err()
 }
 
 func coalesceString(s *string, fallback string) string {

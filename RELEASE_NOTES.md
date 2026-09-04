@@ -5,31 +5,35 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Candidata atual
 
-- **v1.0.0-beta.2 — publicação beta em andamento — 25 de agosto de 2026** — *Segunda candidata da linha 1.0*
+- **v1.0.0-beta.3 — preparação local — 2 de setembro de 2026** — *Shell V2 definitivo e identidade visual das instituições*
 
-  Esta candidata inicia a preparação da futura versão estável `v1.0.0`. O foco atual é consolidar identidade visual, leitura correta dos resumos de despesas e segurança das operações sobre recorrências antes do congelamento funcional.
+  A terceira candidata da linha 1.0 promove a interface autenticada para um único shell canônico nas rotas definitivas. Dashboard, lançamentos, metas, contas, relatórios, contatos, faturas, notificações, ajuda e configurações compartilham navegação, tema, workspace e ações globais. O layout anterior, seu CSS sem consumidores e a rota temporária `/dashboard-v2` foram removidos; o aviso de segurança do token de setup e o rodapé com versão/timezone foram preservados no shell atual.
 
-  A identidade do ContaBase passa a usar o monograma `CB` no sistema, PWA, favicons, autenticação e carregamentos. O ícone instalado mantém fundo grafite integral, variante `maskable` dentro da zona segura e manifest versionado por conteúdo para evitar o cache da identidade anterior. Em `/lancamentos`, Pago, Pendente, Vencido e Agendado passam a representar somente despesas e obrigações de fatura visíveis.
+  Contas e cartões recebem um catálogo global de instituições com logos embarcados e um seletor pesquisável adequado ao mobile. As imagens já incluem o fundo final e agora seguem o mesmo arredondamento em Dashboard, Configurações, Faturas, Lançamentos e seletores do formulário. Instituições fora do catálogo continuam suportadas por "Outra" e fallback textual, sem upload arbitrário.
 
-  O formulário de lançamentos passa a explicar a confirmação futura no momento da entrada: receitas e despesas fora de cartão, com data futura e status pago, são registradas com pagamento agendado para a data escolhida e sem movimentar o saldo antes dela. Manter o status pendente preserva exatamente o fluxo atual.
+  O Dashboard consolida o redesenho de cartões e faturas nos temas claro e escuro, sem estilos especiais por instituição. A navegação lateral passa a usar três blocos compactos, rolagem interna discreta e controles de workspace, tema e notificações no rodapé. Workspaces pessoais e Business têm ícones distintos e mantêm a mesma cobertura de páginas conforme permissões.
 
-  Em Configurações → Backups, o administrador global pode confirmar o local lógico `DATA_DIR/backups/` e consultar até sete snapshots diários protegidos. A rotina verifica a cobertura a cada hora, mas publica apenas um arquivo por dia civil: reinícios e imports não substituem o snapshot daquele dia. Na atualização, o arquivo automático legado mais antigo de cada dia é preservado e as duplicatas só são removidas depois da adoção protegida. Backups pré-restore continuam separados. A visualização não abre os arquivos nem revela caminhos absolutos; existência ainda não equivale a um restore validado. A ação de importar usa o violeta do sistema, deixando o vermelho para os avisos de risco.
+  **Central de Faturas.** A nova rota `/faturas` reúne os cartões do workspace em um carrossel e troca o detalhe da fatura selecionada na própria página. A competência é global, a seleção preserva a URL e as rotas individuais continuam válidas para links diretos. O seletor usa uma faixa contínua de 12 meses — inclusive na virada de ano — preenchendo o desktop e centralizando o mês ativo no mobile.
 
-  Esta candidata também corrige a exclusão "Este e os próximos" para séries legadas: ela encerra regras futuras mesmo quando a cadeia histórica não pode ser validada linearmente e remove ocorrências comuns já marcadas como pagas, revertendo o saldo na mesma transação. Faturas fechadas ou pagas, pagamentos vinculados a fatura e exceções manuais permanecem protegidos. Em `/lancamentos`, toda a área informativa do card abre a edição no mobile, e o resumo de faturas separa título e valores para impedir sobreposição em telas estreitas.
+  A seleção do cartão agora é estável: o Dashboard resolve a competência da fatura escolhida ao abrir a Central, a troca de mês mantém o mesmo cartão e a ordem do carrossel segue a prioridade de pagamento do Dashboard. No mobile, o trilho vertical do Painel ficou mais compacto e o cabeçalho reforça menu e marca sem transformar o hambúrguer em um botão visualmente pesado.
 
-  Nas recorrências, o status de pagamento torna-se local à ocorrência selecionada mesmo quando o usuário escolhe "Este e futuros" ou "Toda a recorrência". Os demais campos continuam seguindo o escopo escolhido. A única regra estrutural preservada é a de despesas vinculadas a cartão de crédito, cuja liquidação individual é representada pela fatura.
+  **Competência contínua.** Lançamentos, Contas, Relatórios e o detalhe individual de Fatura usam agora a mesma faixa de doze meses, com ano correto na virada e período ativo centralizado no mobile. Cada tela preserva seus próprios filtros e contexto ao trocar a competência; o detalhe de Fatura também passou a reutilizar o comportamento global em vez de manter JavaScript duplicado.
 
-  O materializador passa a reconhecer de forma controlada primeiras ocorrências legadas com propriedades locais diferentes da regra e exceções antigas sem `date_civil`, sem reparar ou sobrescrever dados automaticamente. Divergências em sequências posteriores, associações entre workspaces e inconsistências de fatura continuam falhando de forma fechada.
+  A candidata também reúne as correções financeiras posteriores à beta.2: datas civis seguem a timezone configurada, compras feitas no próprio dia do fechamento vão para a fatura seguinte e a edição "Este e futuros" aceita alterar a ocorrência atual paga e sua cauda mutável sem apagar histórico nem relaxar as proteções de fatura.
 
-  **Upgrade pretendido:** `v0.1.0-beta.9` → `v1.0.0-beta.2`. Esse caminho ainda precisa passar pelos gates completos e por smoke real antes de ser declarado suportado.
+  A revisão final também corrige o estado vazio do seletor de instituições, impedindo que uma imagem sem `src` apareça como arte quebrada, e centraliza a coluna da Central de Notificações nos mesmos limites das demais páginas.
 
-  **Validação local:** a suíte canônica completa em `TZ=UTC`, a matriz financeira/recorrente repetida, `go vet`, build e validações de sintaxe estão verdes. A execução integral da matriz de política do atualizador e os smokes reais continuam como gates da candidata. Os testes de fatura foram estabilizados para não dependerem de datas fixas de agosto/setembro de 2026.
+  **Upgrade pretendido:** `v1.0.0-beta.2` → `v1.0.0-beta.3`.
 
-  **Distribuição:** a candidata só será disponibilizada depois do Release Preflight no SHA público exato, criação da tag imutável, validação dos packages Linux e checksums, imagem GHCR fixa e smokes previstos no runbook.
+  **Validação:** a preparação local inclui testes direcionados de renderização, logos, shell, datas civis, faturas e recorrências, além da suíte canônica `TZ=UTC go test ./... -count=1`, vet, build e higiene do diff. Release Preflight, tag, artifacts, GHCR, smokes de instalação/atualização e avanço do canal permanecem gates separados.
 
-  **Canal:** permanece em `v1.0.0-beta.1` durante os gates e só poderá avançar para `v1.0.0-beta.2` depois da validação da Release e dos caminhos de instalação/atualização.
+  **Distribuição:** nenhuma publicação é feita nesta preparação. A tag imutável, o prerelease, os artifacts e o canal Beta só podem avançar após autorização explícita e execução do runbook.
 
 ## Histórico
+
+- **v1.0.0-beta.2 — 25 de agosto de 2026** — *Segunda candidata da linha 1.0, publicada*
+
+  Consolidou o monograma `CB`, confirmação futura sem efeito antecipado no saldo, snapshots diários protegidos, resumos financeiros corrigidos e ajustes de recorrências e lançamentos no mobile. A tag, a Release, os artifacts, a imagem fixa e o canal Beta foram materializados; novas correções avançam para outra versão.
 
 - **v0.1.0-beta.9 — HOTFIX — 15 de agosto de 2026** — *Atualização self-hosted mais segura e resumo mensal de reservas concluído*
 

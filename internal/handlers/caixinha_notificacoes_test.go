@@ -160,6 +160,9 @@ func TestCaixinhaNotificationsHandleApagar(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("dismiss status = %d", rr.Code)
 	}
+	if body := rr.Body.String(); !strings.Contains(body, `id="notification-badge"`) || !strings.Contains(body, `hx-swap-oob="true"`) {
+		t.Fatalf("dismiss response must refresh only the notification badge, got %q", body)
+	}
 
 	visible := h.visibleItemsForUser(h.boxesInOverdraft(false))
 	if len(visible) != 0 {
@@ -191,6 +194,51 @@ func TestCaixinhaNotificationsHandleLimparTudo(t *testing.T) {
 	visible := h.visibleItemsForUser(allItems)
 	if len(visible) != 0 {
 		t.Fatalf("items after limpar tudo = %d, want 0", len(visible))
+	}
+}
+
+func TestLimparTudoHidesClosedInvoiceWithFutureDueDate(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedCaixinhaNotificacoesScenario(t, db)
+	now := time.Now().Unix()
+	closingDate := now - 60
+	dueDate := now + 7*24*60*60
+
+	execTestSQL(t, db, `
+		INSERT INTO accounts (id, workspace_id, name, type, created_at, updated_at)
+		VALUES ('a-card', 'ws-a', 'Cartão A', 'CREDIT_CARD', ?, ?)
+	`, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, created_at)
+		VALUES ('a-invoice', 'a-card', '2026-09', ?, ?, 'CLOSED', ?)
+	`, closingDate, dueDate, now-120)
+
+	h := NotificacoesHandler{
+		DB:          db,
+		Templates:   testNotificacoesTemplate(t),
+		WorkspaceID: "ws-a",
+		UserID:      "user-a",
+	}
+	items := h.closedInvoices()
+	if len(items) != 1 {
+		t.Fatalf("closed invoice notifications = %d, want 1", len(items))
+	}
+	if items[0].CreatedAt != closingDate {
+		t.Fatalf("notification CreatedAt = %d, want closing date %d", items[0].CreatedAt, closingDate)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/notificacoes/limpar", nil)
+	rr := httptest.NewRecorder()
+	h.HandleLimparTudo(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("limpar tudo status = %d", rr.Code)
+	}
+	if strings.Contains(rr.Body.String(), "Fatura aguardando pagamento") {
+		t.Fatalf("closed invoice notification remained after limpar tudo: %q", rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `id="notification-badge"`) || !strings.Contains(rr.Body.String(), `class="hidden"`) {
+		t.Fatalf("limpar tudo response must hide the notification badge: %q", rr.Body.String())
 	}
 }
 

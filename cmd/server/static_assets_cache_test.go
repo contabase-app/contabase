@@ -29,6 +29,9 @@ func TestDockerRuntimeImageCopiesCompleteAssetsTree(t *testing.T) {
 		"assets/pwa-icon-dark-192x192.png",
 		"assets/pwa-icon-dark-512x512.png",
 		"assets/pwa-icon-dark-maskable-512x512.png",
+		"assets/institutions/itau.png",
+		"assets/institutions/nubank.png",
+		"assets/institutions/xp.png",
 	} {
 		info, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(required)))
 		if err != nil {

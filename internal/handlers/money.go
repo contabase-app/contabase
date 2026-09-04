@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 var currencyNoiseRe = regexp.MustCompile(`[^\d,.\-]`)
@@ -16,6 +17,12 @@ func parseCurrency(raw string) (int64, error) {
 		return 0, fmt.Errorf("valor vazio")
 	}
 
+	// Allow the BRL marker, but reject arbitrary letters instead of silently
+	// dropping them (for example, turning "abc100" into 100).
+	s = strings.ReplaceAll(strings.ToUpper(s), "R$", "")
+	if strings.IndexFunc(s, unicode.IsLetter) >= 0 {
+		return 0, fmt.Errorf("valor deve conter apenas números")
+	}
 	s = currencyNoiseRe.ReplaceAllString(s, "")
 	s = strings.ReplaceAll(s, " ", "")
 

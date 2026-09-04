@@ -1,925 +1,1155 @@
-/* ContaBase Dashboard Styles — P.49.b card glow + balance refinements */
+/* Regras exclusivas do conteúdo do Dashboard. O shell compartilhado está em app-shell.css. */
 
-/* Scrollbar hide para mobile */
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-
-/* Progress bar com cor dinâmica via CSS custom property */
-.progress-fill-colored {
-    width: calc(var(--pct, 0) * 1%);
-    transition: width 0.5s ease;
-    background-color: var(--ic, #8b5cf6);
+.cb-v2-content {
+    width: min(1400px, 100%);
+    margin: 0 auto;
+    padding-top: 28px;
 }
 
-/* Emblema com cor sólida */
-.emblem-wrap-solid {
-    background-color: var(--ic, #8b5cf6);
-}
-
-/* Ícone colorido via CSS custom property */
-.icon-colored {
-    color: var(--ic, #8b5cf6);
-}
-
-/* === Credit Card Item — premium feel restored from pre-redesign version === */
-
-.card-cc {
-    position: relative;
-    overflow: hidden;
-    background:
-        radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--ic, #7C5CFF) 6%, transparent), transparent 35%),
-        linear-gradient(180deg, #F8FAFD 0%, #F2F5FA 100%);
-    border: 1px solid color-mix(in srgb, var(--cb-border-subtle) 82%, var(--ic, #CBD5E1) 18%);
-    border-radius: 1.25rem;
-    padding: 1rem;
-    transition: border-color 0.2s, box-shadow 0.3s, transform 0.3s ease;
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.65),
-        0 2px 8px -2px rgba(0, 0, 0, 0.05);
-}
-.card-cc:hover {
-    border-color: color-mix(in srgb, var(--cb-border-strong) 75%, var(--ic, #8B5CF6) 25%);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.75),
-        0 8px 24px -6px rgba(0, 0, 0, 0.12);
-    transform: translateY(-2px);
-}
-.dark .card-cc {
-    background:
-        radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--ic, #7C5CFF) 12%, transparent), transparent 38%),
-        linear-gradient(180deg, #181D28 0%, #151B25 100%);
-    border-color: color-mix(in srgb, var(--cb-border-subtle) 82%, var(--ic, #6366F1) 18%);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.04),
-        0 4px 16px -4px rgba(0, 0, 0, 0.28);
-}
-.dark .card-cc:hover {
-    border-color: color-mix(in srgb, var(--cb-border-strong) 70%, var(--ic, #818CF8) 30%);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.06),
-        0 10px 28px -8px rgba(0, 0, 0, 0.45);
-}
-
-/* Colored ambient blob — positioned top-right, blurred, tinted by card color */
-.card-cc-blob {
-    position: absolute;
-    top: -2.5rem;
-    right: -2.5rem;
-    width: 7rem;
-    height: 7rem;
-    border-radius: 9999px;
-    filter: blur(2.5rem);
-    opacity: 0.15;
-    pointer-events: none;
-    background-color: var(--ic, #8b5cf6);
-    transition: opacity 0.3s ease, transform 0.3s ease;
-}
-.card-cc:hover .card-cc-blob {
-    opacity: 0.22;
-    transform: scale(1.1);
-}
-
-/* Top edge accent line — thin gradient from transparent to color to transparent */
-.card-cc::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0.75rem;
-    right: 0.75rem;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--ic, #8b5cf6), transparent);
-    opacity: 0.20;
-    pointer-events: none;
-}
-
-/* Bottom limit bar — edge-to-edge via absolute positioning */
-.card-cc-bar {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    width: 100%;
-    height: 0.25rem;
-    background: var(--cb-border-subtle);
-    border-radius: 0 0 1.25rem 1.25rem;
-    overflow: hidden;
-}
-.card-cc-bar-fill {
-    height: 100%;
-    transition: width 0.5s ease;
-    background-color: var(--ic, #8b5cf6);
-}
-
-.card-cc-placeholder {
-    position: relative;
-    min-height: 11.75rem;
-    overflow: hidden;
-    padding: 1.75rem;
-    border: 1px dashed color-mix(in srgb, var(--cb-border-strong) 78%, transparent);
-    border-radius: 1.25rem;
-    background:
-        radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--cb-accent) 7%, transparent), transparent 36%),
-        linear-gradient(180deg, color-mix(in srgb, var(--cb-surface-1) 88%, white 12%) 0%, color-mix(in srgb, var(--cb-surface-2) 92%, white 8%) 100%);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.58),
-        0 2px 8px -4px rgba(15, 23, 42, 0.12);
-    opacity: 0.82;
-    transition:
-        border-color 0.2s ease,
-        box-shadow 0.24s ease,
-        opacity 0.2s ease,
-        transform 0.24s ease;
-}
-
-.card-cc-placeholder:hover {
-    border-color: color-mix(in srgb, var(--cb-accent) 38%, var(--cb-border-strong));
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.68),
-        0 10px 26px -16px rgba(15, 23, 42, 0.32);
-    opacity: 1;
-    transform: translateY(-2px);
-}
-
-.card-cc-placeholder-icon {
-    position: absolute;
-    right: 1rem;
-    top: 1rem;
+.cb-v2-heading-row {
     display: flex;
-    height: 2.5rem;
-    width: 2.5rem;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.cb-v2-heading-row h1 {
+    margin: 0;
+    color: var(--v2-text);
+    font-size: 28px;
+    font-weight: 720;
+    letter-spacing: -0.035em;
+    line-height: 1.15;
+    text-wrap: balance;
+}
+
+.cb-v2-heading-row > div > p:last-child {
+    max-width: 55ch;
+    margin: 7px 0 0;
+    color: var(--v2-muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.cb-v2-context-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(96px, 1fr));
+    gap: 7px;
+    min-width: min(100%, 444px);
+}
+
+.cb-v2-context-actions a {
+    display: flex;
+    min-height: 40px;
     align-items: center;
     justify-content: center;
-    border-radius: 0.875rem;
-    color: var(--cb-text-muted);
-    background: color-mix(in srgb, var(--cb-surface-3) 74%, transparent);
-    border: 1px solid color-mix(in srgb, var(--cb-border-subtle) 82%, transparent);
+    gap: 8px;
+    border: 1px solid var(--v2-border);
+    border-radius: 10px;
+    background: var(--v2-surface);
+    color: var(--v2-text);
+    font-size: 12px;
+    font-weight: 610;
+    transition: border-color 180ms ease, background-color 180ms ease;
 }
 
-.card-cc-placeholder-content {
-    display: flex;
-    min-height: calc(11.75rem - 3.5rem - 2px);
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 1.25rem;
+.cb-v2-context-actions a:hover {
+    border-color: var(--v2-border-strong);
+    background: var(--v2-surface-hover);
 }
 
-.card-cc-placeholder-copy {
-    padding-right: 3.25rem;
+.cb-v2-context-actions svg {
+    width: 15px;
+    height: 15px;
+    color: var(--v2-accent);
 }
 
-.card-cc-placeholder-cta {
-    flex-shrink: 0;
+.cb-v2-context-actions a:nth-child(2) svg { color: var(--v2-positive); }
+.cb-v2-context-actions a:nth-child(3) svg { color: var(--v2-info); }
+.cb-v2-context-actions a:nth-child(4) svg { color: var(--v2-warning); }
+
+.cb-v2-grid {
+    display: grid;
+    grid-template-columns: minmax(276px, 0.82fr) minmax(0, 1.58fr);
+    gap: 18px;
+    align-items: start;
 }
 
-.dark .card-cc-placeholder {
-    background:
-        radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--cb-accent) 13%, transparent), transparent 38%),
-        linear-gradient(180deg, rgba(24, 29, 40, 0.76) 0%, rgba(21, 27, 37, 0.68) 100%);
-    border-color: rgba(203, 213, 225, 0.3);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.04),
-        0 4px 16px -10px rgba(0, 0, 0, 0.36);
-}
-
-.dark .card-cc-placeholder:hover {
-    border-color: rgba(167, 139, 250, 0.52);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.06),
-        0 12px 28px -18px rgba(2, 6, 23, 0.74);
-}
-
-/* === Balance secondary metrics — compact inline === */
-
-.balance-inline-metrics {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: baseline;
-}
-.balance-inline-group {
-    display: inline-flex;
-    align-items: baseline;
-    flex-wrap: nowrap;
+.cb-v2-left-column,
+.cb-v2-right-column {
+    display: grid;
+    gap: 18px;
     min-width: 0;
 }
-.balance-sep {
-    color: var(--cb-text-subtle);
-    user-select: none;
-    flex-shrink: 0;
-    line-height: 1;
+
+.cb-v2-panel,
+.cb-v2-credit-card,
+.cb-v2-empty-card {
+    border: 1px solid var(--v2-border);
+    border-radius: 13px;
+    background: var(--v2-surface);
 }
 
-/* === Financial panel — mockup-aligned compact header + balance + pair === */
-
-.cb-dashboard {
-    --cb-dashboard-gap: 1.25rem;
+.cb-v2-panel {
+    padding: 18px;
 }
 
-.cb-dashboard-layout,
-.cb-dashboard-stack,
-.cb-dashboard-pair-grid {
-    gap: var(--cb-dashboard-gap);
-}
-
-.cb-fin-header {
+.cb-v2-panel-header,
+.cb-v2-section-heading {
     display: flex;
+    min-width: 0;
     align-items: center;
     justify-content: space-between;
-    min-height: 1.125rem;
+    gap: 12px;
 }
 
-.cb-fin-kicker {
-    color: var(--cb-text-muted);
-    font-size: 0.75rem;
-    font-weight: 760;
-    letter-spacing: 0;
-}
-
-.cb-fin-balance {
-    display: grid;
-    gap: 0.1875rem;
-    margin-top: 0.8125rem;
-    padding-bottom: 0.9375rem;
-}
-
-.cb-fin-hero {
+.cb-v2-panel-header h2,
+.cb-v2-section-heading h2 {
     margin: 0;
-    font-size: 2.5rem;
-    line-height: 1;
-    font-weight: 880;
-    letter-spacing: -0.025em;
+    color: var(--v2-text);
+    font-size: 16px;
+    font-weight: 680;
+    letter-spacing: -0.018em;
+}
+
+.cb-v2-panel-header > a:not(.cb-v2-text-link) {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    border-radius: 8px;
+    color: var(--v2-muted);
+}
+
+.cb-v2-panel-header > a:not(.cb-v2-text-link):hover {
+    background: var(--v2-surface-hover);
+    color: var(--v2-text);
+}
+
+.cb-v2-panel-header > a:not(.cb-v2-text-link) svg {
+    width: 16px;
+    height: 16px;
+}
+
+.cb-v2-text-link,
+.cb-v2-section-heading > a {
+    color: var(--v2-accent);
+    font-size: 12px;
+    font-weight: 620;
+}
+
+.cb-v2-text-link:hover,
+.cb-v2-section-heading > a:hover {
+    color: var(--v2-accent-strong);
+}
+
+.cb-v2-label {
+    margin: 26px 0 5px;
+    color: var(--v2-muted);
+    font-size: 13px;
+}
+
+.cb-v2-balance {
+    margin: 0;
+    color: var(--v2-positive);
+    font-size: 42px;
     font-variant-numeric: tabular-nums;
+    font-weight: 740;
+    letter-spacing: -0.05em;
+    line-height: 1;
     overflow-wrap: anywhere;
 }
 
-.cb-fin-pair {
+.cb-v2-balance.is-negative,
+.cb-v2 .is-negative {
+    color: var(--v2-danger);
+}
+
+.cb-v2 .is-positive {
+    color: var(--v2-positive);
+}
+
+.cb-v2-balance-breakdown {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    overflow: hidden;
-    border: 1px solid var(--cb-border-subtle);
-    border-radius: 0.875rem;
-    background: var(--cb-surface-2);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 20px;
 }
 
-.cb-fin-pair-cell {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.625rem 0.75rem;
-    min-width: 0;
-}
-
-.cb-fin-pair-cell + .cb-fin-pair-cell {
-    border-left: 1px solid var(--cb-border-subtle);
-}
-
-.cb-fin-pair-icon {
-    display: inline-flex;
-    flex: 0 0 1.5rem;
-    width: 1.5rem;
-    height: 1.5rem;
-    align-items: center;
-    justify-content: center;
-    border-radius: 0.625rem;
-    color: var(--cb-text-muted);
-    background: color-mix(in srgb, var(--cb-text-muted) 9%, transparent);
-}
-
-.cb-fin-pair-copy {
+.cb-v2-balance-breakdown > div {
     display: grid;
-    gap: 0.0625rem;
+    gap: 5px;
     min-width: 0;
+    padding: 11px;
+    border: 1px solid var(--v2-border);
+    border-radius: 9px;
+    background: var(--v2-detail-surface);
 }
 
-.cb-fin-metric-label {
+.cb-v2-balance-breakdown span {
     display: flex;
+    min-width: 0;
     align-items: center;
-    color: var(--cb-text-muted);
-    font-size: 0.6875rem;
-    font-weight: 700;
+    gap: 6px;
+    color: var(--v2-muted);
+    font-size: 11px;
 }
 
-.cb-fin-pair-val {
-    display: block;
-    font-size: 0.8125rem;
-    font-weight: 720;
-    letter-spacing: -0.006em;
+.cb-v2-balance-breakdown svg {
+    width: 13px;
+    height: 13px;
+}
+
+.cb-v2-balance-breakdown strong {
+    overflow-wrap: anywhere;
+    color: var(--v2-text);
+    font-size: 14px;
     font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.cb-fin-trend {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    min-height: 2.25rem;
-    color: var(--cb-text-muted);
-    font-size: 0.75rem;
-    font-weight: 700;
-    padding-block: 0.375rem;
-}
-
-.cb-fin-trend-val {
-    font-size: 0.75rem;
-    font-weight: 760;
-    color: var(--cb-text-muted);
-}
-
-.cb-fin-accounts-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding-top: 0.5rem;
-}
-
-.cb-fin-accounts-list {
-    margin-top: 0.125rem;
-    border-top: 1px solid color-mix(in srgb, var(--cb-border-subtle) 55%, transparent);
-}
-
-.cb-fin-account-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    min-height: 4rem;
-    padding: 0.75rem 0.25rem;
-    border-bottom: 1px solid color-mix(in srgb, var(--cb-border-subtle) 55%, transparent);
-    border-radius: 0;
-    transition: background-color 0.18s ease, color 0.18s ease;
-}
-
-.cb-fin-account-row:hover {
-    background: color-mix(in srgb, var(--cb-surface-2) 80%, transparent);
-    border-radius: 0.75rem;
-}
-
-.cb-fin-account-main {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    min-width: 0;
-    flex: 1;
-}
-
-.cb-fin-account-copy {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-}
-
-.cb-fin-account-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--cb-text-main);
-    font-size: 0.8125rem;
-    font-weight: 720;
-    line-height: 1.2;
-}
-
-.cb-fin-account-type {
-    margin-top: 0.1875rem;
-    color: var(--cb-text-subtle);
-    font-size: 0.625rem;
-    font-weight: 700;
-    line-height: 1;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.cb-fin-account-meta {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.125rem;
-    flex-shrink: 0;
-}
-
-.cb-fin-account-value {
-    color: var(--cb-text-main);
-    font-size: 0.875rem;
-    font-weight: 780;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-
-.cb-fin-account-trend {
-    display: flex;
-    align-items: baseline;
-    gap: 0.25rem;
-}
-
-@media (max-width: 620px) {
-    .cb-dashboard {
-        --cb-dashboard-gap: 1.125rem;
-    }
-
-    /* Mobile: widen the vertical rhythm between major sections
-       (Posição ↔ Cartões ↔ Limites ↔ Próximas ações) for easier scanning
-       while scrolling. The Limites/Metas pair is one visual block, so it
-       keeps the tighter base gap. Tablet/desktop untouched. */
-    .cb-dashboard-layout,
-    .cb-dashboard-stack {
-        gap: 1.75rem;
-    }
-
-    .cb-dashboard-pair-grid {
-        gap: 1.125rem;
-    }
-
-    .cb-fin-hero {
-        font-size: 2rem;
-    }
-
-    .cb-fin-pair {
-        grid-template-columns: 1fr 1fr;
-    }
-
-    .cb-fin-pair-val {
-        font-size: 0.75rem;
-    }
-
-    .cb-fin-pair-cell {
-        gap: 0.5rem;
-        padding: 0.5625rem 0.625rem;
-    }
-
-    .cb-fin-account-row {
-        padding-inline: 0.125rem;
-    }
-
-    .cb-fin-account-value {
-        font-size: 0.8125rem;
-    }
-}
-
-/* === Resumo do mês panel — 4-cell grid, mockup-aligned === */
-
-.cb-summary-panel {
-    padding-bottom: 0.125rem;
-}
-
-.cb-summary-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    min-height: 6.75rem;
-    margin-top: 0.375rem;
-}
-
-.cb-summary-cell {
-    display: grid;
-    align-content: start;
-    gap: 0.25rem;
-    padding: 0.625rem 1rem 0.5rem;
-    min-width: 0;
-    border-left: 1px solid var(--cb-border-subtle);
-}
-
-.cb-summary-cell:first-child {
-    border-left: 0;
-}
-
-.cb-summary-label {
-    color: var(--cb-text-muted);
-    font-size: 0.75rem;
-    font-weight: 720;
-    letter-spacing: 0;
-}
-
-.cb-summary-value {
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 850;
-    letter-spacing: -0.01em;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-
-.cb-summary-meta {
-    color: var(--cb-text-subtle);
-    font-size: 0.6875rem;
     font-weight: 650;
 }
 
-@media (max-width: 860px) {
-    .cb-summary-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .cb-summary-cell:nth-child(3) {
-        border-left: 0;
-        border-top: 1px solid var(--cb-border-subtle);
-    }
-
-    .cb-summary-cell:nth-child(4) {
-        border-top: 1px solid var(--cb-border-subtle);
-    }
-}
-
-@media (max-width: 620px) {
-    .cb-summary-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .cb-summary-cell:nth-child(3) {
-        border-left: 0;
-        border-top: 1px solid var(--cb-border-subtle);
-    }
-
-    .cb-summary-cell:nth-child(4) {
-        border-top: 1px solid var(--cb-border-subtle);
-    }
-
-    .cb-summary-head {
-        display: none;
-    }
-
-    .cb-summary-grid {
-        margin-top: 0;
-    }
-
-    .cb-summary-cell {
-        padding: 0.5rem 0.75rem 0.5rem;
-    }
-}
-
-/* === Próximas ações — clean list, close to the old A Pagar/A Receber rhythm === */
-
-.cb-actions-section {
-    padding-bottom: 0;
-}
-
-.cb-actions-head {
+.cb-v2-trend {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0 0.25rem 0.5rem;
+    gap: 12px;
+    margin-top: 17px;
+    color: var(--v2-muted);
+    font-size: 12px;
 }
 
-.cb-actions-tabs {
-    margin-bottom: 0.5rem;
-    min-height: 2rem;
+.cb-v2-trend strong {
+    color: var(--v2-text);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
 }
 
-.cb-actions-tabs button {
-    min-height: 2rem !important;
-}
+.cb-v2-trend.is-positive strong { color: var(--v2-positive); }
+.cb-v2-trend.is-negative strong { color: var(--v2-danger); }
 
-.cb-actions-tab-active {
-    background-color: var(--cb-surface-2) !important;
-    color: var(--cb-accent) !important;
-    border: 1px solid var(--cb-border-subtle) !important;
-    font-weight: 700;
-}
-
-.dark .cb-actions-tab-active {
-    background-color: var(--cb-surface-2) !important;
-    color: var(--cb-accent) !important;
-    border-color: var(--cb-border-strong) !important;
-}
-
-.cb-actions-total {
-    padding: 0.375rem 0.125rem 0.5rem;
-    border-bottom: 1px solid color-mix(in srgb, var(--cb-border-subtle) 50%, transparent);
-}
-
-.cb-actions-table {
-    min-width: 0;
-}
-
-.cb-actions-row {
+.cb-v2-account-list {
     display: grid;
-    grid-template-columns: 0.5rem minmax(0, 1fr) max-content;
+    margin-top: 10px;
+}
+
+.cb-v2-account-row {
+    display: grid;
+    grid-template-columns: 38px minmax(0, 1fr) minmax(108px, auto);
+    gap: 12px;
     align-items: center;
-    gap: 0.75rem;
-    min-height: 3rem;
-    padding: 0.625rem 0.25rem;
-    border-bottom: 1px solid color-mix(in srgb, var(--cb-border-subtle) 60%, transparent);
-    border-radius: 0;
-    color: var(--cb-text-main);
-    font-size: 0.75rem;
-    transition: background-color 0.18s ease;
+    padding: 11px 0;
+    border-top: 1px solid var(--v2-border);
 }
 
-.cb-actions-row:last-child {
-    border-bottom: 0;
+.cb-v2-account-row:hover .cb-v2-account-copy strong,
+.cb-v2-account-row:hover .cb-v2-account-amount strong {
+    color: var(--v2-row-hover-text);
 }
 
-.cb-actions-row:hover {
-    background: color-mix(in srgb, var(--cb-surface-2) 82%, transparent);
-    border-radius: 0.75rem;
-}
-
-.cb-actions-dot {
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 999px;
-    background: currentColor;
-    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent);
-}
-
-.cb-actions-dot-pay {
-    color: var(--cb-danger);
-}
-
-.cb-actions-dot-recv {
-    color: var(--cb-success);
-}
-
-.cb-actions-copy {
+.cb-v2-provider-mark {
     display: grid;
-    gap: 0.125rem;
+    width: 36px;
+    height: 36px;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--v2-provider, var(--v2-accent));
+    color: #fff;
+    padding: 3px;
+    font-size: 9px;
+    font-weight: 760;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    white-space: nowrap;
+}
+
+.cb-v2-provider-mark--image {
+    padding: 0;
+}
+
+.cb-v2-account-copy,
+.cb-v2-account-amount {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+}
+
+.cb-v2-account-copy strong,
+.cb-v2-account-amount strong {
+    overflow: hidden;
+    color: var(--v2-text);
+    font-size: 14px;
+    font-weight: 630;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: color 180ms ease;
+}
+
+.cb-v2-account-copy small,
+.cb-v2-account-amount small {
+    overflow: hidden;
+    color: var(--v2-subtle);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-v2-account-amount {
+    text-align: right;
+}
+
+.cb-v2-account-amount strong,
+.cb-v2-account-amount small {
+    font-variant-numeric: tabular-nums;
+}
+
+.cb-v2-card-section {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.cb-v2-section-heading {
+    margin: 2px 0 10px;
+}
+
+.cb-v2-carousel-controls {
+    display: flex;
+    align-items: center;
+}
+
+.cb-v2-carousel-controls {
+    gap: 5px;
+}
+
+.cb-v2-carousel-control {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border: 1px solid var(--v2-border);
+    border-radius: 9px;
+    background: var(--v2-surface);
+    color: var(--v2-text);
+    cursor: pointer;
+    transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+}
+
+.cb-v2-carousel-control:hover:not(:disabled) {
+    border-color: var(--v2-border-strong);
+    background: var(--v2-surface-hover);
+}
+
+.cb-v2-carousel-control:disabled {
+    color: var(--v2-subtle);
+    cursor: default;
+    opacity: 0.5;
+}
+
+.cb-v2-carousel-control svg {
+    width: 17px;
+    height: 17px;
+}
+
+.cb-v2-card-carousel {
     min-width: 0;
 }
 
-.cb-actions-desc {
-    display: block;
+.cb-v2-card-rail {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 1px 1px 8px;
+    scroll-padding-inline: 1px;
+    scroll-snap-type: inline mandatory;
+    scrollbar-width: none;
+}
+
+.cb-v2-card-rail::-webkit-scrollbar { display: none; }
+
+.cb-v2-credit-card {
+    position: relative;
+    display: grid;
+    min-width: min(306px, 90%);
+    flex: 1 0 min(306px, 90%);
+    gap: 16px;
+    isolation: isolate;
+    overflow: hidden;
+    border-color: color-mix(in srgb, var(--v2-provider) 28%, var(--v2-border));
+    padding: 17px;
+    scroll-snap-align: start;
+    transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.cb-v2-credit-card::before {
+    position: absolute;
+    top: -44px;
+    right: -54px;
+    z-index: 0;
+    width: 172px;
+    height: 126px;
+    border-radius: 50%;
+    background: var(--v2-provider);
+    content: "";
+    filter: blur(32px);
+    opacity: 0.22;
+    pointer-events: none;
+}
+
+.cb-v2-credit-card > span {
+    position: relative;
+    z-index: 1;
+}
+
+.cb-v2-credit-card:hover {
+    border-color: color-mix(in srgb, var(--v2-provider) 48%, var(--v2-border));
+    background: var(--v2-surface-hover);
+}
+
+/*
+ * Visual físico experimental. Todo o redesenho está isolado neste modificador;
+ * remover `cb-v2-credit-card--physical` do template restaura o card anterior.
+ */
+.cb-v2-credit-card-status {
+    display: none;
+}
+
+.cb-v2-credit-card--physical {
+    --cb-card-surface: color-mix(in srgb, var(--v2-provider) 56%, #0b1018);
+    --cb-card-edge: color-mix(in srgb, var(--v2-provider) 58%, rgba(255, 255, 255, 0.28));
+    aspect-ratio: 1.586 / 1;
+    width: min(326px, 92%);
+    min-width: min(326px, 92%);
+    max-width: 326px;
+    flex: 0 0 min(326px, 92%);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: 8px;
+    border-color: var(--cb-card-edge);
+    border-radius: 15px;
+    background: var(--cb-card-surface);
+    box-shadow: 0 5px 8px rgba(0, 0, 0, 0.2);
+    color: #fff;
+    padding: 16px 17px 15px;
+    transform: translateY(0);
+    transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Superfície tonal: cada cartão herda uma nuance controlada da sua cor. */
+.cb-v2-credit-card--tonal {
+    --cb-card-surface: color-mix(in srgb, var(--v2-provider) 68%, #0b1018);
+    --cb-card-edge: color-mix(in srgb, var(--v2-provider) 82%, #dbeafe);
+    border-color: var(--cb-card-edge);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.28);
+    color: #fff;
+    transition: none;
+}
+
+.cb-v2-credit-card--physical.cb-v2-credit-card--tonal::before,
+.cb-v2-credit-card--physical.cb-v2-credit-card--tonal::after {
+    content: none;
+}
+
+.cb-v2-credit-card--physical.cb-v2-credit-card--tonal:hover {
+    border-color: var(--cb-card-edge);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.18);
+    transform: none;
+}
+
+html[data-theme="light"] .cb-v2-credit-card--tonal {
+    --cb-card-surface: color-mix(in srgb, var(--v2-provider) 76%, #111827);
+    --cb-card-edge: color-mix(in srgb, var(--v2-provider) 86%, #ffffff);
+    color: #fff;
+    box-shadow: 0 3px 6px rgba(23, 32, 51, 0.2);
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal:hover {
+    border-color: var(--cb-card-edge);
+    box-shadow: 0 3px 6px rgba(23, 32, 51, 0.08);
+}
+
+html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-provider-mark {
+    border-color: rgba(255, 255, 255, 0.34);
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+}
+
+html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-top > strong,
+html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-data strong,
+html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-limit strong {
+    color: #fff;
+}
+
+html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-status > small,
+html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-data small,
+html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-limit small {
+    color: rgba(255, 255, 255, 0.72);
+}
+
+html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-open > strong { color: #7dd3fc; }
+html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-closed > strong { color: #fcd34d; }
+html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-paid > strong { color: #6ee7b7; }
+html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-overdue > strong { color: #fda4af; }
+
+html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-data {
+    border-top-color: color-mix(in srgb, var(--v2-text) 14%, transparent);
+}
+
+html[data-theme="light"] .cb-v2-credit-card--tonal > .cb-v2-progress {
+    background: color-mix(in srgb, var(--v2-text) 14%, transparent);
+}
+
+html[data-theme="light"] .cb-v2-credit-card--tonal > .cb-v2-progress > span {
+    background: var(--v2-provider);
+}
+
+.cb-v2-credit-card--physical::before {
+    top: auto;
+    right: -40px;
+    bottom: -52px;
+    width: 210px;
+    height: 150px;
+    background: var(--v2-provider);
+    filter: blur(36px);
+    opacity: 0.34;
+}
+
+.cb-v2-credit-card--physical::after {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    background:
+        radial-gradient(circle at 14% 8%, rgba(255, 255, 255, 0.16), transparent 34%),
+        linear-gradient(118deg, rgba(255, 255, 255, 0.08), transparent 32%, rgba(255, 255, 255, 0.035) 55%, transparent 72%);
+    content: "";
+    pointer-events: none;
+}
+
+.cb-v2-credit-card--physical:hover {
+    border-color: color-mix(in srgb, var(--v2-provider) 74%, rgba(255, 255, 255, 0.38));
+    background: var(--cb-card-surface);
+    box-shadow: 0 7px 8px rgba(0, 0, 0, 0.25);
+    transform: translateY(-2px);
+}
+
+.cb-v2-credit-card--physical:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--v2-provider) 55%, #fff);
+    outline-offset: 3px;
+}
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-top {
+    display: grid;
+    grid-template-areas: "mark name number";
+    grid-template-columns: 32px minmax(0, 1fr) minmax(74px, 104px);
+    align-items: center;
+    gap: 10px;
+}
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-top > strong {
+    grid-area: name;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 680;
+    letter-spacing: 0.015em;
+}
+
+.cb-v2-credit-card--physical .cb-v2-provider-mark {
+    grid-area: mark;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+}
+
+.cb-v2-credit-card--physical .cb-v2-provider-mark--image {
+    padding: 0;
+}
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-status {
+    display: grid;
+    grid-area: number;
+    gap: 2px;
+    min-width: 0;
+    text-align: right;
+}
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-status > strong,
+.cb-v2-credit-card--physical .cb-v2-credit-card-status > small {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-weight: 780;
-    color: var(--cb-text-main);
 }
 
-.cb-actions-date {
-    display: flex;
+.cb-v2-credit-card--physical .cb-v2-credit-card-status > strong {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 14px;
+    font-weight: 720;
+    letter-spacing: 0.01em;
+}
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-status > small {
+    color: rgba(255, 255, 255, 0.63);
+    font-size: 10px;
+    font-weight: 560;
+}
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-open > strong { color: #38bdf8; }
+.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-closed > strong { color: #fbbf24; }
+.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-paid > strong { color: #34d399; }
+.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-overdue > strong { color: #fb7185; }
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-data {
+    align-self: stretch;
     align-items: center;
-    gap: 0.375rem;
-    min-width: 0;
-    color: var(--cb-text-muted);
-    font-size: 0.6875rem;
-    font-weight: 680;
-    line-height: 1.25;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-.cb-actions-status {
-    display: inline-flex;
-    align-items: center;
-    color: currentColor;
-    font-size: 0.625rem;
-    font-weight: 780;
-    white-space: nowrap;
+.cb-v2-credit-card--physical .cb-v2-credit-card-data > span:last-child {
+    text-align: right;
 }
 
-.cb-actions-status::before {
+.cb-v2-credit-card--physical .cb-v2-credit-card-data small,
+.cb-v2-credit-card--physical .cb-v2-credit-card-limit small {
+    color: rgba(255, 255, 255, 0.68);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-data strong {
+    color: #fff;
+    font-size: 19px;
+    font-weight: 710;
+    letter-spacing: -0.02em;
+}
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-data > span:last-child strong {
+    font-size: 13px;
+    letter-spacing: 0;
+}
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-limit {
+    gap: 10px;
+}
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-limit strong {
+    color: #fff;
+    font-size: 12px;
+}
+
+.cb-v2-credit-card--physical > .cb-v2-progress {
+    height: 4px;
+    background: color-mix(in srgb, #fff 28%, var(--cb-card-surface));
+}
+
+.cb-v2-credit-card--physical > .cb-v2-progress > span {
+    background: color-mix(in srgb, var(--v2-provider) 68%, #fff);
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical > .cb-v2-progress {
+    background: rgba(255, 255, 255, 0.24);
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical > .cb-v2-progress > span {
+    background: color-mix(in srgb, var(--v2-provider) 68%, #fff);
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical .cb-v2-credit-card-data {
+    border-top-color: rgba(255, 255, 255, 0.24);
+}
+
+/*
+ * Cartões: superfície náutica comum, com a identidade do emissor restrita à
+ * bandeira e ao brilho ambiente. Isso evita que a cor do banco concorra com
+ * os dados financeiros, mas mantém cada cartão reconhecível no carrossel.
+ */
+.cb-v2-credit-card--physical.cb-v2-credit-card--tonal {
+    --cb-card-surface: #171f2c;
+    --cb-card-edge: #344156;
+    border-color: var(--cb-card-edge);
+    background: var(--cb-card-surface);
+    box-shadow: 0 3px 6px rgba(2, 6, 23, 0.34);
+}
+
+.cb-v2-credit-card--physical.cb-v2-credit-card--tonal::before {
+    top: -42px;
+    right: -54px;
+    bottom: auto;
+    width: 172px;
+    height: 126px;
+    background: var(--v2-provider);
+    content: "";
+    filter: blur(34px);
+    opacity: 0.16;
+}
+
+.cb-v2-credit-card--physical.cb-v2-credit-card--tonal::after {
     content: none;
 }
 
-.cb-actions-status-pay {
-    color: var(--cb-danger);
+.cb-v2-credit-card--physical.cb-v2-credit-card--tonal:hover {
+    border-color: var(--cb-card-edge);
+    background: var(--cb-card-surface);
+    box-shadow: 0 3px 6px rgba(2, 6, 23, 0.34);
+    transform: none;
 }
 
-.cb-actions-status-recv {
-    color: var(--cb-success);
+.cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-provider-mark {
+    border-color: color-mix(in srgb, var(--v2-provider) 74%, rgba(255, 255, 255, 0.52));
+    background: var(--v2-provider);
+    color: #fff;
 }
 
-.cb-actions-amount {
-    color: var(--cb-text-main);
-    font-size: 0.8125rem;
-    font-weight: 820;
+.cb-v2-credit-card--physical.cb-v2-credit-card--tonal > .cb-v2-progress {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.cb-v2-credit-card--physical.cb-v2-credit-card--tonal > .cb-v2-progress > span {
+    background: var(--v2-accent);
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal {
+    --cb-card-surface: #f8fafc;
+    --cb-card-edge: #cbd6e3;
+    color: #172033;
+    box-shadow: 0 2px 6px rgba(23, 32, 51, 0.1);
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal:hover {
+    border-color: var(--cb-card-edge);
+    box-shadow: 0 2px 6px rgba(23, 32, 51, 0.1);
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal::before {
+    opacity: 0.1;
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-top > strong,
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-data strong,
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-limit strong {
+    color: #172033;
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-status > small,
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-data small,
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-limit small {
+    color: #607087;
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-open > strong { color: #0f7490; }
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-closed > strong { color: #a16207; }
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-paid > strong { color: #047857; }
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-overdue > strong { color: #be123c; }
+
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-data {
+    border-top-color: #dbe3ed;
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal > .cb-v2-progress {
+    background: #e2e8f0;
+}
+
+.cb-v2-credit-card-top,
+.cb-v2-credit-card-data,
+.cb-v2-credit-card-limit {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.cb-v2-credit-card-top > strong {
+    overflow: hidden;
+    color: var(--v2-text);
+    font-size: 16px;
+    font-weight: 680;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-v2-credit-card-top .cb-v2-provider-mark {
+    width: 32px;
+    height: 32px;
+    padding: 2px;
+    font-size: 8px;
+    flex: 0 0 auto;
+}
+
+.cb-v2-credit-card-data > span,
+.cb-v2-credit-card-limit {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+}
+
+.cb-v2-credit-card-data small,
+.cb-v2-credit-card-limit small {
+    color: var(--v2-muted);
+    font-size: 11px;
+}
+
+.cb-v2-credit-card-data strong {
+    color: var(--v2-text);
+    font-size: 17px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 670;
+}
+
+.cb-v2-credit-card-limit {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+}
+
+.cb-v2-credit-card-limit strong {
+    color: var(--v2-text);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 630;
+}
+
+.cb-v2-progress {
+    display: block;
+    width: 100%;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--v2-progress-track);
+}
+
+.cb-v2-progress > span {
+    display: block;
+    width: min(100%, var(--v2-progress, 0%));
+    height: 100%;
+    border-radius: inherit;
+    background: var(--v2-accent);
+}
+
+.cb-v2-credit-card .cb-v2-progress > span {
+    background: var(--v2-provider);
+}
+
+/* Mantém a barra e a bandeira independentes da cor de fundo do emissor. */
+.cb-v2-credit-card--physical.cb-v2-credit-card--tonal > .cb-v2-progress > span,
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal > .cb-v2-progress > span {
+    background: var(--v2-accent);
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-provider-mark {
+    border-color: color-mix(in srgb, var(--v2-provider) 74%, rgba(255, 255, 255, 0.52));
+    background: var(--v2-provider);
+    color: #fff;
+}
+
+.cb-v2-progress.is-danger > span { background: var(--v2-danger); }
+.cb-v2-progress.is-warning > span { background: var(--v2-warning); }
+
+.cb-v2-carousel-dots {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+}
+
+.cb-v2-carousel-dots span {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--v2-border-strong);
+    transition: width 180ms ease, background-color 180ms ease;
+}
+
+.cb-v2-carousel-dots span.is-active {
+    width: 13px;
+    border-radius: 4px;
+    background: var(--v2-accent);
+}
+
+.cb-v2-mobile-cards-toggle {
+    display: none;
+}
+
+.cb-v2-credit-card[hidden] {
+    display: none;
+}
+
+.cb-v2-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.cb-v2-progress-list {
+    display: grid;
+    gap: 14px;
+    margin-top: 17px;
+}
+
+.cb-v2-progress-item {
+    display: grid;
+    gap: 7px;
+}
+
+.cb-v2-progress-item > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.cb-v2-progress-item strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--v2-text);
+    font-size: 12px;
+    font-weight: 620;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-v2-progress-item div > span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--v2-muted);
+    font-size: 11px;
     font-variant-numeric: tabular-nums;
     text-align: right;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-@media (max-width: 620px) {
-    .cb-actions-row {
-        grid-template-columns: 0.5rem minmax(0, 1fr) max-content;
-        gap: 0.625rem;
-        padding: 0.625rem 0.125rem;
-        min-height: 3rem;
-    }
-
-    .cb-actions-date {
-        font-size: 0.6875rem;
-    }
-
-    .cb-actions-amount {
-        align-self: start;
-    }
+.cb-v2-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    margin-top: 16px;
+    border: 1px solid var(--v2-border);
+    border-radius: 10px;
+    background: var(--v2-detail-surface);
 }
 
-/* === Cards carousel — horizontal desktop rail, vertical mobile list === */
-
-.cb-dashboard-cards-section {
-    min-width: 0;
-}
-
-.cb-cards-control {
-    display: none;
-    width: 2.5rem;
-    height: 2.5rem;
+.cb-v2-tabs button {
+    display: flex;
+    min-height: 38px;
     align-items: center;
     justify-content: center;
-    border: 1px solid color-mix(in srgb, var(--cb-border-strong) 82%, transparent);
-    border-radius: 9999px;
-    color: var(--cb-text-main);
-    background: color-mix(in srgb, var(--cb-surface-1) 90%, var(--cb-bg) 10%);
-    box-shadow:
-        0 8px 18px -14px rgba(15, 23, 42, 0.65),
-        0 0 0 1px color-mix(in srgb, white 8%, transparent);
-    transition:
-        color 0.18s ease,
-        border-color 0.18s ease,
-        background-color 0.18s ease,
-        box-shadow 0.18s ease,
-        opacity 0.18s ease;
-    position: static;
-    transform: none;
-    grid-row: 2;
-    justify-self: end;
-    z-index: 1;
-    opacity: 1;
+    gap: 7px;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--v2-muted);
     cursor: pointer;
+    font-size: 12px;
+    font-weight: 620;
+    transition: background-color 180ms ease, color 180ms ease;
 }
 
-.dark .cb-cards-control {
-    border-color: rgba(203, 213, 225, 0.3);
-    color: #F8FAFC;
-    background: rgba(15, 23, 42, 0.92);
-    box-shadow:
-        0 12px 26px -18px rgba(2, 6, 23, 0.94),
-        0 0 0 1px rgba(255, 255, 255, 0.06);
+.cb-v2-tabs button[aria-selected="true"] {
+    background: var(--v2-accent-soft);
+    color: var(--v2-accent-on-soft);
 }
 
-.cb-dashboard-cards-section.is-scrollable .cb-cards-control {
-    display: inline-flex;
+.cb-v2-tabs button span {
+    display: inline-grid;
+    min-width: 17px;
+    height: 17px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--v2-tab-badge);
+    color: var(--v2-text);
+    font-size: 9px;
 }
 
-.cb-cards-control-prev {
-    grid-column: 2;
+.cb-v2-action-total {
+    margin: 14px 0 8px;
+    color: var(--v2-muted);
+    font-size: 11px;
 }
 
-.cb-cards-control-next {
-    grid-column: 3;
+.cb-v2-action-total strong {
+    color: var(--v2-danger);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
 }
 
-.cb-cards-control:hover:not(:disabled) {
-    color: var(--cb-text-main);
-    border-color: color-mix(in srgb, var(--cb-accent) 44%, var(--cb-border-strong));
-    background: color-mix(in srgb, var(--cb-surface-1) 86%, white 14%);
-    box-shadow:
-        0 18px 34px -22px rgba(15, 23, 42, 0.72),
-        0 0 0 3px color-mix(in srgb, var(--cb-accent) 18%, transparent);
-}
-
-.dark .cb-cards-control:hover:not(:disabled) {
-    color: #F8FAFC;
-    border-color: rgba(167, 139, 250, 0.62);
-    background: rgba(30, 41, 59, 0.98);
-    box-shadow:
-        0 20px 38px -22px rgba(2, 6, 23, 0.98),
-        0 0 0 3px rgba(124, 92, 255, 0.24);
-}
-
-.cb-cards-control:focus-visible {
-    outline: 2px solid var(--cb-border-focus);
-    outline-offset: 2px;
-    box-shadow:
-        0 0 0 0.25rem color-mix(in srgb, var(--cb-border-focus) 20%, transparent),
-        0 16px 30px -18px rgba(15, 23, 42, 0.56);
-}
-
-.cb-cards-control:disabled {
-    opacity: 0.5;
-    cursor: default;
-    pointer-events: none;
-}
-
-.cb-cards-control i {
-    pointer-events: none;
-    width: 1.25rem;
-    height: 1.25rem;
-    stroke-width: 2.45;
-}
-
-.cb-cards-carousel {
-    min-width: 0;
-}
-
-.cb-cards-viewport {
+.cb-v2-action-list {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 0.625rem 0.5rem;
-    position: relative;
+}
+
+.cb-v2-action-row {
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 11px 0;
+    border-top: 1px solid var(--v2-border);
+}
+
+.cb-v2-action-row:hover strong,
+.cb-v2-action-row:hover b {
+    color: var(--v2-row-hover-text);
+}
+
+.cb-v2-action-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--v2-danger);
+}
+
+.cb-v2-action-receivable .cb-v2-action-dot { background: var(--v2-positive); }
+.cb-v2-action-row.is-overdue .cb-v2-action-dot { background: var(--v2-warning); }
+
+.cb-v2-action-row > span:nth-child(2) {
+    display: grid;
     min-width: 0;
-    isolation: isolate;
+    gap: 3px;
 }
 
-.cb-cards-viewport::after {
-    content: none;
+.cb-v2-action-row strong,
+.cb-v2-action-row b {
+    overflow: hidden;
+    color: var(--v2-text);
+    font-size: 12px;
+    font-weight: 630;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: color 180ms ease;
 }
 
-.cb-cards-viewport:not(:has(.cb-card-rail-item:nth-child(3)))::after {
-    content: none;
+.cb-v2-action-row small {
+    overflow: hidden;
+    color: var(--v2-muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.cb-cards-rail {
-    display: flex;
-    grid-column: 1 / -1;
-    grid-row: 1;
-    position: relative;
-    z-index: 1;
-    gap: 1rem;
+.cb-v2-action-row b {
+    color: var(--v2-danger);
+    font-variant-numeric: tabular-nums;
+}
+
+.cb-v2-action-receivable b { color: var(--v2-positive); }
+
+.cb-v2-empty-state {
+    display: grid;
+    justify-items: start;
+    gap: 7px;
+    padding: 24px 0 4px;
+    color: var(--v2-muted);
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.cb-v2-empty-state svg {
+    width: 18px;
+    height: 18px;
+    color: var(--v2-subtle);
+}
+
+.cb-v2-empty-state p {
+    max-width: 30ch;
+    margin: 0;
+}
+
+.cb-v2-empty-state a {
+    color: var(--v2-accent);
+    font-weight: 620;
+}
+
+.cb-v2-empty-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 20px;
+    color: var(--v2-muted);
+    transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.cb-v2-empty-card:hover {
+    border-color: var(--v2-border-strong);
+    background: var(--v2-surface-raised);
+}
+
+.cb-v2-empty-card > svg {
+    width: 18px;
+    height: 18px;
+    color: var(--v2-accent);
+}
+
+.cb-v2-empty-card > span {
+    display: grid;
     min-width: 0;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scroll-snap-type: x mandatory;
-    scroll-padding-inline: 0;
-    padding: 0.125rem 0 0.25rem;
-    cursor: grab;
-    -webkit-overflow-scrolling: touch;
-    touch-action: pan-x pan-y;
-    user-select: none;
+    gap: 4px;
 }
 
-.cb-cards-rail.is-dragging {
-    cursor: grabbing;
-    scroll-snap-type: none;
+.cb-v2-empty-card strong { color: var(--v2-text); font-size: 12px; }
+.cb-v2-empty-card small { color: var(--v2-muted); font-size: 11px; line-height: 1.4; }
+
+@media (max-width: 1279px) {
+    .cb-v2-grid { grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.35fr); }
+    .cb-v2-context-actions { min-width: 400px; }
+    .cb-v2-metrics-grid { grid-template-columns: 1fr; }
 }
 
-.cb-cards-rail > .cb-card-rail-item {
-    flex: 0 0 min(24rem, 84vw);
-    max-width: 24rem;
-    scroll-snap-align: start;
+@media (max-width: 1023px) {
+    .cb-v2-heading-row { display: grid; align-items: flex-start; }
+    .cb-v2-context-actions { width: 100%; min-width: 0; }
+    .cb-v2-grid { grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.15fr); }
 }
 
-.cb-cards-rail:has(> .cb-card-rail-item:nth-child(2)):not(:has(> .cb-card-rail-item:nth-child(3))) > .cb-card-rail-item {
-    flex-basis: min(24rem, calc((100% - 1rem) / 2));
-    max-width: 24rem;
+@media (max-width: 767px) {
+    .cb-v2-content { padding-top: 20px; }
+    .cb-v2-heading-row { display: grid; gap: 17px; margin-bottom: 18px; }
+    .cb-v2-heading-row h1 { font-size: 24px; }
+    .cb-v2-context-actions { display: none; }
+    .cb-v2-grid { grid-template-columns: 1fr; gap: 15px; }
+    .cb-v2-left-column,
+    .cb-v2-right-column { gap: 15px; }
+    .cb-v2-left-column { display: contents; }
+    .cb-v2-financial-panel { order: 0; }
+    .cb-v2-accounts-panel { order: 1; }
+    .cb-v2-card-section { order: 2; overflow: visible; }
+    .cb-v2-metrics-grid { order: 3; grid-template-columns: 1fr; gap: 15px; }
+    .cb-v2-actions-panel { order: 4; }
+    .cb-v2-right-column { display: contents; }
+    .cb-v2-card-rail { display: grid; gap: 12px; overflow: visible; padding: 0; scroll-snap-type: none; }
+    .cb-v2-credit-card { min-width: 0; width: 100%; flex-basis: auto; }
+    .cb-v2-credit-card--physical { width: 100%; min-height: 184px; max-width: none; flex: 0 0 auto; aspect-ratio: 1.586 / 1; gap: 6px; padding: 14px 15px 13px; }
+    /* O trilho empilhado do painel não precisa preservar a proporção de um cartão físico. */
+    .cb-v2-card-section .cb-v2-credit-card--physical {
+        min-height: 176px;
+        aspect-ratio: 1.86 / 1;
+        padding: 13px 15px 12px;
+    }
+    .cb-v2-credit-card--physical .cb-v2-credit-card-data { padding-top: 5px; }
+    .cb-v2-carousel-dots,
+    .cb-v2-carousel-controls { display: none; }
+    .cb-v2-mobile-cards-toggle { display: flex; justify-content: center; padding-top: 3px; }
+    .cb-v2-mobile-cards-toggle button { min-height: 42px; padding: 0 12px; border-radius: 9px; background: transparent; color: var(--v2-accent); cursor: pointer; font-size: 12px; font-weight: 650; }
+    .cb-v2-mobile-cards-toggle button:hover { background: var(--v2-accent-soft); color: var(--v2-accent-strong); }
+    .cb-v2-panel { padding: 16px; }
+    .cb-v2-balance-breakdown { gap: 7px; }
+    .cb-v2-balance { font-size: 34px; }
 }
 
-.cb-cards-rail:has(> .cb-card-rail-item:nth-child(3)) > .cb-card-rail-item {
-    flex-basis: clamp(20rem, calc((100% - 2.5rem) / 2.25), 24rem);
-    max-width: 24rem;
-}
-
-.cb-cards-rail[data-real-card-count="0"] > .cb-card-rail-item,
-.cb-cards-rail[data-real-card-count="1"] > .cb-card-rail-item {
-    flex: 1 0 calc((100% - 1rem) / 2);
-    max-width: none;
-    min-height: 11.75rem;
-}
-
-@supports not selector(:has(*)) {
-    .cb-cards-rail > .cb-card-rail-item {
-        flex-basis: clamp(20rem, calc((100% - 2.5rem) / 2.25), 24rem);
-        max-width: 24rem;
-    }
-
-    .cb-cards-rail[data-real-card-count="0"] > .cb-card-rail-item,
-    .cb-cards-rail[data-real-card-count="1"] > .cb-card-rail-item {
-        flex-basis: calc((100% - 1rem) / 2);
-        max-width: none;
-    }
-}
-
-@media (max-width: 620px) {
-    .cb-cards-control {
-        display: none !important;
-    }
-
-    .cb-cards-viewport::after {
-        content: none;
-    }
-
-    .cb-cards-rail {
-        display: grid;
-        grid-template-columns: 1fr;
-        overflow: visible;
-        padding: 0;
-        cursor: default;
-        user-select: auto;
-    }
-
-    .cb-cards-rail > .cb-card-rail-item {
-        max-width: none;
-        width: 100%;
-    }
-
-    .card-cc-placeholder {
-        min-height: 11.75rem;
-        padding: 1.5rem;
-    }
-
-    .card-cc-placeholder-content {
-        min-height: calc(11.75rem - 3rem - 2px);
-    }
-
-    .card-cc-placeholder-copy {
-        padding-right: 3rem;
-    }
+@media (max-width: 389px) {
+    .cb-v2-balance-breakdown { grid-template-columns: 1fr; }
+    .cb-v2-account-row { grid-template-columns: 36px minmax(0, 1fr) minmax(88px, auto); gap: 9px; }
+    .cb-v2-provider-mark { width: 34px; height: 34px; }
+    .cb-v2-credit-card--physical { min-height: 180px; }
+    .cb-v2-card-section .cb-v2-credit-card--physical { min-height: 172px; }
+    .cb-v2-credit-card--physical .cb-v2-credit-card-data strong { font-size: 17px; }
+    .cb-v2-credit-card--physical .cb-v2-credit-card-status > strong { font-size: 12px; }
+    .cb-v2-credit-card--physical .cb-v2-credit-card-status > small { font-size: 9px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .cb-cards-control,
-    .cb-cards-control:hover:not(:disabled),
-    .cb-cards-control:focus-visible {
-        transition: none;
+    .cb-v2-credit-card--physical {
+        transition: border-color 120ms ease;
+    }
+
+    .cb-v2-credit-card--physical:hover {
+        transform: none;
     }
 }

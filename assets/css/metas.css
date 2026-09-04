@@ -8,22 +8,6 @@
 .btn-tactile { transition: all 0.15s ease; }
 .btn-tactile:active { transform: scale(0.97); }
 
-/* === PROGRESS BARS === */
-.progress-fill {
-    width: calc(var(--pct, 0) * 1%);
-    transition: width 0.5s ease;
-}
-
-.progress-fill-capped {
-    width: clamp(0%, calc(var(--pct, 0) * 1%), 100%);
-    transition: width 0.5s ease;
-}
-
-/* === GOAL PROGRESS BAR === */
-.goal-progress-fill {
-    background: linear-gradient(to right, #8b5cf6, #a78bfa);
-}
-
 /* === ICONE COLORIDO === */
 .icon-colored {
     color: var(--ic, #8b5cf6);
@@ -35,22 +19,6 @@ details > summary::marker { display: none; content: ""; }
 
 /* === P.40.a — Helpers visuais para redesign de /metas ===
    Classes preparatórias; markup existente permanece inalterado. */
-
-.metas-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1rem;
-  font-size: 0.8125rem;
-  color: var(--cb-text-muted);
-}
-
-.metas-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
 
 .metas-card-title {
   font-size: 0.875rem;
@@ -249,4 +217,139 @@ details > summary::marker { display: none; content: ""; }
 }
 .dark .metas-menu-panel {
   box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.45);
+}
+
+/* Metas e Reservas inside the authenticated V2 shell.
+   Existing component semantics are retained; these rules only map their visual
+   surface to the global shell tokens. */
+.cb-v2-metas-main {
+  --cb-bg: var(--v2-canvas);
+  --cb-bg-soft: var(--v2-detail-surface);
+  --cb-surface-1: var(--v2-surface);
+  --cb-surface-2: var(--v2-surface-raised);
+  --cb-surface-3: var(--v2-surface-hover);
+  --cb-surface-overlay: var(--v2-surface);
+  --cb-border-subtle: var(--v2-border);
+  --cb-border-strong: var(--v2-border-strong);
+  --cb-border-focus: var(--v2-accent);
+  --cb-text-main: var(--v2-text);
+  --cb-text-muted: var(--v2-muted);
+  --cb-text-subtle: var(--v2-subtle);
+  --cb-accent: var(--v2-accent);
+  --cb-accent-solid: var(--v2-accent);
+  --cb-accent-hover: var(--v2-fab-hover);
+  --cb-accent-soft: var(--v2-accent-soft);
+  --cb-success: var(--v2-positive);
+  --cb-danger: var(--v2-danger);
+  --cb-warning: var(--v2-warning);
+  --cb-info: var(--v2-info);
+}
+
+.cb-v2-metas-content {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  padding: 30px 0 12px;
+}
+
+.cb-v2-metas-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.cb-v2-metas-header h1 {
+  margin: 3px 0 5px;
+  color: var(--v2-text);
+  font-size: clamp(25px, 2.25vw, 31px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+}
+
+.cb-v2-metas-header > div > p:last-child {
+  margin: 0;
+  color: var(--v2-muted);
+  font-size: 13px;
+}
+
+.cb-v2-metas-new {
+  display: inline-flex;
+  min-height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid var(--v2-fab-border);
+  border-radius: 10px;
+  background: var(--v2-accent);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  transition: background-color 180ms ease, transform 180ms ease;
+}
+
+.cb-v2-metas-new:hover { background: var(--v2-fab-hover); transform: translateY(-1px); }
+.cb-v2-metas-new svg { width: 16px; height: 16px; }
+
+.cb-v2-metas-panels { min-width: 0; }
+.cb-v2-metas-panels .cb-tabs {
+  width: min(100%, 360px);
+  margin-bottom: 18px;
+  border-color: var(--v2-border);
+  background: var(--v2-surface-raised);
+  border-radius: 11px;
+}
+.cb-v2-metas-panels .cb-tab { min-height: 36px; font-size: 12px; }
+.cb-v2-metas-panels .cb-tab-inactive:hover { background: var(--v2-surface-hover); }
+
+.cb-v2-metas-panels .metas-summary-card {
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border-color: var(--v2-border);
+  border-radius: 12px;
+  background: var(--v2-surface);
+}
+
+.cb-v2-metas-panels .metas-summary-icon,
+.cb-v2-metas-panels .metas-summary-chip {
+  border-color: var(--v2-border);
+  background: var(--v2-detail-surface);
+}
+
+.cb-v2-metas-panels [data-meta-card] {
+  min-height: 164px;
+  padding: 15px;
+  border-color: var(--v2-border);
+  border-radius: 12px;
+  background: var(--v2-surface);
+  box-shadow: none;
+  transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
+}
+
+.cb-v2-metas-panels [data-meta-card]:hover {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-raised);
+  transform: translateY(-1px);
+}
+
+.cb-v2-metas-panels .metas-progress { background: var(--v2-progress-track); }
+.cb-v2-metas-panels .cb-meta-menu-toggle:hover { background: var(--v2-surface-hover); }
+.cb-v2-metas-panels .metas-menu-panel {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-raised);
+}
+
+@media (max-width: 767px) {
+  .cb-v2-metas-content { padding-top: 20px; }
+  .cb-v2-metas-header { align-items: flex-start; margin-bottom: 18px; }
+  .cb-v2-metas-header h1 { font-size: 23px; }
+  .cb-v2-metas-header > div > p:last-child { max-width: 23rem; font-size: 12px; }
+  .cb-v2-metas-new { min-width: 40px; padding: 0 11px; }
+  .cb-v2-metas-new span { display: none; }
+  .cb-v2-metas-panels .cb-tabs { width: 100%; }
+  .cb-v2-metas-panels .metas-summary-card { padding: 13px 14px; }
+  .cb-v2-metas-panels [data-meta-card] { min-height: 0; }
 }

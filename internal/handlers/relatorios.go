@@ -25,10 +25,13 @@ type RelatoriosHandler struct {
 }
 
 type RelatoriosData struct {
+	AppShellAccess
 	OOB                                   bool
 	Title                                 string
+	UserName                              string
 	UserInitials                          string
 	ProfilePhotoURL                       string
+	NotificationCount                     int
 	IsBusiness                            bool
 	ActiveWorkspaceName                   string
 	ActiveTab                             string
@@ -286,7 +289,7 @@ func (h *RelatoriosHandler) HandleExibirRelatorios(w http.ResponseWriter, r *htt
 	}
 	modo := normalizeCaixaModo(r.URL.Query().Get("modo"))
 
-	now := time.Now()
+	now := appTime(time.Now())
 	mes := int(now.Month())
 	ano := now.Year()
 
@@ -336,7 +339,7 @@ func (h *RelatoriosHandler) HandleRelatoriosConceito(w http.ResponseWriter, r *h
 	}
 	modo := normalizeCaixaModo(r.URL.Query().Get("modo"))
 
-	now := time.Now()
+	now := appTime(time.Now())
 	mes := int(now.Month())
 	ano := now.Year()
 
@@ -403,9 +406,10 @@ func (h *RelatoriosHandler) HandleExportarCSV(w http.ResponseWriter, r *http.Req
 
 	switch tipo {
 	case "dre":
-		ano := time.Now().Year()
+		now := appTime(time.Now())
+		ano := now.Year()
 		if raw := strings.TrimSpace(r.URL.Query().Get("ano")); raw != "" {
-			if v, err := strconv.Atoi(raw); err == nil && v >= 2020 && v <= time.Now().Year()+10 {
+			if v, err := strconv.Atoi(raw); err == nil && v >= 2020 && v <= now.Year()+10 {
 				ano = v
 			}
 		}
@@ -424,15 +428,16 @@ func (h *RelatoriosHandler) HandleExportarCSV(w http.ResponseWriter, r *http.Req
 		}
 	case "caixa":
 		modo := normalizeCaixaModo(r.URL.Query().Get("modo"))
-		ano := time.Now().Year()
-		mes := int(time.Now().Month())
+		now := appTime(time.Now())
+		ano := now.Year()
+		mes := int(now.Month())
 		if raw := strings.TrimSpace(r.URL.Query().Get("mes")); raw != "" {
 			if v, err := strconv.Atoi(raw); err == nil && v >= 1 && v <= 12 {
 				mes = v
 			}
 		}
 		if raw := strings.TrimSpace(r.URL.Query().Get("ano")); raw != "" {
-			if v, err := strconv.Atoi(raw); err == nil && v >= 2020 && v <= time.Now().Year()+10 {
+			if v, err := strconv.Atoi(raw); err == nil && v >= 2020 && v <= now.Year()+10 {
 				ano = v
 			}
 		}
@@ -558,7 +563,7 @@ func (h *RelatoriosHandler) HandleExportarCSV(w http.ResponseWriter, r *http.Req
 }
 
 func parseExtratoExportPeriod(r *http.Request) (int, int, error) {
-	now := time.Now().UTC()
+	now := appTime(time.Now())
 	mes := int(now.Month())
 	ano := now.Year()
 
@@ -823,10 +828,13 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 	}
 
 	extraParams := tabViewExtraParams(tab, view, modo)
+	currentAppTime := appTime(time.Now())
 	data := RelatoriosData{
 		Title:                     "Relatórios",
+		UserName:                  "Usuário",
 		UserInitials:              queryUserInitialsByID(h.DB, h.UserID),
 		ProfilePhotoURL:           queryUserProfilePhotoURL(h.DB, h.UserID),
+		NotificationCount:         queryDashboardNotificationCount(h.DB, h.UserID, h.WorkspaceID),
 		IsBusiness:                isBusiness,
 		ActiveWorkspaceName:       queryWorkspaceName(h.DB, h.WorkspaceID),
 		ActiveTab:                 tab,
@@ -844,12 +852,14 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 		MonthSelectorPartial:      "content",
 		MonthSelectorPrevQuery:    relatoriosMonthQuery(int(time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -1, 0).Month()), time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -1, 0).Year(), extraParams),
 		MonthSelectorNextQuery:    relatoriosMonthQuery(int(time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0).Month()), time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0).Year(), extraParams),
-		MonthSelectorCurrentQuery: relatoriosMonthQuery(int(time.Now().UTC().Month()), time.Now().UTC().Year(), extraParams),
+		MonthSelectorCurrentQuery: relatoriosMonthQuery(int(currentAppTime.Month()), currentAppTime.Year(), extraParams),
 		MesAnteriorURL:            relatoriosURL(int(time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -1, 0).Month()), time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -1, 0).Year(), extraParams),
 		MesSeguinteURL:            relatoriosURL(int(time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0).Month()), time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0).Year(), extraParams),
-		CurrentMonthURL:           relatoriosURL(int(time.Now().UTC().Month()), time.Now().UTC().Year(), extraParams),
+		CurrentMonthURL:           relatoriosURL(int(currentAppTime.Month()), currentAppTime.Year(), extraParams),
 		MonthOptions:              buildRelatoriosMonthOptions(ano, mes, tab, view, modo),
 	}
+	data.AppShellAccess = QueryAppShellAccess(h.DB, h.WorkspaceID, h.UserID, data.IsBusiness)
+	data.UserName, data.UserInitials = queryDashboardUser(h.DB, h.UserID)
 
 	loc := time.UTC
 	monthStart := time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, loc).Unix()
@@ -866,7 +876,7 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 	if tab == "caixa" && modo == "realizado" {
 		if err := h.DB.QueryRowContext(ctx, `
 			SELECT COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
-			       COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0)
+			       COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END), 0)
 			FROM transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			WHERE t.workspace_id = ?
@@ -887,11 +897,11 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 		totalDespesas = SumCashExpense(allForecastEvents)
 	} else {
 		if err := h.DB.QueryRowContext(ctx, `
-			SELECT COALESCE(SUM(CASE WHEN type = 'INCOME' THEN amount ELSE 0 END), 0),
-			       COALESCE(SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END), 0)
-				FROM transactions
-				WHERE workspace_id = ? AND date >= ? AND date <= ?
-				  AND `+excludeInvoicePaymentCompetenceClause("")+`
+			SELECT COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
+			       COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END), 0)
+				FROM transactions t
+				WHERE t.workspace_id = ? AND t.date >= ? AND t.date <= ?
+				  AND `+excludeInvoicePaymentCompetenceClause("t")+`
 			`, h.WorkspaceID, monthStart, monthEnd).Scan(&totalReceitas, &totalDespesas); err != nil {
 			return data, fmt.Errorf("query totals: %w", err)
 		}
@@ -1024,7 +1034,7 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 			       COALESCE(p.name, ''),
 			       COALESCE(p.icon, ''),
 			       COALESCE(p.color, ''),
-			       SUM(t.amount) AS total
+			       SUM(`+transactionNetAmountTSQL+`) AS total
 			FROM transactions t
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 			LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -1553,7 +1563,7 @@ func (h *RelatoriosHandler) queryContabilReceitasByMacro(ctx context.Context, mo
 
 func (h *RelatoriosHandler) queryMacroGroupTotals(ctx context.Context, monthStart, monthEnd int64) (int64, int64, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT COALESCE(c.macro_group, p.macro_group, 'Estilo de Vida'), COALESCE(SUM(t.amount), 0)
+		SELECT COALESCE(c.macro_group, p.macro_group, 'Estilo de Vida'), COALESCE(SUM(`+transactionNetAmountTSQL+`), 0)
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -1754,7 +1764,7 @@ func (h *RelatoriosHandler) queryTopClientsByRevenue(ctx context.Context, monthS
 func (h *RelatoriosHandler) queryUncategorizedExpenses(ctx context.Context, monthStart, monthEnd int64) (int64, error) {
 	var total int64
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(t.amount), 0)
+		SELECT COALESCE(SUM(`+transactionNetAmountTSQL+`), 0)
 		FROM transactions t
 		WHERE t.workspace_id = ? AND t.type = 'EXPENSE'
 			  AND t.date >= ? AND t.date <= ?
@@ -1768,10 +1778,10 @@ func (h *RelatoriosHandler) queryNetCashflow(ctx context.Context, monthStart, mo
 	var income, expense int64
 	if err := h.DB.QueryRowContext(ctx, `
 		SELECT
-		  COALESCE(SUM(CASE WHEN type = 'INCOME' THEN amount ELSE 0 END), 0),
-		  COALESCE(SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END), 0)
-		FROM transactions
-		WHERE workspace_id = ? AND status = 'paid' AND date >= ? AND date <= ?
+		  COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
+		  COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END), 0)
+		FROM transactions t
+		WHERE t.workspace_id = ? AND t.status = 'paid' AND t.date >= ? AND t.date <= ?
 	`, h.WorkspaceID, monthStart, monthEnd).Scan(&income, &expense); err != nil {
 		return 0, err
 	}
@@ -2481,10 +2491,10 @@ func (h *RelatoriosHandler) queryInvoiceAllocationTargets(ctx context.Context, s
 			SELECT
 				i.id,
 				COALESCE((
-					SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN tx.amount ELSE 0 END)
+					SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN `+transactionNetAmountTxSQL+` ELSE 0 END)
 					FROM transactions tx
 					WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
-				), 0) -
+				), 0) - `+invoiceGeneralRefundTotalIASQL+` -
 				`+invoiceEffectivePaidSQLExpr+` AS pending_amount
 			FROM invoices i
 			JOIN accounts a ON a.id = i.account_id
@@ -2647,10 +2657,10 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 						i.id,
 						a.workspace_id,
 						COALESCE((
-							SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN tx.amount ELSE 0 END)
+							SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN ` + transactionNetAmountTxSQL + ` ELSE 0 END)
 							FROM transactions tx
 							WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
-						), 0) AS total_amount,
+						), 0) - ` + invoiceGeneralRefundTotalIASQL + ` AS total_amount,
 						COALESCE(SUM(ip.amount_cents), 0) AS paid_amount
 					FROM invoice_payments ip
 					JOIN invoices i ON i.id = ip.invoice_id
@@ -2678,10 +2688,10 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 						i.id,
 						a.workspace_id,
 						COALESCE((
-							SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN tx.amount ELSE 0 END)
+							SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN ` + transactionNetAmountTxSQL + ` ELSE 0 END)
 							FROM transactions tx
 							WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
-						), 0) AS total_amount,
+						), 0) - ` + invoiceGeneralRefundTotalIASQL + ` AS total_amount,
 						COALESCE((
 							SELECT SUM(ip.amount_cents)
 							FROM invoice_payments ip
@@ -2690,10 +2700,10 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 								AND ip.reversed_at IS NULL
 						), 0) AS paid_amount,
 						COALESCE((
-							SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN tx.amount ELSE 0 END)
+							SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN ` + transactionNetAmountTxSQL + ` ELSE 0 END)
 							FROM transactions tx
 							WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
-						), 0) -
+						), 0) - ` + invoiceGeneralRefundTotalIASQL + ` -
 						COALESCE((
 							SELECT SUM(ip.amount_cents)
 							FROM invoice_payments ip
@@ -2748,10 +2758,10 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 				i.id,
 				a.workspace_id,
 				COALESCE((
-					SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN tx.amount ELSE 0 END)
+					SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN ` + transactionNetAmountTxSQL + ` ELSE 0 END)
 					FROM transactions tx
 					WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
-				), 0) AS total_amount,
+				), 0) - ` + invoiceGeneralRefundTotalIASQL + ` AS total_amount,
 				COALESCE(SUM(ip.amount_cents), 0) AS paid_amount
 			FROM invoice_payments ip
 			JOIN invoices i ON i.id = ip.invoice_id
@@ -2819,20 +2829,25 @@ func relatoriosURL(mes, ano int, extraParams string) string {
 }
 
 func buildRelatoriosMonthOptions(ano, mesAtual int, tab, view, modo string) []MonthOption {
+	return buildRelatoriosMonthOptionsAt(ano, mesAtual, tab, view, modo, time.Now())
+}
+
+func buildRelatoriosMonthOptionsAt(ano, mesAtual int, tab, view, modo string, now time.Time) []MonthOption {
 	shortMonths := []string{"Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"}
-	now := time.Now().UTC()
-	currentMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	currentMonth := appMonthStartUTC(now)
 	extraParams := tabViewExtraParams(tab, view, modo)
+	selectedMonth := time.Date(ano, time.Month(mesAtual), 1, 0, 0, 0, 0, time.UTC)
+	firstMonth := selectedMonth.AddDate(0, -5, 0)
 	options := make([]MonthOption, 0, 12)
-	for month := 1; month <= 12; month++ {
-		m := time.Date(ano, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	for offset := 0; offset < 12; offset++ {
+		m := firstMonth.AddDate(0, offset, 0)
 		query := relatoriosMonthQuery(int(m.Month()), m.Year(), extraParams)
 		options = append(options, MonthOption{
 			Label:     shortMonths[int(m.Month())-1],
 			Year:      fmt.Sprintf("%d", m.Year()),
 			URL:       "/relatorios?" + query,
 			Query:     query,
-			IsActive:  month == mesAtual,
+			IsActive:  m.Equal(selectedMonth),
 			IsCurrent: m.Equal(currentMonth),
 		})
 	}
@@ -2842,7 +2857,7 @@ func buildRelatoriosMonthOptions(ano, mesAtual int, tab, view, modo string) []Mo
 func (h *RelatoriosHandler) queryProLaboreAmount(ctx context.Context, monthStart, monthEnd int64) (int64, error) {
 	var amount int64
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(t.amount), 0)
+		SELECT COALESCE(SUM(`+transactionNetAmountTSQL+`), 0)
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -2861,7 +2876,7 @@ func (h *RelatoriosHandler) queryImpostosAmounts(ctx context.Context, monthStart
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT
 			COALESCE(NULLIF(c.macro_group, ''), NULLIF(p.macro_group, ''), ?) AS macro_group,
-			COALESCE(SUM(t.amount), 0) AS total
+			COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) AS total
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -2946,7 +2961,7 @@ func (h *RelatoriosHandler) queryRendimentosFinanceiros(ctx context.Context, mon
 func (h *RelatoriosHandler) queryInvestimentosPatrimonialAmount(ctx context.Context, monthStart, monthEnd int64) (int64, error) {
 	var amount int64
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(t.amount), 0)
+		SELECT COALESCE(SUM(`+transactionNetAmountTSQL+`), 0)
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id

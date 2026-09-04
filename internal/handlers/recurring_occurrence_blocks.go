@@ -92,6 +92,18 @@ func ensureAutomaticInvoiceAcceptsTransactionTx(tx *sql.Tx, workspaceID, account
 	}
 }
 
+// ensureInvoiceAcceptsMutableCompositionTx is used by explicit transaction
+// composition. A closed invoice is still unpaid and remains editable; recurring
+// materialization keeps its stronger frozen-cycle contract through
+// ensureAutomaticInvoiceAcceptsTransactionTx.
+func ensureInvoiceAcceptsMutableCompositionTx(tx *sql.Tx, workspaceID, accountID, invoiceID string) (recurringOccurrenceFrozenInvoice, error) {
+	evidence, err := ensureAutomaticInvoiceAcceptsTransactionTx(tx, workspaceID, accountID, invoiceID)
+	if errors.Is(err, errAutomaticInvoiceFrozen) && evidence.InvoiceStatus == models.InvoiceStatusClosed {
+		return evidence, nil
+	}
+	return evidence, err
+}
+
 func resolveAutomaticInvoiceForOccurrenceTx(tx *sql.Tx, workspaceID, accountID string, occurrenceDate CivilWriteDate) (recurringOccurrenceFrozenInvoice, error) {
 	if err := occurrenceDate.validate(); err != nil {
 		return recurringOccurrenceFrozenInvoice{}, fmt.Errorf("%w: invalid automatic invoice occurrence date", errInvoiceStateStructural)
@@ -128,7 +140,7 @@ func resolveAutomaticCardTransactionInvoiceTx(tx *sql.Tx, workspaceID, accountID
 	if err != nil {
 		return "", "", "", 0, 0, err
 	}
-	if _, err = ensureAutomaticInvoiceAcceptsTransactionTx(tx, workspaceID, accountID, invoiceID); err != nil {
+	if _, err = ensureInvoiceAcceptsMutableCompositionTx(tx, workspaceID, accountID, invoiceID); err != nil {
 		return "", "", "", 0, 0, err
 	}
 	return invoiceID, reference, status, closingUnix, dueUnix, nil

@@ -32,6 +32,56 @@ func TestOpenRegistersSchemaMigrationsOnFreshMemory(t *testing.T) {
 	}
 }
 
+func TestMigration60CreatesTransactionRefundAuditContract(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open memory database: %v", err)
+	}
+	defer db.Close()
+
+	assertMigrationApplied(t, db, 60)
+	assertSchemaObjectExists(t, db, "table", "transaction_refunds")
+	assertSchemaObjectExists(t, db, "trigger", "trg_transaction_refunds_validate_insert")
+	assertSchemaObjectExists(t, db, "trigger", "trg_transactions_refund_floor")
+}
+
+func TestMigration61CreatesInvoiceGeneralRefundAuditContract(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open memory database: %v", err)
+	}
+	defer db.Close()
+
+	assertMigrationApplied(t, db, 61)
+	assertSchemaObjectExists(t, db, "table", "invoice_refunds")
+	for _, trigger := range []string{
+		"trg_invoice_refunds_validate_insert",
+		"trg_invoice_refunds_no_overpay",
+		"trg_invoice_refunds_immutable_update",
+		"trg_invoice_refunds_no_delete",
+	} {
+		assertSchemaObjectExists(t, db, "trigger", trigger)
+	}
+}
+
+func TestLegacyInvoiceBackfillClosingDayStartsNextCycle(t *testing.T) {
+	closingUnix, dueUnix, reference := calculateInvoiceDates(
+		time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC),
+		1,
+		7,
+	)
+
+	if reference != "2026-10" {
+		t.Fatalf("reference = %q, want 2026-10", reference)
+	}
+	if got := time.Unix(closingUnix, 0).UTC().Format("2006-01-02"); got != "2026-10-01" {
+		t.Fatalf("closing date = %q, want 2026-10-01", got)
+	}
+	if got := time.Unix(dueUnix, 0).UTC().Format("2006-01-02"); got != "2026-10-07" {
+		t.Fatalf("due date = %q, want 2026-10-07", got)
+	}
+}
+
 func TestMigration59FreshSchemaCreatesRecurringOccurrenceBlocksOnlyThroughMigration(t *testing.T) {
 	db, err := Open(":memory:")
 	if err != nil {

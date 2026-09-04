@@ -323,10 +323,10 @@ func QueryInvoiceProjectedCashEvents(db *sql.DB, workspaceID string, period Repo
 			i.reference AS invoice_ref,
 			i.status,
 			COALESCE((
-				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END)
+				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END)
 				FROM transactions t
 				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
-			), 0) AS total,
+			), 0) - `+invoiceGeneralRefundTotalIASQL+` AS total,
 			`+invoiceEffectivePaidSQLExpr+` AS paid
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id
@@ -661,10 +661,10 @@ func QueryInvoiceCashEventsByDueDate(db *sql.DB, workspaceID string, period Repo
 			i.reference AS invoice_ref,
 			i.status,
 				COALESCE((
-					SELECT SUM(t.amount)
+					SELECT SUM(`+transactionNetAmountTSQL+`)
 					FROM transactions t
 					WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
-				), 0) AS total,
+				), 0) - `+invoiceGeneralRefundTotalIASQL+` AS total,
 				`+invoiceEffectivePaidSQLExpr+` AS paid
 			FROM invoices i
 			JOIN accounts a ON a.id = i.account_id
@@ -742,8 +742,7 @@ func SumCashExpense(events []CashEvent) int64 {
 }
 
 func BuildProjectedBalanceUntilPeriodEnd(db *sql.DB, workspaceID string, periodEnd int64, now time.Time) (int64, bool, error) {
-	now = now.UTC()
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Unix()
+	todayStart := AppCivilDateUTC(now).Unix()
 	if periodEnd < todayStart {
 		return 0, false, nil
 	}
@@ -763,7 +762,7 @@ func BuildProjectedBalanceUntilPeriodEnd(db *sql.DB, workspaceID string, periodE
 	if err := db.QueryRow(`
 		SELECT
 			COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0)
+			COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END), 0)
 		FROM transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		WHERE t.workspace_id = ?
@@ -783,10 +782,10 @@ func BuildProjectedBalanceUntilPeriodEnd(db *sql.DB, workspaceID string, periodE
 		FROM (
 			SELECT
 				COALESCE((
-					SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END)
+					SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END)
 					FROM transactions t
 					WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
-				), 0) -
+				), 0) - `+invoiceGeneralRefundTotalIASQL+` -
 				`+invoiceEffectivePaidSQLExpr+` AS pending_amount
 			FROM invoices i
 			JOIN accounts a ON a.id = i.account_id
@@ -950,10 +949,10 @@ func buildPendingInvoiceCaixaRows(db *sql.DB, workspaceID string, start, end int
 			i.id,
 			i.due_date,
 			COALESCE((
-				SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN tx.amount ELSE 0 END)
+				SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN `+transactionNetAmountTxSQL+` ELSE 0 END)
 				FROM transactions tx
 				WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
-			), 0) -
+			), 0) - `+invoiceGeneralRefundTotalIASQL+` -
 			`+invoiceEffectivePaidSQLExpr+` AS pending_amount
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id

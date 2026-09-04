@@ -1,33 +1,33 @@
 {{define "contato-form-fields"}}
-<div class="grid grid-cols-2 gap-2">
-    <label class="block">
+<div class="cb-contact-form-grid">
+    <label>
         <span class="cb-label">Tipo</span>
         <select name="type" class="cb-input">
             <option value="client" {{if eq .Type "client"}}selected{{end}}>Cliente</option>
             <option value="vendor" {{if eq .Type "vendor"}}selected{{end}}>Fornecedor</option>
         </select>
     </label>
-    <label class="block">
+    <label>
         <span class="cb-label">ID do Cliente</span>
         <input type="text" name="custom_client_id" value="{{.CustomClientID}}"{{if .CustomClientIDPlaceholder}} placeholder="{{.CustomClientIDPlaceholder}}"{{end}} class="cb-input uppercase">
     </label>
 </div>
-<div class="grid grid-cols-2 gap-2">
-    <label class="block">
+<div class="cb-contact-form-grid">
+    <label>
         <span class="cb-label">CPF/CNPJ</span>
         <input type="text" name="document" value="{{.Document}}" data-oninput="maskCnpjCpfContato" class="cb-input">
     </label>
-    <label class="block">
+    <label>
         <span class="cb-label">Nome</span>
         <input type="text" name="name" required value="{{.Name}}" class="cb-input">
     </label>
 </div>
-<div class="grid grid-cols-2 gap-2">
-    <label class="block">
+<div class="cb-contact-form-grid">
+    <label>
         <span class="cb-label">E-mail</span>
         <input type="email" name="email" value="{{.Email}}" class="cb-input">
     </label>
-    <label class="block">
+    <label>
         <span class="cb-label">Telefone</span>
         <input type="text" name="phone" value="{{.Phone}}" data-oninput="maskPhoneContato" class="cb-input">
     </label>
@@ -35,14 +35,14 @@
 {{end}}
 
 {{define "contato-row-summary"}}
-<div class="flex items-center gap-3 min-w-0">
-    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold uppercase"
+<div class="cb-contact-summary">
+    <span class="cb-contact-avatar"
         style="{{if eq .Type "client"}}background: color-mix(in srgb, var(--cb-success) 12%, transparent); color: var(--cb-success){{else}}background: color-mix(in srgb, var(--cb-warning) 12%, transparent); color: var(--cb-warning){{end}}">
         {{slice .Name 0 2 | upper}}
     </span>
-    <div class="min-w-0">
-        <h3 class="text-sm font-semibold cb-text-main truncate">{{.Name}}</h3>
-        <span class="cb-status-chip {{if eq .Type "client"}}cb-status-chip-success{{else}}cb-status-chip-warning{{end}} mt-1">
+    <div>
+        <h3>{{.Name}}</h3>
+        <span class="cb-status-chip {{if eq .Type "client"}}cb-status-chip-success{{else}}cb-status-chip-warning{{end}}">
             {{.TypeLabel}}
         </span>
     </div>
@@ -50,30 +50,31 @@
 {{end}}
 
 {{define "contato-row"}}
-<article id="contato-{{.ID}}" class="cb-card-dense">
-    <div class="flex items-start justify-between gap-3 w-full">
-        <div class="min-w-0">
-            <p class="text-sm font-semibold cb-text-main truncate">{{.Name}}</p>
-            <p class="text-xs cb-text-subtle mt-0.5">{{.TypeLabel}}{{if .CustomClientID}} · ID {{.CustomClientID}}{{end}}{{if .Document}} · <span data-sensitive>{{.Document}}</span>{{end}}</p>
-            <p class="text-xs cb-text-subtle mt-1">{{if .Email}}<span data-sensitive>{{.Email}}</span>{{else}}Sem e-mail{{end}}{{if .Phone}} · <span data-sensitive>{{.Phone}}</span>{{end}}</p>
-            <p class="text-[10px] cb-text-muted mt-1">{{.CreatedAt}}</p>
+<article id="contato-{{.ID}}" class="cb-contact-card cb-contact-row">
+    <div class="cb-contact-card-header">
+        <div class="cb-contact-row-copy">
+            <strong>{{.Name}}</strong>
+            <p>{{.TypeLabel}}{{if .CustomClientID}} · ID {{.CustomClientID}}{{end}}{{if .Document}} · <span data-sensitive>{{.Document}}</span>{{end}}</p>
+            <p>{{if .Email}}<span data-sensitive>{{.Email}}</span>{{else}}Sem e-mail{{end}}{{if .Phone}} · <span data-sensitive>{{.Phone}}</span>{{end}}</p>
+            <small>{{.CreatedAt}}</small>
         </div>
-        <div class="flex items-center gap-1.5 shrink-0" data-stop-propagation>
+        <div class="cb-contact-actions" data-stop-propagation>
             <button type="button"
                 hx-get="/contatos/{{.ID}}"
                 hx-target="#contato-{{.ID}}"
                 hx-swap="outerHTML"
-                class="cb-button cb-button-secondary w-8 h-8 rounded-lg p-0"
-                aria-label="Editar contato">
-                <i data-lucide="pencil" class="w-3.5 h-3.5 mx-auto"></i>
+                class="cb-contact-action"
+                aria-label="Editar {{.Name}}" title="Editar contato">
+                <i data-lucide="pencil" aria-hidden="true"></i>
             </button>
             <button type="button"
                 hx-delete="/contatos/{{.ID}}"
                 hx-target="#contato-{{.ID}}"
                 hx-swap="delete"
-                class="cb-button cb-button-secondary w-8 h-8 rounded-lg p-0 hover:text-[var(--cb-danger)]"
-                aria-label="Excluir contato">
-                <i data-lucide="trash-2" class="w-3.5 h-3.5 mx-auto"></i>
+                hx-confirm="Remover {{.Name}}?"
+                class="cb-contact-action cb-contact-action-danger"
+                aria-label="Excluir {{.Name}}" title="Excluir contato">
+                <i data-lucide="trash-2" aria-hidden="true"></i>
             </button>
         </div>
     </div>
@@ -81,16 +82,16 @@
 {{end}}
 
 {{define "contato-row-form"}}
-<article id="contato-{{.ID}}" class="cb-card-dense">
-    <form hx-post="/contatos/{{.ID}}/salvar" hx-target="#contato-{{.ID}}" hx-swap="outerHTML" class="space-y-2 w-full">
+<article id="contato-{{.ID}}" class="cb-contact-edit-card">
+    <form hx-post="/contatos/{{.ID}}/salvar" hx-target="#contato-{{.ID}}" hx-swap="outerHTML" class="cb-v2-contatos-form">
         {{template "contato-form-fields" .}}
-        <div class="flex items-center justify-end gap-2 pt-1">
+        <div class="cb-v2-contatos-form-actions">
             <button type="button"
                 hx-get="/contatos" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
-                class="cb-button cb-button-secondary h-8 px-3 text-xs font-semibold rounded-lg">
+                class="cb-button cb-button-secondary">
                 Cancelar
             </button>
-            <button class="cb-button cb-button-primary h-8 px-3 text-xs font-semibold rounded-lg">
+            <button class="cb-button cb-button-primary">
                 Salvar
             </button>
         </div>

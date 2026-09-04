@@ -81,6 +81,69 @@ func TestFormatAppTimeDayBoundary(t *testing.T) {
 	}
 }
 
+func TestAppTimeUsesSaoPauloCivilDayAcrossUTCBoundary(t *testing.T) {
+	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
+	t.Setenv("TZ", "UTC")
+
+	instant := time.Date(2026, time.September, 1, 0, 30, 0, 0, time.UTC)
+	got := appTime(instant)
+
+	if got.Location().String() != "America/Sao_Paulo" {
+		t.Fatalf("location = %q, want America/Sao_Paulo", got.Location())
+	}
+	if got.Format("2006-01-02 15:04") != "2026-08-31 21:30" {
+		t.Fatalf("app time = %q, want 2026-08-31 21:30", got.Format("2006-01-02 15:04"))
+	}
+}
+
+func TestCivilMonthConsumersUseSaoPauloAcrossUTCMonthBoundary(t *testing.T) {
+	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
+	t.Setenv("TZ", "UTC")
+
+	instant := time.Date(2026, time.September, 1, 1, 30, 0, 0, time.UTC)
+	selectedMonth := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+
+	if got := AppCivilDateUTC(instant); !got.Equal(time.Date(2026, time.August, 31, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("civil date = %s, want 2026-08-31", got.Format("2006-01-02"))
+	}
+	if got := dashboardCashSummaryMonthLabel(instant); got != "Agosto/2026" {
+		t.Fatalf("dashboard month label = %q, want Agosto/2026", got)
+	}
+	if got := dashboardPendingWindowEnd(instant); got != time.Date(2026, time.September, 8, 0, 0, 0, 0, time.UTC).Unix() {
+		t.Fatalf("dashboard pending window end = %d, want Sao Paulo August 31 plus eight civil days", got)
+	}
+	if got := computeCycleBadge(time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC).Unix(), instant); got != "Fecha em 1 dia" {
+		t.Fatalf("invoice cycle badge = %q, want Fecha em 1 dia", got)
+	}
+
+	selectors := []struct {
+		name    string
+		options []MonthOption
+	}{
+		{name: "lancamentos", options: buildMonthOptionsAt("", selectedMonth, LancamentosFilters{}, instant)},
+		{name: "contas", options: buildContasMonthOptionsAt(selectedMonth, "", instant)},
+		{name: "faturas", options: buildFaturaMonthOptionsAt("card-test", selectedMonth, "desc", instant)},
+		{name: "relatorios", options: buildRelatoriosMonthOptionsAt(2026, 8, "caixa", "mensal", "realizado", instant)},
+	}
+
+	for _, selector := range selectors {
+		t.Run(selector.name, func(t *testing.T) {
+			var current []MonthOption
+			for _, option := range selector.options {
+				if option.IsCurrent {
+					current = append(current, option)
+				}
+			}
+			if len(current) != 1 {
+				t.Fatalf("current options = %d, want 1", len(current))
+			}
+			if current[0].Label != "Ago" || current[0].Year != "2026" {
+				t.Fatalf("current month = %s/%s, want Ago/2026", current[0].Label, current[0].Year)
+			}
+		})
+	}
+}
+
 func TestFormatAppTimeYearBoundary(t *testing.T) {
 	t.Setenv("CONTABASE_TIMEZONE", "")
 	t.Setenv("TZ", "")

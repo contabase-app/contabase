@@ -57,6 +57,15 @@ function runSwipeAction(row, side) {
         if (!target && txId) target = '#tx-' + txId;
         var options = { swap: swap };
         if (target) options.target = target;
+        var valuesRaw = side === 'left' ? row.dataset.swipeLeftVals : row.dataset.swipeRightVals;
+        if (valuesRaw) {
+            try {
+                options.values = JSON.parse(valuesRaw);
+            } catch (error) {
+                console.error('Invalid swipe action values', error);
+                return;
+            }
+        }
         htmx.ajax(method, url, options);
     };
 

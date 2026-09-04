@@ -100,7 +100,7 @@ func TestBulkDeleteDuplicateIDsAreAppliedOnce(t *testing.T) {
 }
 
 func TestBulkDeleteInvoiceHistoryPreflightHasZeroPartialEffects(t *testing.T) {
-	for _, protectedStatus := range []string{"CLOSED", "PAID"} {
+	for _, protectedStatus := range []string{"PAID"} {
 		t.Run(protectedStatus, func(t *testing.T) {
 			db := openTestDB(t)
 			defer db.Close()
@@ -153,7 +153,7 @@ func TestBulkDeleteInvoiceHistoryPreflightHasZeroPartialEffects(t *testing.T) {
 }
 
 func TestBulkUpdateInvoiceHistoryPreflightHasZeroPartialEffects(t *testing.T) {
-	for _, invoiceStatus := range []string{"CLOSED", "PAID"} {
+	for _, invoiceStatus := range []string{"PAID"} {
 		t.Run(invoiceStatus, func(t *testing.T) {
 			db := openTestDB(t)
 			defer db.Close()

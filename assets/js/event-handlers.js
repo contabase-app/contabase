@@ -173,6 +173,7 @@ window.contabaseInspectUI = function () {
         img.style.display = 'none';
         var fallback = img.nextElementSibling;
         if (fallback && fallback.hasAttribute('data-avatar-text')) {
+            fallback.classList.remove('hidden');
             fallback.style.display = '';
         }
     }, true);

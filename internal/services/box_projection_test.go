@@ -66,6 +66,19 @@ func TestMonthsUntilTargetDate(t *testing.T) {
 	}
 }
 
+func TestMonthsUntilTargetDatePreservesCallerCivilMonth(t *testing.T) {
+	location, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		t.Fatalf("load America/Sao_Paulo: %v", err)
+	}
+
+	now := time.Date(2026, time.September, 1, 1, 30, 0, 0, time.UTC).In(location)
+	target := time.Date(2026, time.October, 1, 12, 0, 0, 0, time.UTC).Unix()
+	if got := MonthsUntilTargetDate(target, now); got != 2 {
+		t.Fatalf("months until October from Sao Paulo August = %d, want 2", got)
+	}
+}
+
 func TestEstimateRequiredMonthlyContributionByTargetDate(t *testing.T) {
 	now := time.Date(2026, time.June, 1, 12, 0, 0, 0, time.UTC)
 

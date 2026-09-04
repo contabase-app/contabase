@@ -24,7 +24,10 @@
         hx-push-url="true"
         class="relative z-10 flex items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-3 transition-all duration-200 hover:bg-[var(--cb-surface-2)]{{if .IsOverdue}} border-[var(--cb-danger)]/20{{end}}" style="{{if .IsOverdue}}background: color-mix(in srgb, var(--cb-danger) 6%, var(--cb-surface-1)){{end}}">
         <span class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.CardColor}}">
-            {{if .CardProviderMark}}
+            {{if .CardProviderLogoPath}}
+            <img src="{{assetPath .CardProviderLogoPath}}" alt="" class="institution-logo" data-avatar-fallback>
+            <span class="hidden font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .CardProviderMark}}" data-avatar-text>{{.CardProviderMark}}</span>
+            {{else if .CardProviderMark}}
             <span class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .CardProviderMark}}" style="color: var(--emblem-color, {{.CardColor}})">{{.CardProviderMark}}</span>
             {{else}}
             <i data-lucide="{{if .CardIcon}}{{.CardIcon}}{{else}}credit-card{{end}}" class="w-5 h-5 icon-colored" style="--ic: var(--emblem-color, {{.CardColor}})"></i>

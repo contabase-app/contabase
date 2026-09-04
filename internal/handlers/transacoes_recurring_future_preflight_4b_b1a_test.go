@@ -109,28 +109,80 @@ func pfRequest(t *testing.T, wsID, userID, txID string, db *sql.DB, extra url.Va
 
 // ---------- CURRENT PROTECTED ----------
 
-func TestRecurringFuturePreflight_BlockedCurrentPaid(t *testing.T) {
+func TestRecurringFuturePreflight_AllowsCurrentPaidIncomeAndMovesBalanceAtomically(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	wsID, userID, ruleID, seriesID := pfSeedCheckingRule(t, db, "cur_paid")
 	_, seq2ID, seq3ID := pfSeedOccurrences(t, db, wsID, userID, seriesID, ruleID, "cur_paid")
-	execTestSQL(t, db, `UPDATE transactions SET status='paid' WHERE id=?`, seq2ID)
-	rr := pfRequest(t, wsID, userID, seq2ID, db, nil)
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status=%d, want 409", rr.Code)
+	now := time.Now().Unix()
+	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-pf-alt', ?, 'Alternative', 'CHECKING', 0, 0, ?, ?)`, wsID, now, now)
+	execTestSQL(t, db, `INSERT INTO categories (id, workspace_id, name, icon, color, type, macro_group, created_at) VALUES ('cat-pf-income', ?, 'IncomeCat', 'tag', '#22c55e', 'INCOME', '', ?)`, wsID, now)
+	execTestSQL(t, db, `UPDATE recurring_rules SET type='INCOME', category_id='cat-pf-income' WHERE id=? AND workspace_id=?`, ruleID, wsID)
+	execTestSQL(t, db, `UPDATE transactions SET type='INCOME', category_id='cat-pf-income' WHERE series_id=? AND workspace_id=?`, seriesID, wsID)
+	execTestSQL(t, db, `UPDATE accounts SET current_balance=15000 WHERE id='acc-pf-chk' AND workspace_id=?`, wsID)
+	execTestSQL(t, db, `UPDATE transactions SET status='paid', paid_at=?, paid_date_civil='2026-07-05' WHERE id=?`, now, seq2ID)
+	execTestSQL(t, db, `INSERT INTO transaction_status_history (id, transaction_id, workspace_id, user_id, previous_status, new_status, new_paid_at, source, created_at) VALUES ('h-pf-cur-paid', ?, ?, ?, 'pending', 'paid', ?, 'manual', ?)`, seq2ID, wsID, userID, now, now)
+	rr := pfRequest(t, wsID, userID, seq2ID, db, url.Values{
+		"tipo":             {"receita"},
+		"origem_conta_id":  {"acc-pf-alt"},
+		"categoria_id":     {"cat-pf-income"},
+		"status_pagamento": {"paid"},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q, want 200", rr.Code, rr.Body.String())
 	}
-	_ = seq3ID
+
+	var currentAccount, currentStatus, currentPaidCivil string
+	var currentPaidAt sql.NullInt64
+	if err := db.QueryRow(`SELECT account_id, status, paid_at, paid_date_civil FROM transactions WHERE id=?`, seq2ID).Scan(&currentAccount, &currentStatus, &currentPaidAt, &currentPaidCivil); err != nil {
+		t.Fatalf("load selected occurrence: %v", err)
+	}
+	if currentAccount != "acc-pf-alt" || currentStatus != "paid" || !currentPaidAt.Valid || currentPaidAt.Int64 != now || currentPaidCivil != "2026-07-05" {
+		t.Fatalf("selected occurrence account=%q status=%q paid_at=%v paid_date_civil=%q", currentAccount, currentStatus, currentPaidAt, currentPaidCivil)
+	}
+	var futureAccount, futureStatus string
+	if err := db.QueryRow(`SELECT account_id, status FROM transactions WHERE id=?`, seq3ID).Scan(&futureAccount, &futureStatus); err != nil {
+		t.Fatalf("load future occurrence: %v", err)
+	}
+	if futureAccount != "acc-pf-alt" || futureStatus != "pending" {
+		t.Fatalf("future occurrence account=%q status=%q", futureAccount, futureStatus)
+	}
+	var oldBalance, newBalance int64
+	if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id='acc-pf-chk' AND workspace_id=?`, wsID).Scan(&oldBalance); err != nil {
+		t.Fatalf("load old balance: %v", err)
+	}
+	if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id='acc-pf-alt' AND workspace_id=?`, wsID).Scan(&newBalance); err != nil {
+		t.Fatalf("load new balance: %v", err)
+	}
+	if oldBalance != 0 || newBalance != 15000 {
+		t.Fatalf("balances old=%d new=%d, want 0 and 15000", oldBalance, newBalance)
+	}
+	var historyCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transaction_status_history WHERE transaction_id=? AND workspace_id=?`, seq2ID, wsID).Scan(&historyCount); err != nil {
+		t.Fatalf("load status history: %v", err)
+	}
+	if historyCount != 1 {
+		t.Fatalf("status history count=%d, want 1", historyCount)
+	}
 }
 
-func TestRecurringFuturePreflight_BlockedCurrentException(t *testing.T) {
+func TestRecurringFuturePreflight_AllowsSelectedPaidManualException(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	wsID, userID, ruleID, seriesID := pfSeedCheckingRule(t, db, "cur_exc")
 	_, seq2ID, seq3ID := pfSeedOccurrences(t, db, wsID, userID, seriesID, ruleID, "cur_exc")
-	execTestSQL(t, db, `UPDATE transactions SET is_recurring_exception=1 WHERE id=?`, seq2ID)
+	execTestSQL(t, db, `UPDATE transactions SET status='paid', paid_at=?, paid_date_civil='2026-07-05', is_recurring_exception=1, recurring_exception_reason='manual_edit' WHERE id=?`, time.Now().Unix(), seq2ID)
 	rr := pfRequest(t, wsID, userID, seq2ID, db, nil)
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status=%d, want 409", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q, want 200", rr.Code, rr.Body.String())
+	}
+	var status, reason string
+	var isException int
+	if err := db.QueryRow(`SELECT status, is_recurring_exception, recurring_exception_reason FROM transactions WHERE id=?`, seq2ID).Scan(&status, &isException, &reason); err != nil {
+		t.Fatalf("load selected exception: %v", err)
+	}
+	if status != "paid" || isException != 1 || reason != "manual_edit" {
+		t.Fatalf("selected exception status=%q exception=%d reason=%q", status, isException, reason)
 	}
 	_ = seq3ID
 }
@@ -175,6 +227,39 @@ func TestRecurringFuturePreflight_BlockedFuturePaid(t *testing.T) {
 	rr := pfRequest(t, wsID, userID, seq2ID, db, nil)
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("status=%d, want 409", rr.Code)
+	}
+}
+
+func TestRecurringFuturePreflight_SelectedPaidStillBlocksProtectedFutureWithoutWrites(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	wsID, userID, ruleID, seriesID := pfSeedCheckingRule(t, db, "cur_and_fut_paid")
+	_, seq2ID, seq3ID := pfSeedOccurrences(t, db, wsID, userID, seriesID, ruleID, "cur_and_fut_paid")
+	now := time.Now().Unix()
+	execTestSQL(t, db, `UPDATE transactions SET status='paid', paid_at=?, paid_date_civil='2026-07-05' WHERE id=?`, now, seq2ID)
+	execTestSQL(t, db, `UPDATE transactions SET status='paid', paid_at=?, paid_date_civil='2026-08-05' WHERE id=?`, now, seq3ID)
+
+	rr := pfRequest(t, wsID, userID, seq2ID, db, url.Values{"valor": {"275.00"}, "descricao": {"must rollback"}})
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status=%d body=%q, want 409", rr.Code, rr.Body.String())
+	}
+	var currentAmount, futureAmount int64
+	var currentDescription, futureDescription string
+	if err := db.QueryRow(`SELECT amount, description FROM transactions WHERE id=?`, seq2ID).Scan(&currentAmount, &currentDescription); err != nil {
+		t.Fatalf("load selected occurrence: %v", err)
+	}
+	if err := db.QueryRow(`SELECT amount, description FROM transactions WHERE id=?`, seq3ID).Scan(&futureAmount, &futureDescription); err != nil {
+		t.Fatalf("load future occurrence: %v", err)
+	}
+	if currentAmount != 15000 || futureAmount != 15000 || currentDescription != "cur_and_fut_paid" || futureDescription != "cur_and_fut_paid" {
+		t.Fatalf("protected future allowed writes: selected=(%d,%q) future=(%d,%q)", currentAmount, currentDescription, futureAmount, futureDescription)
+	}
+	var ruleCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM recurring_rules WHERE workspace_id=? AND series_id=?`, wsID, seriesID).Scan(&ruleCount); err != nil {
+		t.Fatalf("count rules after blocked preflight: %v", err)
+	}
+	if ruleCount != 1 {
+		t.Fatalf("rules by series=%d, want 1 after blocked preflight", ruleCount)
 	}
 }
 

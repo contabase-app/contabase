@@ -91,6 +91,37 @@ const invoiceEffectivePaidSQLExpr = `CASE
 	ELSE COALESCE(i.paid_amount, 0)
 END`
 
+// transactionNetAmountTSQL is the effective expense amount for queries that
+// use the fixed transaction alias t. Refunds are contra-expenses, never income.
+const transactionNetAmountTSQL = `t.amount - COALESCE((
+	SELECT SUM(r.amount_cents)
+	FROM transaction_refunds r
+	WHERE r.workspace_id = t.workspace_id
+	  AND r.transaction_id = t.id
+	  AND r.reversed_at IS NULL
+), 0)`
+
+// transactionNetAmountTxSQL is the equivalent expression for the fixed tx
+// alias used by cash-flow allocation queries.
+const transactionNetAmountTxSQL = `tx.amount - COALESCE((
+	SELECT SUM(r.amount_cents)
+	FROM transaction_refunds r
+	WHERE r.workspace_id = tx.workspace_id
+	  AND r.transaction_id = tx.id
+	  AND r.reversed_at IS NULL
+), 0)`
+
+// invoiceGeneralRefundTotalIASQL is the active adjustment total for callers
+// with the fixed invoice/account aliases i and a. General refunds settle a
+// later invoice without fabricating an income or changing the original expense.
+const invoiceGeneralRefundTotalIASQL = `COALESCE((
+	SELECT SUM(ir.amount_cents)
+	FROM invoice_refunds ir
+	WHERE ir.workspace_id = a.workspace_id
+	  AND ir.invoice_id = i.id
+	  AND ir.reversed_at IS NULL
+), 0)`
+
 func loadInvoiceFinancialSnapshotTx(tx *sql.Tx, workspaceID, invoiceID string) (invoiceFinancialSnapshot, error) {
 	var snapshot invoiceFinancialSnapshot
 	err := tx.QueryRow(`
@@ -101,10 +132,16 @@ func loadInvoiceFinancialSnapshotTx(tx *sql.Tx, workspaceID, invoiceID string) (
 			i.closing_date,
 			i.paid_at,
 			COALESCE((
-				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END)
+				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount - COALESCE((
+					SELECT SUM(r.amount_cents)
+					FROM transaction_refunds r
+					WHERE r.workspace_id = t.workspace_id
+					  AND r.transaction_id = t.id
+					  AND r.reversed_at IS NULL
+				), 0) ELSE 0 END)
 				FROM transactions t
 				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
-			), 0),
+			), 0) - `+invoiceGeneralRefundTotalIASQL+`,
 			COALESCE((
 				SELECT COUNT(ip.id)
 				FROM invoice_payments ip
@@ -158,10 +195,16 @@ func loadInvoiceFinancialSnapshotDB(db *sql.DB, workspaceID, invoiceID string) (
 			i.closing_date,
 			i.paid_at,
 			COALESCE((
-				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END)
+				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount - COALESCE((
+					SELECT SUM(r.amount_cents)
+					FROM transaction_refunds r
+					WHERE r.workspace_id = t.workspace_id
+					  AND r.transaction_id = t.id
+					  AND r.reversed_at IS NULL
+				), 0) ELSE 0 END)
 				FROM transactions t
 				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
-			), 0),
+			), 0) - `+invoiceGeneralRefundTotalIASQL+`,
 			COALESCE((
 				SELECT COUNT(ip.id)
 				FROM invoice_payments ip
@@ -254,7 +297,7 @@ func computeInvoiceState(total, paidActive int64, closingUnix int64, now time.Ti
 
 	if closingUnix > 0 {
 		closeAt := time.Unix(closingUnix, 0).UTC()
-		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		today := AppCivilDateUTC(now)
 		closeDay := time.Date(closeAt.Year(), closeAt.Month(), closeAt.Day(), 0, 0, 0, 0, time.UTC)
 		days := int(closeDay.Sub(today).Hours() / 24)
 		switch {
@@ -291,7 +334,7 @@ func computeCycleBadge(closingUnix int64, now time.Time) string {
 		return ""
 	}
 	closeAt := time.Unix(closingUnix, 0).UTC()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	today := AppCivilDateUTC(now)
 	closeDay := time.Date(closeAt.Year(), closeAt.Month(), closeAt.Day(), 0, 0, 0, 0, time.UTC)
 	days := int(closeDay.Sub(today).Hours() / 24)
 	switch {

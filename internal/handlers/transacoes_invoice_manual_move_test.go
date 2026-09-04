@@ -440,7 +440,7 @@ func TestManualInvoiceMoveSingleScopeRollbackAndInstallmentIsolation(t *testing.
 }
 
 func TestManualInvoiceMoveOverrideDurability(t *testing.T) {
-	t.Run("ordinary edit on closed invoice is blocked and preserves override", func(t *testing.T) {
+	t.Run("ordinary edit on closed invoice is allowed and preserves override", func(t *testing.T) {
 		db := openTestDB(t)
 		defer db.Close()
 		seedManualInvoiceMoveScenarioForTest(t, db)
@@ -448,8 +448,8 @@ func TestManualInvoiceMoveOverrideDurability(t *testing.T) {
 			t.Fatalf("manual status = %d, body = %q", rr.Code, rr.Body.String())
 		}
 		rr := postInvoiceAssignmentModeForTest(t, db, "purchase-test", "invoice-2026-08", "", "", "single")
-		if rr.Code != http.StatusConflict {
-			t.Fatalf("edit status = %d, want 409, body = %q", rr.Code, rr.Body.String())
+		if rr.Code != http.StatusOK {
+			t.Fatalf("edit status = %d, want 200, body = %q", rr.Code, rr.Body.String())
 		}
 		var invoiceID, overrideID string
 		if err := db.QueryRow(`SELECT invoice_id, invoice_override_id FROM transactions WHERE id = 'purchase-test'`).Scan(&invoiceID, &overrideID); err != nil {
@@ -711,7 +711,9 @@ func TestManualInvoiceMoveDerivedViewsAndFinancialDates(t *testing.T) {
 	insertInvoiceExpenseForManualMoveTest(t, db, "dst-extra", "invoice-2026-08", 30000)
 	execTestSQL(t, db, `UPDATE transactions SET category_id = 'cat-second' WHERE id = 'dst-extra'`)
 	insertActiveInvoicePaymentForManualMoveTest(t, db, "dst-partial", "invoice-2026-08", 20000)
-	execTestSQL(t, db, `UPDATE invoice_payments SET paid_at = ? WHERE id = 'ip-dst-partial'`, testUnixDate("2026-08-01"))
+	paymentDate := testUnixDate("2026-08-01")
+	execTestSQL(t, db, `UPDATE invoice_payments SET paid_at = ? WHERE id = 'ip-dst-partial'`, paymentDate)
+	execTestSQL(t, db, `UPDATE transactions SET date = ?, date_civil = '2026-08-01', paid_at = ?, paid_date_civil = '2026-08-01' WHERE id = 'payment-dst-partial'`, paymentDate, paymentDate)
 
 	report := RelatoriosHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
 

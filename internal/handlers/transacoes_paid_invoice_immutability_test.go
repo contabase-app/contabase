@@ -607,7 +607,7 @@ func TestOpenInvoiceTransactionDeleteAndToggleRemainAllowed(t *testing.T) {
 	}
 }
 
-func TestClosedInvoiceTransactionEditIsBlocked(t *testing.T) {
+func TestClosedInvoiceTransactionEditIsAllowed(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
@@ -641,8 +641,8 @@ func TestClosedInvoiceTransactionEditIsBlocked(t *testing.T) {
 
 	handler.HandleAtualizarTransacao(rr, req, "open-purchase")
 
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409, body = %q", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %q", rr.Code, rr.Body.String())
 	}
 
 	var amount int64
@@ -650,16 +650,16 @@ func TestClosedInvoiceTransactionEditIsBlocked(t *testing.T) {
 	if err := db.QueryRow(`SELECT amount, description FROM transactions WHERE id = ?`, "open-purchase").Scan(&amount, &description); err != nil {
 		t.Fatalf("query updated transaction: %v", err)
 	}
-	if amount != 32000 {
-		t.Fatalf("amount = %d, want unchanged 32000", amount)
+	if amount != 43000 {
+		t.Fatalf("amount = %d, want 43000", amount)
 	}
-	if description != "Compra Open" {
-		t.Fatalf("description = %q, want unchanged %q", description, "Compra Open")
+	if description != "Compra Closed Atualizada" {
+		t.Fatalf("description = %q, want updated", description)
 	}
 }
 
-func TestClosedInvoiceTransactionDeleteToggleAndBulkAreBlocked(t *testing.T) {
-	for _, operation := range []string{"delete", "toggle", "bulk-delete", "bulk-status"} {
+func TestClosedInvoiceTransactionDeleteIsAllowed(t *testing.T) {
+	for _, operation := range []string{"delete"} {
 		t.Run(operation, func(t *testing.T) {
 			db := openTestDB(t)
 			defer db.Close()
@@ -688,16 +688,20 @@ func TestClosedInvoiceTransactionDeleteToggleAndBulkAreBlocked(t *testing.T) {
 				rr = httptest.NewRecorder()
 				handler.HandleBulkUpdate(rr, req)
 			}
-			if rr.Code != http.StatusConflict {
-				t.Fatalf("status = %d, want 409, body = %q", rr.Code, rr.Body.String())
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200, body = %q", rr.Code, rr.Body.String())
 			}
 			var count, amount int64
 			var status, invoiceID string
 			if err := db.QueryRow(`SELECT COUNT(1), COALESCE(MAX(amount), 0), COALESCE(MAX(status), ''), COALESCE(MAX(invoice_id), '') FROM transactions WHERE id = 'open-purchase'`).Scan(&count, &amount, &status, &invoiceID); err != nil {
 				t.Fatal(err)
 			}
-			if count != 1 || amount != 32000 || status != "paid" || invoiceID != "invoice-2026-09" {
-				t.Fatalf("blocked %s changed transaction: count=%d amount=%d status=%q invoice=%q", operation, count, amount, status, invoiceID)
+			if operation == "delete" || operation == "bulk-delete" {
+				if count != 0 {
+					t.Fatalf("%s transaction count=%d, want 0", operation, count)
+				}
+			} else if count != 1 || amount != 32000 || status != "pending" || invoiceID != "invoice-2026-09" {
+				t.Fatalf("%s result: count=%d amount=%d status=%q invoice=%q", operation, count, amount, status, invoiceID)
 			}
 		})
 	}
@@ -800,6 +804,7 @@ func testPaidInvoiceMutationHandler(db *sql.DB) TransactionHandler {
 func testPaidInvoiceMutationTemplates() *template.Template {
 	return template.Must(template.New("test").Parse(`
 {{define "lancamento-row"}}<tr id="{{.ID}}"></tr>{{end}}
+{{define "transactions-body"}}<tbody id="transactions-body"></tbody>{{end}}
 {{define "dashboard-cards"}}<section id="dashboard-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-summary"}}<section id="invoice-summary" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-transactions"}}<section id="invoice-transactions" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}

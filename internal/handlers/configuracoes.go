@@ -65,6 +65,7 @@ type ConfiguracoesData struct {
 	UserFirstName       string
 	UserInitials        string
 	ProfilePhotoURL     string
+	NotificationCount   int
 	IsBusiness          bool
 	ActiveWorkspaceName string
 	Section             string
@@ -145,19 +146,20 @@ type CategoryParentOption struct {
 }
 
 type ConfigAccountRow struct {
-	ID           string
-	Name         string
-	Type         string
-	TypeLabel    string
-	Color        string
-	Icon         string
-	ProviderSlug string
-	ProviderMark string
-	Balance      string
-	BalanceCents int64
-	BalanceInput string
-	SortOrder    int64
-	Archived     bool
+	ID               string
+	Name             string
+	Type             string
+	TypeLabel        string
+	Color            string
+	Icon             string
+	ProviderSlug     string
+	ProviderMark     string
+	ProviderLogoPath string
+	Balance          string
+	BalanceCents     int64
+	BalanceInput     string
+	SortOrder        int64
+	Archived         bool
 }
 
 type ConfigCardRow struct {
@@ -167,6 +169,7 @@ type ConfigCardRow struct {
 	Icon                    string
 	ProviderSlug            string
 	ProviderMark            string
+	ProviderLogoPath        string
 	ClosingDay              int64
 	DueDay                  int64
 	CreditLimit             string
@@ -978,6 +981,7 @@ func (h *ConfiguracoesHandler) HandleContasInlineForm(w http.ResponseWriter, r *
 	row.Color = normalizeHexColor(row.Color, "#6B7280")
 	row.ProviderSlug = normalizeAccountProviderSlug(row.ProviderSlug)
 	row.ProviderMark = accountProviderMark(row.ProviderSlug, row.Name)
+	row.ProviderLogoPath = accountProviderLogoPathForAccount(row.ProviderSlug, row.Name)
 	if row.Icon == "" {
 		row.Icon = accountVisualByProvider(row.ProviderSlug, row.Type)
 	}
@@ -1034,6 +1038,7 @@ func (h *ConfiguracoesHandler) HandleCartoesInlineForm(w http.ResponseWriter, r 
 	row.Color = normalizeHexColor(row.Color, "#6B7280")
 	row.ProviderSlug = normalizeAccountProviderSlug(row.ProviderSlug)
 	row.ProviderMark = accountProviderMark(row.ProviderSlug, row.Name)
+	row.ProviderLogoPath = accountProviderLogoPathForAccount(row.ProviderSlug, row.Name)
 	if row.Icon == "" {
 		row.Icon = accountVisualByProvider(row.ProviderSlug, "CREDIT_CARD")
 	}
@@ -1357,6 +1362,7 @@ func (h *ConfiguracoesHandler) renderAccountRow(w http.ResponseWriter, accountID
 	row.Color = normalizeHexColor(row.Color, "#6B7280")
 	row.ProviderSlug = normalizeAccountProviderSlug(row.ProviderSlug)
 	row.ProviderMark = accountProviderMark(row.ProviderSlug, row.Name)
+	row.ProviderLogoPath = accountProviderLogoPathForAccount(row.ProviderSlug, row.Name)
 	if row.Icon == "" {
 		row.Icon = accountVisualByProvider(row.ProviderSlug, row.Type)
 	}
@@ -1381,6 +1387,7 @@ func (h *ConfiguracoesHandler) renderCardRow(w http.ResponseWriter, accountID st
 	row.Color = normalizeHexColor(row.Color, "#6B7280")
 	row.ProviderSlug = normalizeAccountProviderSlug(row.ProviderSlug)
 	row.ProviderMark = accountProviderMark(row.ProviderSlug, row.Name)
+	row.ProviderLogoPath = accountProviderLogoPathForAccount(row.ProviderSlug, row.Name)
 	if row.Icon == "" {
 		row.Icon = accountVisualByProvider(row.ProviderSlug, "CREDIT_CARD")
 	}
@@ -2558,6 +2565,7 @@ func (h *ConfiguracoesHandler) loadConfigShellData(data *ConfiguracoesData) erro
 	}
 	data.UserInitials = initials(data.UserName)
 	data.UserFirstName = extractFirstName(data.UserName)
+	data.NotificationCount = queryDashboardNotificationCount(h.DB, h.UserID, h.WorkspaceID)
 	if fileName := strings.TrimPrefix(photoPath, "/uploads/profile/"); photoPath != "" && fileName != photoPath && fileName != "" {
 		if _, err := os.Stat(filepath.Join(paths.ProfileUploadsDir(), fileName)); err == nil {
 			data.ProfilePhotoURL = fmt.Sprintf("%s?v=%d", photoPath, updatedAt)
@@ -3150,18 +3158,19 @@ func (h *ConfiguracoesHandler) queryContas(repo *repository.ConfigRepository) ([
 			icon = accountVisualByProvider(item.ProviderSlug, item.Type)
 		}
 		out = append(out, ConfigAccountRow{
-			ID:           item.ID,
-			Name:         item.Name,
-			Type:         item.Type,
-			TypeLabel:    models.AccountTypeLabel(item.Type),
-			Color:        normalizeHexColor(item.Color, "#6B7280"),
-			Icon:         icon,
-			ProviderSlug: normalizeAccountProviderSlug(item.ProviderSlug),
-			ProviderMark: accountProviderMark(item.ProviderSlug, item.Name),
-			Balance:      formatCurrencyLabel(item.CurrentBalance),
-			BalanceCents: item.CurrentBalance,
-			BalanceInput: centsToInput(item.CurrentBalance),
-			SortOrder:    item.SortOrder,
+			ID:               item.ID,
+			Name:             item.Name,
+			Type:             item.Type,
+			TypeLabel:        models.AccountTypeLabel(item.Type),
+			Color:            normalizeHexColor(item.Color, "#6B7280"),
+			Icon:             icon,
+			ProviderSlug:     normalizeAccountProviderSlug(item.ProviderSlug),
+			ProviderMark:     accountProviderMark(item.ProviderSlug, item.Name),
+			ProviderLogoPath: accountProviderLogoPathForAccount(item.ProviderSlug, item.Name),
+			Balance:          formatCurrencyLabel(item.CurrentBalance),
+			BalanceCents:     item.CurrentBalance,
+			BalanceInput:     centsToInput(item.CurrentBalance),
+			SortOrder:        item.SortOrder,
 		})
 	}
 	return out, nil
@@ -3186,6 +3195,7 @@ func (h *ConfiguracoesHandler) queryCartoes(repo *repository.ConfigRepository) (
 			Icon:                    icon,
 			ProviderSlug:            providerSlug,
 			ProviderMark:            accountProviderMark(providerSlug, item.Name),
+			ProviderLogoPath:        accountProviderLogoPathForAccount(item.ProviderSlug, item.Name),
 			ClosingDay:              item.ClosingDay,
 			DueDay:                  item.DueDay,
 			CreditLimit:             formatCurrencyLabel(item.CreditLimit),
@@ -3210,19 +3220,20 @@ func (h *ConfiguracoesHandler) queryArchivedContas(repo *repository.ConfigReposi
 			icon = accountVisualByProvider(item.ProviderSlug, item.Type)
 		}
 		out = append(out, ConfigAccountRow{
-			ID:           item.ID,
-			Name:         item.Name,
-			Type:         item.Type,
-			TypeLabel:    models.AccountTypeLabel(item.Type),
-			Color:        normalizeHexColor(item.Color, "#6B7280"),
-			Icon:         icon,
-			ProviderSlug: normalizeAccountProviderSlug(item.ProviderSlug),
-			ProviderMark: accountProviderMark(item.ProviderSlug, item.Name),
-			Balance:      formatCurrencyLabel(item.CurrentBalance),
-			BalanceCents: item.CurrentBalance,
-			BalanceInput: centsToInput(item.CurrentBalance),
-			SortOrder:    item.SortOrder,
-			Archived:     true,
+			ID:               item.ID,
+			Name:             item.Name,
+			Type:             item.Type,
+			TypeLabel:        models.AccountTypeLabel(item.Type),
+			Color:            normalizeHexColor(item.Color, "#6B7280"),
+			Icon:             icon,
+			ProviderSlug:     normalizeAccountProviderSlug(item.ProviderSlug),
+			ProviderMark:     accountProviderMark(item.ProviderSlug, item.Name),
+			ProviderLogoPath: accountProviderLogoPathForAccount(item.ProviderSlug, item.Name),
+			Balance:          formatCurrencyLabel(item.CurrentBalance),
+			BalanceCents:     item.CurrentBalance,
+			BalanceInput:     centsToInput(item.CurrentBalance),
+			SortOrder:        item.SortOrder,
+			Archived:         true,
 		})
 	}
 	return out, nil
@@ -3247,6 +3258,7 @@ func (h *ConfiguracoesHandler) queryArchivedCartoes(repo *repository.ConfigRepos
 			Icon:                    icon,
 			ProviderSlug:            providerSlug,
 			ProviderMark:            accountProviderMark(providerSlug, item.Name),
+			ProviderLogoPath:        accountProviderLogoPathForAccount(item.ProviderSlug, item.Name),
 			ClosingDay:              item.ClosingDay,
 			DueDay:                  item.DueDay,
 			CreditLimit:             formatCurrencyLabel(item.CreditLimit),

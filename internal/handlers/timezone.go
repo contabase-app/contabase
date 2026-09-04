@@ -25,6 +25,23 @@ func appTimeLocation() *time.Location {
 	return loc
 }
 
+func appTime(now time.Time) time.Time {
+	return now.In(appTimeLocation())
+}
+
+// AppCivilDateUTC returns the application's civil date encoded at midnight UTC.
+// It is intended only for comparisons with legacy civil dates stored in UTC;
+// the day, month and year are always selected in the application timezone.
+func AppCivilDateUTC(now time.Time) time.Time {
+	current := appTime(now)
+	return time.Date(current.Year(), current.Month(), current.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func appMonthStartUTC(now time.Time) time.Time {
+	current := appTime(now)
+	return time.Date(current.Year(), current.Month(), 1, 0, 0, 0, 0, time.UTC)
+}
+
 func businessDayStartUnix(now time.Time) int64 {
 	return appDayStartUnix(now)
 }

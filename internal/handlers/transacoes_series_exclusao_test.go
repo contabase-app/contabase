@@ -223,8 +223,8 @@ func TestRecurringDeleteSinglePaidAndExceptionDoNotReappear(t *testing.T) {
 	}
 }
 
-func TestRecurringDeleteSingleBlocksClosedAndPaidInvoices(t *testing.T) {
-	for _, status := range []string{"CLOSED", "PAID"} {
+func TestRecurringDeleteSingleBlocksPaidInvoices(t *testing.T) {
+	for _, status := range []string{"PAID"} {
 		t.Run(status, func(t *testing.T) {
 			db := openTestDB(t)
 			defer db.Close()

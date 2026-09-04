@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/contabase-app/contabase/internal/models"
 )
 
 func TestHandleListarTransacoesRenderBranches(t *testing.T) {
@@ -122,6 +124,29 @@ func TestBuildLancamentosDataMonthSelectorUsesListPartialContract(t *testing.T) 
 	}
 }
 
+func TestBuildLancamentosMonthOptionsAreContinuousAroundSelection(t *testing.T) {
+	selected := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
+	options := buildMonthOptionsAt("account-1", selected, LancamentosFilters{Order: "desc"}, selected)
+
+	if len(options) != 12 {
+		t.Fatalf("month options = %d, want 12", len(options))
+	}
+	if options[0].Label != "Abr" || options[0].Year != "2026" {
+		t.Fatalf("first rolling option = %+v, want Abr/2026", options[0])
+	}
+	if options[5].Label != "Set" || !options[5].IsActive {
+		t.Fatalf("selected month must remain in the sixth position: %+v", options[5])
+	}
+	if options[11].Label != "Mar" || options[11].Year != "2027" {
+		t.Fatalf("rolling range must continue into next year: %+v", options[11])
+	}
+	for _, expected := range []string{"mes=3", "ano=2027", "conta=account-1", "ordem=desc"} {
+		if !strings.Contains(options[11].Query, expected) {
+			t.Fatalf("cross-year option lost %q in query %q", expected, options[11].Query)
+		}
+	}
+}
+
 func TestLancamentosMonthSelectorDoesNotInheritListPartial(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
@@ -184,6 +209,55 @@ func TestLancamentosMonthSelectorDoesNotInheritListPartial(t *testing.T) {
 	assertContains(t, body, `id="lancamentos-filter-period"`)
 }
 
+func TestLancamentosPageUsesGlobalAppShell(t *testing.T) {
+	tpl := template.Must(template.New("lancamentos-app-shell").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath": func(path string) string { return path + "?v=test" },
+		"hasString": func(items []string, target string) bool {
+			for _, item := range items {
+				if item == target {
+					return true
+				}
+			}
+			return false
+		},
+	})).ParseFiles(
+		resolveTemplatePath(t, "templates/pages/lancamentos.html"),
+		resolveTemplatePath(t, "templates/components/app_shell.html"),
+		resolveTemplatePath(t, "templates/components/seletor_meses.html"),
+		resolveTemplatePath(t, "templates/components/invoice-row.html"),
+	))
+
+	data := LancamentosData{
+		Title:               "Lançamentos",
+		UserName:            "Vitor Ferreira",
+		UserInitials:        "VF",
+		ActiveWorkspaceName: "Família",
+		MonthLabel:          "Agosto de 2026",
+	}
+	var out bytes.Buffer
+	if err := tpl.ExecuteTemplate(&out, "lancamentos-page", data); err != nil {
+		t.Fatalf("render lancamentos page: %v", err)
+	}
+
+	body := out.String()
+	for _, expected := range []string{
+		`data-app-shell`,
+		`data-page-section="transactions"`,
+		`data-v2-nav-section="transactions"`,
+		`cb-v2-lancamentos-header`,
+		`aria-label="Adicionar lançamento"`,
+		`id="payment-confirm-modal"`,
+		`id="global-delete-scope-modal"`,
+		`/assets/js/payment-confirm.js?v=test`,
+		`/assets/css/lancamentos.css?v=test`,
+	} {
+		assertContains(t, body, expected)
+	}
+	if strings.Contains(body, `{{template "layout-start"`) {
+		t.Fatal("lancamentos page must use the global app shell, not the legacy layout")
+	}
+}
+
 func TestLancamentosBulkPaidUsesPaymentDateModalContract(t *testing.T) {
 	lancamentosBytes, err := os.ReadFile(resolveTemplatePath(t, "templates/pages/lancamentos.html"))
 	if err != nil {
@@ -197,9 +271,9 @@ func TestLancamentosBulkPaidUsesPaymentDateModalContract(t *testing.T) {
 		t.Fatal("bulk paid action must open payment-date modal, not submit directly")
 	}
 
-	layoutBytes, err := os.ReadFile(resolveTemplatePath(t, "templates/layout.html"))
+	layoutBytes, err := os.ReadFile(resolveTemplatePath(t, "templates/pages/lancamentos.html"))
 	if err != nil {
-		t.Fatalf("read layout template: %v", err)
+		t.Fatalf("read lancamentos template: %v", err)
 	}
 	layout := string(layoutBytes)
 	assertContains(t, layout, `name="payment_date"`)
@@ -266,7 +340,9 @@ func testLancamentosBranchTemplates(t *testing.T) *template.Template {
 
 func TestVisualRegressionInvoiceAndFormEmblems(t *testing.T) {
 	// Test invoice-row.html rendering
-	tplInvoice := template.Must(template.New("invoice-test").ParseFiles(
+	tplInvoice := template.Must(template.New("invoice-test").Funcs(template.FuncMap{
+		"assetPath": func(path string) string { return path + "?v=test" },
+	}).ParseFiles(
 		resolveTemplatePath(t, "templates/components/invoice-row.html"),
 	))
 
@@ -285,6 +361,22 @@ func TestVisualRegressionInvoiceAndFormEmblems(t *testing.T) {
 		assertContains(t, html, "MP")
 		assertContains(t, html, "emblem-len-2")
 		assertContains(t, html, "emblem-text")
+	})
+
+	t.Run("invoice-row with provider logo", func(t *testing.T) {
+		var buf bytes.Buffer
+		data := InvoiceRow{
+			CardColor:            "#EC7000",
+			CardProviderMark:     "Itaú",
+			CardProviderLogoPath: "institutions/itau.png",
+			CardIcon:             "credit-card",
+		}
+		if err := tplInvoice.ExecuteTemplate(&buf, "invoice-row-legacy", data); err != nil {
+			t.Fatalf("failed to execute invoice-row: %v", err)
+		}
+		html := buf.String()
+		assertContains(t, html, `src="institutions/itau.png?v=test"`)
+		assertContains(t, html, `class="institution-logo"`)
 	})
 
 	t.Run("invoice-row with ProviderMark INTER", func(t *testing.T) {
@@ -353,6 +445,21 @@ func TestVisualRegressionInvoiceAndFormEmblems(t *testing.T) {
 		assertContains(t, html, "origemIconText")
 		assertContains(t, html, "emblem-len-2")
 		assertContains(t, html, `id="origemIcon" class="hidden`)
+	})
+
+	t.Run("form-lancamento initial with provider logo", func(t *testing.T) {
+		var buf bytes.Buffer
+		data := FormTransacaoData{
+			OrigemColor:            "#EC7000",
+			OrigemProviderMark:     "Itaú",
+			OrigemProviderLogoPath: "institutions/itau.png",
+			OrigemIcon:             "building-2",
+		}
+		if err := tplForm.ExecuteTemplate(&buf, "form-lancamento", data); err != nil {
+			t.Fatalf("failed to execute form-lancamento: %v", err)
+		}
+		html := buf.String()
+		assertContains(t, html, `id="origemIconImage" src="institutions/itau.png?v=test"`)
 	})
 
 	t.Run("form-lancamento initial with empty OrigemProviderMark fallback", func(t *testing.T) {
@@ -639,6 +746,139 @@ func TestTransactionRowConfirmTexts(t *testing.T) {
 		assertContains(t, html, `class="invoice-summary`)
 		assertContains(t, html, `<span>Total R$ 2.000,00</span><span>Pago R$ 765,44</span>`)
 	})
+
+	t.Run("renders transfer origin and destination without category", func(t *testing.T) {
+		var buf bytes.Buffer
+		data := TransactionRow{
+			ID:                     "transfer-123",
+			Type:                   models.TransactionTypeTransfer,
+			Description:            "Transferência entre contas",
+			AccountName:            "Inter",
+			DestinationAccountName: "Nubank",
+			CategoryName:           "Categoria não deve aparecer",
+			PaymentIcon:            "arrow-left-right",
+			PaymentTone:            "success",
+			PaymentStatus:          models.PaymentStatusPaid,
+		}
+		if err := tplRow.ExecuteTemplate(&buf, "lancamento-row", data); err != nil {
+			t.Fatalf("failed to execute transfer row: %v", err)
+		}
+		html := buf.String()
+		assertContains(t, html, `<span class="min-w-0 truncate">Inter</span>`)
+		assertContains(t, html, `&rarr;`)
+		assertContains(t, html, `<span class="min-w-0 truncate">Nubank</span>`)
+		assertContains(t, html, `class="tx-status tx-status-success"`)
+		assertContains(t, html, `data-lucide="arrow-left-right"`)
+		if strings.Contains(html, data.CategoryName) {
+			t.Fatalf("transfer row must not render category: %s", html)
+		}
+	})
+}
+
+func TestTransactionVisualStatusKeepsTransferIconAcrossPaymentStates(t *testing.T) {
+	now := time.Now().In(appTimeLocation())
+	todayUTC := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Unix()
+	scheduledAt := todayUTC + 3600
+
+	for _, tc := range []struct {
+		name          string
+		paymentStatus string
+		displayDate   int64
+		scheduledAt   *int64
+		wantTone      string
+		wantTitle     string
+	}{
+		{name: "confirmed", paymentStatus: models.PaymentStatusPaid, displayDate: todayUTC, wantTone: "success", wantTitle: "Transferência confirmada"},
+		{name: "pending", paymentStatus: models.PaymentStatusPending, displayDate: todayUTC, wantTone: "warning", wantTitle: "Transferência pendente"},
+		{name: "overdue", paymentStatus: models.PaymentStatusPending, displayDate: todayUTC - 24*60*60, wantTone: "danger", wantTitle: "Transferência atrasada"},
+		{name: "scheduled", paymentStatus: models.PaymentStatusPending, displayDate: todayUTC, scheduledAt: &scheduledAt, wantTone: "scheduled", wantTitle: "Transferência agendada"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := transactionVisualStatus(models.TransactionTypeTransfer, tc.paymentStatus, tc.displayDate, tc.scheduledAt)
+			if got.Icon != "arrow-left-right" || got.Tone != tc.wantTone || got.Title != tc.wantTitle {
+				t.Fatalf("visual = %#v, want icon arrow-left-right, tone %q, title %q", got, tc.wantTone, tc.wantTitle)
+			}
+		})
+	}
+}
+
+func TestLancamentosAccountFiltersIncludeIncomingAndOutgoingTransfers(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedInvoicePaymentScenario(t, db)
+
+	now := time.Now().Unix()
+	for _, account := range []struct {
+		id   string
+		name string
+	}{
+		{id: "checking-destination", name: "Nubank"},
+		{id: "checking-origin", name: "Inter"},
+	} {
+		execTestSQL(t, db, `
+			INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at)
+			VALUES (?, 'ws-test', ?, 'CHECKING', 0, 0, ?, ?)
+		`, account.id, account.name, now, now)
+	}
+
+	transferDate := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC).Unix()
+	for _, tx := range []struct {
+		id          string
+		origin      string
+		destination string
+		description string
+	}{
+		{id: "transfer-out", origin: "checking-test", destination: "checking-destination", description: "Saída da conta filtrada"},
+		{id: "transfer-in", origin: "checking-origin", destination: "checking-test", description: "Entrada na conta filtrada"},
+		{id: "transfer-unrelated", origin: "checking-origin", destination: "checking-destination", description: "Transferência não relacionada"},
+	} {
+		execTestSQL(t, db, `
+			INSERT INTO transactions (
+				id, workspace_id, user_id, account_id, destination_account_id,
+				type, amount, date, description, status,
+				installment_number, total_installments, created_at, updated_at
+			) VALUES (?, 'ws-test', 'user-test', ?, ?, 'TRANSFER', 1000, ?, ?, 'paid', 1, 1, ?, ?)
+		`, tx.id, tx.origin, tx.destination, transferDate, tx.description, now, now)
+	}
+
+	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+	assertTransfers := func(t *testing.T, data LancamentosData) {
+		t.Helper()
+		byID := make(map[string]TransactionRow, len(data.Transactions))
+		for _, row := range data.Transactions {
+			byID[row.ID] = row
+		}
+		if len(byID) != 2 {
+			t.Fatalf("filtered transfers = %v, want only incoming and outgoing", byID)
+		}
+		if _, ok := byID["transfer-out"]; !ok {
+			t.Fatal("outgoing transfer missing from account filter")
+		}
+		incoming, ok := byID["transfer-in"]
+		if !ok {
+			t.Fatal("incoming transfer missing from account filter")
+		}
+		if incoming.AccountName != "Inter" || incoming.DestinationAccountName != "Conta Teste" {
+			t.Fatalf("incoming transfer route = %q -> %q", incoming.AccountName, incoming.DestinationAccountName)
+		}
+		if _, ok := byID["transfer-unrelated"]; ok {
+			t.Fatal("unrelated transfer must not match account filter")
+		}
+	}
+
+	filters := LancamentosFilters{Tipos: []string{"transferencia"}, Situacoes: []string{"pago"}}
+	fromDashboard, err := handler.buildLancamentosData("checking-test", 8, 2026, filters)
+	if err != nil {
+		t.Fatalf("buildLancamentosData dashboard account filter: %v", err)
+	}
+	assertTransfers(t, fromDashboard)
+
+	filters.OrigemIDs = []string{"checking-test"}
+	fromFilterPanel, err := handler.buildLancamentosData("", 8, 2026, filters)
+	if err != nil {
+		t.Fatalf("buildLancamentosData filter panel account: %v", err)
+	}
+	assertTransfers(t, fromFilterPanel)
 }
 
 // TestLancamentosChronologicalAscendingOrder verifica que a lista de lançamentos

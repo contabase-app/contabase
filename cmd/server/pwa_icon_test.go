@@ -90,7 +90,7 @@ func TestPWAManifestLinkIsContentVersioned(t *testing.T) {
 	repoRoot := filepath.Clean(filepath.Join("..", ".."))
 	want := `<link rel="manifest" href="{{assetPath "/assets/manifest.json"}}">`
 	for _, templatePath := range []string{
-		"templates/layout.html",
+		"templates/components/app_shell.html",
 		"templates/pages/ativar_conta.html",
 		"templates/pages/login.html",
 		"templates/pages/login_2fa.html",

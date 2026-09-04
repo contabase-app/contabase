@@ -1,15 +1,28 @@
 {{define "relatorios-page"}}
-{{template "layout-start" .}}
-{{template "relatorios-content" .}}
-{{template "layout-end" .}}
+{{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="/assets/css/relatorios.css">
+{{template "app-v2-document-head-end" .}}
+<main id="main-content" class="cb-v2-main cb-v2-relatorios-main" data-page-section="reports" data-page-title="{{.Title}}">
+    {{template "app-v2-appbar" .}}
+    <div class="cb-v2-content cb-v2-relatorios-content">
+        <header class="cb-v2-relatorios-header">
+            <div>
+                <p class="cb-v2-eyebrow">Análises</p>
+                <h1>Relatórios</h1>
+                <p>Visualize o desempenho financeiro por período, com os critérios de cada demonstrativo preservados.</p>
+            </div>
+        </header>
+        {{template "relatorios-content" .}}
+    </div>
+</main>
+{{template "app-v2-shell-after-main" .}}
+{{template "app-v2-document-end" .}}
 {{end}}
 
 {{define "relatorios-content"}}
-<link rel="stylesheet" href="/assets/css/relatorios.css">
-<main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative" data-page-title="Relatórios">
-    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
+<section class="cb-v2-relatorios-panels" aria-label="Demonstrativos financeiros">
     {{template "relatorios-body" .}}
-</main>
+</section>
 {{end}}
 
 {{define "relatorios-body"}}

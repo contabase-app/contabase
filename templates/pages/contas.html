@@ -1,18 +1,36 @@
 {{define "contas-page"}}
-{{template "layout-start" .}}
-{{template "contas-content" .}}
-{{template "layout-end" .}}
+{{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/contas.css"}}">
+{{template "app-v2-document-head-end" .}}
+<main id="main-content" class="cb-v2-main cb-v2-contas-main" data-page-section="accounts" data-page-title="{{.Title}}">
+    {{template "app-v2-appbar" .}}
+    <div class="cb-v2-content cb-v2-contas-content">
+        <header class="cb-v2-contas-header">
+            <div>
+                <p class="cb-v2-eyebrow">Compromissos</p>
+                <h1>Contas</h1>
+                <p>Acompanhe o que vence e o que você tem a receber no período.</p>
+            </div>
+        </header>
+        {{template "contas-content" .}}
+    </div>
+</main>
+{{template "app-v2-shell-after-main" .}}
+{{template "lancamentos-global-overlays" .}}
+<script src="/assets/js/swipe.js"></script>
+<script src="/assets/js/predictive-description.js"></script>
+<script src="/assets/js/modals-global.js"></script>
+<script src="{{assetPath "/assets/js/payment-confirm.js"}}"></script>
+{{template "app-v2-document-end" .}}
 {{end}}
 
 {{define "contas-content"}}
-<link rel="stylesheet" href="/assets/css/contas.css">
-<main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative" data-page-title="Contas">
-    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
+<section class="cb-v2-contas-panels" aria-label="Contas do período">
     <select id="payment-account-options" class="hidden" aria-hidden="true" tabindex="-1">
         {{range .PaymentAccounts}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
     </select>
     {{template "contas-body" .}}
-</main>
+</section>
 {{end}}
 
 {{define "contas-body"}}

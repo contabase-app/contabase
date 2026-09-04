@@ -1,4 +1,4 @@
-// Recibo page — standalone, does not depend on layout.html scripts
+// Recibo page — standalone, does not depend on authenticated-shell scripts.
 (function() {
     // Image avatar fallback
     document.addEventListener('error', function(e) {

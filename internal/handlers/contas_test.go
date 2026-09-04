@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -8,16 +9,86 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/contabase-app/contabase/internal/models"
 )
+
+func TestContasPageUsesGlobalAppShell(t *testing.T) {
+	tpl := template.Must(template.New("contas-app-shell").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath": func(path string) string { return path + "?v=test" },
+		"hasString": func(items []string, target string) bool {
+			for _, item := range items {
+				if item == target {
+					return true
+				}
+			}
+			return false
+		},
+	})).ParseFiles(
+		resolveTemplatePath(t, "templates/pages/contas.html"),
+		resolveTemplatePath(t, "templates/pages/lancamentos.html"),
+		resolveTemplatePath(t, "templates/components/app_shell.html"),
+		resolveTemplatePath(t, "templates/components/seletor_meses.html"),
+	))
+
+	data := ContasData{
+		Title:               "Contas",
+		UserName:            "Vitor Ferreira",
+		UserInitials:        "VF",
+		ActiveWorkspaceName: "Família",
+		Aba:                 "pagar",
+	}
+	var out bytes.Buffer
+	if err := tpl.ExecuteTemplate(&out, "contas-page", data); err != nil {
+		t.Fatalf("render contas page: %v", err)
+	}
+
+	body := out.String()
+	for _, expected := range []string{
+		`data-app-shell`,
+		`data-page-section="accounts"`,
+		`data-v2-nav-section="accounts"`,
+		`cb-v2-contas-header`,
+		`id="payment-confirm-modal"`,
+		`/assets/css/contas.css?v=test`,
+		`/assets/js/payment-confirm.js?v=test`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("contas page missing %q", expected)
+		}
+	}
+	if strings.Contains(body, `{{template "layout-start"`) {
+		t.Fatal("contas page must use the global app shell, not the legacy layout")
+	}
+}
+
+func TestContasMonthOptionsAreContinuousAroundSelection(t *testing.T) {
+	selected := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
+	options := buildContasMonthOptionsAt(selected, "aluguel", selected)
+
+	if len(options) != 12 {
+		t.Fatalf("month options = %d, want 12", len(options))
+	}
+	if options[0].Label != "Abr" || options[0].Year != "2026" {
+		t.Fatalf("first rolling option = %+v, want Abr/2026", options[0])
+	}
+	if !options[5].IsActive || options[5].Label != "Set" {
+		t.Fatalf("selected month must remain in the sixth position: %+v", options[5])
+	}
+	if options[11].Label != "Mar" || options[11].Year != "2027" || !strings.Contains(options[11].Query, "periodo=2027-03") || !strings.Contains(options[11].Query, "q=aluguel") {
+		t.Fatalf("cross-year option lost the Contas query contract: %+v", options[11])
+	}
+}
 
 func TestContasListPartialRendersWithMinimalData(t *testing.T) {
 	tplBytes, err := os.ReadFile(filepath.Join(projectRoot(), "templates/pages/contas.html"))
 	if err != nil {
 		t.Fatalf("read contas template: %v", err)
 	}
-	tpl := template.Must(template.New("contas").Parse(string(tplBytes)))
+	tpl := template.Must(template.New("contas").Funcs(template.FuncMap{
+		"assetPath": func(path string) string { return path },
+	}).Parse(string(tplBytes)))
 
 	pay := PendingItemRow{
 		ID: "pay-1", Description: "Aluguel", Amount: 150000,
@@ -107,10 +178,10 @@ func TestContasListPartialRendersWithMinimalData(t *testing.T) {
 	}
 }
 
-func TestPaymentConfirmModalIsAvailableFromLayout(t *testing.T) {
-	layoutBytes, err := os.ReadFile(filepath.Join(projectRoot(), "templates/layout.html"))
+func TestPaymentConfirmModalIsAvailableFromLancamentos(t *testing.T) {
+	layoutBytes, err := os.ReadFile(filepath.Join(projectRoot(), "templates/pages/lancamentos.html"))
 	if err != nil {
-		t.Fatalf("read layout template: %v", err)
+		t.Fatalf("read lancamentos template: %v", err)
 	}
 	layout := string(layoutBytes)
 	for _, want := range []string{
@@ -120,7 +191,7 @@ func TestPaymentConfirmModalIsAvailableFromLayout(t *testing.T) {
 		`/assets/js/payment-confirm.js`,
 	} {
 		if !strings.Contains(layout, want) {
-			t.Fatalf("layout missing payment modal contract %q", want)
+			t.Fatalf("lancamentos missing payment modal contract %q", want)
 		}
 	}
 }
@@ -131,7 +202,9 @@ func TestContasBodyRendersWithSummaryAndRefresh(t *testing.T) {
 		t.Fatalf("read contas template: %v", err)
 	}
 	stub := `{{define "seletor_meses"}}<div id="monthSelector">seletor</div>{{end}}`
-	tpl := template.Must(template.New("contas").Parse(string(contasBytes) + "\n" + stub))
+	tpl := template.Must(template.New("contas").Funcs(template.FuncMap{
+		"assetPath": func(path string) string { return path },
+	}).Parse(string(contasBytes) + "\n" + stub))
 
 	data := ContasData{
 		Aba:                   "pagar",

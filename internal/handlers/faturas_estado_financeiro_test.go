@@ -960,7 +960,7 @@ func TestInvoiceHistoryGuardTargetSet(t *testing.T) {
 		wantErr error
 	}{
 		{name: "two local open allowed", ids: []string{"tx-open-1", "tx-open-2"}},
-		{name: "open and closed block whole set", ids: []string{"tx-open-1", "tx-closed"}, wantErr: errClosedInvoiceMutationBlocked},
+		{name: "open and closed are mutable", ids: []string{"tx-open-1", "tx-closed"}},
 		{name: "open and paid block whole set", ids: []string{"tx-open-1", "tx-paid"}, wantErr: errPaidInvoiceMutationBlocked},
 		{name: "open and missing fail closed", ids: []string{"tx-open-1", "tx-missing"}, wantErr: errTransactionMutationTargetInvalid},
 		{name: "open and foreign fail closed", ids: []string{"tx-open-1", "tx-foreign"}, wantErr: errTransactionMutationTargetInvalid},

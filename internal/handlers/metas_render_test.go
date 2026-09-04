@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -159,15 +160,17 @@ func TestHandleListarMetasRendersCaixinhaStates(t *testing.T) {
 
 		body := rr.Body.String()
 		assertContains(t, body, `id="metas-tabs"`)
+		assertContains(t, body, `id="metas-primary-action"`)
 		assertContains(t, body, `hx-swap-oob="outerHTML"`)
-		if count := strings.Count(body, `id="fab-primary"`); count != 1 {
-			t.Fatalf("fab-primary count = %d, want 1\nbody=%s", count, body)
+		assertContains(t, body, `Nova reserva`)
+		if strings.Contains(body, `id="fab-primary"`) {
+			t.Fatalf("partial metas response must not replace the global launch FAB\nbody=%s", body)
 		}
 		assertContains(t, body, "Previsão:")
 		assertContains(t, body, "Sem categoria")
 	})
 
-	t.Run("htmx full page keeps fab oob", func(t *testing.T) {
+	t.Run("htmx full page keeps global launch FAB intact", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/metas?aba=caixinhas", nil)
 		req.Header.Set("HX-Request", "true")
 		rr := httptest.NewRecorder()
@@ -178,12 +181,104 @@ func TestHandleListarMetasRendersCaixinhaStates(t *testing.T) {
 		}
 
 		body := rr.Body.String()
-		assertContains(t, body, `fab-primary`)
-		assertContains(t, body, `hx-swap-oob="outerHTML"`)
-		if count := strings.Count(body, `id="fab-primary"`); count != 1 {
-			t.Fatalf("fab-primary count = %d, want 1\nbody=%s", count, body)
+		if strings.Contains(body, `hx-swap-oob="outerHTML"`) {
+			t.Fatalf("full htmx metas response must not emit a header action swap\nbody=%s", body)
+		}
+		if strings.Contains(body, `id="fab-primary"`) {
+			t.Fatalf("htmx metas response must not replace the global launch FAB\nbody=%s", body)
 		}
 	})
+}
+
+func TestMetasPageUsesGlobalAppShell(t *testing.T) {
+	tpl := testMetasPageTemplates(t)
+	data := MetasData{
+		Title:               "Metas",
+		UserName:            "Vitor Ferreira",
+		UserInitials:        "VF",
+		ActiveWorkspaceName: "Família",
+		Aba:                 "limites",
+	}
+
+	var out bytes.Buffer
+	if err := tpl.ExecuteTemplate(&out, "metas-page", data); err != nil {
+		t.Fatalf("render metas page: %v", err)
+	}
+
+	body := out.String()
+	for _, expected := range []string{
+		`data-app-shell`,
+		`data-page-section="goals"`,
+		`data-v2-nav-section="goals"`,
+		`cb-v2-metas-header`,
+		`id="metas-primary-action"`,
+		`Novo limite`,
+		`/assets/css/metas.css?v=test`,
+		`/assets/js/metas-caixinhas.js?v=test`,
+		`/assets/js/form-meta.js?v=test`,
+	} {
+		assertContains(t, body, expected)
+	}
+	if strings.Contains(body, `{{template "layout-start"`) {
+		t.Fatal("metas page must use the global app shell, not the legacy layout")
+	}
+}
+
+func TestMetasHeaderActionUsesWorkspaceContext(t *testing.T) {
+	tpl := testMetasPageTemplates(t)
+
+	for _, tc := range []struct {
+		name       string
+		aba        string
+		isBusiness bool
+		want       string
+	}{
+		{name: "personal limit", aba: "limites", want: "Novo limite"},
+		{name: "business goal", aba: "limites", isBusiness: true, want: "Nova meta"},
+		{name: "reserve", aba: "caixinhas", want: "Nova reserva"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			if err := tpl.ExecuteTemplate(&out, "metas-header-action", MetasData{Aba: tc.aba, IsBusiness: tc.isBusiness}); err != nil {
+				t.Fatalf("render metas action: %v", err)
+			}
+			assertContains(t, out.String(), tc.want)
+		})
+	}
+}
+
+func TestMetasTransactionLinksUseDocumentNavigation(t *testing.T) {
+	pageBytes, err := os.ReadFile(resolveTemplatePath(t, "templates/pages/metas.html"))
+	if err != nil {
+		t.Fatalf("read metas page: %v", err)
+	}
+	page := string(pageBytes)
+	assertContains(t, page, `<a href="/lancamentos?categoria={{.CategoryID}}" data-ck-close class="cb-meta-menu-item">`)
+	if strings.Contains(page, `hx-get="/lancamentos?categoria={{.CategoryID}}"`) {
+		t.Fatal("Metas transaction links must use document navigation to preserve the V2 app shell")
+	}
+}
+
+func TestMetaFormTabsUseDedicatedController(t *testing.T) {
+	formBytes, err := os.ReadFile(resolveTemplatePath(t, "templates/components/form_meta.html"))
+	if err != nil {
+		t.Fatalf("read metas form template: %v", err)
+	}
+	form := string(formBytes)
+	assertContains(t, form, `data-meta-tab="limite"`)
+	assertContains(t, form, `data-meta-tab="caixinha"`)
+	if strings.Contains(form, `data-onclick-tab="toggleMetaTab"`) {
+		t.Fatal("metas form tabs must use their dedicated controller instead of global click delegation")
+	}
+
+	scriptBytes, err := os.ReadFile(resolveTemplatePath(t, "assets/js/form-meta.js"))
+	if err != nil {
+		t.Fatalf("read metas form script: %v", err)
+	}
+	script := string(scriptBytes)
+	assertContains(t, script, `function initMetaTabs(root)`)
+	assertContains(t, script, `data-meta-tab-ready`)
+	assertContains(t, script, `window.toggleMetaTab(tabButton.dataset.metaTab || 'limite')`)
 }
 
 func TestHandleListarMetasRendersLimitCards(t *testing.T) {
@@ -287,17 +382,19 @@ func testMetasPageTemplates(t *testing.T) *template.Template {
 	t.Helper()
 
 	metasPath := resolveTemplatePath(t, "templates/pages/metas.html")
-	content, err := os.ReadFile(metasPath)
+	shellPath := resolveTemplatePath(t, "templates/components/app_shell.html")
+	metasContent, err := os.ReadFile(metasPath)
 	if err != nil {
 		t.Fatalf("read metas template: %v", err)
 	}
+	shellContent, err := os.ReadFile(shellPath)
+	if err != nil {
+		t.Fatalf("read app shell template: %v", err)
+	}
 
-	stubs := `
-{{define "layout-start"}}<html><body><div id="main-content">{{end}}
-{{define "layout-end"}}</div></body></html>{{end}}
-{{define "fab-metas-oob"}}<div id="fab-primary" hx-swap-oob="outerHTML">fab</div>{{end}}
-`
-	return template.Must(template.New("metas-test").Parse(stubs + string(content)))
+	return template.Must(template.New("metas-test").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath": func(path string) string { return path + "?v=test" },
+	})).Parse(string(metasContent) + string(shellContent)))
 }
 
 func testMetasFormTemplates(t *testing.T) *template.Template {

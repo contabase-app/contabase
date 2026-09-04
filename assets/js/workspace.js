@@ -1,5 +1,5 @@
 // Init Calls + Workspace/Drawer/Bottom Sheet + ESC Keydown
-// Extracted from layout.html — Fase 9.9.5g
+// Workspace selector interactions shared by the authenticated app shell.
 
 // --- Init Calls ---
 

@@ -269,4 +269,5 @@ jobs:
           push: true
           build-args: |
             VERSION=${{ needs.prepare.outputs.version }}
-          tags: ghcr.io/contabase-app/contabase:${{ needs.prepare.outputs.version }}
+          tags: |
+            ghcr.io/contabase-app/contabase:${{ needs.prepare.outputs.version }}

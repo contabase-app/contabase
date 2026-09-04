@@ -22,10 +22,13 @@ type ContasHandler struct {
 }
 
 type ContasData struct {
+	AppShellAccess
 	OOB                       bool
 	Title                     string
+	UserName                  string
 	UserInitials              string
 	ProfilePhotoURL           string
+	NotificationCount         int
 	MesAtual                  int
 	AnoAtual                  int
 	Aba                       string
@@ -79,7 +82,7 @@ func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Requ
 	reqID := perfReqID()
 	dbB := dbSnap(h.DB)
 
-	now := time.Now()
+	now := appTime(time.Now())
 	mes := int(now.Month())
 	ano := now.Year()
 	periodo := strings.TrimSpace(r.URL.Query().Get("periodo"))
@@ -184,9 +187,11 @@ func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Requ
 		} else {
 			templateName = "contas-page"
 			data.Title = "Contas"
-			data.UserInitials = queryUserInitialsByID(h.DB, h.UserID)
+			data.UserName, data.UserInitials = queryDashboardUser(h.DB, h.UserID)
 			data.ProfilePhotoURL = queryUserProfilePhotoURL(h.DB, h.UserID)
+			data.NotificationCount = queryDashboardNotificationCount(h.DB, h.UserID, h.WorkspaceID)
 			data.IsBusiness = workspaceType(h.DB, h.WorkspaceID) == models.WorkspaceTypeBusiness
+			data.AppShellAccess = QueryAppShellAccess(h.DB, h.WorkspaceID, h.UserID, data.IsBusiness)
 			data.ActiveWorkspaceName = queryWorkspaceName(h.DB, h.WorkspaceID)
 		}
 	}
@@ -230,10 +235,10 @@ func queryPendingItems(db *sql.DB, workspaceID, itemType string, onlyOverdue boo
 func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOverdue bool, mes, ano int, search string) ([]PendingItemRow, error) {
 	invoicePendingSubquery := `(
 			COALESCE((
-				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount ELSE 0 END)
+				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN ` + transactionNetAmountTSQL + ` ELSE 0 END)
 				FROM transactions t
 				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
-			), 0)
+			), 0) - ` + invoiceGeneralRefundTotalIASQL + `
 			- ` + invoiceEffectivePaidSQLExpr + `
 		)`
 
@@ -400,19 +405,23 @@ func formatDateLabelFromUnix(unix int64) string {
 }
 
 func buildContasMonthOptions(selectedMonth time.Time, search string) []MonthOption {
+	return buildContasMonthOptionsAt(selectedMonth, search, time.Now())
+}
+
+func buildContasMonthOptionsAt(selectedMonth time.Time, search string, now time.Time) []MonthOption {
 	shortMonths := []string{"Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"}
-	now := time.Now().UTC()
-	currentMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	currentMonth := appMonthStartUTC(now)
+	firstMonth := selectedMonth.AddDate(0, -5, 0)
 	options := make([]MonthOption, 0, 12)
-	for month := 1; month <= 12; month++ {
-		m := time.Date(selectedMonth.Year(), time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	for offset := 0; offset < 12; offset++ {
+		m := firstMonth.AddDate(0, offset, 0)
 		query := contasMonthQuery(int(m.Month()), m.Year(), search)
 		options = append(options, MonthOption{
 			Label:     shortMonths[int(m.Month())-1],
 			Year:      fmt.Sprintf("%d", m.Year()),
 			URL:       "/contas?" + query,
 			Query:     query,
-			IsActive:  m.Month() == selectedMonth.Month(),
+			IsActive:  m.Equal(selectedMonth),
 			IsCurrent: m.Equal(currentMonth),
 		})
 	}

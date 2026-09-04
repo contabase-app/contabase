@@ -185,36 +185,9 @@
         }
     }
 
-    // --- Month selector ---
-
-    function centerActiveMonth() {
-        var container = document.getElementById('month-selector-container');
-        if (!container) return;
-        var active = container.querySelector('[data-month-active="true"]');
-        if (active) {
-            var containerWidth = container.offsetWidth;
-            var activeWidth = active.offsetWidth;
-            var activeOffset = active.getBoundingClientRect().left - container.getBoundingClientRect().left + container.scrollLeft;
-            container.scroll({
-                left: activeOffset - (containerWidth / 2) + (activeWidth / 2),
-                behavior: 'smooth'
-            });
-        }
-    }
-
     // --- Initialization ---
 
     function init() {
-        // Month selector (once)
-        setTimeout(centerActiveMonth, 50);
-
-        if (!window.monthSelectorInitialized) {
-            window.monthSelectorInitialized = true;
-            document.body.addEventListener('htmx:afterSettle', function () {
-                centerActiveMonth();
-            });
-        }
-
         // Payment modals (may need re-binding after HTMX swaps)
         bindPaymentModals();
     }
@@ -232,6 +205,17 @@
         // The swap target is #main-content for full-page swaps, or #faturas-content for OOB swaps
         if (target.id === 'main-content' || target.id === 'faturas-content' || target.closest('#faturas-content')) {
             // Use setTimeout to let Lucide icons and DOM settle before binding
+            setTimeout(bindPaymentModals, 10);
+        }
+    });
+
+    // OOB replacements emit their own lifecycle event. Invoice mutations replace
+    // #invoice-summary, including the payment buttons and modals, so direct
+    // listeners from the previous fragment must be rebound after that swap.
+    document.body.addEventListener('htmx:oobAfterSwap', function (e) {
+        var target = (e.detail && e.detail.target) || e.target;
+        if (!target) return;
+        if (target.id === 'invoice-summary' || target.querySelector('#invoice-summary')) {
             setTimeout(bindPaymentModals, 10);
         }
     });

@@ -1,16 +1,48 @@
 {{define "configuracoes-page"}}
-{{template "layout-start" .}}
+{{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/configuracoes.css"}}">
+{{template "app-v2-document-head-end" .}}
+<main id="main-content" class="cb-v2-main cb-v2-configuracoes-main" data-page-section="settings" data-page-title="{{.Title}}">
+    {{template "app-v2-appbar" .}}
 {{template "configuracoes-content" .}}
-{{template "layout-end" .}}
+</main>
+{{template "app-v2-shell-after-main" .}}
+{{template "app-v2-document-end" .}}
+{{end}}
+
+{{define "configuracoes-v2-section-start"}}
+{{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/configuracoes.css"}}">
+{{template "app-v2-document-head-end" .}}
+<main id="main-content" class="cb-v2-main cb-v2-configuracoes-main" data-page-section="settings" data-page-title="{{.Title}}">
+    {{template "app-v2-appbar" .}}
+    <div class="cb-v2-content cb-v2-configuracoes-content cb-v2-configuracoes-section">
+{{end}}
+
+{{define "configuracoes-v2-section-end"}}
+    </div>
+</main>
+{{template "app-v2-shell-after-main" .}}
+{{template "app-v2-document-end" .}}
 {{end}}
 
 {{define "configuracoes-content"}}
-<link rel="stylesheet" href="/assets/css/configuracoes.css">
-<main class="w-full max-w-7xl mx-auto px-4 md:px-6 lg:px-8 pt-6 pb-[7rem] md:pb-10 font-sans relative">
-    <div class="fixed inset-0 pointer-events-none z-[-1] cb-page overflow-hidden"></div>
+<div class="cb-v2-content cb-v2-configuracoes-content">
+    <header class="cb-v2-configuracoes-header">
+        <div>
+            <p class="cb-v2-eyebrow">Preferências</p>
+            <h1>Configurações</h1>
+            <p>Gerencie seu perfil, o workspace e as opções permitidas para sua função.</p>
+        </div>
+    </header>
 
-    <!-- Mobile: Lista de navegacao (botoes full-page) -->
-    <div class="flex flex-col gap-3 md:hidden w-full pb-28">
+    <section class="cb-v2-configuracoes-context" aria-label="Contexto de configurações">
+        <i data-lucide="panel-left"></i>
+        <p>As opções desta área ficam reunidas no menu lateral.</p>
+    </section>
+
+    <!-- Navegação legada mantida apenas como fallback de marcação durante a migração. -->
+    <div data-config-legacy-hub-nav class="flex flex-col gap-3 md:hidden w-full pb-28">
         <button type="button" hx-get="/configuracoes/perfil" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
             class="btn-tactile cb-card-dense flex items-center justify-between w-full p-4 text-left min-h-[72px]">
             <div class="flex items-center gap-3 min-w-0 flex-1">
@@ -94,7 +126,7 @@
     </div>
 
     <!-- Desktop: SaaS Split Layout -->
-    <div class="hidden md:flex gap-8 w-full max-w-full">
+    <div data-config-legacy-hub-nav class="hidden md:flex gap-8 w-full max-w-full">
         <aside class="md:w-64 flex-none border-r border-[var(--cb-border-subtle)] pr-6">
             <div class="mb-6">
                 <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
@@ -125,7 +157,7 @@
             {{end}}
         </div>
     </div>
-</main>
+</div>
 {{end}}
 
 {{define "configuracoes-sidebar"}}

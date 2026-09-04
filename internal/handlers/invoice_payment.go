@@ -367,16 +367,7 @@ func reconcileInvoiceAfterPaymentReversalTx(
 	closingCivil sql.NullString,
 	reversalDate CivilDate,
 ) (int64, string, *int64, error) {
-	var invoiceTotal int64
-	if err := tx.QueryRow(`
-		SELECT COALESCE(SUM(t.amount), 0)
-		FROM transactions t
-		WHERE t.workspace_id = ?
-		  AND t.invoice_id = ?
-		  AND t.type = 'EXPENSE'
-	`, workspaceID, invoiceID).Scan(&invoiceTotal); err != nil {
-		return 0, "", nil, err
-	}
+	invoiceTotal := sumInvoiceTotalTx(tx, workspaceID, invoiceID)
 
 	timeline, err := loadActiveInvoicePaymentTimelineTx(tx, workspaceID, invoiceID, invoiceTotal)
 	if err != nil {

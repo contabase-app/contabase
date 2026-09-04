@@ -1,0 +1,242 @@
+{{/*
+  Shell autenticado.
+  Este componente e a unica origem da navegacao global: sidebar desktop,
+  drawer mobile, barra inferior, workspace, tema, notificacoes e atalhos. Paginas
+  devem fornecer apenas o conteudo de #main-content e data-page-section.
+*/}}
+
+{{define "app-v2-document-head-start"}}
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="csrf-token" content="">
+    <meta name="theme-color" content="#0d121a">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>{{if .Title}}{{.Title}} | ContaBase{{else}}ContaBase{{end}}</title>
+    <link rel="shortcut icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+    <link rel="manifest" href="{{assetPath "/assets/manifest.json"}}">
+    <script src="/assets/js/theme-init.js"></script>
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="stylesheet" href="/assets/css/geist-sans.css">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/design-system.css"}}">
+    <link rel="stylesheet" href="/assets/css/app-shell.css">
+    <meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":true,"allowEval":false}'>
+    <script src="/assets/js/htmx.min.js"></script>
+    <script src="/assets/js/lucide.min.js"></script>
+{{end}}
+
+{{define "app-v2-document-head-end"}}
+</head>
+<body class="cb-v2-body">
+    <div id="htmx-indicator" class="cb-v2-indicator" aria-live="polite">
+        <img src="/assets/contabase-monogram.svg" alt="" aria-hidden="true">
+        Processando…
+    </div>
+    <div id="global-feedback" class="cb-v2-feedback hidden" aria-live="polite"></div>
+    <div class="cb-v2" data-app-shell>
+        {{template "app-v2-desktop-sidebar" .}}
+{{end}}
+
+{{define "app-v2-nav-links"}}
+<a class="cb-v2-nav-link {{if eq .Title "Dashboard"}}is-active{{end}}" data-v2-nav-section="dashboard" href="/"{{if eq .Title "Dashboard"}} aria-current="page"{{end}}><i data-lucide="layout-dashboard"></i><span>Painel</span></a>
+<a class="cb-v2-nav-link {{if or (eq .Title "Lançamentos") (eq .Title "Fluxo de Caixa")}}is-active{{end}}" data-v2-nav-section="transactions" href="/lancamentos"{{if or (eq .Title "Lançamentos") (eq .Title "Fluxo de Caixa")}} aria-current="page"{{end}}><i data-lucide="list"></i><span>Lançamentos</span></a>
+<a class="cb-v2-nav-link {{if eq .Title "Metas"}}is-active{{end}}" data-v2-nav-section="goals" href="/metas"{{if eq .Title "Metas"}} aria-current="page"{{end}}><i data-lucide="target"></i><span>Metas</span></a>
+<a class="cb-v2-nav-link {{if eq .Title "Contas"}}is-active{{end}}" data-v2-nav-section="accounts" href="/contas"{{if eq .Title "Contas"}} aria-current="page"{{end}}><i data-lucide="receipt-text"></i><span>Contas</span></a>
+<a class="cb-v2-nav-link {{if or (eq .Title "Faturas") (eq .Title "Fatura")}}is-active{{end}}" data-v2-nav-section="invoices" href="/faturas"{{if or (eq .Title "Faturas") (eq .Title "Fatura")}} aria-current="page"{{end}}><i data-lucide="credit-card"></i><span>Faturas</span></a>
+<a class="cb-v2-nav-link {{if eq .Title "Relatórios"}}is-active{{end}}" data-v2-nav-section="reports" href="/relatorios"{{if eq .Title "Relatórios"}} aria-current="page"{{end}}><i data-lucide="chart-no-axes-combined"></i><span>Relatórios</span></a>
+{{if .IsBusiness}}<a class="cb-v2-nav-link {{if eq .Title "Contatos"}}is-active{{end}}" data-v2-nav-section="contacts" href="/contatos"{{if eq .Title "Contatos"}} aria-current="page"{{end}}><i data-lucide="contact-round"></i><span>Contatos</span></a>{{end}}
+{{end}}
+
+{{define "app-v2-settings-nav"}}
+<section class="cb-v2-settings-nav" aria-label="Configurações">
+<div class="cb-v2-nav-separator" aria-hidden="true"></div>
+<div class="cb-v2-nav-group {{if eq .Title "Configurações"}}is-open{{end}}" data-v2-nav-group data-v2-nav-group-key="settings" data-v2-nav-group-default="{{if eq .Title "Configurações"}}open{{else}}closed{{end}}">
+    <button type="button" class="cb-v2-nav-group-toggle" data-v2-nav-group-toggle aria-expanded="{{if eq .Title "Configurações"}}true{{else}}false{{end}}">
+        <span><i data-lucide="settings-2"></i><span>Configurações</span></span><i data-lucide="chevron-down" aria-hidden="true"></i>
+    </button>
+    <div class="cb-v2-nav-sub-list" data-v2-nav-group-panel{{if ne .Title "Configurações"}} hidden{{end}}>
+        <a class="cb-v2-nav-sub-link {{if eq .Section "perfil"}}is-active{{end}}" href="/configuracoes/perfil"><i data-lucide="user"></i><span>Meu Perfil</span></a>
+        {{if .CanManageWorkspaceProfile}}<a class="cb-v2-nav-sub-link {{if eq .Section "workspace"}}is-active{{end}}" href="/configuracoes/workspace"><i data-lucide="building-2"></i><span>Perfil corporativo</span></a>{{end}}
+        {{if .CanManageOps}}
+        <a class="cb-v2-nav-sub-link {{if eq .Section "categorias"}}is-active{{end}}" href="/configuracoes/categorias"><i data-lucide="tags"></i><span>Categorias</span></a>
+        <a class="cb-v2-nav-sub-link {{if eq .Section "contas"}}is-active{{end}}" href="/configuracoes/contas"><i data-lucide="wallet"></i><span>Contas</span></a>
+        <a class="cb-v2-nav-sub-link {{if eq .Section "cartoes"}}is-active{{end}}" href="/configuracoes/cartoes"><i data-lucide="credit-card"></i><span>Cartões</span></a>
+        {{end}}
+    </div>
+</div>
+{{if .CanManageGlobal}}
+<div class="cb-v2-nav-separator" aria-hidden="true"></div>
+<div class="cb-v2-nav-group" data-v2-nav-group data-v2-nav-group-key="administration" data-v2-nav-group-default="closed">
+    <button type="button" class="cb-v2-nav-group-toggle" data-v2-nav-group-toggle aria-expanded="false">
+        <span><i data-lucide="shield-check"></i><span>Administração</span></span><i data-lucide="chevron-down" aria-hidden="true"></i>
+    </button>
+    <div class="cb-v2-nav-sub-list" data-v2-nav-group-panel hidden>
+        <a class="cb-v2-nav-sub-link {{if eq .Section "admin-users"}}is-active{{end}}" href="/admin/usuarios"><i data-lucide="users"></i><span>Usuários</span></a>
+        <a class="cb-v2-nav-sub-link {{if eq .Section "admin-workspaces"}}is-active{{end}}" href="/admin/workspaces"><i data-lucide="layers-3"></i><span>Workspaces</span></a>
+        <a class="cb-v2-nav-sub-link {{if eq .Section "admin-backups"}}is-active{{end}}" href="/admin/backups"><i data-lucide="database-backup"></i><span>Backups</span></a>
+        <a class="cb-v2-nav-sub-link {{if eq .Section "admin-auditoria"}}is-active{{end}}" href="/admin/auditoria"><i data-lucide="scan-eye"></i><span>Auditoria</span></a>
+    </div>
+</div>
+{{end}}
+ </section>
+{{end}}
+
+{{define "app-v2-quick-actions"}}
+<section class="cb-v2-quick-actions" aria-label="Acesso rápido">
+    <p>Acesso rápido</p>
+    <button type="button" class="cb-v2-quick-action" hx-get="/transacoes/nova?tipo=despesa" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false"><i data-lucide="arrow-down"></i><span>Nova Despesa</span></button>
+    <button type="button" class="cb-v2-quick-action" hx-get="/transacoes/nova?tipo=receita" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false"><i data-lucide="arrow-up"></i><span>Nova Receita</span></button>
+    <button type="button" class="cb-v2-quick-action" hx-get="/transacoes/nova?tipo=transferencia" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false"><i data-lucide="arrow-left-right"></i><span>Nova Transferência</span></button>
+</section>
+{{end}}
+
+{{define "app-v2-sidebar-controls"}}
+<div class="cb-v2-sidebar-controls" aria-label="Controles do aplicativo">
+    <button type="button" class="cb-v2-icon-button" data-theme-toggle data-v2-theme-toggle aria-label="Alternar tema claro ou escuro" title="Alternar tema claro ou escuro"><i class="cb-v2-theme-icon-dark" data-lucide="sun" aria-hidden="true"></i><i class="cb-v2-theme-icon-light" data-lucide="moon" aria-hidden="true"></i></button>
+    <a class="cb-v2-icon-button cb-v2-notification-button" href="/notificacoes" aria-label="Notificações" title="Notificações">
+        <i data-lucide="bell"></i><span id="notification-badge"{{if gt .NotificationCount 0}} aria-label="{{.NotificationCount}} notificações não lidas"{{else}} class="hidden"{{end}}></span>
+    </a>
+</div>
+{{end}}
+
+{{define "app-v2-desktop-sidebar"}}
+<aside class="cb-v2-sidebar" data-v2-sidebar aria-label="Navegação principal">
+    <div class="cb-v2-sidebar-header">
+        <a class="cb-v2-brand" href="/"><img src="/assets/contabase-monogram.svg" alt="" aria-hidden="true"><span>ContaBase</span></a>
+        <button type="button" class="cb-v2-icon-button cb-v2-sidebar-toggle" data-v2-sidebar-toggle aria-expanded="true" aria-label="Recolher menu lateral" title="Recolher menu lateral"><i class="cb-v2-sidebar-toggle-close" data-lucide="panel-left-close"></i><i class="cb-v2-sidebar-toggle-open" data-lucide="panel-left-open"></i></button>
+    </div>
+    <div class="cb-v2-sidebar-body">
+        <nav class="cb-v2-nav-list">
+            {{template "app-v2-nav-links" .}}
+        </nav>
+        {{template "app-v2-quick-actions" .}}
+        {{template "app-v2-settings-nav" .}}
+    </div>
+    <div class="cb-v2-sidebar-footer">
+        <div class="cb-v2-sidebar-footer-context">
+            <button type="button" class="cb-v2-workspace" data-v2-workspace-trigger aria-haspopup="dialog" aria-controls="workspaceDrawer"><i data-lucide="{{if .IsBusiness}}building-2{{else}}house{{end}}"></i><span>{{.ActiveWorkspaceName}}</span><i data-lucide="chevron-up" aria-hidden="true"></i></button>
+            {{template "app-v2-sidebar-controls" .}}
+        </div>
+    </div>
+</aside>
+{{end}}
+
+{{define "app-v2-appbar"}}
+<header class="cb-v2-appbar">
+    <div class="cb-v2-appbar-start">
+        <button type="button" class="cb-v2-icon-button cb-v2-menu-button" data-v2-menu-trigger aria-label="Abrir navegação"><i data-lucide="menu"></i></button>
+        <a class="cb-v2-appbar-brand" href="/"><img src="/assets/contabase-monogram.svg" alt="" aria-hidden="true"><span>ContaBase</span></a>
+    </div>
+    <div class="cb-v2-appbar-actions">
+        <button type="button" class="cb-v2-icon-button" data-theme-toggle data-v2-theme-toggle aria-label="Alternar tema claro ou escuro" title="Alternar tema claro ou escuro"><i class="cb-v2-theme-icon-dark" data-lucide="sun" aria-hidden="true"></i><i class="cb-v2-theme-icon-light" data-lucide="moon" aria-hidden="true"></i></button>
+        <a class="cb-v2-icon-button cb-v2-notification-button" href="/notificacoes" aria-label="Notificações" title="Notificações">
+            <i data-lucide="bell"></i><span data-notification-badge{{if gt .NotificationCount 0}} aria-label="{{.NotificationCount}} notificações não lidas"{{else}} class="hidden"{{end}}></span>
+        </a>
+    </div>
+</header>
+{{template "app-v2-setup-token-notice" .}}
+{{end}}
+
+{{define "app-v2-setup-token-notice"}}
+{{if SetupTokenStillConfigured .}}
+<section class="cb-v2-setup-notice" role="alert" aria-live="polite">
+    <div><i data-lucide="triangle-alert" aria-hidden="true"></i><div><strong>O token local de setup ainda está ativo.</strong><p>Remova ou comente <code>CONTABASE_SETUP_TOKEN</code> após concluir a instalação e reinicie o ContaBase.</p></div></div>
+    <div class="cb-v2-setup-notice-commands"><span>Docker: <code>docker compose up -d --build</code></span><span>Binário/systemd: <code>sudo systemctl restart contabase</code></span></div>
+</section>
+{{end}}
+{{end}}
+
+{{define "app-v2-footer"}}
+<footer class="cb-v2-footer">
+    <p>&copy; <span id="current-year">2026</span> ContaBase &mdash; AGPL-3.0 &mdash; <a href="https://github.com/contabase-app/contabase" target="_blank" rel="noopener noreferrer">GitHub</a></p>
+    {{with appCurrentTime}}<p title="Data e hora reconhecidas pelo ContaBase na timezone configurada.">Sistema: {{.DateTime}} · {{.Timezone}}</p>{{end}}
+    <p>Versão {{appVersion}}</p>
+</footer>
+{{end}}
+
+{{define "app-v2-drawer-navigation"}}
+<dialog class="cb-v2-drawer" data-v2-menu-dialog aria-label="Navegação">
+    <div class="cb-v2-drawer-content">
+        <div class="cb-v2-drawer-header"><a class="cb-v2-brand" href="/"><img src="/assets/contabase-monogram.svg" alt="" aria-hidden="true"><span>ContaBase</span></a><button type="button" class="cb-v2-icon-button" data-v2-menu-close aria-label="Fechar navegação"><i data-lucide="x"></i></button></div>
+        <nav class="cb-v2-nav-list">
+            {{template "app-v2-nav-links" .}}
+        </nav>
+        {{template "app-v2-quick-actions" .}}
+        {{template "app-v2-settings-nav" .}}
+        <div class="cb-v2-drawer-footer">
+            <div class="cb-v2-drawer-context">
+                <button type="button" class="cb-v2-workspace cb-v2-drawer-workspace" data-v2-workspace-trigger aria-haspopup="dialog" aria-controls="workspaceDrawer"><i data-lucide="{{if .IsBusiness}}building-2{{else}}house{{end}}"></i><span>{{.ActiveWorkspaceName}}</span><i data-lucide="chevron-up" aria-hidden="true"></i></button>
+                {{template "app-v2-sidebar-controls" .}}
+            </div>
+        </div>
+    </div>
+</dialog>
+
+<nav class="cb-v2-bottom-nav" aria-label="Navegação principal">
+    <a class="{{if eq .Title "Dashboard"}}is-active{{end}}" data-v2-nav-section="dashboard" href="/"{{if eq .Title "Dashboard"}} aria-current="page"{{end}} aria-label="Painel"><i data-lucide="layout-dashboard"></i><span class="sr-only">Painel</span></a>
+    <a class="{{if or (eq .Title "Lançamentos") (eq .Title "Fluxo de Caixa")}}is-active{{end}}" data-v2-nav-section="transactions" href="/lancamentos"{{if or (eq .Title "Lançamentos") (eq .Title "Fluxo de Caixa")}} aria-current="page"{{end}} aria-label="Lançamentos"><i data-lucide="list"></i><span class="sr-only">Lançamentos</span></a>
+    <a class="{{if eq .Title "Metas"}}is-active{{end}}" data-v2-nav-section="goals" href="/metas"{{if eq .Title "Metas"}} aria-current="page"{{end}} aria-label="Metas"><i data-lucide="target"></i><span class="sr-only">Metas</span></a>
+    <a class="{{if eq .Title "Contas"}}is-active{{end}}" data-v2-nav-section="accounts" href="/contas"{{if eq .Title "Contas"}} aria-current="page"{{end}} aria-label="Contas"><i data-lucide="receipt-text"></i><span class="sr-only">Contas</span></a>
+</nav>
+{{end}}
+
+{{define "app-v2-workspace-drawer"}}
+<div id="drawerBackdrop" class="cb-v2-workspace-backdrop fixed inset-0 z-50 opacity-0 pointer-events-none transition-opacity duration-200" data-v2-workspace-backdrop></div>
+<aside id="workspaceDrawer" data-contabase-overlay data-overlay-priority="5" data-overlay-close="closeWorkspaceDrawer" data-overlay-close-method="translate" class="cb-v2-workspace-drawer fixed top-0 right-0 z-50 h-full w-[82vw] max-w-xs translate-x-full transition-transform duration-300 ease-out" aria-label="Selecionar workspace">
+    <div class="cb-v2-workspace-drawer-header">
+        <div><p>Workspaces</p><strong>Trocar contexto</strong></div>
+        <button type="button" class="cb-v2-icon-button" data-v2-workspace-close aria-label="Fechar seletor de workspace"><i data-lucide="x"></i></button>
+    </div>
+    <div class="cb-v2-workspace-drawer-body">
+        <p class="cb-v2-eyebrow">Meus workspaces</p>
+        <nav id="ws-drawer-nav" class="cb-v2-workspace-list" aria-live="polite"><p>Carregando…</p></nav>
+    </div>
+</aside>
+{{end}}
+
+{{define "app-v2-navigation"}}
+<div data-v2-global-navigation>
+    {{template "app-v2-drawer-navigation" .}}
+    {{template "app-v2-workspace-drawer" .}}
+</div>
+{{end}}
+
+{{define "app-v2-shell-after-main"}}
+{{if eq .Title "Contatos"}}
+<button type="button" class="cb-v2-fab" data-contact-create data-onclick-ev="openContatosModal" aria-label="Novo contato"><i data-lucide="user-plus"></i></button>
+{{else}}
+<button type="button" class="cb-v2-fab" hx-get="/transacoes/nova" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Adicionar lançamento"><i data-lucide="plus"></i></button>
+{{end}}
+{{template "app-v2-navigation" .}}
+{{end}}
+
+{{define "app-v2-document-end"}}
+    {{template "app-v2-footer" .}}
+    </div>
+    <div id="bottom-sheet-container" data-contabase-overlay data-overlay-priority="10" data-overlay-close="closeBottomSheet" data-overlay-close-method="innerHTML"></div>
+    <div id="picker-modal-container"></div>
+
+    <script src="/assets/js/theme-toggle.js"></script>
+    <script src="/assets/js/core-utils.js"></script>
+    <script src="/assets/js/dashboard-tabs.js"></script>
+    <script src="/assets/js/money-mask.js"></script>
+    <script src="/assets/js/installment-preview.js"></script>
+    <script src="/assets/js/overlay-stack.js"></script>
+    <script src="/assets/js/workspace.js"></script>
+    <script src="/assets/js/picker-modal.js"></script>
+    <script src="/assets/js/modal-interceptor.js"></script>
+    <script src="/assets/js/event-handlers.js"></script>
+    <script src="/assets/js/form-lancamento.js"></script>
+    <script src="/assets/js/hx-events.js"></script>
+    <script src="/assets/js/tooltip.js"></script>
+    <script src="/assets/js/htmx-lifecycle.js"></script>
+    <script src="{{assetPath "/assets/js/config-selects.js"}}"></script>
+    <script src="{{assetPath "/assets/js/month-selector.js"}}"></script>
+    <script src="/assets/js/app-shell.js"></script>
+</body>
+</html>
+{{end}}

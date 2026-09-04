@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -37,6 +38,46 @@ func TestAccountProviderMark(t *testing.T) {
 				t.Errorf("accountProviderMark(%q, %q) = %q, expected %q", tc.providerSlug, tc.accountName, got, tc.expected)
 			}
 		})
+	}
+}
+
+func TestAccountProviderLogoPath(t *testing.T) {
+	for slug, want := range map[string]string{
+		"bb":          "institutions/bb.png",
+		"bradesco":    "institutions/bradesco.png",
+		"c6":          "institutions/c6.png",
+		"caixa":       "institutions/caixa.png",
+		"inter":       "institutions/inter.png",
+		"itau":        "institutions/itau.png",
+		"mercadopago": "institutions/mercadopago.png",
+		"nubank":      "institutions/nubank.png",
+		"pagbank":     "institutions/pagbank.png",
+		"picpay":      "institutions/picpay.png",
+		"santander":   "institutions/santander.png",
+		"xp":          "institutions/xp.png",
+	} {
+		if got := accountProviderLogoPath(slug); got != want {
+			t.Fatalf("%s logo path = %q, want %q", slug, got, want)
+		}
+	}
+	if got := accountProviderLogoPath("custom"); got != "" {
+		t.Fatalf("custom provider logo path = %q, want empty", got)
+	}
+	if got := accountProviderLogoPath("unknown"); got != "" {
+		t.Fatalf("unknown provider logo path = %q, want empty", got)
+	}
+	if got := accountProviderLogoPathForAccount("custom", "Itaú | Vitor"); got != "institutions/itau.png" {
+		t.Fatalf("legacy Itaú logo path = %q", got)
+	}
+	if got := accountProviderLogoPathForAccount("custom", "Dinheiro"); got != "" {
+		t.Fatalf("custom wallet logo path = %q, want empty", got)
+	}
+}
+
+func TestResolveAccountProviderInputRequiresExplicitSelection(t *testing.T) {
+	_, _, _, err := resolveAccountProviderInput("", "", "")
+	if err == nil || !strings.Contains(err.Error(), "selecione uma instituição") {
+		t.Fatalf("empty provider error = %v", err)
 	}
 }
 

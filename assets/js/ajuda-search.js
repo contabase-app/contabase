@@ -9,7 +9,7 @@
     if (input.dataset.helpSearchReady) return;
     input.dataset.helpSearchReady = 'true';
 
-    var sections = document.querySelectorAll('main > div > section');
+    var sections = document.querySelectorAll('[data-help-sections] > section');
     if (!sections.length) {
       delete input.dataset.helpSearchReady;
       return;

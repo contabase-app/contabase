@@ -31,7 +31,7 @@ func prevInvoiceMonth(year int, month time.Month) (int, time.Month) {
 
 func calculateInvoiceDates(t time.Time, closingDay, dueDay int64) (closingUnix, dueUnix int64, reference string) {
 	year, month := t.Year(), t.Month()
-	if int64(t.Day()) > closingDay {
+	if int64(t.Day()) >= closingDay {
 		year, month = nextInvoiceMonth(year, month)
 	}
 	closingUnix = time.Date(year, month, int(closingDay), 12, 0, 0, 0, time.UTC).Unix()
@@ -1688,6 +1688,190 @@ END`,
 			return nil
 		},
 	},
+	{
+		version: 60,
+		name:    "transaction_refunds",
+		up: func(tx *sql.Tx) error {
+			if err := migrateTransactionRefunds(tx); err != nil {
+				return fmt.Errorf("migration 60 transaction refunds: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 61,
+		name:    "invoice_general_refunds",
+		up: func(tx *sql.Tx) error {
+			if err := migrateInvoiceGeneralRefunds(tx); err != nil {
+				return fmt.Errorf("migration 61 invoice general refunds: %w", err)
+			}
+			return nil
+		},
+	},
+}
+
+func migrateTransactionRefunds(tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS transaction_refunds (
+			id             TEXT PRIMARY KEY,
+			workspace_id   TEXT    NOT NULL,
+			transaction_id TEXT    NOT NULL,
+			amount_cents   INTEGER NOT NULL CHECK (amount_cents > 0),
+			description    TEXT    NOT NULL,
+			created_by     TEXT    NOT NULL,
+			created_at     INTEGER NOT NULL DEFAULT (unixepoch()),
+			reversed_at    INTEGER,
+			reversed_by    TEXT,
+			FOREIGN KEY (workspace_id)   REFERENCES workspaces(id)   ON DELETE CASCADE,
+			FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE,
+			FOREIGN KEY (created_by)     REFERENCES users(id)        ON DELETE RESTRICT,
+			FOREIGN KEY (reversed_by)    REFERENCES users(id)        ON DELETE RESTRICT,
+			CHECK ((reversed_at IS NULL AND reversed_by IS NULL) OR (reversed_at IS NOT NULL AND reversed_by IS NOT NULL))
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_transaction_refunds_transaction_active ON transaction_refunds(transaction_id, reversed_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_transaction_refunds_workspace_created ON transaction_refunds(workspace_id, created_at DESC)`,
+		`CREATE TRIGGER IF NOT EXISTS trg_transaction_refunds_validate_insert
+		BEFORE INSERT ON transaction_refunds
+		FOR EACH ROW
+		WHEN NEW.reversed_at IS NULL AND (
+			NOT EXISTS (
+				SELECT 1 FROM transactions t
+				WHERE t.id = NEW.transaction_id
+				  AND t.workspace_id = NEW.workspace_id
+				  AND t.type = 'EXPENSE'
+				  AND t.invoice_id IS NOT NULL
+			) OR NEW.amount_cents + COALESCE((
+				SELECT SUM(r.amount_cents)
+				FROM transaction_refunds r
+				WHERE r.transaction_id = NEW.transaction_id
+				  AND r.workspace_id = NEW.workspace_id
+				  AND r.reversed_at IS NULL
+			), 0) > COALESCE((SELECT t.amount FROM transactions t WHERE t.id = NEW.transaction_id), 0)
+		)
+		BEGIN
+			SELECT RAISE(ABORT, 'invalid transaction refund');
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_transactions_refund_floor
+		BEFORE UPDATE OF amount ON transactions
+		FOR EACH ROW
+		WHEN NEW.amount < COALESCE((
+			SELECT SUM(r.amount_cents)
+			FROM transaction_refunds r
+			WHERE r.transaction_id = OLD.id
+			  AND r.workspace_id = OLD.workspace_id
+			  AND r.reversed_at IS NULL
+		), 0)
+		BEGIN
+			SELECT RAISE(ABORT, 'transaction amount below active refunds');
+		END`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(statement); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrateInvoiceGeneralRefunds records a credit returned in a later billing
+// cycle, where there is no purchase row in the current invoice to attach it
+// to. It is an invoice adjustment, never an income transaction.
+func migrateInvoiceGeneralRefunds(tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS invoice_refunds (
+			id           TEXT PRIMARY KEY,
+			workspace_id TEXT    NOT NULL,
+			invoice_id   TEXT    NOT NULL,
+			amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+			description  TEXT    NOT NULL,
+			created_by   TEXT    NOT NULL,
+			created_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+			reversed_at  INTEGER,
+			reversed_by  TEXT,
+			FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+			FOREIGN KEY (invoice_id)   REFERENCES invoices(id)   ON DELETE CASCADE,
+			FOREIGN KEY (created_by)   REFERENCES users(id)      ON DELETE RESTRICT,
+			FOREIGN KEY (reversed_by)  REFERENCES users(id)      ON DELETE RESTRICT,
+			CHECK ((reversed_at IS NULL AND reversed_by IS NULL) OR (reversed_at IS NOT NULL AND reversed_by IS NOT NULL))
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_invoice_refunds_invoice_active ON invoice_refunds(invoice_id, reversed_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_invoice_refunds_workspace_created ON invoice_refunds(workspace_id, created_at DESC)`,
+		`CREATE TRIGGER IF NOT EXISTS trg_invoice_refunds_validate_insert
+		BEFORE INSERT ON invoice_refunds
+		FOR EACH ROW
+		WHEN NEW.reversed_at IS NULL AND NOT EXISTS (
+			SELECT 1
+			FROM invoices i
+			JOIN accounts a ON a.id = i.account_id
+			WHERE i.id = NEW.invoice_id
+			  AND a.workspace_id = NEW.workspace_id
+			  AND a.type = 'CREDIT_CARD'
+			  AND i.status IN ('OPEN', 'CLOSED')
+		)
+		BEGIN
+			SELECT RAISE(ABORT, 'invalid invoice refund');
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_invoice_refunds_no_overpay
+		BEFORE INSERT ON invoice_refunds
+		FOR EACH ROW
+		WHEN NEW.reversed_at IS NULL AND NEW.amount_cents + COALESCE((
+			SELECT SUM(ir.amount_cents)
+			FROM invoice_refunds ir
+			WHERE ir.workspace_id = NEW.workspace_id
+			  AND ir.invoice_id = NEW.invoice_id
+			  AND ir.reversed_at IS NULL
+		), 0) > COALESCE((
+			SELECT SUM(t.amount - COALESCE((
+				SELECT SUM(tr.amount_cents)
+				FROM transaction_refunds tr
+				WHERE tr.workspace_id = t.workspace_id
+				  AND tr.transaction_id = t.id
+				  AND tr.reversed_at IS NULL
+			), 0))
+			FROM transactions t
+			WHERE t.workspace_id = NEW.workspace_id
+			  AND t.invoice_id = NEW.invoice_id
+			  AND t.type = 'EXPENSE'
+		), 0) - COALESCE((
+			SELECT CASE
+				WHEN EXISTS (
+					SELECT 1 FROM invoice_payments ip_lineage
+					WHERE ip_lineage.workspace_id = NEW.workspace_id
+					  AND ip_lineage.invoice_id = NEW.invoice_id
+				) THEN COALESCE((
+					SELECT SUM(ip_active.amount_cents)
+					FROM invoice_payments ip_active
+					WHERE ip_active.workspace_id = NEW.workspace_id
+					  AND ip_active.invoice_id = NEW.invoice_id
+					  AND ip_active.reversed_at IS NULL
+				), 0)
+				ELSE COALESCE(i.paid_amount, 0)
+			END
+			FROM invoices i
+			WHERE i.id = NEW.invoice_id
+		), 0)
+		BEGIN
+			SELECT RAISE(ABORT, 'invoice refund exceeds pending balance');
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_invoice_refunds_immutable_update
+		BEFORE UPDATE OF workspace_id, invoice_id, amount_cents, description, created_by, created_at ON invoice_refunds
+		FOR EACH ROW
+		BEGIN
+			SELECT RAISE(ABORT, 'invoice refund audit fields are immutable');
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS trg_invoice_refunds_no_delete
+		BEFORE DELETE ON invoice_refunds
+		FOR EACH ROW
+		BEGIN
+			SELECT RAISE(ABORT, 'invoice refunds must be reversed, not deleted');
+		END`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(statement); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func migrateRecurringOccurrenceBlocks(tx *sql.Tx) error {

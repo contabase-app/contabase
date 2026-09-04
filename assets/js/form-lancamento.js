@@ -320,7 +320,7 @@
         if (typeof window.refreshIcons === 'function') window.refreshIcons();
     };
 
-    ns.updateAccountIcon = function(wrapper, icon, iconText, iconName, colorHex, providerMark) {
+    ns.updateAccountIcon = function(wrapper, icon, iconText, iconImage, iconName, colorHex, providerMark, providerLogoURL) {
         Object.values(colorClasses).flat().forEach(function(c) { wrapper.classList.remove(c); icon.classList.remove(c); });
         wrapper.style.backgroundColor = '';
         wrapper.style.borderColor = '';
@@ -331,6 +331,21 @@
         wrapper.style.setProperty('--ic', colorHex || '#6B7280');
         wrapper.style.borderWidth = '1px';
         wrapper.style.borderStyle = 'solid';
+        if (iconImage) {
+            iconImage.classList.add('hidden');
+            iconImage.removeAttribute('src');
+        }
+        if (providerLogoURL && providerLogoURL.trim() !== '' && iconImage) {
+            iconImage.src = providerLogoURL;
+            iconImage.style.display = '';
+            iconImage.classList.remove('hidden');
+            if (iconText) {
+                iconText.classList.add('hidden');
+                iconText.textContent = providerMark || '';
+            }
+            if (icon) icon.classList.add('hidden');
+            return;
+        }
         if (providerMark && providerMark.trim() !== '') {
             if (iconText) {
                 iconText.textContent = providerMark;
@@ -460,10 +475,11 @@
             var destIconWrap = document.getElementById('destinoIconWrap');
             var destIcon = document.getElementById('destinoIcon');
             var destIconText = document.getElementById('destinoIconText');
+            var destIconImage = document.getElementById('destinoIconImage');
 
             if (destId) destId.value = payload.id;
             if (destName) destName.textContent = payload.name;
-            ns.updateAccountIcon(destIconWrap, destIcon, destIconText, payload.icon, payload.color, payload.providerMark);
+            ns.updateAccountIcon(destIconWrap, destIcon, destIconText, destIconImage, payload.icon, payload.color, payload.providerMark, payload.providerLogoURL);
 
             if (typeof cb.onCloseModal === 'function') cb.onCloseModal();
             return;
@@ -476,13 +492,14 @@
         var originIconWrap = document.getElementById('origemIconWrap');
         var originIcon = document.getElementById('origemIcon');
         var originIconText = document.getElementById('origemIconText');
+        var originIconImage = document.getElementById('origemIconImage');
 
         if (originIdEl) originIdEl.value = payload.id;
         if (originTypeEl) originTypeEl.value = payload.kind;
         if (originNameEl) originNameEl.textContent = payload.name;
         if (originLabelEl && payload.originLabel) originLabelEl.textContent = payload.originLabel;
 
-        ns.updateAccountIcon(originIconWrap, originIcon, originIconText, payload.icon, payload.color, payload.providerMark);
+        ns.updateAccountIcon(originIconWrap, originIcon, originIconText, originIconImage, payload.icon, payload.color, payload.providerMark, payload.providerLogoURL);
 
         if (typeof cb.onCardStateCaptured === 'function') cb.onCardStateCaptured(payload.closingDay, payload.dueDay);
 
@@ -1073,7 +1090,7 @@
         function getInvoiceText(closingDay, dueDay) {
             var selectedDate = dateInput && dateInput.value ? new Date(dateInput.value + 'T12:00:00') : new Date();
             var closingDate = new Date(selectedDate);
-            if (selectedDate.getDate() > Number(closingDay)) closingDate.setMonth(closingDate.getMonth() + 1);
+            if (selectedDate.getDate() >= Number(closingDay)) closingDate.setMonth(closingDate.getMonth() + 1);
             var dueDate = new Date(closingDate);
             if (Number(dueDay) < Number(closingDay)) dueDate.setMonth(dueDate.getMonth() + 1);
             var month = monthFormatter.format(dueDate).replace(' de ', '/');
@@ -1487,6 +1504,7 @@
                     icon: option.dataset.originIcon,
                     color: option.dataset.originColor,
                     providerMark: option.dataset.originProviderMark || '',
+                    providerLogoURL: option.dataset.originProviderLogo || '',
                     closingDay: option.dataset.closingDay || null,
                     dueDay: option.dataset.dueDay || null,
                     originLabel: isDest ? undefined : (kind === 'cartao' ? 'Cartão de crédito' : (transactionType && transactionType.value === 'receita') ? 'Conta de entrada' : 'Conta de origem')

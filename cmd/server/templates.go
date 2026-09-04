@@ -47,7 +47,6 @@ func (e *AppTemplateEngine) reload() error {
 	}
 
 	patterns := []string{
-		"templates/layout.html",
 		"templates/pages/*.html",
 		"templates/components/*.html",
 	}

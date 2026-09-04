@@ -29,3 +29,11 @@ func TestParseCurrency(t *testing.T) {
 		}
 	}
 }
+
+func TestParseCurrencyRejectsLetters(t *testing.T) {
+	for _, raw := range []string{"abc100", "100 reais", "R$ cem"} {
+		if _, err := parseCurrency(raw); err == nil {
+			t.Fatalf("parseCurrency(%q) accepted letters", raw)
+		}
+	}
+}

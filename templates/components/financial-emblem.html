@@ -1,5 +1,8 @@
 {{define "financial-emblem"}}
-{{if .ProviderMark}}
+{{if .ProviderLogoPath}}
+<img src="{{assetPath .ProviderLogoPath}}" alt="" class="institution-logo" data-avatar-fallback>
+<span class="hidden font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .ProviderMark}}" data-avatar-text>{{.ProviderMark}}</span>
+{{else if .ProviderMark}}
 <span class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .ProviderMark}}" style="color: var(--emblem-color, {{.Color}})">{{.ProviderMark}}</span>
 {{else}}
 <i data-lucide="{{if .Icon}}{{.Icon}}{{else}}wallet{{end}}" class="h-4 w-4 icon-colored" style="--ic: var(--emblem-color, {{.Color}})"></i>

@@ -116,7 +116,7 @@ func MonthsUntilTargetDate(targetDateUnix int64, now time.Time) int {
 	}
 
 	targetDate := time.Unix(targetDateUnix, 0).UTC()
-	currentMonth := time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
+	currentMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	targetMonth := time.Date(targetDate.Year(), targetDate.Month(), 1, 0, 0, 0, 0, time.UTC)
 	if targetMonth.Before(currentMonth) {
 		return 0

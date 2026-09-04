@@ -11,9 +11,53 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
+## [v1.0.0-beta.3] — 2026-09-02
+
+### Adicionado
+- **Faturas — central por cartão:** a rota `/faturas` passa a reunir todos os cartões do workspace, com seleção por card, competência global e detalhe da fatura na própria página. As rotas individuais continuam disponíveis para links diretos e ações existentes.
+- **Instituições financeiras — catálogo visual:** contas e cartões podem escolher uma instituição em um seletor pesquisável e responsivo. O catálogo embarcado fornece logos aprovados com fundo final, preserva a opção "Outra" para instituições não catalogadas e é compartilhado por todos os workspaces, sem aceitar uploads arbitrários.
+- **Instituições financeiras — identidade consistente:** Dashboard, configurações de contas e cartões, faturas, lançamentos e seletores do formulário passam a consumir a mesma identidade de instituição, com fallback textual seguro quando não há logo.
+
+### Alterado
+- **Faturas — competência contínua:** o seletor da central usa uma janela contínua de 12 meses, inclusive na virada de ano. No desktop os meses ocupam toda a barra; no mobile o mês selecionado abre centralizado.
+- **Faturas — seleção estável por cartão:** os links do Dashboard e as rotas legadas de fatura passam a abrir a Central no cartão e na competência efetivamente correspondentes. Ao trocar de mês, a Central preserva o cartão selecionado; a ordem dos cartões segue a mesma prioridade de pagamento do Dashboard.
+- **Lançamentos — competência contínua:** o primeiro piloto de padronização aplica a faixa de 12 meses também em `/lancamentos`. A competência selecionada ocupa a sexta posição, a sequência cruza anos e preserva conta, busca, tipos, situações, categorias e ordenação nas URLs e atualizações HTMX.
+- **Contas, Relatórios e detalhe de Fatura — competência contínua:** as demais superfícies passaram a usar a mesma faixa de 12 meses e o mesmo comportamento de centralização no mobile, preservando respectivamente `periodo`/busca, aba/visão/modo e cartão/ordenação. O detalhe individual de Fatura deixou de manter um centralizador JavaScript próprio.
+- **Interface autenticada — shell canônico:** Dashboard, Lançamentos, Metas, Contas, Relatórios, Contatos, Faturas, Notificações, Ajuda e Configurações usam o mesmo shell na rota definitiva. A navegação lateral reúne páginas, ações rápidas e configurações/administração em blocos compactos, com workspace, tema e notificações no rodapé.
+- **Dashboard — cartões e faturas:** os cards de crédito adotam estrutura uniforme nos temas claro e escuro, identidade discreta da instituição, estado da fatura em duas linhas, valores alinhados e barras de limite com contraste consistente.
+- **Workspaces:** o shell identifica contexto pessoal com ícone de casa e Business com ícone de prédio; páginas e menus administrativos permanecem condicionados às permissões do workspace ativo.
+- **Logos de instituições:** o arredondamento e o recorte das imagens passam a ser um contrato global do design system, inclusive em linhas de configuração e no formulário de lançamento.
+- **Lançamentos — transferências:** registros de transferência exibem a rota completa `Conta de origem → Conta de destino` abaixo da descrição, sem categoria. O filtro por conta considera transferências que saem ou entram na conta selecionada, inclusive combinado com o tipo `Transferências`.
+- **Faturas — ações:** quitar, pagamento parcial e reembolso geral usam blocos verticais no desktop, com ícone acima e rótulo em duas linhas; no mobile permanecem empilhados, mas cada ação usa ícone e texto na mesma linha.
+
+### Corrigido
+- **Configurações — seletor de instituição:** imagens de logo sem `src` não ficam mais visíveis no estado vazio ou ao escolher "Outra / Personalizada"; o ícone de instituição passa a ser exibido sem arte quebrada.
+- **Notificações — coluna central:** o conteúdo da Central de Notificações passa a respeitar a mesma coluna centralizada das demais páginas, preservando margens e largura em desktop e mobile.
+- **Faturas — composição e reembolsos:** faturas fechadas continuam editáveis até o pagamento; reembolsos de itens e gerais reduzem a despesa sem criar receita, com valores monetários validados e formatados em `R$`.
+- **Lançamentos — rota da transferência:** a consulta carrega o nome da conta destino com isolamento por workspace, evitando registros sem contexto ao filtrar a conta de destino.
+- **Datas civis e timezone:** consumidores de período atual e datas financeiras usam a timezone configurada pela aplicação, preservando o dia civil em `America/Sao_Paulo` mesmo quando o runtime usa outra timezone.
+- **Cartões — fechamento no próprio dia:** um lançamento realizado no dia de fechamento é direcionado à fatura seguinte, inclusive desde `00:00` na timezone configurada, mantendo prévia, materialização e persistência no mesmo contrato.
+- **Recorrências — ocorrência atual paga e cauda futura:** a edição "Este e futuros" pode alterar a ocorrência selecionada e os próximos registros mutáveis, inclusive ao trocar a conta da ocorrência atual já paga, preservando pagamento, histórico e proteções de fatura.
+- **Navegação responsiva:** o menu lateral pode rolar sem expor uma barra visual desproporcional, preserva acesso a Configurações/Administração em alturas menores e elimina espaçamentos redundantes em desktop e mobile.
+- **Mobile — painel e cabeçalho:** o trilho vertical de cartões do Dashboard usa uma composição mais compacta, enquanto o menu, monograma e nome do produto ganham alvo de toque e leitura mais claros. O menu hambúrguer permanece visualmente reduzido ao ícone, sem caixa, fundo ou contorno.
+
+### Removido
+- **Resíduos da validação visual:** removidos a rota temporária `/dashboard-v2`, o layout autenticado anterior, seu stylesheet sem consumidores e o componente de perfil duplicado da sidebar. O aviso de token de setup e o rodapé de versão/timezone foram mantidos no shell canônico.
+
+### Release pipeline
+- Esta candidata sucede a versão materializada `v1.0.0-beta.2`. Publicação, tag, artifacts, GHCR e avanço do canal continuam separados e dependem dos gates e da autorização explícita previstos no runbook.
+
+### Limitações conhecidas neste marco
+- **Padronização de competência:** a implementação está completa nas quatro superfícies e aguarda smoke visual desktop/mobile com filtros e contextos reais.
+- **Quitação após editar item:** permanece pendente a confirmação do fluxo completo no ambiente DEV. O resumo da fatura é renderizado novamente por HTMX, mas o botão de quitar ainda precisa ser validado após salvar uma edição sem recarregar a página.
+- **Smoke visual:** os testes automatizados cobrem renderização, consulta e filtros; ainda falta validar visualmente em desktop e mobile a rota `origem → destino` e o estado do botão de quitação após uma edição.
+- **Distribuição:** esta é uma preparação local. Release Preflight, tag, artifacts, GHCR, smokes de instalação/atualização e avanço do canal não foram executados.
+
 ## [v1.0.0-beta.2] — 2026-08-25
 
 ### Corrigido
+- **Recorrências — edição a partir de ocorrência paga:** ao escolher "Neste e nos lançamentos futuros" em uma ocorrência atual paga ou já marcada como exceção manual, a edição passa a atualizar a ocorrência selecionada e a cauda futura mutável na mesma transação. Status, data e histórico do pagamento atual são preservados; uma troca de conta estorna e reaplica o saldo atomicamente. Ocorrências futuras pagas, pagamentos de fatura e vínculos de faturas protegidas continuam bloqueados.
+- **Cartões — dia de fechamento:** compras feitas no próprio dia de fechamento passam a entrar automaticamente na fatura seguinte. A prévia do formulário e os limites usados por projeções e materializações recorrentes seguem a mesma fronteira civil inclusiva, sem alterar as proteções de estado, pagamento ou seleção manual.
 - **Recorrências — exclusão futura:** "Este e os próximos" volta a encerrar uma série mesmo quando registros legados possuem uma cadeia versionada incompleta ou inconsistente. Ocorrências comuns marcadas como pagas sem vínculo de fatura também são removidas na ação explícita, com reversão do efeito no saldo na mesma transação. Pagamentos de fatura, faturas fechadas ou pagas e exceções manuais continuam protegidos.
 - **Lançamentos — edição no mobile:** valor, data, descrição e metadados passam a integrar o mesmo alvo de toque que abre o editor. O botão tem área mínima de 44px e mantém o ícone de status como ação independente.
 - **Faturas em lançamentos:** o card da fatura separa ícone, título e resumo financeiro em colunas responsivas. Nomes longos passam a truncar antes de alcançar os valores; em pagamentos parciais, Total e Pago se empilham em telas estreitas.

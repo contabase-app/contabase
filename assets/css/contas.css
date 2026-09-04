@@ -10,9 +10,86 @@
 .tx-status-danger{background:color-mix(in srgb, var(--cb-danger) 12%, transparent);color:color-mix(in srgb, var(--cb-danger) 80%, var(--cb-text-main))}
 .tx-status-scheduled{background:color-mix(in srgb, var(--cb-accent) 14%, transparent);color:color-mix(in srgb, var(--cb-accent) 80%, var(--cb-text-main))}
 .tx-status-success{background:color-mix(in srgb, var(--cb-success) 12%, transparent);color:color-mix(in srgb, var(--cb-success) 80%, var(--cb-text-main))}
-.tx-status-transfer{background:color-mix(in srgb, #0ea5e9 12%, transparent);color:#0284c7}
 
 /* Swipe row mechanics */
 [data-swipe-row="true"] { position: relative; overflow: hidden; }
 [data-swipe-content] { position: relative; z-index: 10; -webkit-user-select: none; user-select: none; }
 .swipe-icon { width: 1.25rem; height: 1.25rem; color: #fff; }
+
+/* Contas inside the V2 shell. Financial states and interaction hooks remain
+   unchanged; this layer only maps the page to the shared visual vocabulary. */
+.cb-v2-contas-main {
+  --cb-bg: var(--v2-canvas);
+  --cb-bg-soft: var(--v2-detail-surface);
+  --cb-surface-1: var(--v2-surface);
+  --cb-surface-2: var(--v2-surface-raised);
+  --cb-surface-3: var(--v2-surface-hover);
+  --cb-surface-overlay: var(--v2-surface);
+  --cb-border-subtle: var(--v2-border);
+  --cb-border-strong: var(--v2-border-strong);
+  --cb-border-focus: var(--v2-accent);
+  --cb-text-main: var(--v2-text);
+  --cb-text-muted: var(--v2-muted);
+  --cb-text-subtle: var(--v2-subtle);
+  --cb-accent: var(--v2-accent);
+  --cb-accent-solid: var(--v2-accent);
+  --cb-accent-hover: var(--v2-fab-hover);
+  --cb-accent-soft: var(--v2-accent-soft);
+  --cb-success: var(--v2-positive);
+  --cb-danger: var(--v2-danger);
+  --cb-warning: var(--v2-warning);
+  --cb-info: var(--v2-info);
+}
+
+.cb-v2-contas-content {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  padding: 30px 0 12px;
+}
+
+.cb-v2-contas-header { margin-bottom: 24px; }
+.cb-v2-contas-header h1 {
+  margin: 3px 0 5px;
+  color: var(--v2-text);
+  font-size: 31px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+}
+.cb-v2-contas-header > div > p:last-child {
+  max-width: 54ch;
+  margin: 0;
+  color: var(--v2-muted);
+  font-size: 13px;
+}
+
+.cb-v2-contas-panels #contas-body > .mt-5 {
+  margin-top: 18px;
+}
+.cb-v2-contas-panels .cb-card-dense,
+.cb-v2-contas-panels .cb-row-dense {
+  border-color: var(--v2-border);
+  background: var(--v2-surface);
+}
+.cb-v2-contas-panels .cb-card-dense { border-radius: 12px; }
+.cb-v2-contas-panels .cb-row-dense {
+  transition: border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
+}
+.cb-v2-contas-panels .cb-row-dense:hover {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-raised);
+}
+.cb-v2-contas-panels .cb-tabs {
+  border-color: var(--v2-border);
+  background: var(--v2-surface-raised);
+}
+.cb-v2-contas-panels .cb-tab { min-height: 40px; font-size: 12px; }
+.cb-v2-contas-panels .cb-tab-inactive:hover { background: var(--v2-surface-hover); }
+
+@media (max-width: 767px) {
+  .cb-v2-contas-content { padding-top: 20px; }
+  .cb-v2-contas-header { margin-bottom: 18px; }
+  .cb-v2-contas-header h1 { font-size: 23px; }
+  .cb-v2-contas-header > div > p:last-child { font-size: 12px; }
+  .cb-v2-contas-panels #contas-body > .mt-5 { margin-top: 16px; }
+}

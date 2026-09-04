@@ -150,7 +150,7 @@ func TestInsertTransactionAutoRejectsPaidInvoiceWithinCycle(t *testing.T) {
 	}
 }
 
-func TestInsertTransactionAutoRejectsClosedInvoiceWithinCycle(t *testing.T) {
+func TestInsertTransactionAutoAcceptsClosedUnpaidInvoiceWithinCycle(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
@@ -180,16 +180,16 @@ func TestInsertTransactionAutoRejectsClosedInvoiceWithinCycle(t *testing.T) {
 		"",
 		false,
 	)
-	if !errors.Is(err, errAutomaticInvoiceFrozen) || !errors.Is(err, errInvoiceStateTransitionConflict) {
-		t.Fatalf("insertTransaction auto closed within cycle error = %v, want frozen conflict", err)
+	if err != nil {
+		t.Fatalf("insertTransaction auto closed within cycle error = %v, want nil", err)
 	}
 
 	var inserted int
 	if err := db.QueryRow(`SELECT COUNT(1) FROM transactions WHERE description = 'Compra Fatura Fechada Mesmo Ciclo'`).Scan(&inserted); err != nil {
 		t.Fatalf("count inserted transactions: %v", err)
 	}
-	if inserted != 0 {
-		t.Fatalf("inserted transactions = %d, want 0", inserted)
+	if inserted != 1 {
+		t.Fatalf("inserted transactions = %d, want 1", inserted)
 	}
 	var status string
 	if err := db.QueryRow(`SELECT status FROM invoices WHERE id = 'invoice-2026-08'`).Scan(&status); err != nil {
@@ -201,7 +201,7 @@ func TestInsertTransactionAutoRejectsClosedInvoiceWithinCycle(t *testing.T) {
 }
 
 func TestHandleSalvarTransacaoAutoFrozenReturns409WithoutTombstone(t *testing.T) {
-	for _, status := range []string{"CLOSED", "PAID"} {
+	for _, status := range []string{"PAID"} {
 		t.Run(status, func(t *testing.T) {
 			db := openTestDB(t)
 			defer db.Close()
@@ -372,6 +372,82 @@ func TestInsertTransactionAutoAfterClosingGoesToNextInvoice(t *testing.T) {
 	}
 
 	txID := findTransactionByDescription(t, db, "Compra Apos Fechamento")
+	assertTransactionInvoiceReference(t, db, txID, scenario.NextRef)
+}
+
+func TestHandleResolverDestinoFaturaOnClosingDayGoesToNextInvoice(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	seedInvoicePaymentScenario(t, db)
+	scenario := moveSeedInvoiceScenarioToClosingDayBoundary(t, db)
+
+	handler := FaturasHandler{
+		DB:          db,
+		WorkspaceID: "ws-test",
+		UserID:      "user-test",
+	}
+	req := httptest.NewRequest(
+		"GET",
+		"/cartoes/fatura-destino/card-test?data="+scenario.ClosingDate.Format("2006-01-02")+"&fatura_offset=auto",
+		nil,
+	)
+	rr := httptest.NewRecorder()
+
+	handler.HandleResolverDestinoFatura(rr, req, "card-test")
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	}
+	var payload struct {
+		Reference string `json:"reference"`
+		Status    string `json:"status"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.Reference != scenario.NextRef {
+		t.Fatalf("destination reference = %q, want %q", payload.Reference, scenario.NextRef)
+	}
+	if payload.Status != "OPEN" {
+		t.Fatalf("destination status = %q, want OPEN", payload.Status)
+	}
+}
+
+func TestInsertTransactionAutoOnClosingDayGoesToNextInvoice(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	seedInvoicePaymentScenario(t, db)
+	scenario := moveSeedInvoiceScenarioToClosingDayBoundary(t, db)
+	seedExpenseCategoryForInvoiceResolutionTest(t, db)
+
+	handler := TransactionHandler{
+		DB:          db,
+		WorkspaceID: "ws-test",
+		UserID:      "user-test",
+	}
+	_, err := handler.insertTransaction(
+		"EXPENSE",
+		23188,
+		"Compra no dia do fechamento",
+		"",
+		"", civilWriteDateFromLegacyUnix(scenario.ClosingDate.Unix()), "card-test",
+		"",
+		"cat-expense",
+		1,
+		"paid",
+		false,
+		"",
+		"", OptionalCivilWriteDate{}, nil,
+		"",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("insertTransaction auto on closing day: %v", err)
+	}
+
+	txID := findTransactionByDescription(t, db, "Compra no dia do fechamento")
 	assertTransactionInvoiceReference(t, db, txID, scenario.NextRef)
 }
 
@@ -655,6 +731,53 @@ func seedInvoiceForStatusTest(t *testing.T, db *sql.DB, accountID, reference, st
 		INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, paid_at, paid_amount, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, "invoice-"+reference, accountID, reference, closingUnix, dueUnix, status, nullablePaidAtForStatus(status, now), nullablePaidAmountForStatus(status), now)
+}
+
+type closingDayBoundaryScenarioForTest struct {
+	ClosingDate time.Time
+	CurrentRef  string
+	NextRef     string
+}
+
+func moveSeedInvoiceScenarioToClosingDayBoundary(t *testing.T, db *sql.DB) closingDayBoundaryScenarioForTest {
+	t.Helper()
+
+	base := time.Now().UTC().AddDate(2, 0, 0)
+	closingDate := time.Date(base.Year(), base.Month(), 1, 12, 0, 0, 0, time.UTC)
+	currentRef := closingDate.Format("2006-01")
+	nextRef, err := nextInvoiceReference(currentRef)
+	if err != nil {
+		t.Fatalf("next closing-day invoice reference: %v", err)
+	}
+
+	currentClosingUnix, currentDueUnix := invoiceDatesForReference(closingDate.Year(), closingDate.Month(), 1, 7)
+	nextYear, nextMonth, err := parseInvoiceReference(nextRef)
+	if err != nil {
+		t.Fatalf("parse next closing-day invoice reference: %v", err)
+	}
+	nextClosingUnix, nextDueUnix := invoiceDatesForReference(nextYear, nextMonth, 1, 7)
+	now := time.Now().Unix()
+
+	execTestSQL(t, db, `
+		UPDATE credit_cards
+		SET closing_day = 1, due_day = 7
+		WHERE account_id = 'card-test'
+	`)
+	execTestSQL(t, db, `
+		UPDATE invoices
+		SET reference = ?, closing_date = ?, due_date = ?, status = 'CLOSED', paid_at = NULL, paid_amount = 0
+		WHERE id = 'invoice-2026-08' AND account_id = 'card-test'
+	`, currentRef, currentClosingUnix, currentDueUnix)
+	execTestSQL(t, db, `
+		INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, paid_at, paid_amount, created_at)
+		VALUES ('invoice-closing-day-next', 'card-test', ?, ?, ?, 'OPEN', NULL, 0, ?)
+	`, nextRef, nextClosingUnix, nextDueUnix, now)
+
+	return closingDayBoundaryScenarioForTest{
+		ClosingDate: closingDate,
+		CurrentRef:  currentRef,
+		NextRef:     nextRef,
+	}
 }
 
 func setInvoiceStatusForTest(t *testing.T, db *sql.DB, invoiceID, status string) {

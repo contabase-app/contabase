@@ -1,4 +1,4 @@
-// Theme Toggle — extracted from layout.html (F2.6-B)
+// Theme toggle shared by the authenticated app shell.
 (function () {
     function getStoredTheme() {
         return localStorage.getItem('theme');

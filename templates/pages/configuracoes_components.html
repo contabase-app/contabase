@@ -2,6 +2,66 @@
 
 {{define "field-label"}}cb-label{{end}}
 
+{{define "provider-logo-picker"}}
+<fieldset class="cb-provider-picker" data-provider-picker>
+    <legend class="cb-label">Instituição</legend>
+    <select name="provider_slug" data-provider-value class="sr-only" aria-label="Instituição">
+        <option value="" selected>Escolha a instituição</option>
+        <option value="custom">Outra / Personalizada</option>
+        {{range .AccountProviders}}
+        <option value="{{.Slug}}">{{.Name}}</option>
+        {{end}}
+    </select>
+    <button type="button" class="cb-provider-trigger" data-provider-open aria-haspopup="dialog" aria-expanded="false">
+        <span class="cb-provider-trigger-logo" data-provider-trigger-logo>
+            <img alt="" class="hidden institution-logo" data-provider-trigger-image data-avatar-fallback>
+            <span class="hidden emblem-text" data-provider-trigger-fallback data-avatar-text></span>
+            <i data-lucide="landmark" data-provider-trigger-placeholder aria-hidden="true"></i>
+        </span>
+        <span class="cb-provider-trigger-copy">
+            <strong data-provider-trigger-name>Escolha a instituição</strong>
+            <small data-provider-trigger-hint>Toque para ver as opções disponíveis</small>
+        </span>
+        <i data-lucide="chevron-down" class="cb-provider-trigger-chevron" aria-hidden="true"></i>
+    </button>
+
+    <dialog class="cb-provider-dialog" data-provider-dialog aria-labelledby="provider-picker-title">
+        <div class="cb-provider-dialog-panel">
+            <header class="cb-provider-dialog-header">
+                <div>
+                    <h2 id="provider-picker-title">Escolha a instituição</h2>
+                    <p>Os logos são mantidos globalmente pelo ContaBase.</p>
+                </div>
+                <button type="button" class="cb-provider-dialog-close" data-provider-close aria-label="Fechar seletor de instituições">
+                    <i data-lucide="x" aria-hidden="true"></i>
+                </button>
+            </header>
+            <label class="cb-provider-search">
+                <i data-lucide="search" aria-hidden="true"></i>
+                <input type="search" placeholder="Buscar instituição" autocomplete="off" data-provider-search>
+            </label>
+            <div class="cb-provider-picker-grid" role="group" aria-label="Instituições disponíveis">
+                <button type="button" class="cb-provider-choice" data-provider-choice data-provider-slug="custom" data-provider-name="Outra / Personalizada" data-provider-custom-choice aria-pressed="false">
+                    <span class="cb-provider-choice-logo cb-provider-choice-logo-custom"><i data-lucide="landmark" aria-hidden="true"></i></span>
+                    <span class="cb-provider-choice-copy"><strong>Outra</strong><small>Instituição personalizada</small></span>
+                    <span class="cb-provider-choice-check" aria-hidden="true"><i data-lucide="check"></i></span>
+                </button>
+                {{range .AccountProviders}}
+                <button type="button" class="cb-provider-choice" data-provider-choice data-provider-slug="{{.Slug}}" data-provider-name="{{.Name}}" data-provider-logo="{{if .LogoPath}}{{assetPath .LogoPath}}{{end}}" data-provider-mark="{{.Mark}}" data-provider-color="{{.Color}}" data-provider-search-text="{{.Name}}" aria-pressed="false">
+                    <span class="cb-provider-choice-logo" style="--ic: {{.Color}}">
+                        {{if .LogoPath}}<img src="{{assetPath .LogoPath}}" alt="" class="institution-logo" data-avatar-fallback><span class="hidden emblem-text emblem-len-{{len .Mark}}" data-avatar-text>{{.Mark}}</span>{{else}}<span class="emblem-text emblem-len-{{len .Mark}}">{{.Mark}}</span>{{end}}
+                    </span>
+                    <span class="cb-provider-choice-copy"><strong>{{.Name}}</strong></span>
+                    <span class="cb-provider-choice-check" aria-hidden="true"><i data-lucide="check"></i></span>
+                </button>
+                {{end}}
+            </div>
+            <p class="cb-provider-empty hidden" data-provider-empty>Nenhuma instituição encontrada.</p>
+        </div>
+    </dialog>
+</fieldset>
+{{end}}
+
 {{define "admin-auditoria-table-rows"}}
 {{range .SecurityLogs}}
 <tr class="border-t border-[var(--cb-border-subtle)]">

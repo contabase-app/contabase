@@ -32,7 +32,7 @@ func (h *RelatoriosHandler) HandleExportarContabilZIP(w http.ResponseWriter, r *
 		return
 	}
 
-	pdfBytes, err := buildContabilPDFReport(data, identity, h.WorkspaceID, mes, ano, time.Now())
+	pdfBytes, err := buildContabilPDFReport(data, identity, h.WorkspaceID, mes, ano, appTime(time.Now()))
 	if err != nil {
 		http.Error(w, "erro ao gerar zip", http.StatusInternalServerError)
 		return

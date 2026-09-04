@@ -1,5 +1,5 @@
 // Global Confirmation and Delete Modals
-// Extracted from layout.html — Fase 9.9.5e
+// Global modal interactions used by authenticated pages.
 
 window._gConfirmState = null;
 

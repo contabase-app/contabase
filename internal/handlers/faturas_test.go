@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"html/template"
@@ -17,6 +18,410 @@ import (
 	"github.com/contabase-app/contabase/internal/database"
 	"github.com/contabase-app/contabase/internal/models"
 )
+
+func TestFaturasPageUsesGlobalAppShell(t *testing.T) {
+	tpl := template.Must(template.New("faturas-app-shell").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath": func(path string) string { return path + "?v=test" },
+		"hasString": func(items []string, target string) bool {
+			for _, item := range items {
+				if item == target {
+					return true
+				}
+			}
+			return false
+		},
+	})).ParseFiles(
+		resolveTemplatePath(t, "templates/pages/faturas.html"),
+		resolveTemplatePath(t, "templates/pages/lancamentos.html"),
+		resolveTemplatePath(t, "templates/components/app_shell.html"),
+	))
+
+	data := FaturaData{
+		Title:               "Fatura",
+		UserName:            "Vitor Ferreira",
+		UserInitials:        "VF",
+		ActiveWorkspaceName: "Família",
+		CardName:            "Cartão principal",
+	}
+	var out bytes.Buffer
+	if err := tpl.ExecuteTemplate(&out, "faturas-page", data); err != nil {
+		t.Fatalf("render faturas page: %v", err)
+	}
+
+	body := out.String()
+	for _, expected := range []string{
+		`data-app-shell`,
+		`data-page-section="invoice"`,
+		`cb-v2-faturas-header`,
+		`id="faturas-content"`,
+		`id="payment-confirm-modal"`,
+		`/assets/css/faturas.css?v=test`,
+		`/assets/js/payment-confirm.js?v=test`,
+		`/assets/js/faturas.js?v=test`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("faturas page missing %q", expected)
+		}
+	}
+	if strings.Contains(body, `{{template "layout-start"`) {
+		t.Fatal("faturas page must use the global app shell, not the legacy layout")
+	}
+
+	data.InvoiceID = "invoice-test"
+	data.NextReference = "2026-09"
+	data.CanMutateItems = true
+	data.Transactions = []TransactionRow{{
+		ID:            "tx-test",
+		UpdatedAt:     123,
+		DateLabel:     "2 Set",
+		Description:   "Compra teste",
+		CategoryName:  "Categoria",
+		CategoryIcon:  "tag",
+		CategoryColor: "gray",
+		TimeDisplay:   "12:00",
+		AmountDisplay: "- R$ 10,00",
+		AmountClass:   "text-red-500",
+	}}
+	data.TransactionGroups = []TransactionDayGroup{{DateLabel: "2 Set", FirstIndex: 0, Transactions: data.Transactions}}
+	out.Reset()
+	if err := tpl.ExecuteTemplate(&out, "faturas-page", data); err != nil {
+		t.Fatalf("render faturas move actions: %v", err)
+	}
+	for _, expected := range []string{
+		`data-swipe-right-vals='{"expected_invoice_id":"invoice-test","expected_destination_reference":"2026-09","expected_updated_at":"123","expected_move_scope":"single"}'`,
+		`hx-vals='{"expected_invoice_id":"invoice-test","expected_destination_reference":"2026-09","expected_updated_at":"123","expected_move_scope":"single"}'`,
+		`data-tooltip-hover`,
+		`data-tooltip-text="Informar reembolso"`,
+		`data-tooltip-text="Mover para próxima fatura"`,
+		`Esquerda (&larr;) para mover a cobrança para a próxima fatura`,
+		`Direita (&rarr;) para apagar o registro`,
+	} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("faturas move action missing %q in %s", expected, out.String())
+		}
+	}
+
+	out.Reset()
+	if err := tpl.ExecuteTemplate(&out, "faturas-empty-page", FaturaEmptyData{
+		Title:               "Fatura",
+		UserName:            "Vitor Ferreira",
+		UserInitials:        "VF",
+		ActiveWorkspaceName: "Família",
+		CardName:            "Cartão principal",
+		PeriodLabel:         "Set/2026",
+		PreviousURL:         "/cartoes/card/faturas?mes=8&ano=2026",
+		NextURL:             "/cartoes/card/faturas?mes=10&ano=2026",
+		OpenInvoiceURL:      "/cartoes/card/faturas/abrir?mes=9&ano=2026",
+	}); err != nil {
+		t.Fatalf("render empty faturas page: %v", err)
+	}
+	for _, expected := range []string{
+		`Nenhuma fatura para este período`,
+		`hx-post="/cartoes/card/faturas/abrir?mes=9&amp;ano=2026"`,
+		`data-app-shell`,
+	} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("empty faturas page missing %q", expected)
+		}
+	}
+}
+
+func TestFaturasIndexRendersSelectedCardAndInvoiceDetail(t *testing.T) {
+	tpl := template.Must(template.New("faturas-index").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath": func(path string) string { return path + "?v=test" },
+		"hasString": func(items []string, target string) bool {
+			for _, item := range items {
+				if item == target {
+					return true
+				}
+			}
+			return false
+		},
+	})).ParseFiles(
+		resolveTemplatePath(t, "templates/pages/faturas_index.html"),
+		resolveTemplatePath(t, "templates/pages/faturas.html"),
+		resolveTemplatePath(t, "templates/pages/lancamentos.html"),
+		resolveTemplatePath(t, "templates/components/app_shell.html"),
+		resolveTemplatePath(t, "templates/components/credit_card.html"),
+	))
+
+	data := FaturasIndexData{
+		Title:               "Faturas",
+		UserName:            "Vitor Ferreira",
+		UserInitials:        "VF",
+		ActiveWorkspaceName: "Família",
+		PeriodLabel:         "Setembro de 2026",
+		PreviousURL:         "/faturas?cartao=card-1&mes=8&ano=2026",
+		NextURL:             "/faturas?cartao=card-1&mes=10&ano=2026",
+		RefreshCardsURL:     "/faturas?cartao=card-1&mes=9&ano=2026&partial=cards",
+		HasSelectedInvoice:  true,
+		Cards: []CreditCardCard{{
+			ID:             "card-1",
+			InvoiceID:      "invoice-1",
+			Name:           "Cartão principal",
+			Money:          MoneyMinor(9999),
+			LimitMoney:     MoneyMinor(10000),
+			DueDateCompact: "10/set",
+			StatusLabel:    "Aberta",
+			ContentURL:     "/faturas/conteudo?cartao=card-1&mes=9&ano=2026",
+			Href:           "/faturas?cartao=card-1&mes=9&ano=2026",
+			IsFaturasIndex: true,
+			IsSelected:     true,
+			ProviderMark:   "CB",
+			Color:          "#6b5ce7",
+			LimitPercent:   80,
+		}},
+		SelectedFatura: FaturaData{CardName: "Cartão principal", HideMonthNavigation: true},
+	}
+	var out bytes.Buffer
+	if err := tpl.ExecuteTemplate(&out, "faturas-index-page", data); err != nil {
+		t.Fatalf("render faturas index: %v", err)
+	}
+	body := out.String()
+	for _, expected := range []string{
+		`data-faturas-index`,
+		`id="faturas-index-card-rail"`,
+		`data-faturas-card`,
+		`is-selected`,
+		`aria-current="page"`,
+		`data-faturas-content-url="/faturas/conteudo?cartao=card-1&amp;mes=9&amp;ano=2026"`,
+		`/assets/css/faturas-index.css?v=test`,
+		`/assets/js/faturas-index.js?v=test`,
+		`href="/configuracoes/cartoes"`,
+		`id="faturas-content"`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("faturas index missing %q", expected)
+		}
+	}
+}
+
+func TestFaturasIndexURLsKeepSelectedCardPeriodAndSort(t *testing.T) {
+	pageURL := faturasIndexURL("card-1", 9, 2026, "asc")
+	contentURL := faturasIndexContentURL("card-1", 9, 2026, "asc")
+	refreshURL := faturasIndexCardsURL("card-1", 9, 2026, "asc")
+	for _, raw := range []string{pageURL, contentURL, refreshURL} {
+		u, err := url.Parse(raw)
+		if err != nil {
+			t.Fatalf("parse index URL %q: %v", raw, err)
+		}
+		if u.Query().Get("cartao") != "card-1" || u.Query().Get("mes") != "9" || u.Query().Get("ano") != "2026" || u.Query().Get("ordem") != "asc" {
+			t.Fatalf("index URL lost selected state: %s", raw)
+		}
+	}
+	if u, _ := url.Parse(refreshURL); u.Query().Get("partial") != "cards" {
+		t.Fatalf("refresh URL must request only the card rail: %s", refreshURL)
+	}
+}
+
+func TestFaturasIndexKeepsRequestedCardWithoutInvoice(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedCreditCardWithLimit(t, db, "ws-hub-selection", "xp", "cc-xp", 100000)
+	now := time.Now().Unix()
+	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at)
+		VALUES ('empty-card', 'ws-hub-selection', 'Cartão sem fatura', 'CREDIT_CARD', 0, 0, ?, ?)`, now, now)
+	execTestSQL(t, db, `INSERT INTO credit_cards (id, account_id, closing_day, due_day, credit_limit)
+		VALUES ('cc-empty', 'empty-card', 20, 10, 100000)`)
+	handler := FaturasHandler{DB: db, WorkspaceID: "ws-hub-selection"}
+	for _, id := range []string{"xp", "empty-card"} {
+		t.Run(id, func(t *testing.T) {
+			data, err := handler.buildFaturasIndexData(httptest.NewRequest(http.MethodGet, faturasIndexURL(id, 9, 2026, "desc"), nil))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if data.SelectedCardID != id || data.HasSelectedInvoice {
+				t.Fatalf("selected = %q, has invoice = %v", data.SelectedCardID, data.HasSelectedInvoice)
+			}
+			selectedCount := 0
+			for _, card := range data.Cards {
+				if card.IsSelected {
+					selectedCount++
+					if card.ID != id || data.SelectedEmpty.CardName != card.Name {
+						t.Fatalf("selected card and empty detail disagree: %+v, %+v", card, data.SelectedEmpty)
+					}
+				}
+			}
+			if selectedCount != 1 {
+				t.Fatalf("selected cards = %d, want 1", selectedCount)
+			}
+		})
+	}
+	if _, err := handler.buildFaturasIndexData(httptest.NewRequest(http.MethodGet, faturasIndexURL("unavailable-card", 9, 2026, "desc"), nil)); err == nil {
+		t.Fatal("an unavailable explicit card must not silently select XP or another card")
+	}
+	// The Dashboard resolves an open invoice even for a newly created card.
+	// Both generated links must survive a round trip through the hub.
+	dashboard := BuildDashboardData(db, "user-ws-hub-selection", "ws-hub-selection")
+	if len(dashboard.Cards) != 2 {
+		t.Fatalf("dashboard cards = %d, want 2", len(dashboard.Cards))
+	}
+	for _, card := range dashboard.Cards {
+		data, err := handler.buildFaturasIndexData(httptest.NewRequest(http.MethodGet, card.Href, nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if data.SelectedCardID != card.ID || data.SelectedFatura.InvoiceID != card.InvoiceID {
+			t.Fatalf("dashboard link %q opened another card or invoice", card.Href)
+		}
+	}
+}
+
+func TestFaturasIndexUsesDashboardCardPriorityOrder(t *testing.T) {
+	now := time.Date(2026, time.September, 3, 12, 0, 0, 0, time.UTC)
+	cards := []CreditCardCard{
+		{ID: "paid", Status: models.InvoiceStatusPaid, Amount: 90000, DueDateUnix: now.AddDate(0, 0, -5).Unix()},
+		{ID: "upcoming-low", Status: models.InvoiceStatusOpen, Amount: 10000, DueDateUnix: now.AddDate(0, 0, 5).Unix()},
+		{ID: "upcoming-high", Status: models.InvoiceStatusClosed, Amount: 50000, DueDateUnix: now.AddDate(0, 0, 5).Unix()},
+		{ID: "overdue", Status: models.InvoiceStatusClosed, Amount: 20000, DueDateUnix: now.AddDate(0, 0, -1).Unix()},
+		{ID: "zero", Status: models.InvoiceStatusOpen, Amount: 0, DueDateUnix: now.AddDate(0, 0, -1).Unix()},
+	}
+
+	SortDashboardCardsByPaymentPriority(cards, now)
+	got := make([]string, len(cards))
+	for i := range cards {
+		got[i] = cards[i].ID
+	}
+	want := []string{"overdue", "upcoming-high", "upcoming-low", "paid", "zero"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("card order = %v, want Dashboard order %v", got, want)
+	}
+}
+
+func TestInvoiceIDEntryPointRedirectsToInvoiceHub(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedCreditCardWithLimit(t, db, "ws-invoice-hub", "card-invoice-hub", "cc-invoice-hub", 100000)
+	seedInvoiceForCard(t, db, "ws-invoice-hub", "card-invoice-hub", "invoice-hub", "2026-08", "CLOSED", 2026, 8, 20)
+
+	handler := FaturasHandler{DB: db, WorkspaceID: "ws-invoice-hub"}
+	want := "/faturas?ano=2026&cartao=card-invoice-hub&mes=8"
+
+	t.Run("browser request", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		handler.HandleFaturaConceitoPorID(rr, httptest.NewRequest(http.MethodGet, "/cartoes/faturas/invoice-hub", nil), "invoice-hub")
+		if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != want {
+			t.Fatalf("redirect = status %d location %q, want 303 %q", rr.Code, rr.Header().Get("Location"), want)
+		}
+	})
+
+	t.Run("htmx request", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/cartoes/faturas/invoice-hub", nil)
+		req.Header.Set("HX-Request", "true")
+		handler.HandleFaturaConceitoPorID(rr, req, "invoice-hub")
+		if rr.Code != http.StatusOK || rr.Header().Get("HX-Redirect") != want {
+			t.Fatalf("HTMX redirect = status %d location %q, want 200 %q", rr.Code, rr.Header().Get("HX-Redirect"), want)
+		}
+	})
+}
+
+func TestDashboardCardLinksToResolvedInvoiceHub(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedCreditCardWithLimit(t, db, "ws-dashboard-hub", "card-dashboard-hub", "cc-dashboard-hub", 100000)
+	seedInvoiceForCard(t, db, "ws-dashboard-hub", "card-dashboard-hub", "invoice-dashboard-hub", "2026-08", "CLOSED", 2026, 8, 20)
+	seedExpenseOnInvoice(t, db, "ws-dashboard-hub", "card-dashboard-hub", "invoice-dashboard-hub", 5000, 1, 1, "tx-dashboard-hub")
+
+	dashboard := BuildDashboardData(db, "user-ws-dashboard-hub", "ws-dashboard-hub")
+	if len(dashboard.Cards) != 1 {
+		t.Fatalf("dashboard cards = %d, want 1", len(dashboard.Cards))
+	}
+	if got, want := dashboard.Cards[0].Href, "/faturas?ano=2026&cartao=card-dashboard-hub&mes=8"; got != want {
+		t.Fatalf("dashboard card hub URL = %q, want %q", got, want)
+	}
+}
+
+func TestFaturasIndexMonthOptionsAreContinuousAroundSelection(t *testing.T) {
+	selected := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
+	options := buildFaturasIndexMonthOptions("card-1", selected, "desc")
+	if len(options) != 12 {
+		t.Fatalf("month options = %d, want 12", len(options))
+	}
+	if options[0].Label != "Abr" || options[0].Year != "2026" {
+		t.Fatalf("first rolling option = %+v, want Abr/2026", options[0])
+	}
+	if options[5].Label != "Set" || !options[5].IsActive {
+		t.Fatalf("selected month must remain centered: %+v", options[5])
+	}
+	if options[11].Label != "Mar" || options[11].Year != "2027" {
+		t.Fatalf("rolling range must continue into next year: %+v", options[11])
+	}
+}
+
+func TestFaturaMonthOptionsAreContinuousAroundSelection(t *testing.T) {
+	selected := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
+	options := buildFaturaMonthOptionsAt("card-1", selected, "asc", selected)
+
+	if len(options) != 12 {
+		t.Fatalf("month options = %d, want 12", len(options))
+	}
+	if options[0].Label != "Abr" || options[0].Year != "2026" {
+		t.Fatalf("first rolling option = %+v, want Abr/2026", options[0])
+	}
+	if !options[5].IsActive || options[5].Label != "Set" {
+		t.Fatalf("selected month must remain in the sixth position: %+v", options[5])
+	}
+	for _, expected := range []string{"/cartoes/card-1/faturas?", "mes=3", "ano=2027", "ordem=asc"} {
+		if !strings.Contains(options[11].URL, expected) {
+			t.Fatalf("cross-year option lost %q in URL %q", expected, options[11].URL)
+		}
+	}
+}
+
+func TestFaturaMonthNavigationUsesSharedContinuousRail(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join(projectRoot(), "templates/pages/faturas.html"))
+	if err != nil {
+		t.Fatalf("read faturas template: %v", err)
+	}
+	for _, expected := range []string{`data-month-selector`, `id="monthRail"`, `data-month-rail-viewport`, `data-month-current="true"`, `class="month-btn btn-tactile"`} {
+		if !strings.Contains(string(content), expected) {
+			t.Fatalf("invoice month navigation missing shared rail marker %q", expected)
+		}
+	}
+
+	script, err := os.ReadFile(filepath.Join(projectRoot(), "assets/js/faturas.js"))
+	if err != nil {
+		t.Fatalf("read faturas script: %v", err)
+	}
+	if strings.Contains(string(script), "centerActiveMonth") {
+		t.Fatal("invoice page must use the global month-selector behavior, not a duplicate centering handler")
+	}
+}
+
+func TestFaturasJSRebindsPaymentActionsAfterOOBSummarySwap(t *testing.T) {
+	raw, err := os.ReadFile(resolveTemplatePath(t, "assets/js/faturas.js"))
+	if err != nil {
+		t.Fatalf("read faturas.js: %v", err)
+	}
+	script := string(raw)
+	for _, expected := range []string{"htmx:oobAfterSwap", "invoice-summary", "bindPaymentModals"} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("faturas.js missing OOB payment rebind contract %q", expected)
+		}
+	}
+}
+
+func TestFaturasTooltipScriptShowsActionHelpOnHoverAndFocus(t *testing.T) {
+	raw, err := os.ReadFile(resolveTemplatePath(t, "assets/js/tooltip.js"))
+	if err != nil {
+		t.Fatalf("read tooltip.js: %v", err)
+	}
+	script := string(raw)
+	for _, expected := range []string{"data-tooltip-hover", "pointerenter", "pointerleave", "trigger.addEventListener('focus'", "trigger.addEventListener('blur'"} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("tooltip.js missing immediate action tooltip contract %q", expected)
+		}
+	}
+
+	lifecycleRaw, err := os.ReadFile(resolveTemplatePath(t, "assets/js/htmx-lifecycle.js"))
+	if err != nil {
+		t.Fatalf("read htmx lifecycle: %v", err)
+	}
+	if !strings.Contains(string(lifecycleRaw), "initHoverTooltips") {
+		t.Fatal("HTMX lifecycle must initialize hover tooltips after swaps")
+	}
+}
 
 func TestHandlePagarFaturaLiquidaFaturaDebitaContaECriaProxima(t *testing.T) {
 	db := openTestDB(t)
@@ -1433,7 +1838,9 @@ func TestInvoiceTransactionsTemplateHighlightsLoadMoreAndKeepsMetadataWithoutTag
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	tpl := template.Must(template.New("faturas").Parse(string(content)))
+	tpl := template.Must(template.New("faturas").Funcs(template.FuncMap{
+		"assetPath": func(path string) string { return path },
+	}).Parse(string(content)))
 
 	var buf strings.Builder
 	if err := tpl.ExecuteTemplate(&buf, "invoice-transactions", data); err != nil {
@@ -1783,6 +2190,89 @@ func TestInvoiceDatesForReferenceClampDays293031(t *testing.T) {
 				t.Fatalf("due date = %s, want %s", due, tc.wantDueDate)
 			}
 		})
+	}
+}
+
+func TestCalculateInvoiceDatesClosingDayStartsNextCycle(t *testing.T) {
+	cases := []struct {
+		name            string
+		date            string
+		closingDay      int64
+		dueDay          int64
+		wantReference   string
+		wantClosingDate string
+		wantDueDate     string
+	}{
+		{
+			name:            "dia anterior permanece na fatura corrente",
+			date:            "2026-08-31",
+			closingDay:      1,
+			dueDay:          7,
+			wantReference:   "2026-09",
+			wantClosingDate: "2026-09-01",
+			wantDueDate:     "2026-09-07",
+		},
+		{
+			name:            "dia do fechamento inicia a proxima fatura",
+			date:            "2026-09-01",
+			closingDay:      1,
+			dueDay:          7,
+			wantReference:   "2026-10",
+			wantClosingDate: "2026-10-01",
+			wantDueDate:     "2026-10-07",
+		},
+		{
+			name:            "dia seguinte permanece na proxima fatura",
+			date:            "2026-09-02",
+			closingDay:      1,
+			dueDay:          7,
+			wantReference:   "2026-10",
+			wantClosingDate: "2026-10-01",
+			wantDueDate:     "2026-10-07",
+		},
+		{
+			name:            "fechamento 31 usa o ultimo dia de fevereiro",
+			date:            "2026-02-28",
+			closingDay:      31,
+			dueDay:          7,
+			wantReference:   "2026-04",
+			wantClosingDate: "2026-03-31",
+			wantDueDate:     "2026-04-07",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			purchaseDate, err := time.ParseInLocation("2006-01-02", tc.date, time.UTC)
+			if err != nil {
+				t.Fatalf("parse date: %v", err)
+			}
+			purchaseDate = purchaseDate.Add(12 * time.Hour)
+
+			closingUnix, dueUnix, reference := calculateInvoiceDates(purchaseDate, tc.closingDay, tc.dueDay)
+			if reference != tc.wantReference {
+				t.Fatalf("reference = %q, want %q", reference, tc.wantReference)
+			}
+			if got := time.Unix(closingUnix, 0).UTC().Format("2006-01-02"); got != tc.wantClosingDate {
+				t.Fatalf("closing date = %q, want %q", got, tc.wantClosingDate)
+			}
+			if got := time.Unix(dueUnix, 0).UTC().Format("2006-01-02"); got != tc.wantDueDate {
+				t.Fatalf("due date = %q, want %q", got, tc.wantDueDate)
+			}
+		})
+	}
+}
+
+func TestInvoiceCycleBoundsUseClosingDayAsNextCycleBoundary(t *testing.T) {
+	startUnix, endUnix := invoiceCycleBoundsForReference(2026, time.September, 1, 7)
+	wantStart := time.Date(2026, time.August, 1, 12, 0, 0, 0, time.UTC).Unix()
+	wantEnd := time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC).Unix()
+
+	if startUnix != wantStart {
+		t.Fatalf("cycle start = %s, want %s", time.Unix(startUnix, 0).UTC(), time.Unix(wantStart, 0).UTC())
+	}
+	if endUnix != wantEnd {
+		t.Fatalf("cycle end = %s, want %s", time.Unix(endUnix, 0).UTC(), time.Unix(wantEnd, 0).UTC())
 	}
 }
 
@@ -2234,7 +2724,9 @@ func TestFaturaTemplateExpoeFluxoPagamentoParcial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	tpl := template.Must(template.New("faturas").Parse(string(content)))
+	tpl := template.Must(template.New("faturas").Funcs(template.FuncMap{
+		"assetPath": func(path string) string { return path },
+	}).Parse(string(content)))
 
 	var buf strings.Builder
 	if err := tpl.ExecuteTemplate(&buf, "invoice-summary", data); err != nil {
@@ -2254,6 +2746,14 @@ func TestFaturaTemplateExpoeFluxoPagamentoParcial(t *testing.T) {
 		"Saldo estimado da conta após pagamento",
 		"R$ 750,00",
 		"Pagamento parcial",
+		"Reembolso geral",
+		"grid-cols-1 gap-2.5 pt-1 md:grid-cols-3 md:gap-2",
+		"cb-invoice-action",
+		"cb-invoice-action-label",
+		"<span>Quitar</span><span>fatura</span>",
+		"<span>Pagamento</span><span>parcial</span>",
+		"<span>Reembolso</span><span>geral</span>",
+		`hx-get="/cartoes/faturas/reembolso?invoice_id=invoice-2026-08"`,
 		`name="payment_mode" value="partial"`,
 		`name="payment_amount"`,
 		`name="payment_date"`,
@@ -2261,6 +2761,31 @@ func TestFaturaTemplateExpoeFluxoPagamentoParcial(t *testing.T) {
 	} {
 		if !strings.Contains(html, expected) {
 			t.Fatalf("missing %q in invoice summary html: %s", expected, html)
+		}
+	}
+}
+
+func TestInvoiceActionButtonsAdaptFromMobileRowsToDesktopTiles(t *testing.T) {
+	raw, err := os.ReadFile(resolveTemplatePath(t, "assets/css/design-system.css"))
+	if err != nil {
+		t.Fatalf("read design system: %v", err)
+	}
+	stylesheet := string(raw)
+	for _, expected := range []string{
+		".cb-invoice-action {",
+		"min-height: 3.25rem",
+		"flex-direction: row",
+		"padding: 0.75rem 1rem",
+		"font-size: 0.6875rem",
+		"text-transform: none",
+		".cb-invoice-action-label",
+		"content: \" \"",
+		"min-height: 7rem",
+		"flex-direction: column",
+		"font-size: 0.5625rem",
+	} {
+		if !strings.Contains(stylesheet, expected) {
+			t.Fatalf("invoice action style missing %q", expected)
 		}
 	}
 }
@@ -2287,7 +2812,9 @@ func TestFaturaTemplateSemContaCorrenteBloqueiaQuitacao(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	tpl := template.Must(template.New("faturas").Parse(string(content)))
+	tpl := template.Must(template.New("faturas").Funcs(template.FuncMap{
+		"assetPath": func(path string) string { return path },
+	}).Parse(string(content)))
 
 	var buf strings.Builder
 	if err := tpl.ExecuteTemplate(&buf, "invoice-summary", data); err != nil {

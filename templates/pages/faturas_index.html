@@ -1,0 +1,58 @@
+{{define "faturas-index-page"}}
+{{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/dashboard.css"}}">
+<link rel="stylesheet" href="{{assetPath "/assets/css/faturas.css"}}">
+<link rel="stylesheet" href="{{assetPath "/assets/css/faturas-index.css"}}">
+{{template "app-v2-document-head-end" .}}
+<main id="main-content" class="cb-v2-main cb-v2-faturas-main cb-v2-faturas-index-main" data-faturas-index data-page-section="invoices" data-page-title="Faturas">
+    {{template "app-v2-appbar" .}}
+    <div class="cb-v2-content cb-v2-faturas-content cb-v2-faturas-index-content">
+        <header class="cb-v2-faturas-header cb-v2-faturas-index-header">
+            <div>
+                <p class="cb-v2-eyebrow">Cartões e faturas</p>
+                <h1>Faturas</h1>
+                <p>Selecione um cartão para acompanhar sua fatura e agir sobre o período.</p>
+            </div>
+            <a class="cb-v2-faturas-back" href="/configuracoes/cartoes"><i data-lucide="settings-2"></i><span>Gerenciar cartões</span></a>
+        </header>
+        {{if .Cards}}
+        <section class="cb-faturas-index-period" aria-label="Competência selecionada">
+            <a href="{{.PreviousURL}}" class="cb-faturas-index-period-button" aria-label="Mês anterior"><i data-lucide="chevron-left"></i></a>
+            <div class="cb-faturas-index-months" aria-label="Meses de {{.PeriodLabel}}">
+                {{range .MonthOptions}}<a href="{{.URL}}" class="cb-faturas-index-month{{if .IsActive}} is-active{{else if .IsCurrent}} is-current{{end}}"{{if .IsActive}} aria-current="date"{{end}}><strong>{{.Label}}</strong><small>{{.Year}}</small></a>{{end}}
+            </div>
+            <a href="{{.NextURL}}" class="cb-faturas-index-period-button" aria-label="Mês seguinte"><i data-lucide="chevron-right"></i></a>
+        </section>
+        {{template "faturas-index-card-rail" .}}
+        <div id="faturas-index-detail" class="cb-faturas-index-detail" aria-live="polite">
+            {{if .HasSelectedInvoice}}{{template "faturas-content" .SelectedFatura}}{{else}}{{template "faturas-empty-content" .SelectedEmpty}}{{end}}
+        </div>
+        {{else}}
+        <section class="cb-v2-empty-card cb-faturas-index-empty" aria-label="Nenhum cartão cadastrado">
+            <i data-lucide="credit-card"></i><span><strong>Cadastre seu primeiro cartão</strong><small>Ao cadastrar um cartão, suas faturas aparecerão aqui.</small></span><a href="/configuracoes/cartoes">Cadastrar cartão</a>
+        </section>
+        {{end}}
+    </div>
+</main>
+{{template "app-v2-shell-after-main" .}}
+{{template "lancamentos-global-overlays" .}}
+<script src="/assets/js/swipe.js"></script>
+<script src="/assets/js/predictive-description.js"></script>
+<script src="/assets/js/modals-global.js"></script>
+<script src="{{assetPath "/assets/js/payment-confirm.js"}}"></script>
+<script src="{{assetPath "/assets/js/faturas.js"}}"></script>
+<script src="{{assetPath "/assets/js/faturas-index.js"}}"></script>
+{{template "app-v2-document-end" .}}
+{{end}}
+
+{{define "faturas-index-card-rail"}}
+<section id="faturas-index-card-rail" class="cb-v2-card-section cb-faturas-index-card-section" hx-get="{{.RefreshCardsURL}}" hx-trigger="refreshFinancials from:body" hx-select="#faturas-index-card-rail" hx-swap="outerHTML">
+    <div class="cb-v2-section-heading"><div><p class="cb-v2-eyebrow">{{.PeriodLabel}}</p><h2>Cartões</h2></div><div class="cb-v2-carousel-controls" aria-label="Navegar pelos cartões"><button type="button" class="cb-v2-carousel-control" data-faturas-card-prev aria-label="Cartões anteriores"><i data-lucide="chevron-left"></i></button><button type="button" class="cb-v2-carousel-control" data-faturas-card-next aria-label="Próximos cartões"><i data-lucide="chevron-right"></i></button></div></div>
+    <div class="cb-v2-card-carousel cb-faturas-index-carousel">
+        <div class="cb-v2-card-rail" data-faturas-card-rail role="region" aria-label="Cartões de crédito">
+            {{range .Cards}}{{template "credit-card-tile" .}}{{end}}
+        </div>
+        <div class="cb-v2-carousel-dots" data-faturas-carousel-dots aria-hidden="true">{{range .Cards}}<span{{if .IsSelected}} class="is-active"{{end}}></span>{{end}}</div>
+    </div>
+</section>
+{{end}}
