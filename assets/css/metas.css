@@ -51,22 +51,38 @@ details > summary::marker { display: none; content: ""; }
 .metas-progress {
   height: 0.375rem;
   width: 100%;
+  margin: 0;
   overflow: hidden;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
   border-radius: 9999px;
-  background-color: var(--cb-surface-3);
+  background-color: var(--metas-progress-track, var(--cb-surface-3));
+  --metas-progress-track: var(--cb-surface-3);
+  --metas-progress-value: var(--cb-accent);
 }
 
-.metas-progress-fill {
-  height: 100%;
+.metas-progress::-webkit-progress-bar {
+  background-color: var(--metas-progress-track);
   border-radius: 9999px;
-  width: clamp(0%, calc(var(--pct, 0) * 1%), 100%);
+}
+
+.metas-progress::-webkit-progress-value {
+  background-color: var(--metas-progress-value);
+  border-radius: 9999px;
   transition: width 0.5s ease;
 }
 
-.metas-progress-accent { background-color: var(--cb-accent); }
-.metas-progress-healthy { background-color: var(--cb-success); }
-.metas-progress-warning { background-color: var(--cb-warning); }
-.metas-progress-danger  { background-color: var(--cb-danger); }
+.metas-progress::-moz-progress-bar {
+  background-color: var(--metas-progress-value);
+  border-radius: 9999px;
+  transition: width 0.5s ease;
+}
+
+.metas-progress-accent { --metas-progress-value: var(--cb-accent); }
+.metas-progress-healthy { --metas-progress-value: var(--cb-success); }
+.metas-progress-warning { --metas-progress-value: var(--cb-warning); }
+.metas-progress-danger  { --metas-progress-value: var(--cb-danger); }
 
 .metas-pace {
   display: inline-flex;
@@ -335,7 +351,7 @@ details > summary::marker { display: none; content: ""; }
   transform: translateY(-1px);
 }
 
-.cb-v2-metas-panels .metas-progress { background: var(--v2-progress-track); }
+.cb-v2-metas-panels .metas-progress { --metas-progress-track: var(--v2-progress-track); }
 .cb-v2-metas-panels .cb-meta-menu-toggle:hover { background: var(--v2-surface-hover); }
 .cb-v2-metas-panels .metas-menu-panel {
   border-color: var(--v2-border-strong);

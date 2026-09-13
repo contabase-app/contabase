@@ -20,6 +20,24 @@ if [[ "$snapshot_version" != "$release_version" ]]; then
   exit 1
 fi
 
+expected_go_version="go$(awk '$1 == "go" { print $2; exit }' go.mod)"
+if [[ ! "$expected_go_version" =~ ^go[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "invalid Go version in go.mod: $expected_go_version" >&2
+  exit 1
+fi
+
+verify_artifact_toolchain() {
+  local artifact_name="$1"
+  local artifact_path="$2"
+  local artifact_go_version
+  artifact_go_version="$(go version "$artifact_path" | awk '{ print $NF }')"
+  if [[ "$artifact_go_version" != "$expected_go_version" ]]; then
+    echo "Go toolchain mismatch for $artifact_name: got=$artifact_go_version want=$expected_go_version" >&2
+    exit 1
+  fi
+  printf '%s toolchain: %s\n' "$artifact_name" "$artifact_go_version"
+}
+
 dist_dir="${RELEASE_DIST_DIR:-$repo_root/release-dist}"
 work_dir="${RELEASE_WORK_DIR:-$repo_root/release-work}"
 case "$dist_dir" in
@@ -43,6 +61,9 @@ TZ=UTC go test ./... -count=1
 echo "== Go vet =="
 go vet ./...
 
+echo "== Go vulnerability scan =="
+go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+
 echo "== Native build =="
 go build ./...
 
@@ -60,11 +81,15 @@ for arch in amd64 arm64; do
     -o "$bundle_root/contabase" \
     ./cmd/server
 
+  verify_artifact_toolchain "contabase-linux-$arch" "$bundle_root/contabase"
+
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
     -trimpath \
     -ldflags="-s -w" \
     -o "$bundle_root/admin" \
     ./cmd/admin
+
+  verify_artifact_toolchain "admin-linux-$arch" "$bundle_root/admin"
 
   cp -R templates assets "$bundle_root/"
   cp LICENSE "$bundle_root/LICENSE"

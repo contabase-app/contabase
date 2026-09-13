@@ -5,7 +5,8 @@
 //   data-contabase-overlay          — marks element as overlay
 //   data-overlay-priority="<number>" — higher = closes first on Back/ESC (default 0)
 //   data-overlay-close="<fnName>"   — global function name to call on close (optional)
-//   data-overlay-close-method="display|hidden|remove|innerHTML" — fallback close method
+//   data-overlay-close-method="hidden|remove|innerHTML" — fallback close method
+//   ("display" remains a legacy alias for "hidden".)
 //
 // Key design principles (D6):
 // - ONE sentinel per overlay stack (idempotent overlayDidOpen)
@@ -36,7 +37,7 @@
             priority: 220,
             detect: function() {
                 var el = document.getElementById('global-confirm-modal');
-                return el && el.style.display !== 'none' && !el.classList.contains('hidden');
+                return el && !el.classList.contains('hidden');
             },
             close: function() { if (typeof window.cancelGlobalConfirm === 'function') window.cancelGlobalConfirm(); }
         },
@@ -45,12 +46,13 @@
             priority: 219,
             detect: function() {
                 var el = document.getElementById('global-delete-scope-modal');
-                return el && el.style.display !== 'none' && !el.classList.contains('hidden');
+                return el && !el.classList.contains('hidden');
             },
             close: function() {
                 var el = document.getElementById('global-delete-scope-modal');
                 if (el) {
-                    el.style.display = 'none';
+                    el.classList.add('hidden');
+                    el.classList.remove('flex');
                     window._gDeleteState = { txId: null };
                 }
             }
@@ -121,15 +123,10 @@
     function _isVisible(el, method) {
         if (!el) return false;
         switch (method) {
-            case 'display':
-                if (el.style.display === 'none') return false;
-                try {
-                    if (window.getComputedStyle(el).display === 'none') return false;
-                } catch (ignore) {}
-                return true;
             case 'remove': return true;
             case 'innerHTML': return el.innerHTML.trim() !== '';
             case 'translate': return !el.classList.contains('translate-x-full');
+            case 'display':
             case 'hidden':
             default: {
                 // Fase lancamentos-overlay-sentinel-filtro-fantasma:
@@ -153,7 +150,7 @@
             return;
         }
         switch (method) {
-            case 'display': el.style.display = 'none'; break;
+            case 'display': el.classList.add('hidden'); break;
             case 'remove': el.remove(); break;
             case 'innerHTML': el.innerHTML = ''; break;
             case 'hidden': el.classList.add('hidden'); break;
@@ -261,7 +258,6 @@
                     } : null,
                     topElementState: topEl ? {
                         classList: Array.from(topEl.classList).join(' '),
-                        styleDisplay: topEl.style.display,
                         hidden: topEl.classList.contains('hidden'),
                         innerHTMLLength: (topEl.innerHTML || '').length,
                         computedDisplay: (function() {

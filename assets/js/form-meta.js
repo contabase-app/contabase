@@ -45,14 +45,11 @@
             var iconEl = document.getElementById('categoriaIcon' + suffix);
             if (iconEl) {
                 iconEl.setAttribute('data-lucide', icon);
-                iconEl.style.color = color;
+                if (typeof window.applyRuntimeColor === 'function') window.applyRuntimeColor(iconEl, color);
             }
 
             var wrap = document.getElementById('categoriaIconWrap' + suffix);
-            if (wrap) {
-                wrap.style.borderColor = color;
-                wrap.style.backgroundColor = color + '22';
-            }
+            if (wrap && typeof window.applyRuntimeColor === 'function') window.applyRuntimeColor(wrap, color);
 
             if (typeof window.refreshIcons === 'function') window.refreshIcons();
         };
@@ -87,14 +84,11 @@
         var iconEl = document.getElementById('categoriaIcon' + suffix);
         if (iconEl) {
             iconEl.setAttribute('data-lucide', suffix === '_caixinha' ? 'piggy-bank' : 'tag');
-            iconEl.style.color = '#6b7280';
+            if (typeof window.applyRuntimeColor === 'function') window.applyRuntimeColor(iconEl, '#6B7280');
         }
 
         var wrap = document.getElementById('categoriaIconWrap' + suffix);
-        if (wrap) {
-            wrap.style.borderColor = '#6b7280';
-            wrap.style.backgroundColor = 'rgba(107, 114, 128, 0.13)';
-        }
+        if (wrap && typeof window.applyRuntimeColor === 'function') window.applyRuntimeColor(wrap, '#6B7280');
 
         if (typeof window.refreshIcons === 'function') window.refreshIcons();
     }

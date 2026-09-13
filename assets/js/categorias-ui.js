@@ -129,15 +129,11 @@
     var currentType = st.currentTab;
     Array.from(macroSel.options).forEach(function(opt) {
       var forTypes = (opt.dataset.catMacroForType || '').split(',').map(function(s) { return s.trim(); });
-      if (forTypes.indexOf(currentType) >= 0) {
-        opt.style.display = '';
-      } else {
-        opt.style.display = 'none';
-      }
+      opt.hidden = forTypes.indexOf(currentType) < 0;
     });
 
     var visibleValues = Array.from(macroSel.options)
-      .filter(function(o) { return o.style.display !== 'none'; })
+      .filter(function(o) { return !o.hidden; })
       .map(function(o) { return o.value; });
 
     if (visibleValues.indexOf(st.selectMacro) < 0 && visibleValues.indexOf('') >= 0) {
@@ -203,12 +199,12 @@
 
     if (collapsed) {
       children.classList.add('hidden');
-      if (chevron) chevron.style.transform = 'rotate(-90deg)';
+      if (chevron) chevron.classList.add('-rotate-90');
       toggleBtn.setAttribute('aria-label', 'Expandir subcategorias');
       toggleBtn.setAttribute('aria-expanded', 'false');
     } else {
       children.classList.remove('hidden');
-      if (chevron) chevron.style.transform = '';
+      if (chevron) chevron.classList.remove('-rotate-90');
       toggleBtn.setAttribute('aria-label', 'Ocultar subcategorias');
       toggleBtn.setAttribute('aria-expanded', 'true');
     }

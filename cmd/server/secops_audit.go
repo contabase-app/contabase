@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/smtp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/contabase-app/contabase/internal/security"
@@ -19,7 +21,39 @@ import (
 
 type requestContextKey string
 
-const authContextKey requestContextKey = "auth_context"
+const (
+	authContextKey          requestContextKey = "auth_context"
+	securityAuditContextKey requestContextKey = "security_audit_context"
+)
+
+// securityAuditRequestContext crosses middleware request copies. Authentication
+// derives a new request context, while the audit middleware needs the resulting
+// identity only after that handler returns. The carrier is installed internally
+// before authentication and cannot be populated from request headers.
+type securityAuditRequestContext struct {
+	mu            sync.RWMutex
+	auth          authContext
+	authenticated bool
+}
+
+func (c *securityAuditRequestContext) setAuthenticated(ctx authContext) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.auth = ctx
+	c.authenticated = true
+}
+
+func (c *securityAuditRequestContext) authenticatedContext() (authContext, bool) {
+	if c == nil {
+		return authContext{}, false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.auth, c.authenticated
+}
 
 const (
 	secOpsEventHeader      = "X-SecOps-Event"
@@ -110,6 +144,8 @@ func logSecurityEvent(db *sql.DB, r *http.Request, workspaceID, userID, eventTyp
 
 func (s *securityAuditService) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auditContext := &securityAuditRequestContext{}
+		r = r.WithContext(context.WithValue(r.Context(), securityAuditContextKey, auditContext))
 		recorder := &statusRecorder{ResponseWriter: w}
 		next.ServeHTTP(recorder, r)
 
@@ -122,7 +158,7 @@ func (s *securityAuditService) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx, _ := authContextFromRequest(r)
+		ctx, _ := auditContext.authenticatedContext()
 		workspaceID := strings.TrimSpace(ctx.ActiveWorkspaceID)
 		userID := strings.TrimSpace(ctx.UserID)
 		if err := s.recordEvent(r, recorder.secOpsHeaders(), workspaceID, userID, status, event); err != nil {
@@ -344,7 +380,7 @@ func classifySecurityEvent(r *http.Request, status int, headers http.Header) (se
 	}
 
 	switch {
-	case r.Method == http.MethodGet && path == "/admin/backups/exportar":
+	case status >= http.StatusOK && status < http.StatusMultipleChoices && r.Method == http.MethodGet && path == "/admin/backups/exportar":
 		return securityEvent{Type: "backup.export", Severity: "INFO", Status: "success"}, true
 	case r.Method == http.MethodPost && (path == "/admin/workspaces/salvar" || path == "/admin/workspaces/editar" || path == "/admin/usuarios/salvar" || path == "/admin/usuarios/reset-senha" || path == "/admin/usuarios/desativar-2fa" || path == "/admin/usuarios/revogar-sessoes"):
 		return securityEvent{Type: "workspace.edit", Severity: "INFO", Status: "success"}, true
@@ -365,15 +401,16 @@ func loginAttemptEmail(r *http.Request) string {
 
 func secOpsMetadataFromHeaders(headers http.Header) map[string]any {
 	out := make(map[string]any)
+	metaHeaderPrefix := http.CanonicalHeaderKey(secOpsMetaHeaderPrefix)
 	for key, values := range headers {
 		if len(values) == 0 {
 			continue
 		}
 		canonical := http.CanonicalHeaderKey(key)
-		if !strings.HasPrefix(canonical, secOpsMetaHeaderPrefix) {
+		if !strings.HasPrefix(canonical, metaHeaderPrefix) {
 			continue
 		}
-		metaKey := strings.ToLower(strings.TrimPrefix(canonical, secOpsMetaHeaderPrefix))
+		metaKey := strings.ToLower(strings.TrimPrefix(canonical, metaHeaderPrefix))
 		metaKey = strings.ReplaceAll(metaKey, "-", "_")
 		if metaKey == "" {
 			continue
@@ -417,13 +454,12 @@ func defaultSeverityForEvent(eventType string) string {
 	}
 }
 
-func authContextFromRequest(r *http.Request) (authContext, bool) {
-	raw := r.Context().Value(authContextKey)
-	if raw == nil {
-		return authContext{}, false
+func recordAuthenticatedAuditContext(r *http.Request, ctx authContext) {
+	if r == nil {
+		return
 	}
-	ctx, ok := raw.(authContext)
-	return ctx, ok
+	carrier, _ := r.Context().Value(securityAuditContextKey).(*securityAuditRequestContext)
+	carrier.setAuthenticated(ctx)
 }
 
 func (n *smtpNotifier) sendAsync(cfg smtpAlertConfig, subject, body string) {
@@ -505,9 +541,12 @@ func (r *statusRecorder) secOpsHeaders() http.Header {
 
 func (r *statusRecorder) captureAndStripSecOpsHeaders() {
 	headers := r.Header()
+	eventHeader := http.CanonicalHeaderKey(secOpsEventHeader)
+	severityHeader := http.CanonicalHeaderKey(secOpsSeverityHeader)
+	metaHeaderPrefix := http.CanonicalHeaderKey(secOpsMetaHeaderPrefix)
 	for key, values := range headers {
 		canonical := http.CanonicalHeaderKey(key)
-		if canonical != secOpsEventHeader && canonical != secOpsSeverityHeader && !strings.HasPrefix(canonical, secOpsMetaHeaderPrefix) {
+		if canonical != eventHeader && canonical != severityHeader && !strings.HasPrefix(canonical, metaHeaderPrefix) {
 			continue
 		}
 		if r.capturedSecOpsHeads == nil {

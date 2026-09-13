@@ -10,7 +10,7 @@
                     <i data-lucide="undo-2" class="h-5 w-5"></i>
                 </span>
                 <div class="min-w-0 flex-1">
-                    <h2 id="invoice-refund-title" class="text-base font-bold text-[var(--cb-text-main)]">Informar reembolso geral</h2>
+                    <h2 id="invoice-refund-title" class="text-base font-bold text-[var(--cb-text-main)]">{{if .IsEditing}}Editar reembolso geral{{else}}Informar reembolso geral{{end}}</h2>
                     <p class="truncate text-xs text-[var(--cb-text-muted)]">{{.CardName}} · Fatura {{.Reference}}</p>
                 </div>
                 <button type="button" class="sheet-close-btn flex h-11 w-11 items-center justify-center rounded-full border" data-onclick="closeBottomSheet" aria-label="Fechar">
@@ -30,20 +30,20 @@
                     </div>
                     {{end}}
                 </div>
-                <form hx-post="/cartoes/faturas/reembolso" hx-swap="none" hx-indicator="#htmx-indicator" class="sheet-form space-y-4">
+                <form hx-post="{{.FormAction}}" hx-swap="none" hx-indicator="#htmx-indicator" class="sheet-form space-y-4">
                     <input type="hidden" name="invoice_id" value="{{.InvoiceID}}">
                     <label class="block">
                         <span class="sheet-label mb-1.5 block">Valor reembolsado</span>
-                        <input name="valor" type="text" inputmode="numeric" autocomplete="off" placeholder="R$ 0,00" data-money-mask class="sheet-control h-14 w-full rounded-xl border px-4 text-lg font-bold outline-none" required autofocus>
+                        <input name="valor" type="text" inputmode="numeric" autocomplete="off" value="{{if .IsEditing}}R$ {{.CurrentAmountInput}}{{end}}" placeholder="R$ 0,00" data-money-mask class="sheet-control h-14 w-full rounded-xl border px-4 text-lg font-bold outline-none" required autofocus>
                     </label>
                     <label class="block">
                         <span class="sheet-label mb-1.5 block">Descrição</span>
-                        <input name="descricao" type="text" maxlength="240" placeholder="Ex: Estorno de compra em fatura anterior" class="sheet-control h-14 w-full rounded-xl border px-4 text-sm outline-none" required>
+                        <input name="descricao" type="text" maxlength="240" value="{{.Description}}" placeholder="Ex: Estorno de compra em fatura anterior" class="sheet-control h-14 w-full rounded-xl border px-4 text-sm outline-none" required>
                     </label>
                     <p class="text-xs leading-relaxed text-[var(--cb-text-muted)]">Use quando o crédito pertence a uma compra de outra fatura. O valor reduz apenas o saldo desta fatura e não será contabilizado como receita.</p>
                     <button type="submit" class="cb-button cb-button-primary btn-tactile flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold">
                         <i data-lucide="check" class="h-4 w-4"></i>
-                        Registrar reembolso
+                        {{.SubmitLabel}}
                     </button>
                 </form>
             </div>

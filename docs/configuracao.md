@@ -111,6 +111,8 @@ Se o proxy está no mesmo servidor, normalmente use:
 TRUSTED_PROXIES=127.0.0.1,::1
 ```
 
+O valor deve conter somente o IP ou CIDR do hop que abre a conexão direta com o ContaBase. Esse proxy precisa acrescentar o IP do par que observou em `X-Forwarded-For`; o ContaBase percorre essa cadeia da direita para a esquerda e ignora hops listados em `TRUSTED_PROXIES`. Ele não usa `X-Real-IP` nem `CF-Connecting-IP` como alternativa. Não exponha diretamente a porta de origem do ContaBase à Internet.
+
 Se você não usa proxy reverso, pode deixar vazio:
 
 ```env

@@ -100,13 +100,9 @@ window.applyWorkspaceTypeUI = function(workspaceType) {
 window.applyWorkspaceVisualTheme = function(payload) {
     if (!payload) return;
     var body = document.body;
-    var accent = payload.accent_rgb || '';
-    var accentSoft = payload.accent_soft_rgb || '';
-    var accentText = payload.accent_text_rgb || '';
-    if (!accent || !accentSoft || !accentText) return;
-    body.style.setProperty('--ws-accent-rgb', accent);
-    body.style.setProperty('--ws-accent-soft-rgb', accentSoft);
-    body.style.setProperty('--ws-accent-text-rgb', accentText);
+    var theme = payload.theme_token || '';
+    if (['violeta', 'laranja', 'amarelo', 'azul', 'esmeralda', 'rosa'].indexOf(theme) === -1) return;
+    body.dataset.workspaceTheme = theme;
     body.classList.add('workspace-theme-active');
 };
 

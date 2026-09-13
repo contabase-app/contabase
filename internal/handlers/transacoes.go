@@ -11,7 +11,7 @@ import (
 	"io"
 	"log"
 	"math"
-	"mime/multipart"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -221,6 +221,7 @@ type TransacaoReciboData struct {
 
 type TransactionHandler struct {
 	DB               *sql.DB
+	WriterDB         *sql.DB
 	Templates        TemplateEngine
 	WorkspaceID      string
 	UserID           string
@@ -234,6 +235,7 @@ type recurringEditTestHooks struct {
 	afterPreflight     func(scope string)
 	beforeAllRuleWrite func(tx *sql.Tx) error
 	afterInvoiceMove   func(tx *sql.Tx) error
+	afterWriterBegin   func()
 }
 
 func (h *TransactionHandler) HandleNovaTransacao(w http.ResponseWriter, r *http.Request) {
@@ -342,7 +344,11 @@ func (h *TransactionHandler) HandleTransacaoPreditiva(w http.ResponseWriter, r *
 func (h *TransactionHandler) HandleSalvarTransacao(w http.ResponseWriter, r *http.Request) {
 	t0 := time.Now()
 	reqID := perfReqID()
-	if err := parseMultipartOrForm(r); err != nil {
+	if err := parseMultipartOrForm(w, r); err != nil {
+		if transactionRequestTooLarge(err) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		respondTransactionValidationError(w, "Não foi possível ler o formulário do lançamento. Recarregue e tente novamente.", http.StatusBadRequest)
 		return
 	}
@@ -2554,7 +2560,11 @@ func (h *TransactionHandler) queryFormCategories() ([]FormCategory, error) {
 }
 
 func (h *TransactionHandler) queryPredictiveSuggestions(q string, txType string) ([]PredictiveSuggestion, error) {
-	normalizedQ := normalizeAccents(q)
+	trimmedQ := strings.TrimSpace(q)
+	if len([]rune(trimmedQ)) < 2 {
+		return nil, nil
+	}
+	normalizedQ := normalizeAccents(trimmedQ)
 	rows, err := h.DB.Query(`
 		WITH matched AS (
 			SELECT
@@ -2570,32 +2580,35 @@ func (h *TransactionHandler) queryPredictiveSuggestions(q string, txType string)
 				t.date,
 				t.created_at,
 				COUNT(*) OVER (
-					PARTITION BY lower(t.description)
+					PARTITION BY lower(trim(t.description))
 				) AS frequency,
 				ROW_NUMBER() OVER (
-					PARTITION BY lower(t.description), t.account_id, COALESCE(t.category_id, ''), COALESCE(t.destination_account_id, '')
+					PARTITION BY lower(trim(t.description)), t.account_id, COALESCE(t.category_id, ''), COALESCE(t.destination_account_id, '')
 					ORDER BY t.date DESC, t.created_at DESC
 				) AS rn
 			FROM transactions t
-			INNER JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+			INNER JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id AND a.archived_at IS NULL
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
-			LEFT JOIN accounts da ON da.id = t.destination_account_id AND da.workspace_id = t.workspace_id
+			LEFT JOIN accounts da ON da.id = t.destination_account_id AND da.workspace_id = t.workspace_id AND da.archived_at IS NULL
 			WHERE t.workspace_id = ?
 				AND t.type = ?
 				AND (t.category_id IS NOT NULL OR t.type = 'TRANSFER')
+				AND COALESCE(t.is_recurring_exception, 0) = 0
 				AND trim(t.description) <> ''
+				AND (t.type <> 'TRANSFER' OR da.id IS NOT NULL)
 		)
 		SELECT description, account_id, account_name, account_type, category_id, category_name, destination_account_id, destination_account_name, type, frequency
 		FROM matched
 		WHERE rn = 1
 		ORDER BY frequency DESC, date DESC, created_at DESC
-		LIMIT 100
 	`, h.WorkspaceID, txType)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
+	// Search the ranked stream before limiting matching suggestions. Limiting
+	// candidates here hides existing descriptions as the workspace history grows.
 	var suggestions []PredictiveSuggestion
 	for rows.Next() {
 		var s PredictiveSuggestion
@@ -2941,14 +2954,25 @@ func ensureContactInWorkspaceTx(tx *sql.Tx, contactID, workspaceID string) error
 	return nil
 }
 
-func parseMultipartOrForm(r *http.Request) error {
-	if err := r.ParseMultipartForm(12 << 20); err != nil && err != http.ErrNotMultipart {
+const (
+	transactionMultipartMaxBytes    = 11 << 20
+	transactionMultipartMemoryBytes = 1 << 20
+)
+
+func parseMultipartOrForm(w http.ResponseWriter, r *http.Request) error {
+	r.Body = http.MaxBytesReader(w, r.Body, transactionMultipartMaxBytes)
+	if err := r.ParseMultipartForm(transactionMultipartMemoryBytes); err != nil && err != http.ErrNotMultipart {
 		return err
 	}
 	if r.MultipartForm == nil {
 		return r.ParseForm()
 	}
 	return nil
+}
+
+func transactionRequestTooLarge(err error) bool {
+	var maxErr *http.MaxBytesError
+	return errors.As(err, &maxErr)
 }
 
 func formAllowsBoxOverdraft(r *http.Request) bool {
@@ -2979,7 +3003,7 @@ func respondTransactionFieldError(w http.ResponseWriter, field, message string) 
 }
 
 func (h *TransactionHandler) persistTransactionUpload(r *http.Request) (string, error) {
-	file, header, err := r.FormFile("anexo")
+	file, _, err := r.FormFile("anexo")
 	if err != nil {
 		if err == http.ErrMissingFile {
 			return "", nil
@@ -2999,14 +3023,11 @@ func (h *TransactionHandler) persistTransactionUpload(r *http.Request) (string, 
 	if len(content) == 0 {
 		return "", nil
 	}
-	if !isAllowedUploadContent(content, header) {
+	ext, ok := transactionAttachmentExtension(content)
+	if !ok {
 		return "", fmt.Errorf("unsupported file type")
 	}
 
-	ext := normalizedUploadExt(header.Filename)
-	if ext == "" {
-		ext = ".bin"
-	}
 	fileName := uuid.NewString() + ext
 	relPath := filepath.Join("uploads", h.WorkspaceID, fileName)
 	fullPath := filepath.Join(paths.TransactionUploadsDir(h.WorkspaceID), fileName)
@@ -3079,11 +3100,12 @@ func (h *TransactionHandler) HandleDownloadAnexo(w http.ResponseWriter, r *http.
 	}
 
 	name := filepath.Base(fullPath)
-	disposition := "inline"
-	if r.URL.Query().Get("download") == "1" {
+	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": name})
+	if disposition == "" {
 		disposition = "attachment"
 	}
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, name))
+	w.Header().Set("Content-Disposition", disposition)
+	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, name, info.ModTime(), file)
 }
@@ -3120,35 +3142,23 @@ func safeAttachmentFullPath(workspaceID, relPath string) (string, error) {
 	return fullAbs, nil
 }
 
-func isAllowedUploadContent(content []byte, header *multipart.FileHeader) bool {
-	contentType := http.DetectContentType(content)
-	allowedTypes := map[string]struct{}{
-		"application/pdf": {},
-		"image/jpeg":      {},
-		"image/png":       {},
-		"image/webp":      {},
+// transactionAttachmentExtension derives the stored filename from recognized
+// content, never from the user-controlled upload name. The download handler
+// still forces every attachment to be a binary download as defense in depth
+// for files that were stored before this rule existed.
+func transactionAttachmentExtension(content []byte) (string, bool) {
+	switch http.DetectContentType(content) {
+	case "application/pdf":
+		return ".pdf", true
+	case "image/jpeg":
+		return ".jpg", true
+	case "image/png":
+		return ".png", true
+	case "image/webp":
+		return ".webp", true
+	default:
+		return "", false
 	}
-	if _, ok := allowedTypes[contentType]; ok {
-		return true
-	}
-	ext := normalizedUploadExt(header.Filename)
-	allowedExt := map[string]struct{}{
-		".pdf":  {},
-		".jpg":  {},
-		".jpeg": {},
-		".png":  {},
-		".webp": {},
-	}
-	_, ok := allowedExt[ext]
-	return ok
-}
-
-func normalizedUploadExt(name string) string {
-	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(name)))
-	if ext == ".jpeg" {
-		return ".jpg"
-	}
-	return ext
 }
 
 func parseDate(s string) (int64, error) {
@@ -3161,11 +3171,12 @@ func parseDate(s string) (int64, error) {
 
 func formatCurrencyCents(cents int64) string {
 	negative := cents < 0
-	if negative {
-		cents = -cents
-	}
 	reais := cents / 100
 	c := cents % 100
+	if negative {
+		reais = -reais
+		c = -c
+	}
 	reaisStr := formatInt(reais)
 	centsStr := fmt.Sprintf(",%02d", c)
 	if negative {
@@ -4971,6 +4982,7 @@ type TransactionRow struct {
 	RefundedAmountDisplay       string
 	EffectiveAmountDisplay      string
 	RefundDescriptions          string
+	RefundEntries               []TransactionRefundRow
 	PaidAt                      *int64
 	PaidAtDisplay               string
 	ScheduledPaymentAt          *int64
@@ -6120,13 +6132,23 @@ func (h *TransactionHandler) renderInvoiceContextOOB(w http.ResponseWriter, r *h
 		return err
 	}
 	invoiceData.OOB = true
+	configureFaturaForIndexRequest(&invoiceData, r)
 	dashboardData := BuildDashboardData(h.DB, h.UserID, h.WorkspaceID)
 	dashboardData.OOB = true
 
 	var buf bytes.Buffer
-	for _, templateName := range []string{"invoice-summary", "invoice-transactions"} {
-		if err := h.Templates.ExecuteTemplate(&buf, templateName, invoiceData); err != nil {
+	if invoiceData.IsFaturasIndex {
+		// The hub has a card rail above this region. Replacing its complete
+		// detail composition makes all financial values settle atomically.
+		invoiceData.OOBContent = true
+		if err := h.Templates.ExecuteTemplate(&buf, "faturas-content", invoiceData); err != nil {
 			return err
+		}
+	} else {
+		for _, templateName := range []string{"invoice-summary", "invoice-transactions"} {
+			if err := h.Templates.ExecuteTemplate(&buf, templateName, invoiceData); err != nil {
+				return err
+			}
 		}
 	}
 	SortDashboardCardsByPaymentPriority(dashboardData.Cards, time.Now())
@@ -6433,7 +6455,11 @@ func (h *TransactionHandler) HandleGerarRecibo(w http.ResponseWriter, r *http.Re
 }
 
 func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *http.Request, id string) {
-	if err := parseMultipartOrForm(r); err != nil {
+	if err := parseMultipartOrForm(w, r); err != nil {
+		if transactionRequestTooLarge(err) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid form", http.StatusBadRequest)
 		return
 	}
@@ -10637,12 +10663,23 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 		paymentDateUnix = cwd.LegacyUnix()
 	}
 
-	tx, err := h.DB.Begin()
+	if h.WriterDB == nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	tx, err := h.WriterDB.BeginTx(r.Context(), nil)
 	if err != nil {
+		if h.respondTogglePagamentoPreCommitError(w, r, err) {
+			return
+		}
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	defer tx.Rollback()
+	if h.testHooks != nil && h.testHooks.afterWriterBegin != nil {
+		h.testHooks.afterWriterBegin()
+	}
 
 	var trType, paymentStatus string
 	var amount int64
@@ -10661,6 +10698,9 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 		WHERE t.id = ? AND t.workspace_id = ?
 	`, id, h.WorkspaceID).Scan(&trType, &amount, &accountID, &destAccountID, &paymentStatus, &txDate, &accType, &currentPaidAt, &invoiceID, &recurringRuleID)
 	if err != nil {
+		if h.respondTogglePagamentoPreCommitError(w, r, err) {
+			return
+		}
 		http.Error(w, "transação não encontrada", http.StatusNotFound)
 		return
 	}
@@ -10675,6 +10715,9 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 		}
 		if errors.Is(err, errTransactionMutationTargetInvalid) {
 			http.Error(w, "transação não encontrada", http.StatusNotFound)
+			return
+		}
+		if h.respondTogglePagamentoPreCommitError(w, r, err) {
 			return
 		}
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -10700,14 +10743,17 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 			`, now, id, h.WorkspaceID)
 		}
 		if err != nil {
+			if h.respondTogglePagamentoPreCommitError(w, r, err) {
+				return
+			}
 			http.Error(w, "erro ao atualizar agendamento", http.StatusInternalServerError)
 			return
 		}
 		if err := tx.Commit(); err != nil {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			respondTogglePagamentoIndeterminateOutcome(w, r)
 			return
 		}
-		h.respondPaymentStatusChange(w, r, id)
+		h.respondTogglePagamentoCommitted(w, r, id)
 		return
 	}
 
@@ -10730,10 +10776,10 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 	// explicit payment_action=pending can undo a payment.
 	if paymentStatus == newStatus {
 		if err := tx.Commit(); err != nil {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			respondTogglePagamentoIndeterminateOutcome(w, r)
 			return
 		}
-		h.respondPaymentStatusChange(w, r, id)
+		h.respondTogglePagamentoCommitted(w, r, id)
 		return
 	}
 
@@ -10751,6 +10797,9 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 			FROM accounts
 			WHERE id = ? AND workspace_id = ? AND archived_at IS NULL AND type != ?
 		`, requestedPaymentAccountID, h.WorkspaceID, models.AccountTypeCreditCard).Scan(&nextAccountType); err != nil {
+			if h.respondTogglePagamentoPreCommitError(w, r, err) {
+				return
+			}
 			http.Error(w, "conta de pagamento não encontrada", http.StatusBadRequest)
 			return
 		}
@@ -10765,6 +10814,9 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 
 	if paymentStatus == "paid" {
 		if err := services.ReverseBalanceEffect(tx, h.WorkspaceID, trType, accType, amount, accountID, dest, now); err != nil {
+			if h.respondTogglePagamentoPreCommitError(w, r, err) {
+				return
+			}
 			http.Error(w, "erro ao estornar", http.StatusInternalServerError)
 			return
 		}
@@ -10782,6 +10834,9 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 				if errors.Is(err, errInvoiceStateTransitionConflict) {
 					http.Error(w, "estado financeiro da fatura não permite esta alteração", http.StatusConflict)
 				} else {
+					if h.respondTogglePagamentoPreCommitError(w, r, err) {
+						return
+					}
 					http.Error(w, "erro na fatura", http.StatusInternalServerError)
 				}
 				return
@@ -10804,32 +10859,79 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 		WHERE id = ? AND workspace_id = ? AND status = ?
 	`, newStatus, nextAccountID, nextInvoiceID, now, paidAt, paidDateCivil, id, h.WorkspaceID, paymentStatus)
 	if err != nil {
+		if h.respondTogglePagamentoPreCommitError(w, r, err) {
+			return
+		}
 		http.Error(w, "erro ao atualizar status", http.StatusInternalServerError)
 		return
 	}
 
 	if err := h.insertTransactionStatusHistoryTx(tx, id, paymentStatus, newStatus, currentPaidAt, paidAt, now); err != nil {
+		if h.respondTogglePagamentoPreCommitError(w, r, err) {
+			return
+		}
 		http.Error(w, "erro ao registrar histórico", http.StatusInternalServerError)
 		return
 	}
 
 	if newStatus == "paid" {
 		if err := services.ApplyBalanceEffect(tx, h.WorkspaceID, trType, nextAccountType, newStatus, amount, nextAccountID, dest, now); err != nil {
+			if h.respondTogglePagamentoPreCommitError(w, r, err) {
+				return
+			}
 			http.Error(w, "erro ao aplicar saldo", http.StatusInternalServerError)
 			return
 		}
 	}
 
 	if err := reconcileInvoicesForTransactionsTx(tx, h.WorkspaceID, []string{id}, now); err != nil {
+		if h.respondTogglePagamentoPreCommitError(w, r, err) {
+			return
+		}
 		respondInvoiceCompositionError(w, err)
 		return
 	}
 
 	if err := tx.Commit(); err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		respondTogglePagamentoIndeterminateOutcome(w, r)
 		return
 	}
 
+	h.respondTogglePagamentoCommitted(w, r, id)
+}
+
+const togglePagamentoIndeterminateMessage = "Não foi possível confirmar o resultado. Atualize os dados antes de tentar novamente."
+
+func (h *TransactionHandler) respondTogglePagamentoPreCommitError(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case requestContextError(r.Context().Err()) || requestContextError(err):
+		http.Error(w, "request timeout", http.StatusRequestTimeout)
+		return true
+	case sqliteContention(err):
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "serviço temporariamente indisponível", http.StatusServiceUnavailable)
+		return true
+	default:
+		return false
+	}
+}
+
+func respondTogglePagamentoIndeterminateOutcome(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Reswap", "none")
+		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"refreshFinancials":null,"mostrarAlerta":%q}`, togglePagamentoIndeterminateMessage))
+		w.WriteHeader(http.StatusTooManyRequests)
+		return
+	}
+	http.Error(w, togglePagamentoIndeterminateMessage, http.StatusConflict)
+}
+
+func (h *TransactionHandler) respondTogglePagamentoCommitted(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	h.respondPaymentStatusChange(w, r, id)
 }
 
@@ -10856,8 +10958,6 @@ func (h *TransactionHandler) respondPaymentStatusChange(w http.ResponseWriter, r
 	w.Header().Set("HX-Trigger", "refreshFinancials")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	_ = h.renderLancamentosResumoOOB(&buf, r)
-
 	buf.WriteTo(w)
 }
 
@@ -10875,6 +10975,44 @@ func validateSchedulableTransaction(trType, paymentStatus, accountType, accountI
 		return fmt.Errorf("faturas e compras de cartão não podem ser agendadas")
 	}
 	return nil
+}
+
+const bulkDeleteRecurringBlockedMessage = "Lançamentos recorrentes devem ser excluídos individualmente. Nenhum lançamento foi excluído."
+
+func respondBulkDeleteRecurringBlocked(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("HX-Reswap", "none")
+	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"mostrarAlerta":%q}`, bulkDeleteRecurringBlockedMessage))
+	w.WriteHeader(http.StatusConflict)
+	fmt.Fprint(w, bulkDeleteRecurringBlockedMessage)
+}
+
+// A presença do vínculo recorrente basta para bloquear o lote: o guard não
+// interpreta validade de regra, sequência, status ou exceção. Exclusão de
+// ocorrência recorrente é sempre individual (persiste skip no caminho unitário).
+func (h *TransactionHandler) ensureBulkDeleteHasNoRecurringTransactionsTx(tx *sql.Tx, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	query := `
+		SELECT 1
+		FROM transactions
+		WHERE workspace_id = ?
+		  AND id IN (` + sqlPlaceholders(len(ids)) + `)
+		  AND (recurring_rule_id IS NOT NULL OR series_id IS NOT NULL)
+		LIMIT 1
+	`
+	args := make([]interface{}, 0, len(ids)+1)
+	args = append(args, h.WorkspaceID)
+	args = appendStrings(args, ids)
+	var found int
+	if err := tx.QueryRow(query, args...).Scan(&found); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	return errRecurringDeleteConflict
 }
 
 func (h *TransactionHandler) HandleBulkDelete(w http.ResponseWriter, r *http.Request) {
@@ -10905,6 +11043,14 @@ func (h *TransactionHandler) HandleBulkDelete(w http.ResponseWriter, r *http.Req
 		_ = h.logSecurityTamperingTx(tx, r, "bulk_delete_workspace_scope_violation", ids)
 		_ = tx.Rollback()
 		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := h.ensureBulkDeleteHasNoRecurringTransactionsTx(tx, ids); err != nil {
+		if errors.Is(err, errRecurringDeleteConflict) {
+			respondBulkDeleteRecurringBlocked(w)
+			return
+		}
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	if err := h.ensureTransactionsMutableByInvoiceStatusTx(tx, ids); err != nil {
@@ -12218,21 +12364,21 @@ func containsString(items []string, target string) bool {
 	return false
 }
 
-func (h *TransactionHandler) projectedAccumulatedBalance(currentBalance int64, selectedMonth time.Time) int64 {
+func (h *TransactionHandler) projectedAccumulatedBalance(currentBalance int64, selectedMonth time.Time) (int64, error) {
 	return calcProjectedAccumulatedBalance(h.DB, h.WorkspaceID, currentBalance, selectedMonth)
 }
 
-func (h *TransactionHandler) projectedTransactionNetCashFlowBetween(today, tomorrow, end time.Time) int64 {
+func (h *TransactionHandler) projectedTransactionNetCashFlowBetween(today, tomorrow, end time.Time) (int64, error) {
 	return calcProjectedTransactionNetCashFlowBetween(h.DB, h.WorkspaceID, today, tomorrow, end)
 }
 
-func (h *TransactionHandler) projectedRecurringNetCashFlowBetween(start, end time.Time) int64 {
+func (h *TransactionHandler) projectedRecurringNetCashFlowBetween(start, end time.Time) (int64, error) {
 	return calcProjectedRecurringNetCashFlowBetween(h.DB, h.WorkspaceID, start, end)
 }
 
-func projectedRecurringRuleNet(trType string, amount int64, startDate int64, frequency string, rangeStart, rangeEnd time.Time) int64 {
+func projectedRecurringRuleNet(trType string, amount int64, startDate int64, frequency string, rangeStart, rangeEnd time.Time) (int64, error) {
 	if trType == "TRANSFER" {
-		return 0
+		return 0, nil
 	}
 
 	occurrence := time.Unix(startDate, 0).UTC()
@@ -12243,10 +12389,14 @@ func projectedRecurringRuleNet(trType string, amount int64, startDate int64, fre
 	for i := 0; i < 40 && occurrence.Before(rangeEnd); i++ {
 		prevDate := occurrence.Unix()
 		if occurrence.After(time.Unix(startDate, 0).UTC()) && !occurrence.Before(rangeStart) {
+			var err error
 			if trType == "INCOME" {
-				total += amount
+				total, err = addReportInt64Checked(total, amount)
 			} else if trType == "EXPENSE" {
-				total -= amount
+				total, err = subInt64Checked(total, amount)
+			}
+			if err != nil {
+				return 0, err
 			}
 		}
 		occurrence = nextRecurrenceDate(occurrence, frequency)
@@ -12254,7 +12404,7 @@ func projectedRecurringRuleNet(trType string, amount int64, startDate int64, fre
 			break
 		}
 	}
-	return total
+	return total, nil
 }
 
 func nextRecurrenceDate(t time.Time, frequency string) time.Time {
@@ -12295,13 +12445,13 @@ func recurrenceDateFromOffset(startUnix int64, frequency string, offset int64) i
 	return occurrence.Unix()
 }
 
-func (h *TransactionHandler) paidNetCashFlowBetween(start, end time.Time) int64 {
+func (h *TransactionHandler) paidNetCashFlowBetween(start, end time.Time) (int64, error) {
 	return calcPaidNetCashFlowBetween(h.DB, h.WorkspaceID, start, end)
 }
 
 // Package-level accumulated balance helpers (shared by /lancamentos and /relatorios).
 
-func calcProjectedAccumulatedBalance(db *sql.DB, workspaceID string, currentBalance int64, selectedMonth time.Time) int64 {
+func calcProjectedAccumulatedBalance(db *sql.DB, workspaceID string, currentBalance int64, selectedMonth time.Time) (int64, error) {
 	today := AppCivilDateUTC(time.Now())
 	tomorrow := today.AddDate(0, 0, 1)
 	currentMonth := appMonthStartUTC(time.Now())
@@ -12309,16 +12459,30 @@ func calcProjectedAccumulatedBalance(db *sql.DB, workspaceID string, currentBala
 	selectedEnd := selectedStart.AddDate(0, 1, 0)
 
 	if !selectedStart.Before(currentMonth) {
-		return currentBalance +
-			calcProjectedTransactionNetCashFlowBetween(db, workspaceID, today, tomorrow, selectedEnd) +
-			calcProjectedRecurringNetCashFlowBetween(db, workspaceID, today, selectedEnd)
+		projectedFlow, err := calcProjectedTransactionNetCashFlowBetween(db, workspaceID, today, tomorrow, selectedEnd)
+		if err != nil {
+			return 0, err
+		}
+		recurringFlow, err := calcProjectedRecurringNetCashFlowBetween(db, workspaceID, today, selectedEnd)
+		if err != nil {
+			return 0, err
+		}
+		withProjected, err := addReportInt64Checked(currentBalance, projectedFlow)
+		if err != nil {
+			return 0, err
+		}
+		return addReportInt64Checked(withProjected, recurringFlow)
 	}
-	return currentBalance - calcPaidNetCashFlowBetween(db, workspaceID, selectedEnd, today)
+	paidFlow, err := calcPaidNetCashFlowBetween(db, workspaceID, selectedEnd, today)
+	if err != nil {
+		return 0, err
+	}
+	return subInt64Checked(currentBalance, paidFlow)
 }
 
-func calcProjectedTransactionNetCashFlowBetween(db *sql.DB, workspaceID string, today, tomorrow, end time.Time) int64 {
+func calcProjectedTransactionNetCashFlowBetween(db *sql.DB, workspaceID string, today, tomorrow, end time.Time) (int64, error) {
 	var incomeTotal, expenseTotal int64
-	db.QueryRow(`
+	if err := db.QueryRow(`
 		SELECT COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
 		       COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END), 0)
 		FROM transactions t
@@ -12329,18 +12493,20 @@ func calcProjectedTransactionNetCashFlowBetween(db *sql.DB, workspaceID string, 
 		  	status = 'pending'
 		  	OR date >= ?
 		  )
-	`, workspaceID, today.Unix(), end.Unix(), tomorrow.Unix()).Scan(&incomeTotal, &expenseTotal)
-	return incomeTotal - expenseTotal
+	`, workspaceID, today.Unix(), end.Unix(), tomorrow.Unix()).Scan(&incomeTotal, &expenseTotal); err != nil {
+		return 0, err
+	}
+	return subInt64Checked(incomeTotal, expenseTotal)
 }
 
-func calcProjectedRecurringNetCashFlowBetween(db *sql.DB, workspaceID string, start, end time.Time) int64 {
+func calcProjectedRecurringNetCashFlowBetween(db *sql.DB, workspaceID string, start, end time.Time) (int64, error) {
 	rows, err := db.Query(`
 		SELECT id, type, amount, start_date, frequency
 		FROM recurring_rules
 		WHERE workspace_id = ? AND active = 1 AND start_date < ?
 	`, workspaceID, end.Unix())
 	if err != nil {
-		return 0
+		return 0, err
 	}
 	defer rows.Close()
 
@@ -12355,15 +12521,15 @@ func calcProjectedRecurringNetCashFlowBetween(db *sql.DB, workspaceID string, st
 	for rows.Next() {
 		var item recurringRuleProjection
 		if err := rows.Scan(&item.id, &item.trType, &item.amount, &item.startDate, &item.frequency); err != nil {
-			continue
+			return 0, err
 		}
 		rules = append(rules, item)
 	}
 	if err := rows.Err(); err != nil {
-		return 0
+		return 0, err
 	}
 	if err := rows.Close(); err != nil {
-		return 0
+		return 0, err
 	}
 
 	var total int64
@@ -12376,23 +12542,35 @@ func calcProjectedRecurringNetCashFlowBetween(db *sql.DB, workspaceID string, st
 			  AND recurring_rule_id = ?
 			  AND date >= ?
 			  AND date < ?
-		`, workspaceID, rule.id, start.Unix(), end.Unix()).Scan(&projectedCount); err == nil && projectedCount > 0 {
+		`, workspaceID, rule.id, start.Unix(), end.Unix()).Scan(&projectedCount); err != nil {
+			return 0, err
+		}
+		if projectedCount > 0 {
 			continue
 		}
-		total += projectedRecurringRuleNet(rule.trType, rule.amount, rule.startDate, rule.frequency, start, end)
+		ruleNet, err := projectedRecurringRuleNet(rule.trType, rule.amount, rule.startDate, rule.frequency, start, end)
+		if err != nil {
+			return 0, err
+		}
+		total, err = addReportInt64Checked(total, ruleNet)
+		if err != nil {
+			return 0, err
+		}
 	}
-	return total
+	return total, nil
 }
 
-func calcPaidNetCashFlowBetween(db *sql.DB, workspaceID string, start, end time.Time) int64 {
+func calcPaidNetCashFlowBetween(db *sql.DB, workspaceID string, start, end time.Time) (int64, error) {
 	var incomeTotal, expenseTotal int64
-	db.QueryRow(`
+	if err := db.QueryRow(`
 		SELECT COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
 		       COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END), 0)
 		FROM transactions t
 		WHERE t.workspace_id = ? AND t.status = 'paid' AND t.date >= ? AND t.date < ?
-	`, workspaceID, start.Unix(), end.Unix()).Scan(&incomeTotal, &expenseTotal)
-	return incomeTotal - expenseTotal
+	`, workspaceID, start.Unix(), end.Unix()).Scan(&incomeTotal, &expenseTotal); err != nil {
+		return 0, err
+	}
+	return subInt64Checked(incomeTotal, expenseTotal)
 }
 
 func buildMonthOptions(accountFilter string, selectedMonth time.Time, filters LancamentosFilters) []MonthOption {

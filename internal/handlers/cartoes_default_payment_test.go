@@ -37,6 +37,9 @@ func TestCreateCardWithDefaultPaymentAccount(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
+	if got := rr.Header().Get("HX-Trigger-After-Swap"); got != "workspaceColorsChanged" {
+		t.Fatalf("HX-Trigger-After-Swap = %q, want workspaceColorsChanged", got)
+	}
 
 	var defaultPaymentAccountID sql.NullString
 	err := db.QueryRow(`
@@ -76,6 +79,9 @@ func TestCreateCardWithoutDefaultPaymentAccount(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("HX-Trigger-After-Swap"); got != "workspaceColorsChanged" {
+		t.Fatalf("HX-Trigger-After-Swap = %q, want workspaceColorsChanged", got)
 	}
 
 	var defaultPaymentAccountID sql.NullString
@@ -151,6 +157,9 @@ func TestEditCardSetsDefaultPaymentAccount(t *testing.T) {
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("HX-Trigger-After-Swap"); got != "workspaceColorsChanged" {
+		t.Fatalf("HX-Trigger-After-Swap = %q, want workspaceColorsChanged", got)
 	}
 
 	var defaultPaymentAccountID sql.NullString

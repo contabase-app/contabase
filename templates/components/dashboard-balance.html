@@ -2,7 +2,7 @@
 <section id="dashboard-balance" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} hx-trigger="refreshFinancials from:body" hx-get="/" hx-select="#dashboard-balance" hx-swap="outerHTML" class="cb-card-dense flex flex-col gap-3 w-full h-full">
     <div class="flex items-center justify-between gap-2">
         <span class="cb-text-micro font-bold text-[var(--cb-text-muted)] uppercase tracking-wider truncate">Posição financeira</span>
-        <span class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--cb-accent)] shrink-0" style="background: color-mix(in srgb, var(--cb-accent) 12%, transparent)">
+        <span class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--cb-accent)] shrink-0 cb-tone-accent cb-tone-icon">
             <i data-lucide="landmark" class="w-3.5 h-3.5"></i>
         </span>
     </div>

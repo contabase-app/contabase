@@ -16,11 +16,6 @@
     </div>
 </main>
 {{template "app-v2-shell-after-main" .}}
-{{template "lancamentos-global-overlays" .}}
-<script src="/assets/js/swipe.js"></script>
-<script src="/assets/js/predictive-description.js"></script>
-<script src="/assets/js/modals-global.js"></script>
-<script src="{{assetPath "/assets/js/payment-confirm.js"}}"></script>
 {{template "app-v2-document-end" .}}
 {{end}}
 
@@ -53,7 +48,7 @@
         <div class="cb-card-dense flex flex-col gap-1.5 min-w-0">
             <div class="flex items-center justify-between gap-1">
                 <span class="cb-section-title truncate">A Pagar</span>
-                <span class="flex h-5 w-5 items-center justify-center rounded-md shrink-0" style="background: color-mix(in srgb, var(--cb-danger) 12%, transparent)">
+                <span class="flex h-5 w-5 items-center justify-center rounded-md shrink-0 cb-tone-danger cb-tone-icon">
                     <i data-lucide="arrow-up-right" class="w-3 h-3 text-[var(--cb-danger)]"></i>
                 </span>
             </div>
@@ -62,7 +57,7 @@
         <div class="cb-card-dense flex flex-col gap-1.5 min-w-0">
             <div class="flex items-center justify-between gap-1">
                 <span class="cb-section-title truncate">A Receber</span>
-                <span class="flex h-5 w-5 items-center justify-center rounded-md shrink-0" style="background: color-mix(in srgb, var(--cb-success) 12%, transparent)">
+                <span class="flex h-5 w-5 items-center justify-center rounded-md shrink-0 cb-tone-success cb-tone-icon">
                     <i data-lucide="arrow-down-left" class="w-3 h-3 text-[var(--cb-success)]"></i>
                 </span>
             </div>
@@ -71,7 +66,7 @@
         <div class="col-span-2 sm:col-span-1 cb-card-dense flex flex-col gap-1.5 min-w-0">
             <div class="flex items-center justify-between gap-1">
                 <span class="cb-section-title truncate">Inadimplência</span>
-                <span class="flex h-5 w-5 items-center justify-center rounded-md shrink-0" style="background: color-mix(in srgb, var(--cb-warning) 12%, transparent)">
+                <span class="flex h-5 w-5 items-center justify-center rounded-md shrink-0 cb-tone-warning cb-tone-icon">
                     <i data-lucide="alert-triangle" class="w-3 h-3 text-[var(--cb-warning)]"></i>
                 </span>
             </div>
@@ -133,10 +128,8 @@
         {{if .IsInvoice}}
         <article id="invoice-{{.ID}}" class="relative mb-1.5 overflow-hidden rounded-xl {{if .IsOverdue}}overdue{{end}}">
             <a href="/cartoes/faturas/{{.ID}}"
-               class="cb-row-dense flex items-center gap-3 text-left{{if .IsOverdue}}{{if $isPagar}} overdue-payable{{else}} overdue-receivable{{end}}{{end}}"
-               {{if .IsOverdue}}style="{{if $isPagar}}border-color: color-mix(in srgb, var(--cb-danger) 20%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 6%, var(--cb-surface-1)){{else}}border-color: color-mix(in srgb, var(--cb-warning) 20%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-warning) 6%, var(--cb-surface-1)){{end}}"{{end}}>
-                <span class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                      style="{{if $isPagar}}background: color-mix(in srgb, var(--cb-danger) 12%, transparent); color: var(--cb-danger){{else}}background: color-mix(in srgb, var(--cb-text-subtle) 12%, transparent); color: var(--cb-text-subtle){{end}}"
+               class="cb-row-dense flex items-center gap-3 text-left{{if .IsOverdue}}{{if $isPagar}} overdue-payable cb-overdue-payable{{else}} overdue-receivable cb-overdue-receivable{{end}}{{end}}">
+                <span class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 {{if $isPagar}}cb-invoice-payable-icon{{else}}cb-invoice-receivable-icon{{end}}"
                       title="Fatura de cartão">
                     <i data-lucide="credit-card" class="w-4 h-4"></i>
                 </span>
@@ -180,7 +173,7 @@
             <div data-swipe-bg-right class="absolute inset-y-0 right-0 flex w-28 origin-right items-center justify-end rounded-r-xl bg-[var(--cb-success)] px-6 opacity-0 pointer-events-none">
                 <i data-lucide="check-circle-2" class="w-5 h-5 text-white"></i>
             </div>
-            <div data-swipe-content class="cb-row-dense flex items-center gap-3"{{if .IsOverdue}} style="{{if $isPagar}}border-color: color-mix(in srgb, var(--cb-danger) 20%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 6%, var(--cb-surface-1)){{else}}border-color: color-mix(in srgb, var(--cb-warning) 20%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-warning) 6%, var(--cb-surface-1)){{end}}"{{end}}>
+            <div data-swipe-content class="cb-row-dense flex items-center gap-3{{if .IsOverdue}}{{if $isPagar}} cb-overdue-payable{{else}} cb-overdue-receivable{{end}}{{end}}">
                 <button type="button"
                     data-payment-confirm
                     class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all hover:opacity-80 tx-status-{{.StatusTone}}"

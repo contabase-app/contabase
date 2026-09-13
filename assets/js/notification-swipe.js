@@ -1,15 +1,20 @@
 (function() {
   function initNotificationSwipe() {
+    var motion = window.cbRuntimeMotion;
+    if (!motion || !motion.supported) return;
     document.querySelectorAll('[data-swipe-notification]').forEach(function(card) {
+      if (card.dataset.notificationSwipeInit === 'true') return;
       var delBtn = card.querySelector('[data-swipe-delete]');
       if (!delBtn) return;
+      card.dataset.notificationSwipeInit = 'true';
 
       var startX = 0, currentX = 0, swiping = false;
 
       card.addEventListener('touchstart', function(e) {
         startX = e.touches[0].clientX;
+        currentX = 0;
         swiping = true;
-        card.style.transition = 'none';
+        motion.cancel(card);
       }, { passive: true });
 
       card.addEventListener('touchmove', function(e) {
@@ -17,28 +22,31 @@
         var diff = e.touches[0].clientX - startX;
         if (diff > 0) diff = 0;
         currentX = diff;
-        card.style.transform = 'translateX(' + currentX + 'px)';
+        motion.hold(card, { transform: 'translateX(' + currentX + 'px)', opacity: '1' });
       }, { passive: true });
 
       card.addEventListener('touchend', function() {
         swiping = false;
         if (currentX < -100) {
-          card.style.transition = 'all 0.3s ease';
-          card.style.transform = 'translateX(-100%)';
-          card.style.opacity = '0';
-          setTimeout(function() {
-            delBtn.click();
-          }, 300);
+          motion.exit(card, { transform: 'translateX(-100%)', opacity: '0' }, {
+            duration: 300,
+            easing: 'ease',
+            complete: function() { delBtn.click(); }
+          });
         } else {
-          card.style.transition = 'all 0.3s ease';
-          card.style.transform = 'translateX(0)';
+          motion.toBase(card, { transform: 'translateX(0px)', opacity: '1' }, {
+            duration: 300,
+            easing: 'ease'
+          });
         }
       });
 
       card.addEventListener('touchcancel', function() {
         swiping = false;
-        card.style.transition = 'all 0.3s ease';
-        card.style.transform = 'translateX(0)';
+        motion.toBase(card, { transform: 'translateX(0px)', opacity: '1' }, {
+          duration: 300,
+          easing: 'ease'
+        });
       });
     });
   }

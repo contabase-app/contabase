@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -709,36 +711,75 @@ func QueryInvoiceCashEventsByDueDate(db *sql.DB, workspaceID string, period Repo
 	return events, nil
 }
 
-func SumCashEvents(events []CashEvent) int64 {
+var errReportAggregateOverflow = errors.New("report aggregate exceeds int64 range")
+
+// addReportInt64Checked reaproveita addInt64Checked e traduz o overflow para o
+// sentinel de relatórios, mantendo um único erro identificável nesta cadeia.
+func addReportInt64Checked(a, b int64) (int64, error) {
+	sum, err := addInt64Checked(a, b)
+	if err != nil {
+		return 0, errReportAggregateOverflow
+	}
+	return sum, nil
+}
+
+// subInt64Checked subtrai dois int64 detectando overflow/underflow antes da
+// operação, sem saturação ou wrap. Trata b == MinInt64 separadamente porque
+// nesse caso -b não é representável em int64.
+func subInt64Checked(a, b int64) (int64, error) {
+	if b == math.MinInt64 {
+		if a >= 0 {
+			return 0, errReportAggregateOverflow
+		}
+		return a - b, nil
+	}
+	return addReportInt64Checked(a, -b)
+}
+
+func SumCashEvents(events []CashEvent) (int64, error) {
 	var total int64
 	for _, ev := range events {
+		var err error
 		if ev.IsIncome {
-			total += ev.AmountCents
+			total, err = addReportInt64Checked(total, ev.AmountCents)
 		} else {
-			total -= ev.AmountCents
+			total, err = subInt64Checked(total, ev.AmountCents)
+		}
+		if err != nil {
+			return 0, err
 		}
 	}
-	return total
+	return total, nil
 }
 
-func SumCashIncome(events []CashEvent) int64 {
-	var total int64
-	for _, ev := range events {
-		if ev.IsIncome {
-			total += ev.AmountCents
-		}
-	}
-	return total
-}
-
-func SumCashExpense(events []CashEvent) int64 {
+func SumCashIncome(events []CashEvent) (int64, error) {
 	var total int64
 	for _, ev := range events {
 		if !ev.IsIncome {
-			total += ev.AmountCents
+			continue
 		}
+		next, err := addReportInt64Checked(total, ev.AmountCents)
+		if err != nil {
+			return 0, err
+		}
+		total = next
 	}
-	return total
+	return total, nil
+}
+
+func SumCashExpense(events []CashEvent) (int64, error) {
+	var total int64
+	for _, ev := range events {
+		if ev.IsIncome {
+			continue
+		}
+		next, err := addReportInt64Checked(total, ev.AmountCents)
+		if err != nil {
+			return 0, err
+		}
+		total = next
+	}
+	return total, nil
 }
 
 func BuildProjectedBalanceUntilPeriodEnd(db *sql.DB, workspaceID string, periodEnd int64, now time.Time) (int64, bool, error) {

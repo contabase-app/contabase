@@ -59,6 +59,10 @@ type ConfiguracoesHandler struct {
 	SessionToken        string
 }
 
+func triggerWorkspaceColorsChanged(w http.ResponseWriter) {
+	w.Header().Set("HX-Trigger-After-Swap", "workspaceColorsChanged")
+}
+
 type ConfiguracoesData struct {
 	Title               string
 	UserName            string
@@ -515,29 +519,16 @@ func (h *ConfiguracoesHandler) HandlePasswordChange(w http.ResponseWriter, r *ht
 		h.renderPasswordChangeArea(w, "Erro interno. Tente novamente.", "")
 		return
 	}
-	now := time.Now().Unix()
-	if _, err := h.DB.Exec(`
-		UPDATE users
-		SET password_hash = ?,
-		    must_change_password = 0,
-		    temporary_password_expires_at = NULL,
-		    updated_at = ?
-		WHERE id = ?
-	`, string(hash), now, h.UserID); err != nil {
-		h.renderPasswordChangeArea(w, "Não foi possível atualizar a senha.", "")
-		return
-	}
-
 	var currentToken string
 	if cookie, err := r.Cookie(httpcookies.Session); err == nil {
 		currentToken = cookie.Value
 	} else if h.SessionToken != "" {
 		currentToken = h.SessionToken
 	}
-	if currentToken != "" {
-		_ = h.AuthService.RevokeUserSessionsExcept(h.UserID, currentToken)
-	} else {
-		_ = h.AuthService.RevokeAllUserSessions(h.UserID)
+	if err := h.AuthService.ChangePasswordAndRevokeAuthArtifacts(h.UserID, string(hash), currentToken); err != nil {
+		log.Printf("password change transaction failed: user=%s err=%v", h.UserID, err)
+		h.renderPasswordChangeArea(w, "Não foi possível atualizar a senha.", "")
+		return
 	}
 
 	slog.Info("password_changed", "user_id", h.UserID)
@@ -775,9 +766,14 @@ func (h *ConfiguracoesHandler) HandleContasCreate(w http.ResponseWriter, r *http
 		return
 	}
 	accType := normalizeAccountType(r.FormValue("type"))
-	initial, err := parseCurrency(r.FormValue("initial_balance"))
+	initialInput := strings.TrimSpace(r.FormValue("initial_balance"))
+	if initialInput == "" {
+		initialInput = "0"
+	}
+	initial, err := parseAccountBalance(initialInput)
 	if err != nil {
-		initial = 0
+		h.renderConfigSectionWithFlash(w, "contas", "Saldo inicial inválido. Informe um valor monetário válido.", "")
+		return
 	}
 	icon := normalizeIconName(r.FormValue("icon"))
 	if icon == "" {
@@ -796,6 +792,7 @@ func (h *ConfiguracoesHandler) HandleContasCreate(w http.ResponseWriter, r *http
 		h.renderConfigSectionWithFlash(w, "contas", "Não foi possível criar a conta.", "")
 		return
 	}
+	triggerWorkspaceColorsChanged(w)
 	h.renderConfigSectionWithFlash(w, "contas", "", "Conta criada com sucesso.")
 }
 
@@ -897,6 +894,7 @@ func (h *ConfiguracoesHandler) HandleCartoesCreate(w http.ResponseWriter, r *htt
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+	triggerWorkspaceColorsChanged(w)
 	h.renderConfigSectionWithFlash(w, "cartoes", "", "Cartão criado com sucesso.")
 }
 
@@ -996,10 +994,6 @@ func (h *ConfiguracoesHandler) HandleContasInlineSave(w http.ResponseWriter, r *
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	accType := normalizeAccountType(r.FormValue("type"))
-	balance, err := parseCurrency(r.FormValue("balance"))
-	if err != nil {
-		balance = 0
-	}
 	color := normalizeHexColor(r.FormValue("color"), "#6B7280")
 	icon := normalizeIconName(r.FormValue("icon"))
 	if name == "" || accType == "" {
@@ -1008,12 +1002,13 @@ func (h *ConfiguracoesHandler) HandleContasInlineSave(w http.ResponseWriter, r *
 	}
 	if err := execOne(h.DB, `
 		UPDATE accounts
-		SET name = ?, type = ?, current_balance = ?, color = ?, icon = ?, updated_at = unixepoch()
+		SET name = ?, type = ?, color = ?, icon = ?, updated_at = unixepoch()
 		WHERE id = ? AND workspace_id = ? AND type != 'CREDIT_CARD'
-	`, name, accType, balance, color, icon, accountID, h.WorkspaceID); err != nil {
+	`, name, accType, color, icon, accountID, h.WorkspaceID); err != nil {
 		http.Error(w, "conta não encontrada", http.StatusNotFound)
 		return
 	}
+	triggerWorkspaceColorsChanged(w)
 	h.renderAccountRow(w, accountID)
 }
 
@@ -1118,6 +1113,7 @@ func (h *ConfiguracoesHandler) HandleCartoesInlineSave(w http.ResponseWriter, r 
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+	triggerWorkspaceColorsChanged(w)
 	h.renderCardRow(w, accountID)
 }
 
@@ -1745,13 +1741,17 @@ func (h *ConfiguracoesHandler) HandleAdminUsersSave(w http.ResponseWriter, r *ht
 		}
 	}
 
-	if len(existingWS) > 0 && len(workspaceIDs) == 0 {
+	if (!isCreate && status != "active") || (len(existingWS) > 0 && len(workspaceIDs) == 0) {
 		if _, err := tx.Exec(`UPDATE sessions SET revoked_at = unixepoch() WHERE user_id = ? AND revoked_at IS NULL`, userID); err != nil {
 			renderTxError("Não foi possível revogar sessões do usuário.")
 			return
 		}
 		if _, err := tx.Exec(`UPDATE pre_auth_sessions SET consumed_at = unixepoch() WHERE user_id = ? AND consumed_at IS NULL`, userID); err != nil {
 			renderTxError("Não foi possível revogar desafios pendentes do usuário.")
+			return
+		}
+		if _, err := tx.Exec(`UPDATE mfa_setup_challenges SET consumed_at = unixepoch() WHERE user_id = ? AND consumed_at IS NULL`, userID); err != nil {
+			renderTxError("Não foi possível revogar desafios de segurança do usuário.")
 			return
 		}
 	}
@@ -2092,6 +2092,10 @@ func safeUploadPath(uploadDir, fileName string) (string, error) {
 }
 
 func (h *ConfiguracoesHandler) HandleAdminWorkspacesCreate(w http.ResponseWriter, r *http.Request) {
+	if h.ActorRole != models.RoleAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	slog.Debug("admin workspace create: parsing form", "actor_user_id", h.UserID)
 	r.Body = http.MaxBytesReader(w, r.Body, workspaceLogoMultipartMax)
 	if err := r.ParseMultipartForm(5 << 20); err != nil {
@@ -2223,6 +2227,10 @@ func (h *ConfiguracoesHandler) respondWorkspaceCreateError(w http.ResponseWriter
 }
 
 func (h *ConfiguracoesHandler) HandleAdminWorkspaceEdit(w http.ResponseWriter, r *http.Request, workspaceID string) {
+	if h.ActorRole != models.RoleAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, workspaceLogoMultipartMax)
 	if err := r.ParseMultipartForm(5 << 20); err != nil {
 		if err2 := r.ParseForm(); err2 != nil {
@@ -2279,7 +2287,7 @@ func (h *ConfiguracoesHandler) HandleAdminWorkspaceEdit(w http.ResponseWriter, r
 }
 
 func (h *ConfiguracoesHandler) HandleAdminWorkspaceDelete(w http.ResponseWriter, r *http.Request, workspaceID string) {
-	if h.ActorRole != models.RoleAdmin && h.ActorRole != models.RoleManager {
+	if h.ActorRole != models.RoleAdmin {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -3849,10 +3857,13 @@ func normalizeWorkspaceThemeToken(rawToken, workspaceType string) string {
 func centsToInput(v int64) string {
 	reais := v / 100
 	cents := v % 100
-	if cents < 0 {
+	sign := ""
+	if v < 0 {
+		sign = "-"
+		reais = -reais
 		cents = -cents
 	}
-	return fmt.Sprintf("%d.%02d", reais, cents)
+	return fmt.Sprintf("%s%d.%02d", sign, reais, cents)
 }
 
 func execOne(db *sql.DB, query string, args ...interface{}) error {

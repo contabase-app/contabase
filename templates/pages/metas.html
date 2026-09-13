@@ -161,9 +161,7 @@
             {{end}}
         </div>
 
-        <div class="metas-progress">
-            <div class="metas-progress-fill metas-progress-{{$variant}}" style="--pct: {{.Percent}}"></div>
-        </div>
+        <progress class="metas-progress metas-progress-{{$variant}}" value="{{.Percent}}" max="100" aria-label="{{.CategoryName}}: {{.Percent}}% usado">{{.Percent}}%</progress>
 
         <div class="metas-metrics">
             <span>Gasto: <span class="metas-value" data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}}</span></span>
@@ -268,7 +266,7 @@
     <div class="relative z-10 flex items-start justify-between gap-3 pointer-events-none">
         <div class="flex items-center gap-2.5 min-w-0">
             <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]">
-                <i data-lucide="{{.Icon}}" class="w-3.5 h-3.5 icon-colored" style="--ic: {{.Color}}"></i>
+                <i data-lucide="{{.Icon}}" class="w-3.5 h-3.5 icon-colored" data-cb-color="{{.Color}}"></i>
             </span>
             <div class="min-w-0">
                 <p class="metas-card-title truncate">{{.Name}}</p>
@@ -324,9 +322,7 @@
             <span class="cb-status-chip cb-status-chip-{{$status}}">{{$statusLabel}}</span>
         </div>
 
-        <div class="metas-progress">
-            <div class="metas-progress-fill metas-progress-{{$variant}}" style="--pct: {{.Percent}}"></div>
-        </div>
+        <progress class="metas-progress metas-progress-{{$variant}}" value="{{.Percent}}" max="100" aria-label="{{.Name}}: {{.Percent}}% atingido">{{.Percent}}%</progress>
 
         <div class="metas-metrics">
             <span>Saldo: <span class="metas-value" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</span></span>
@@ -421,7 +417,7 @@
             <div class="px-6 pt-4 md:pt-5 pb-3">
                 <div class="flex items-center gap-3">
                     <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]">
-                        <i data-lucide="{{.Icon}}" class="w-4 h-4 icon-colored" style="--ic: {{.Color}}"></i>
+                        <i data-lucide="{{.Icon}}" class="w-4 h-4 icon-colored" data-cb-color="{{.Color}}"></i>
                     </span>
                     <div class="pr-8 min-w-0">
                         <h2 class="text-sm font-semibold cb-text-main truncate">Aportar na reserva</h2>

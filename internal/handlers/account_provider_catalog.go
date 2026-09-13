@@ -56,6 +56,17 @@ func accountProviderOptions() []AccountProviderOption {
 	return out
 }
 
+// AccountProviderColors returns a copy of the built-in institution palette so
+// the authenticated appearance stylesheet can render those choices without
+// allowing inline CSS in templates.
+func AccountProviderColors() []string {
+	out := make([]string, 0, len(accountProviderCatalog))
+	for _, provider := range accountProviderCatalog {
+		out = append(out, provider.Color)
+	}
+	return out
+}
+
 func accountProviderBySlugOrCustom(raw string) (AccountProviderOption, bool) {
 	slug := normalizeAccountProviderSlug(raw)
 	if slug == customAccountProviderSlug {

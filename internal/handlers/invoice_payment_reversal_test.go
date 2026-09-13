@@ -3,10 +3,12 @@ package handlers
 import (
 	"database/sql"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -566,5 +568,223 @@ func TestReverseInvoicePaymentConcurrentSamePaymentCreditsOnce(t *testing.T) {
 	state := reversalSnapshot(t, dbA, "ip-a", "payment-a")
 	if state.Balance != 200000 || state.CompensationCount != 1 || !state.PaymentReversalTxID.Valid {
 		t.Fatalf("concurrent final state: %+v", state)
+	}
+}
+
+// insertReversalPaymentTransaction inserts the original EXPENSE transaction of
+// an invoice payment directly, mirroring the production payment write.
+func insertReversalPaymentTransaction(t *testing.T, db *sql.DB, txID string, amount, paidAt, createdAt int64) {
+	t.Helper()
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, type, amount, date, date_civil, description, status, paid_at, paid_date_civil, installment_number, total_installments, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'EXPENSE', ?, ?, '2026-08-05', 'Invoice payment', 'paid', ?, '2026-08-05', 1, 1, ?, ?)
+	`, txID, reversalWorkspaceID, reversalUserID, reversalPaymentAccountID, amount, paidAt, paidAt, createdAt, createdAt)
+}
+
+// insertReversalPaymentRecord inserts an invoice_payments row directly so test
+// fixtures can stage extreme amounts without passing through int64
+// accumulators (fixture computes current_balance via naive sums).
+func insertReversalPaymentRecord(t *testing.T, db *sql.DB, id string, txID sql.NullString, amount, paidAt, createdAt int64) {
+	t.Helper()
+	execTestSQL(t, db, `
+		INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, transaction_id, amount_cents, paid_at, source, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?)
+	`, id, reversalWorkspaceID, reversalInvoiceID, reversalPaymentAccountID, txID, amount, paidAt, reversalUserID, createdAt)
+}
+
+func TestReverseInvoicePaymentInvoiceTotalOverflowRollsBack(t *testing.T) {
+	db := openTestDB(t)
+	t.Cleanup(func() { _ = db.Close() })
+	paidAt := reversalUnix("2026-08-05", 10)
+	seedInvoicePaymentReversalFixture(t, db, reversalFixtureOptions{
+		InvoiceTotal: math.MaxInt64,
+		Payments: []reversalPaymentSeed{{
+			ID: "ip-a", TxID: "payment-a", Amount: 100000, PaidAt: paidAt, CreatedAt: paidAt,
+		}},
+		ClosingCivil: "2026-08-20", InvoiceStatus: "PAID", InvoicePaidAt: &paidAt,
+		LegacyPaid: 100000, InitialBalance: 300000,
+	})
+	// Second invoice item of 1 cent pushes SUM(amount) past math.MaxInt64.
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, invoice_id, type, amount, date, date_civil, description, status, paid_at, paid_date_civil, installment_number, total_installments, created_at, updated_at)
+		VALUES ('purchase-overflow-extra', ?, ?, ?, ?, 'EXPENSE', 1, ?, '2026-08-03', 'Purchase overflow', 'paid', ?, '2026-08-03', 1, 1, ?, ?)
+	`, reversalWorkspaceID, reversalUserID, reversalCardAccountID, reversalInvoiceID,
+		reversalUnix("2026-08-03", 12), reversalUnix("2026-08-03", 12), paidAt, paidAt)
+
+	before := reversalSnapshot(t, db, "ip-a", "payment-a")
+	_, err := reverseInvoicePayment(db, reversalCommand("ip-a"))
+	if err == nil {
+		t.Fatal("invoice total overflow must fail the reversal")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "overflow") {
+		t.Fatalf("expected integer overflow from invoice total sum, got: %v", err)
+	}
+	after := reversalSnapshot(t, db, "ip-a", "payment-a")
+	if after != before {
+		t.Fatalf("overflow persisted partial state\n got: %+v\nwant: %+v", after, before)
+	}
+	if after.PaymentReversedAt.Valid || after.PaymentReversalTxID.Valid || after.CompensationCount != 0 {
+		t.Fatalf("reversal fields/compensation persisted after overflow: %+v", after)
+	}
+	if after.InvoiceStatus != before.InvoiceStatus || after.InvoicePaidAmount != before.InvoicePaidAmount ||
+		after.InvoicePaidAt != before.InvoicePaidAt || after.Balance != before.Balance ||
+		after.TransactionCount != before.TransactionCount || after.OriginalAmount != before.OriginalAmount {
+		t.Fatalf("invoice/balance/transaction state diverged after overflow: %+v", after)
+	}
+}
+
+func TestReverseInvoicePaymentActiveSumOverflowRollsBack(t *testing.T) {
+	db := openTestDB(t)
+	t.Cleanup(func() { _ = db.Close() })
+	tSmall := reversalUnix("2026-08-01", 10)
+	tBig1 := reversalUnix("2026-08-02", 10)
+	tBig2 := reversalUnix("2026-08-03", 10)
+	seedInvoicePaymentReversalFixture(t, db, reversalFixtureOptions{
+		InvoiceTotal:  100000,
+		Payments:      nil,
+		ClosingCivil:  "2026-08-20",
+		InvoiceStatus: "OPEN",
+		InitialBalance: 200000,
+	})
+	// Extreme active payments are staged directly: the fixture accumulator
+	// (activePaid += Amount) would itself overflow and corrupt the balance.
+	insertReversalPaymentTransaction(t, db, "payment-a", 100, tSmall, tSmall)
+	insertReversalPaymentRecord(t, db, "ip-a", sql.NullString{String: "payment-a", Valid: true}, 100, tSmall, tSmall)
+	insertReversalPaymentRecord(t, db, "ip-big1", sql.NullString{}, math.MaxInt64, tBig1, tBig1)
+	insertReversalPaymentRecord(t, db, "ip-big2", sql.NullString{}, 1, tBig2, tBig2)
+
+	before := reversalSnapshot(t, db, "ip-a", "payment-a")
+	_, err := reverseInvoicePayment(db, reversalCommand("ip-a"))
+	if !errors.Is(err, errInvoicePaymentSumOverflow) {
+		t.Fatalf("error = %v, want errInvoicePaymentSumOverflow", err)
+	}
+	after := reversalSnapshot(t, db, "ip-a", "payment-a")
+	if after != before {
+		t.Fatalf("active sum overflow persisted partial state\n got: %+v\nwant: %+v", after, before)
+	}
+	if after.PaymentReversedAt.Valid || after.PaymentReversalTxID.Valid || after.CompensationCount != 0 {
+		t.Fatalf("reversal fields/compensation persisted after overflow: %+v", after)
+	}
+	if after.Balance != before.Balance || after.InvoiceStatus != before.InvoiceStatus ||
+		after.InvoicePaidAmount != before.InvoicePaidAmount || after.InvoicePaidAt != before.InvoicePaidAt ||
+		after.TransactionCount != before.TransactionCount {
+		t.Fatalf("balance/invoice/transaction state diverged after overflow: %+v", after)
+	}
+}
+
+func TestReverseInvoicePaymentActiveSumUnderflowRollsBack(t *testing.T) {
+	db := openTestDB(t)
+	t.Cleanup(func() { _ = db.Close() })
+	tNeg1 := reversalUnix("2026-08-01", 10)
+	tNeg2 := reversalUnix("2026-08-02", 10)
+	tSmall := reversalUnix("2026-08-03", 10)
+	seedInvoicePaymentReversalFixture(t, db, reversalFixtureOptions{
+		InvoiceTotal:  100000,
+		Payments:      nil,
+		ClosingCivil:  "2026-08-20",
+		InvoiceStatus: "OPEN",
+		InitialBalance: 200000,
+	})
+	insertReversalPaymentTransaction(t, db, "payment-a", 100, tSmall, tSmall)
+	insertReversalPaymentRecord(t, db, "ip-a", sql.NullString{String: "payment-a", Valid: true}, 100, tSmall, tSmall)
+
+	// Negative amounts are impossible under the normal schema
+	// (invoice_payments.amount_cents > 0). Disable CHECK constraints only to
+	// stage the extreme fixture, then restore before exercising production code.
+	execTestSQL(t, db, `PRAGMA ignore_check_constraints = ON`)
+	insertReversalPaymentRecord(t, db, "ip-neg1", sql.NullString{}, math.MinInt64, tNeg1, tNeg1)
+	insertReversalPaymentRecord(t, db, "ip-neg2", sql.NullString{}, -1, tNeg2, tNeg2)
+	execTestSQL(t, db, `PRAGMA ignore_check_constraints = OFF`)
+
+	if _, err := db.Exec(`
+		INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, transaction_id, amount_cents, paid_at, source, created_by, created_at)
+		VALUES ('ip-reject', ?, ?, ?, NULL, -1, ?, 'manual', ?, ?)
+	`, reversalWorkspaceID, reversalInvoiceID, reversalPaymentAccountID, tNeg1, reversalUserID, tNeg1); err == nil {
+		t.Fatal("normal schema must reject negative amount_cents")
+	}
+
+	before := reversalSnapshot(t, db, "ip-a", "payment-a")
+	_, err := reverseInvoicePayment(db, reversalCommand("ip-a"))
+	if !errors.Is(err, errInvoicePaymentSumOverflow) {
+		t.Fatalf("error = %v, want errInvoicePaymentSumOverflow", err)
+	}
+	after := reversalSnapshot(t, db, "ip-a", "payment-a")
+	if after != before {
+		t.Fatalf("underflow persisted partial state\n got: %+v\nwant: %+v", after, before)
+	}
+	if after.PaymentReversedAt.Valid || after.PaymentReversalTxID.Valid || after.CompensationCount != 0 {
+		t.Fatalf("reversal fields/compensation persisted after underflow: %+v", after)
+	}
+	if after.Balance != before.Balance || after.InvoiceStatus != before.InvoiceStatus ||
+		after.InvoicePaidAmount != before.InvoicePaidAmount || after.InvoicePaidAt != before.InvoicePaidAt ||
+		after.TransactionCount != before.TransactionCount {
+		t.Fatalf("balance/invoice/transaction state diverged after underflow: %+v", after)
+	}
+}
+
+func TestAddInt64CheckedExactLimits(t *testing.T) {
+	tests := []struct {
+		name    string
+		a, b    int64
+		want    int64
+		wantErr bool
+	}{
+		{name: "MaxInt64 plus zero", a: math.MaxInt64, b: 0, want: math.MaxInt64},
+		{name: "zero plus MaxInt64", a: 0, b: math.MaxInt64, want: math.MaxInt64},
+		{name: "reach MaxInt64 from below", a: math.MaxInt64 - 1, b: 1, want: math.MaxInt64},
+		{name: "MinInt64 plus zero", a: math.MinInt64, b: 0, want: math.MinInt64},
+		{name: "zero plus MinInt64", a: 0, b: math.MinInt64, want: math.MinInt64},
+		{name: "reach MinInt64 from above", a: math.MinInt64 + 1, b: -1, want: math.MinInt64},
+		{name: "MaxInt64 plus one overflows", a: math.MaxInt64, b: 1, wantErr: true},
+		{name: "MaxInt64 plus MaxInt64 overflows", a: math.MaxInt64, b: math.MaxInt64, wantErr: true},
+		{name: "MinInt64 minus one underflows", a: math.MinInt64, b: -1, wantErr: true},
+		{name: "MinInt64 plus MinInt64 underflows", a: math.MinInt64, b: math.MinInt64, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := addInt64Checked(tt.a, tt.b)
+			if tt.wantErr {
+				if !errors.Is(err, errInvoicePaymentSumOverflow) {
+					t.Fatalf("error = %v, want errInvoicePaymentSumOverflow", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("valid boundary rejected: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("sum = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSumInvoiceTotalTxPropagatesQueryError(t *testing.T) {
+	db := openTestDB(t)
+	t.Cleanup(func() { _ = db.Close() })
+	paidAt := reversalUnix("2026-08-05", 10)
+	seedInvoicePaymentReversalFixture(t, db, reversalFixtureOptions{
+		InvoiceTotal: 100000,
+		Payments: []reversalPaymentSeed{{
+			ID: "ip-a", TxID: "payment-a", Amount: 100000, PaidAt: paidAt, CreatedAt: paidAt,
+		}},
+		ClosingCivil: "2026-08-20", InvoiceStatus: "PAID", InvoicePaidAt: &paidAt,
+		LegacyPaid: 100000, InitialBalance: 200000,
+	})
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DROP TABLE transaction_refunds`); err != nil {
+		t.Fatalf("drop table: %v", err)
+	}
+	total, err := sumInvoiceTotalTx(tx, reversalWorkspaceID, reversalInvoiceID)
+	if err == nil {
+		t.Fatalf("query error must propagate, got total=%d err=nil", total)
+	}
+	if !errors.Is(err, sql.ErrNoRows) && total != 0 {
+		t.Fatalf("failed scan must not report a usable total: %d/%v", total, err)
 	}
 }

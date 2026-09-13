@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"io"
 	"net/http/httptest"
@@ -29,7 +30,7 @@ func TestAdminExportBackupUsesProvidedDatabasePath(t *testing.T) {
 	assertExportMarker(t, backupPath, "custom-db")
 }
 
-func TestAdminExportBackupCheckpointsWALBeforeCopy(t *testing.T) {
+func TestAdminExportBackupIncludesUncheckpointedWAL(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "wal-contabase.db")
 	db := openExportTestDB(t, dbPath)
 	defer db.Close()
@@ -45,6 +46,26 @@ func TestAdminExportBackupCheckpointsWALBeforeCopy(t *testing.T) {
 	defer cleanup()
 
 	assertExportMarker(t, backupPath, "wal-visible")
+}
+
+func TestAdminExportBackupCancellationCleansStaging(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("TMPDIR", root)
+	dbPath := filepath.Join(root, "source.db")
+	db := openExportTestDB(t, dbPath)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	path, cleanup, err := createAdminExportBackupContext(ctx, db, dbPath)
+	if err == nil || path != "" || cleanup != nil {
+		t.Fatalf("canceled export accepted: path=%s err=%v", path, err)
+	}
+	matches, err := filepath.Glob(filepath.Join(root, "contabase-export-*"))
+	if err != nil || len(matches) != 0 {
+		t.Fatalf("export staging leaked: %v %v", matches, err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestAdminBackupDownloadHeadersAreSafe(t *testing.T) {

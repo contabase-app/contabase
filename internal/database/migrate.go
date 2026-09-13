@@ -767,10 +767,137 @@ var migrations = []migration{
 		version: 27,
 		name:    "cost_limits_timestamps",
 		up: func(tx *sql.Tx) error {
-			if err := addColumnIfMissing(tx, "cost_limits", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())"); err != nil {
+			created, err := columnExists(tx, "cost_limits", "created_at")
+			if err != nil {
 				return err
 			}
-			return addColumnIfMissing(tx, "cost_limits", "updated_at", "INTEGER NOT NULL DEFAULT (unixepoch())")
+			updated, err := columnExists(tx, "cost_limits", "updated_at")
+			if err != nil {
+				return err
+			}
+			if created && updated {
+				return nil
+			}
+			var count int
+			if err := tx.QueryRow(`SELECT count(*) FROM cost_limits`).Scan(&count); err != nil {
+				return err
+			}
+			if count == 0 {
+				// Preserve the original path for fresh/empty installations.
+				if err := addColumnIfMissing(tx, "cost_limits", "created_at", "INTEGER NOT NULL DEFAULT (unixepoch())"); err != nil {
+					return err
+				}
+				return addColumnIfMissing(tx, "cost_limits", "updated_at", "INTEGER NOT NULL DEFAULT (unixepoch())")
+			}
+			// SQLite rejects ADD COLUMN with a nonconstant default on populated
+			// tables. Rebuild only pending v27, retaining its original defaults.
+			// No historical schema references cost_limits; refuse unknown incoming
+			// FKs rather than risking delete actions in a customized installation.
+			var dependents, scratch, columns int
+			if err := tx.QueryRow(`SELECT count(*) FROM sqlite_schema s, pragma_foreign_key_list(s.name) f WHERE s.type='table' AND lower(f."table")='cost_limits'`).Scan(&dependents); err != nil {
+				return err
+			}
+			if dependents != 0 {
+				return fmt.Errorf("migration 27: unexpected cost_limits dependents; preserve for inspection")
+			}
+			if err := tx.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE name='cost_limits_new'`).Scan(&scratch); err != nil {
+				return err
+			}
+			if scratch != 0 {
+				return fmt.Errorf("migration 27: staging name already exists")
+			}
+			if err := tx.QueryRow(`SELECT count(*) FROM pragma_table_info('cost_limits')`).Scan(&columns); err != nil {
+				return err
+			}
+			expected := 5
+			if created {
+				expected++
+			}
+			if updated {
+				expected++
+			}
+			if columns != expected {
+				return fmt.Errorf("migration 27: unexpected cost_limits columns; preserve for inspection")
+			}
+			projection := `id,workspace_id,category_id,max_amount_monthly,alert_threshold`
+			createdExpr, updatedExpr := "unixepoch()", "unixepoch()"
+			if created {
+				projection += ",created_at"
+				createdExpr = "created_at"
+			}
+			if updated {
+				projection += ",updated_at"
+				updatedExpr = "updated_at"
+			}
+			query := "SELECT " + projection + " FROM cost_limits ORDER BY id"
+			before, err := migration12Digest(tx, query)
+			if err != nil {
+				return err
+			}
+			objects, err := tx.Query(`SELECT sql FROM sqlite_schema WHERE tbl_name='cost_limits' AND type IN ('index','trigger') AND sql IS NOT NULL ORDER BY type,name`)
+			if err != nil {
+				return err
+			}
+			var definitions []string
+			for objects.Next() {
+				var definition string
+				if err := objects.Scan(&definition); err != nil {
+					objects.Close()
+					return err
+				}
+				definitions = append(definitions, definition)
+			}
+			if err := objects.Err(); err != nil {
+				objects.Close()
+				return err
+			}
+			if err := objects.Close(); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`CREATE TABLE cost_limits_new (
+				id TEXT PRIMARY KEY,
+				workspace_id TEXT NOT NULL,
+				category_id TEXT NOT NULL,
+				max_amount_monthly INTEGER NOT NULL CHECK (max_amount_monthly > 0),
+				alert_threshold INTEGER NOT NULL DEFAULT 0,
+				created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+				updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+				FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+				FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+				UNIQUE (workspace_id, category_id)
+			)`); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`INSERT INTO cost_limits_new SELECT id,workspace_id,category_id,max_amount_monthly,alert_threshold,` + createdExpr + "," + updatedExpr + ` FROM cost_limits`); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`DROP TABLE cost_limits`); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`ALTER TABLE cost_limits_new RENAME TO cost_limits`); err != nil {
+				return err
+			}
+			for _, definition := range definitions {
+				if _, err := tx.Exec(definition); err != nil {
+					return err
+				}
+			}
+			after, err := migration12Digest(tx, query)
+			if err != nil {
+				return err
+			}
+			if before != after {
+				return fmt.Errorf("migration 27 changed historical cost limits")
+			}
+			rows, err := tx.Query(`PRAGMA foreign_key_check(cost_limits)`)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			if rows.Next() {
+				return fmt.Errorf("migration 27: cost_limits foreign key validation failed")
+			}
+			return rows.Err()
 		},
 	},
 	{
@@ -1707,6 +1834,57 @@ END`,
 			}
 			return nil
 		},
+	},
+	{
+		version: 62,
+		name:    "auth_mfa_step_up_and_totp_replay_protection",
+		up: func(tx *sql.Tx) error {
+			if err := addColumnIfMissing(tx, "users", "totp_last_used_step", "INTEGER NOT NULL DEFAULT -1"); err != nil {
+				return fmt.Errorf("add users.totp_last_used_step: %w", err)
+			}
+			stmts := []string{
+				`CREATE TABLE IF NOT EXISTS mfa_setup_challenges (
+					id           TEXT PRIMARY KEY,
+					user_id      TEXT NOT NULL,
+					token_hash   TEXT NOT NULL UNIQUE,
+					secret_enc   TEXT NOT NULL,
+					expires_at   INTEGER NOT NULL,
+					consumed_at  INTEGER,
+					created_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+					FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+				)`,
+				`CREATE INDEX IF NOT EXISTS idx_mfa_setup_challenges_user_id ON mfa_setup_challenges(user_id)`,
+				`CREATE INDEX IF NOT EXISTS idx_mfa_setup_challenges_expires_at ON mfa_setup_challenges(expires_at)`,
+			}
+			for _, stmt := range stmts {
+				if _, err := tx.Exec(stmt); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		version: 63,
+		name:    "session_recent_reauthentication",
+		up: func(tx *sql.Tx) error {
+			exists, err := tableExists(tx, "sessions")
+			if err != nil {
+				return fmt.Errorf("inspect sessions table: %w", err)
+			}
+			if !exists {
+				return nil
+			}
+			if err := addColumnIfMissing(tx, "sessions", "reauthenticated_at", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+				return fmt.Errorf("add sessions.reauthenticated_at: %w", err)
+			}
+			return nil
+		},
+	},
+	{
+		version: 64,
+		name:    "account_balance_adjustments",
+		up:      migrateAccountBalanceAdjustments,
 	},
 }
 
@@ -2824,6 +3002,14 @@ func runMigrations(db *sql.DB) error {
 			return fmt.Errorf("check migration %d: %w", m.version, err)
 		}
 		if applied {
+			continue
+		}
+		// F10: only pending v12 needs connection-scoped protection against FK
+		// delete actions. Already-applied v12 is never replayed or repaired.
+		if m.version == 12 {
+			if err := runCategoryMigration12(db, m); err != nil {
+				return fmt.Errorf("apply migration %d (%s): %w", m.version, m.name, err)
+			}
 			continue
 		}
 

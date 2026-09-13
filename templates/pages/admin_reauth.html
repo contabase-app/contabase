@@ -1,0 +1,67 @@
+{{define "admin-reauth-page"}}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0a0b0f">
+    <title>Confirmar identidade — ContaBase</title>
+    <link rel="shortcut icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+    <link rel="manifest" href="{{assetPath "/assets/manifest.json"}}">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/style.css"}}">
+    <link rel="stylesheet" href="/assets/css/geist-sans.css">
+    <link rel="stylesheet" href="/assets/css/auth-pages.css">
+</head>
+<body class="min-h-screen bg-[#09090c] font-sans text-white antialiased overflow-hidden">
+    <div class="fixed inset-0 pointer-events-none overflow-hidden">
+        <div class="blob absolute top-[-20%] left-[-15%] w-[60vw] h-[60vw] rounded-full bg-violet-600/20 blur-[80px]"></div>
+        <div class="blob-2 absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-indigo-600/15 blur-[80px]"></div>
+        <div class="absolute inset-0 opacity-[0.035] dot-pattern"></div>
+    </div>
+
+    <main class="relative mx-auto flex min-h-screen max-w-md items-center px-5 py-10">
+        <section class="fade-up w-full rounded-3xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-2xl p-7 shadow-2xl shadow-black/60">
+            <div class="mb-7">
+                <div class="inline-flex items-center gap-2.5 mb-5">
+                    <img src="/assets/contabase-monogram.svg" alt="" aria-hidden="true" class="h-9 w-9 rounded-lg shrink-0">
+                    <span class="font-['Geist_Sans',sans-serif] font-bold text-xl tracking-tight text-white select-none">ContaBase</span>
+                </div>
+                <h1 class="text-2xl font-bold text-white tracking-tight">Confirme sua identidade</h1>
+                <p class="mt-1.5 text-sm text-white/45">Esta confirmação protege operações administrativas sensíveis por 10 minutos.</p>
+            </div>
+
+            {{if .Error}}
+            <div class="mb-5 flex items-center gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3.5" role="alert">
+                <p class="text-sm text-rose-200">{{.Error}}</p>
+            </div>
+            {{end}}
+
+            <form method="post" action="/admin/reautenticar" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <input type="hidden" name="return_to" value="{{.ReturnTo}}">
+                <label class="block space-y-2">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-white/40">Senha atual</span>
+                    <input type="password" name="current_password" required autocomplete="current-password" autofocus
+                        class="h-11 w-full rounded-xl border border-white/[0.08] bg-white/[0.05] px-3.5 text-sm text-white outline-none placeholder:text-white/25 focus:border-zinc-700/60 focus:ring-1 focus:ring-zinc-700/20 transition-all">
+                </label>
+                {{if .RequiresCurrentFactor}}
+                <label class="block space-y-2">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-white/40">Código do autenticador</span>
+                    <input type="text" name="current_totp_code" required inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}"
+                        class="h-11 w-full rounded-xl border border-white/[0.08] bg-white/[0.05] px-3.5 text-sm text-white outline-none placeholder:text-white/25 focus:border-zinc-700/60 focus:ring-1 focus:ring-zinc-700/20 transition-all"
+                        placeholder="000000">
+                </label>
+                {{end}}
+                <button type="submit"
+                    class="mt-2 h-12 w-full rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-sm font-bold text-white transition-all hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] shadow-lg shadow-violet-500/30">
+                    Confirmar e continuar
+                </button>
+                <a href="{{.ReturnTo}}" class="block text-center text-sm text-white/50 hover:text-white/80">Cancelar</a>
+            </form>
+        </section>
+    </main>
+</body>
+</html>
+{{end}}

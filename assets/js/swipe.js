@@ -1,19 +1,22 @@
 function resetSwipe(row) {
+    var motion = window.cbRuntimeMotion;
+    if (!motion || !motion.supported) return;
     var content = row.querySelector('[data-swipe-content]');
     var leftBg = row.querySelector('[data-swipe-bg-left]');
     var rightBg = row.querySelector('[data-swipe-bg-right]');
     if (content) {
-        content.style.transition = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
-        content.style.transform = '';
+        motion.toBase(content, { transform: 'translateX(0px)' }, {
+            duration: 220,
+            easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+        });
     }
     [leftBg, rightBg].forEach(function(bg) {
         if (!bg) return;
-        bg.style.opacity = '0';
-        bg.style.transform = 'scaleX(0.88)';
+        motion.toBase(bg, { opacity: '0', transform: 'scaleX(0.88)' }, {
+            duration: 220,
+            easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+        });
     });
-    window.setTimeout(function() {
-        if (content) content.style.transition = '';
-    }, 240);
 }
 
 function resetAllSwipes() {
@@ -79,6 +82,8 @@ function runSwipeAction(row, side) {
 
 function initSwipeRow(row) {
     if (row.dataset.swipeInit === 'true') return;
+    var motion = window.cbRuntimeMotion;
+    if (!motion || !motion.supported) return;
     var content = row.querySelector('[data-swipe-content]');
     if (!content) return;
     row.dataset.swipeInit = 'true';
@@ -98,7 +103,9 @@ function initSwipeRow(row) {
         currentX = startX;
         horizontal = false;
         tracking = true;
-        content.style.transition = '';
+        motion.cancel(content);
+        motion.cancel(leftBg);
+        motion.cancel(rightBg);
     }, { passive: true });
 
     row.addEventListener('touchmove', function(event) {
@@ -118,20 +125,22 @@ function initSwipeRow(row) {
         if (event.cancelable) event.preventDefault();
 
         var limited = Math.max(Math.min(diffX * 0.48, 140), -140);
-        content.style.transform = 'translateX(' + limited + 'px)';
+        motion.hold(content, { transform: 'translateX(' + limited + 'px)' });
         if (diffX > 0 && leftBg) {
-            leftBg.style.opacity = Math.min(Math.abs(diffX) / 84, 1);
-            leftBg.style.transform = 'scaleX(' + Math.min(1, 0.88 + Math.abs(diffX) / 700) + ')';
+            motion.hold(leftBg, {
+                opacity: String(Math.min(Math.abs(diffX) / 84, 1)),
+                transform: 'scaleX(' + Math.min(1, 0.88 + Math.abs(diffX) / 700) + ')'
+            });
         } else if (leftBg) {
-            leftBg.style.opacity = '0';
-            leftBg.style.transform = 'scaleX(0.88)';
+            motion.hold(leftBg, { opacity: '0', transform: 'scaleX(0.88)' });
         }
         if (diffX < 0 && rightBg) {
-            rightBg.style.opacity = Math.min(Math.abs(diffX) / 84, 1);
-            rightBg.style.transform = 'scaleX(' + Math.min(1, 0.88 + Math.abs(diffX) / 700) + ')';
+            motion.hold(rightBg, {
+                opacity: String(Math.min(Math.abs(diffX) / 84, 1)),
+                transform: 'scaleX(' + Math.min(1, 0.88 + Math.abs(diffX) / 700) + ')'
+            });
         } else if (rightBg) {
-            rightBg.style.opacity = '0';
-            rightBg.style.transform = 'scaleX(0.88)';
+            motion.hold(rightBg, { opacity: '0', transform: 'scaleX(0.88)' });
         }
     }, { passive: false });
 

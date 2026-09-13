@@ -29,6 +29,13 @@ import (
 const (
 	csrfCookieName = httpcookies.CSRF
 	csrfHeaderName = "X-CSRF-Token"
+
+	httpReadHeaderTimeout      = 10 * time.Second
+	httpReadTimeout            = 60 * time.Second
+	httpWriteTimeout           = 120 * time.Second
+	httpIdleTimeout            = 120 * time.Second
+	transactionRequestMaxBytes = 11 << 20
+	httpMaxHeaderBytes         = 1 << 20
 )
 
 type permission string
@@ -442,11 +449,8 @@ func (c httpBoundaryConfig) enforceRemoteHTTPS(next http.Handler) http.Handler {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Acesso Remoto Bloqueado</title>
   <link rel="stylesheet" href="%s">
-  <style>
-    body { background: radial-gradient(circle at top, #1f1734 0%, #0b0b11 58%, #08080d 100%); }
-  </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-4 sm:p-6 text-zinc-100 antialiased font-sans">
+<body class="cb-remote-access-blocked min-h-screen flex items-center justify-center p-4 sm:p-6 text-zinc-100 antialiased font-sans">
   <section class="w-full max-w-2xl bg-[#12121c]/90 backdrop-blur-md border border-amber-500/30 rounded-2xl p-6 sm:p-8 shadow-[0_18px_52px_rgba(0,0,0,0.45)]">
     <div class="flex items-center gap-4 mb-6">
       <div class="flex-shrink-0 w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500">
@@ -508,9 +512,7 @@ func securityHeaders(next http.Handler) http.Handler {
 	return newHTTPBoundaryConfigFromEnv().securityHeaders(next)
 }
 
-const cspReportOnlyPolicy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'"
-
-const cspEnforcingPolicy = "frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'; connect-src 'self'"
+const cspEnforcingPolicy = "default-src 'self'; script-src 'self'; script-src-attr 'none'; style-src 'self'; style-src-elem 'self'; style-src-attr 'none'; font-src 'self'; img-src 'self' data: https:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; media-src 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'"
 
 func (c httpBoundaryConfig) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -518,13 +520,44 @@ func (c httpBoundaryConfig) securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
-		w.Header().Set("Content-Security-Policy-Report-Only", cspReportOnlyPolicy)
 		w.Header().Set("Content-Security-Policy", cspEnforcingPolicy)
 		if c.requestIsHTTPS(r) {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		MaxHeaderBytes:    httpMaxHeaderBytes,
+	}
+}
+
+// limitTransactionMutationBodies bounds the body before authentication parses
+// a CSRF form field. The transaction handler repeats the bound so direct
+// handler use cannot accidentally remove this protection.
+func limitTransactionMutationBodies(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isTransactionMutationRequest(r) && r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, transactionRequestMaxBytes)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isTransactionMutationRequest(r *http.Request) bool {
+	if r == nil || (r.Method != http.MethodPost && r.Method != http.MethodPut) {
+		return false
+	}
+	path := strings.TrimSpace(r.URL.Path)
+	return path == "/transacoes" || strings.HasPrefix(path, "/transacoes/")
 }
 
 type rateLimitPolicy struct {
@@ -541,22 +574,35 @@ type rateLimitDecision struct {
 }
 
 type rateLimitBucket struct {
-	hits     []time.Time
-	lastSeen time.Time
-	window   time.Duration
+	hits   []time.Time
+	window time.Duration
 }
 
 type memoryRateLimiter struct {
 	mu             sync.Mutex
 	buckets        map[string]*rateLimitBucket
+	maxBuckets     int
 	cleanupEvery   time.Duration
 	lastCleanupRun time.Time
 }
 
+const (
+	defaultRateLimitMaxBuckets   = 10_000
+	defaultRateLimitCleanupEvery = 2 * time.Minute
+)
+
 func newMemoryRateLimiter() *memoryRateLimiter {
+	return newMemoryRateLimiterWithCapacity(defaultRateLimitMaxBuckets)
+}
+
+func newMemoryRateLimiterWithCapacity(maxBuckets int) *memoryRateLimiter {
+	if maxBuckets <= 0 {
+		maxBuckets = defaultRateLimitMaxBuckets
+	}
 	return &memoryRateLimiter{
 		buckets:      make(map[string]*rateLimitBucket),
-		cleanupEvery: 2 * time.Minute,
+		maxBuckets:   maxBuckets,
+		cleanupEvery: defaultRateLimitCleanupEvery,
 	}
 }
 
@@ -571,26 +617,35 @@ func (l *memoryRateLimiter) Allow(key string, policy rateLimitPolicy, now time.T
 	if now.IsZero() {
 		now = time.Now()
 	}
+	bucketKey := rateLimitKeyHash(key)
 
 	if l.lastCleanupRun.IsZero() || now.Sub(l.lastCleanupRun) >= l.cleanupEvery {
-		for entryKey, bucket := range l.buckets {
-			ttl := bucket.window * 2
-			if ttl <= 0 {
-				ttl = policy.Window * 2
-			}
-			if now.Sub(bucket.lastSeen) > ttl {
-				delete(l.buckets, entryKey)
-			}
-		}
+		l.cleanupExpiredBuckets(now)
 		l.lastCleanupRun = now
 	}
 
-	bucket, ok := l.buckets[key]
+	bucket, ok := l.buckets[bucketKey]
 	if !ok {
+		if len(l.buckets) >= l.maxBuckets {
+			// Run an immediate cleanup at capacity even when the periodic cleanup
+			// interval has not elapsed. Active buckets are never evicted because
+			// doing so would let an attacker rotate identities to reset a limit.
+			l.cleanupExpiredBuckets(now)
+			l.lastCleanupRun = now
+		}
+		if len(l.buckets) >= l.maxBuckets {
+			retryAfter := l.capacityRetryAfter(now)
+			return rateLimitDecision{
+				Allowed:    false,
+				Limit:      policy.Limit,
+				Remaining:  0,
+				ResetAt:    now.Add(retryAfter),
+				RetryAfter: retryAfter,
+			}
+		}
 		bucket = &rateLimitBucket{}
-		l.buckets[key] = bucket
+		l.buckets[bucketKey] = bucket
 	}
-	bucket.lastSeen = now
 	bucket.window = policy.Window
 
 	cutoff := now.Add(-policy.Window)
@@ -627,6 +682,36 @@ func (l *memoryRateLimiter) Allow(key string, policy rateLimitPolicy, now time.T
 	}
 }
 
+func (l *memoryRateLimiter) cleanupExpiredBuckets(now time.Time) {
+	for key, bucket := range l.buckets {
+		if bucket == nil || len(bucket.hits) == 0 || bucket.window <= 0 {
+			delete(l.buckets, key)
+			continue
+		}
+		expiresAt := bucket.hits[len(bucket.hits)-1].Add(bucket.window)
+		if !now.Before(expiresAt) {
+			delete(l.buckets, key)
+		}
+	}
+}
+
+func (l *memoryRateLimiter) capacityRetryAfter(now time.Time) time.Duration {
+	var retryAfter time.Duration
+	for _, bucket := range l.buckets {
+		if bucket == nil || len(bucket.hits) == 0 || bucket.window <= 0 {
+			continue
+		}
+		remaining := bucket.hits[len(bucket.hits)-1].Add(bucket.window).Sub(now)
+		if remaining > 0 && (retryAfter <= 0 || remaining < retryAfter) {
+			retryAfter = remaining
+		}
+	}
+	if retryAfter <= 0 {
+		return time.Second
+	}
+	return retryAfter
+}
+
 func writeRateLimitExceeded(w http.ResponseWriter, _ *http.Request, decision rateLimitDecision) {
 	w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds(decision.RetryAfter)))
 	w.Header().Set("Cache-Control", "no-store")
@@ -661,6 +746,25 @@ func allowRateLimitedRequest(w http.ResponseWriter, r *http.Request, limiter *me
 	return false
 }
 
+var (
+	passwordChangeUserRateLimitPolicy   = rateLimitPolicy{Limit: 5, Window: 15 * time.Minute}
+	passwordChangeUserIPRateLimitPolicy = rateLimitPolicy{Limit: 8, Window: 15 * time.Minute}
+)
+
+// allowPasswordChangeRateLimit limits a compromised active session even when
+// its source IP changes, while retaining a narrower user-and-IP bucket for
+// local abuse visibility.
+func allowPasswordChangeRateLimit(w http.ResponseWriter, r *http.Request, limiter *memoryRateLimiter, userID string, now time.Time) bool {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return false
+	}
+	if !allowRateLimitedRequest(w, r, limiter, "security:password-change:user:"+userID, passwordChangeUserRateLimitPolicy, now) {
+		return false
+	}
+	return allowRateLimitedRequest(w, r, limiter, "security:password-change:user-ip:"+userID+":ip:"+clientIP(r), passwordChangeUserIPRateLimitPolicy, now)
+}
+
 func rateLimitKeyHash(value string) string {
 	sum := sha256.Sum256([]byte(strings.TrimSpace(value)))
 	return hex.EncodeToString(sum[:])
@@ -684,34 +788,42 @@ func clientIP(r *http.Request) string {
 func (c httpBoundaryConfig) clientIP(r *http.Request) string {
 	directIP := directClientIP(r)
 	if c.requestFromTrustedProxy(r) {
-		if ip := forwardedHeaderClientIP(r); ip != "" {
+		if ip := rightmostUntrustedForwardedIP(r.Header.Get("X-Forwarded-For"), c.trustedProxyRanges); ip != "" {
 			return ip
 		}
 	}
 	return directIP
 }
 
-func forwardedHeaderClientIP(r *http.Request) string {
-	if ip := firstForwardedIP(r.Header.Get("X-Forwarded-For")); ip != "" {
-		return ip
-	}
-	if ip := validHeaderIP(r.Header.Get("X-Real-IP")); ip != "" {
-		return ip
-	}
-	if ip := validHeaderIP(r.Header.Get("CF-Connecting-IP")); ip != "" {
-		return ip
+// rightmostUntrustedForwardedIP walks the X-Forwarded-For chain from the
+// backend towards the client. A trusted proxy appends the peer it observed,
+// so entries injected by a client before that peer cannot select the rate-limit
+// identity. X-Real-IP and CF-Connecting-IP are deliberately not fallback
+// sources because this application has no guarantee that every trusted proxy
+// overwrites them.
+func rightmostUntrustedForwardedIP(value string, trustedRanges []*net.IPNet) string {
+	parts := strings.Split(value, ",")
+	for i := len(parts) - 1; i >= 0; i-- {
+		ipText := validHeaderIP(parts[i])
+		if ipText == "" {
+			continue
+		}
+		ip := net.ParseIP(ipText)
+		if ip == nil || ipInTrustedRanges(ip, trustedRanges) {
+			continue
+		}
+		return ip.String()
 	}
 	return ""
 }
 
-func firstForwardedIP(value string) string {
-	for _, part := range strings.Split(value, ",") {
-		if strings.TrimSpace(part) == "" {
-			continue
+func ipInTrustedRanges(ip net.IP, ranges []*net.IPNet) bool {
+	for _, ipNet := range ranges {
+		if ipNet.Contains(ip) {
+			return true
 		}
-		return validHeaderIP(part)
 	}
-	return ""
+	return false
 }
 
 func validHeaderIP(value string) string {

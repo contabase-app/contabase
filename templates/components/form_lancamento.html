@@ -161,19 +161,19 @@
             <button id="origemPicker" type="button"
                 class="sheet-picker flex w-full items-center justify-between gap-3 rounded-xl border p-4 text-left">
                 <span class="flex min-w-0 items-center gap-3">
-                    <span id="origemIconWrap" class="sheet-picker-icon flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border emblem-wrap-solid select-none" style="--ic: {{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}}">
+                    <span id="origemIconWrap" class="sheet-picker-icon flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border emblem-wrap-solid select-none" data-cb-color="{{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}}">
                         {{if .OrigemProviderLogoPath}}
                         <img id="origemIconImage" src="{{assetPath .OrigemProviderLogoPath}}" alt="" class="institution-logo" data-avatar-fallback>
                         <span id="origemIconText" class="hidden font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .OrigemProviderMark}}" data-avatar-text>{{.OrigemProviderMark}}</span>
-                        <i id="origemIcon" class="hidden h-4 w-4 icon-colored" style="--ic: var(--emblem-color, {{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}})"></i>
+                        <i id="origemIcon" class="hidden h-4 w-4 icon-colored" data-cb-color="{{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}}"></i>
                         {{else if .OrigemProviderMark}}
                         <img id="origemIconImage" alt="" class="hidden institution-logo" data-avatar-fallback>
-                        <span id="origemIconText" class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .OrigemProviderMark}}" style="color: var(--emblem-color, {{.OrigemColor}})" data-avatar-text>{{.OrigemProviderMark}}</span>
-                        <i id="origemIcon" class="hidden h-4 w-4 icon-colored" style="--ic: var(--emblem-color, {{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}})"></i>
+                        <span id="origemIconText" class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .OrigemProviderMark}} cb-runtime-color-text" data-cb-color="{{.OrigemColor}}" data-avatar-text>{{.OrigemProviderMark}}</span>
+                        <i id="origemIcon" class="hidden h-4 w-4 icon-colored" data-cb-color="{{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}}"></i>
                         {{else}}
                         <img id="origemIconImage" alt="" class="hidden institution-logo" data-avatar-fallback>
-                        <span id="origemIconText" class="hidden font-bold uppercase tracking-wider select-none emblem-text" style="color: var(--emblem-color, {{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}})" data-avatar-text></span>
-                        <i id="origemIcon" data-lucide="{{if .OrigemIcon}}{{.OrigemIcon}}{{else}}wallet{{end}}" class="h-4 w-4 icon-colored" style="--ic: var(--emblem-color, {{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}})"></i>
+                        <span id="origemIconText" class="hidden font-bold uppercase tracking-wider select-none emblem-text cb-runtime-color-text" data-cb-color="{{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}}" data-avatar-text></span>
+                        <i id="origemIcon" data-lucide="{{if .OrigemIcon}}{{.OrigemIcon}}{{else}}wallet{{end}}" class="h-4 w-4 icon-colored" data-cb-color="{{if .OrigemColor}}{{.OrigemColor}}{{else}}#6366F1{{end}}"></i>
                         {{end}}
                     </span>
                     <span class="min-w-0">
@@ -237,19 +237,19 @@
             <button id="destinoPicker" type="button"
                 class="sheet-picker hidden w-full items-center justify-between gap-3 rounded-xl border p-4 text-left">
                 <span class="flex min-w-0 items-center gap-3">
-                    <span id="destinoIconWrap" class="sheet-picker-icon flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border emblem-wrap-solid select-none" style="--ic: {{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}}">
+                    <span id="destinoIconWrap" class="sheet-picker-icon flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border emblem-wrap-solid select-none" data-cb-color="{{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}}">
                         {{if .DestinoProviderLogoPath}}
                         <img id="destinoIconImage" src="{{assetPath .DestinoProviderLogoPath}}" alt="" class="institution-logo" data-avatar-fallback>
                         <span id="destinoIconText" class="hidden font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .DestinoProviderMark}}" data-avatar-text>{{.DestinoProviderMark}}</span>
-                        <i id="destinoIcon" class="hidden h-4 w-4 icon-colored" style="--ic: var(--emblem-color, {{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}})"></i>
+                        <i id="destinoIcon" class="hidden h-4 w-4 icon-colored" data-cb-color="{{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}}"></i>
                         {{else if .DestinoProviderMark}}
                         <img id="destinoIconImage" alt="" class="hidden institution-logo" data-avatar-fallback>
-                        <span id="destinoIconText" class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .DestinoProviderMark}}" style="color: var(--emblem-color, {{.DestinoColor}})" data-avatar-text>{{.DestinoProviderMark}}</span>
-                        <i id="destinoIcon" class="hidden h-4 w-4 icon-colored" style="--ic: var(--emblem-color, {{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}})"></i>
+                        <span id="destinoIconText" class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .DestinoProviderMark}} cb-runtime-color-text" data-cb-color="{{.DestinoColor}}" data-avatar-text>{{.DestinoProviderMark}}</span>
+                        <i id="destinoIcon" class="hidden h-4 w-4 icon-colored" data-cb-color="{{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}}"></i>
                         {{else}}
                         <img id="destinoIconImage" alt="" class="hidden institution-logo" data-avatar-fallback>
-                        <span id="destinoIconText" class="hidden font-bold uppercase tracking-wider select-none emblem-text" style="color: var(--emblem-color, {{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}})" data-avatar-text></span>
-                        <i id="destinoIcon" data-lucide="{{if .DestinoIcon}}{{.DestinoIcon}}{{else}}wallet{{end}}" class="h-4 w-4 icon-colored" style="--ic: var(--emblem-color, {{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}})"></i>
+                        <span id="destinoIconText" class="hidden font-bold uppercase tracking-wider select-none emblem-text cb-runtime-color-text" data-cb-color="{{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}}" data-avatar-text></span>
+                        <i id="destinoIcon" data-lucide="{{if .DestinoIcon}}{{.DestinoIcon}}{{else}}wallet{{end}}" class="h-4 w-4 icon-colored" data-cb-color="{{if .DestinoColor}}{{.DestinoColor}}{{else}}#6366F1{{end}}"></i>
                         {{end}}
                     </span>
                     <span class="min-w-0">
@@ -273,8 +273,8 @@
                     hx-push-url="false"
                     class="sheet-picker flex w-full items-center justify-between gap-3 rounded-xl border p-4 text-left">
                     <span class="flex min-w-0 items-center gap-3">
-                        <span id="categoriaIconWrap" class="sheet-picker-icon flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border {{if .CategoriaColor}}icon-wrap-colored{{end}}" style="{{if .CategoriaColor}}--ic: {{.CategoriaColor}}{{end}}">
-                            <i id="categoriaIcon" data-lucide="{{if .CategoriaIcon}}{{.CategoriaIcon}}{{else}}tag{{end}}" class="h-4 w-4 {{if .CategoriaColor}}icon-colored{{else}}text-[var(--cb-text-muted)]{{end}}" style="{{if .CategoriaColor}}--ic: {{.CategoriaColor}}{{end}}"></i>
+                        <span id="categoriaIconWrap" class="sheet-picker-icon flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border {{if .CategoriaColor}}icon-wrap-colored{{end}}"{{if .CategoriaColor}} data-cb-color="{{.CategoriaColor}}"{{end}}>
+                            <i id="categoriaIcon" data-lucide="{{if .CategoriaIcon}}{{.CategoriaIcon}}{{else}}tag{{end}}" class="h-4 w-4 {{if .CategoriaColor}}icon-colored{{else}}text-[var(--cb-text-muted)]{{end}}"{{if .CategoriaColor}} data-cb-color="{{.CategoriaColor}}"{{end}}></i>
                         </span>
                         <span class="min-w-0">
                             <span id="categoriaNome" class="sheet-primary-text block truncate text-sm font-semibold">{{if .CategoriaNome}}{{.CategoriaNome}}{{else}}Selecione uma categoria{{end}}</span>
@@ -425,8 +425,7 @@
                     <div class="flex items-center gap-2 rounded-xl border border-violet-500/15 bg-violet-500/10 px-3 py-2.5 text-xs text-violet-700 dark:text-violet-200">
                         <i data-lucide="paperclip" class="h-4 w-4 shrink-0"></i>
                         <span class="min-w-0 flex-1 truncate">Anexo salvo</span>
-                        <a href="{{.AttachmentViewURL}}" target="_blank" rel="noopener" class="rounded-lg bg-[var(--cb-surface-1)] px-2 py-1 font-semibold text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]">Ver</a>
-                        <a href="{{.AttachmentDownloadURL}}" class="rounded-lg bg-violet-500/15 px-2 py-1 font-semibold text-violet-700 dark:text-violet-100">Baixar</a>
+                        <a href="{{.AttachmentDownloadURL}}" class="rounded-lg bg-violet-500/15 px-2 py-1 font-semibold text-violet-700 dark:text-violet-100">Baixar anexo</a>
                     </div>
                     {{end}}
                 </div>
@@ -589,7 +588,7 @@
                     {{range .Accounts}}{{if eq .Tipo "conta"}}
                     <button type="button" data-origin-kind="conta" data-origin-id="{{.ID}}" data-origin-name="{{.Name}}" data-origin-icon="{{.Icon}}" data-origin-color="{{.Color}}" data-origin-provider="{{.ProviderSlug}}" data-origin-provider-mark="{{.ProviderMark}}" data-origin-provider-logo="{{if .ProviderLogoPath}}{{assetPath .ProviderLogoPath}}{{end}}"
                         class="origin-option flex w-full items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 text-left hover:bg-[var(--cb-surface-3)]">
-                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg emblem-wrap-solid select-none" data-cb-color="{{.Color}}">
                             {{template "financial-emblem" .}}
                         </span>
                         <span class="min-w-0">
@@ -604,7 +603,7 @@
                     {{range .Accounts}}{{if eq .Tipo "cartao"}}
                     <button type="button" data-origin-kind="cartao" data-origin-id="{{.ID}}" data-origin-name="{{.Name}}" data-origin-icon="{{.Icon}}" data-origin-color="{{.Color}}" data-origin-provider="{{.ProviderSlug}}" data-closing-day="{{.ClosingDay}}" data-due-day="{{.DueDay}}" data-origin-provider-mark="{{.ProviderMark}}" data-origin-provider-logo="{{if .ProviderLogoPath}}{{assetPath .ProviderLogoPath}}{{end}}"
                         class="origin-option flex w-full items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 text-left hover:bg-[var(--cb-surface-3)]">
-                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+                        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg emblem-wrap-solid select-none" data-cb-color="{{.Color}}">
                             {{template "financial-emblem" .}}
                         </span>
                         <span class="min-w-0">

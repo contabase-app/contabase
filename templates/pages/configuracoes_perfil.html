@@ -21,8 +21,8 @@
 
     <div class="w-full px-4 pb-[7rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
 
-        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-danger) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-danger) 8%, transparent); color: var(--cb-danger)">{{.FlashError}}</div>{{end}}
-        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm" style="border-color: color-mix(in srgb, var(--cb-success) 25%, var(--cb-border-subtle)); background: color-mix(in srgb, var(--cb-success) 8%, transparent); color: var(--cb-success)">{{.FlashSuccess}}</div>{{end}}
+        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-danger">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-success">{{.FlashSuccess}}</div>{{end}}
 
         <!-- Section header -->
         <div class="mb-6">
@@ -39,7 +39,7 @@
                         <div class="relative w-20 h-20 rounded-full bg-[var(--cb-accent-soft)] flex items-center justify-center text-2xl font-bold text-[var(--cb-accent)]">
                             {{if .Perfil.PhotoURL}}
                             <img src="{{.Perfil.PhotoURL}}" alt="Foto de perfil" class="w-full h-full rounded-full object-cover" data-avatar-fallback>
-                            <span data-avatar-text style="display:none">{{.UserInitials}}</span>
+                            <span data-avatar-text class="hidden">{{.UserInitials}}</span>
                             {{else}}
                             {{.UserInitials}}
                             {{end}}
@@ -175,10 +175,9 @@
                         </div>
                         <button type="button"
                             class="h-10 rounded-xl border border-red-500/30 px-4 text-xs font-bold uppercase tracking-wider text-[var(--cb-danger)] transition-all hover:bg-[var(--cb-surface-3)] active:scale-95 btn-tactile"
-                            hx-post="/configuracoes/seguranca/totp/desativar"
+                            hx-get="/configuracoes/seguranca/totp/desativar"
                             hx-target="#totp-area"
-                            hx-swap="innerHTML"
-                            hx-confirm="Deseja desativar a autenticação de dois fatores (2FA) da sua conta?">
+                            hx-swap="innerHTML">
                             Revogar 2FA
                         </button>
                     </div>

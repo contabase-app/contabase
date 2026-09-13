@@ -257,6 +257,23 @@ document.body.addEventListener('htmx:responseError', function(event) {
         showGlobalFeedback('Erro interno. Tente novamente.', 'error');
         return;
     }
+    if (xhr.status === 409) {
+        // Bulk delete of recurring transactions already showed its specific
+        // mostrarAlerta; the generic fallback must not overwrite it.
+        var pathInfo = (event.detail && event.detail.pathInfo) || {};
+        var requestPath = String(pathInfo.requestPath || '').split('?')[0];
+        if (requestPath === '/transacoes/bulk/delete'
+            && (xhr.getResponseHeader('HX-Reswap') || '').toLowerCase() === 'none') {
+            try {
+                var bulkTrigger = JSON.parse(xhr.getResponseHeader('HX-Trigger') || '');
+                if (bulkTrigger && typeof bulkTrigger.mostrarAlerta === 'string' && bulkTrigger.mostrarAlerta) {
+                    return;
+                }
+            } catch (e) {
+                // Invalid HX-Trigger JSON keeps the existing fallback.
+            }
+        }
+    }
     if (xhr.status >= 400) {
         showGlobalFeedback('Não foi possível concluir a ação.', 'error');
     }

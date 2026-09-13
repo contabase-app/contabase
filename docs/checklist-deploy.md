@@ -16,6 +16,7 @@ Ele serve para Docker e para qualquer ambiente em que o ContaBase fique acessive
 - [ ] O restore ja foi testado ao menos uma vez.
 - [ ] As permissoes dos diretorios de dados estao corretas.
 - [ ] `APP_DEBUG=false` em producao.
+- [ ] A aplicação usa uma única réplica ou o proxy/edge aplica rate limit compartilhado entre todas as réplicas.
 
 ## Validacoes rapidas
 
@@ -31,6 +32,7 @@ curl -i http://localhost:8080/health
 - [ ] O proxy encaminha `X-Forwarded-Proto`.
 - [ ] O proxy encaminha `X-Forwarded-For`.
 - [ ] O proxy nao expõe o app sem HTTPS.
+- [ ] A porta de origem não pode ser acessada para contornar o rate limit do proxy/edge.
 
 ## Depois do primeiro acesso
 

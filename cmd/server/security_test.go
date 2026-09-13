@@ -1,9 +1,14 @@
 package main
 
 import (
+	"crypto/sha256"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -439,14 +444,38 @@ func TestClientIPUsesRemoteAddrWithoutTrustedProxy(t *testing.T) {
 	}
 }
 
-func TestClientIPUsesFirstForwardedForFromTrustedProxy(t *testing.T) {
+func TestClientIPUsesRightmostUntrustedForwardedForFromTrustedProxy(t *testing.T) {
 	cfg := newHTTPBoundaryConfig("app.example.com", "10.0.0.0/8")
 	req := httptest.NewRequest(http.MethodGet, "http://app.example.com/", nil)
 	req.RemoteAddr = "10.1.2.3:44123"
 	req.Header.Set("X-Forwarded-For", " 198.51.100.20, 198.51.100.21")
 
-	if got := cfg.clientIP(req); got != "198.51.100.20" {
-		t.Fatalf("expected first forwarded IP, got %q", got)
+	if got := cfg.clientIP(req); got != "198.51.100.21" {
+		t.Fatalf("expected rightmost forwarded IP, got %q", got)
+	}
+}
+
+func TestClientIPIgnoresSpoofedLeftmostForwardedForFromTrustedProxy(t *testing.T) {
+	cfg := newHTTPBoundaryConfig("app.example.com", "10.0.0.0/8")
+	req := httptest.NewRequest(http.MethodGet, "http://app.example.com/", nil)
+	req.RemoteAddr = "10.1.2.3:44123"
+	// A client-supplied value is retained on the left while the proxy appends
+	// the peer it actually observed on the right.
+	req.Header.Set("X-Forwarded-For", "203.0.113.250, 198.51.100.21")
+
+	if got := cfg.clientIP(req); got != "198.51.100.21" {
+		t.Fatalf("spoofed leftmost XFF selected as client IP: %q", got)
+	}
+}
+
+func TestClientIPSkipsTrustedProxyHopsFromRight(t *testing.T) {
+	cfg := newHTTPBoundaryConfig("app.example.com", "10.0.0.0/8")
+	req := httptest.NewRequest(http.MethodGet, "http://app.example.com/", nil)
+	req.RemoteAddr = "10.1.2.3:44123"
+	req.Header.Set("X-Forwarded-For", "198.51.100.21, 10.2.3.4")
+
+	if got := cfg.clientIP(req); got != "198.51.100.21" {
+		t.Fatalf("expected client before trusted proxy chain, got %q", got)
 	}
 }
 
@@ -463,20 +492,20 @@ func TestClientIPFallsBackOnInvalidForwardedHeaders(t *testing.T) {
 	}
 }
 
-func TestClientIPSupportsRealIPAndCloudflareHeadersFromTrustedProxy(t *testing.T) {
+func TestClientIPDoesNotFallbackToRealIPOrCloudflareHeaders(t *testing.T) {
 	cfg := newHTTPBoundaryConfig("app.example.com", "10.0.0.0/8")
 	req := httptest.NewRequest(http.MethodGet, "http://app.example.com/", nil)
 	req.RemoteAddr = "10.1.2.3:44123"
 	req.Header.Set("X-Real-IP", "198.51.100.30")
 
-	if got := cfg.clientIP(req); got != "198.51.100.30" {
-		t.Fatalf("expected x-real-ip client IP, got %q", got)
+	if got := cfg.clientIP(req); got != "10.1.2.3" {
+		t.Fatalf("X-Real-IP must not become client IP, got %q", got)
 	}
 
 	req.Header.Del("X-Real-IP")
 	req.Header.Set("CF-Connecting-IP", "198.51.100.31")
-	if got := cfg.clientIP(req); got != "198.51.100.31" {
-		t.Fatalf("expected cloudflare client IP, got %q", got)
+	if got := cfg.clientIP(req); got != "10.1.2.3" {
+		t.Fatalf("CF-Connecting-IP must not become client IP, got %q", got)
 	}
 }
 
@@ -528,6 +557,94 @@ func TestMemoryRateLimiterReleasesAfterWindow(t *testing.T) {
 	}
 }
 
+func TestMemoryRateLimiterBoundsBucketsAndFailsClosed(t *testing.T) {
+	limiter := newMemoryRateLimiterWithCapacity(2)
+	policy := rateLimitPolicy{Limit: 2, Window: time.Minute}
+	now := time.Unix(100, 0)
+
+	if decision := limiter.Allow("auth:login:ip:203.0.113.10", policy, now); !decision.Allowed {
+		t.Fatal("expected first identity to be allowed")
+	}
+	if decision := limiter.Allow("auth:login:ip:203.0.113.11", policy, now); !decision.Allowed {
+		t.Fatal("expected second identity to be allowed")
+	}
+	decision := limiter.Allow("auth:login:ip:203.0.113.12", policy, now)
+	if decision.Allowed {
+		t.Fatal("expected unseen identity to be blocked at capacity")
+	}
+	if decision.RetryAfter <= 0 {
+		t.Fatalf("expected positive retry-after at capacity, got %s", decision.RetryAfter)
+	}
+	if got := len(limiter.buckets); got != 2 {
+		t.Fatalf("bucket count = %d, want 2", got)
+	}
+
+	if decision := limiter.Allow("auth:login:ip:203.0.113.10", policy, now.Add(time.Second)); !decision.Allowed {
+		t.Fatal("existing identity must keep its bucket at capacity")
+	}
+}
+
+func TestMemoryRateLimiterReclaimsExpiredBucketAtCapacity(t *testing.T) {
+	limiter := newMemoryRateLimiterWithCapacity(1)
+	policy := rateLimitPolicy{Limit: 1, Window: time.Minute}
+	now := time.Unix(100, 0)
+
+	if decision := limiter.Allow("auth:login:email:first@example.test", policy, now); !decision.Allowed {
+		t.Fatal("expected first identity to be allowed")
+	}
+	if decision := limiter.Allow("auth:login:email:second@example.test", policy, now.Add(time.Minute)); !decision.Allowed {
+		t.Fatal("expected expired bucket to be reclaimed for a new identity")
+	}
+	if got := len(limiter.buckets); got != 1 {
+		t.Fatalf("bucket count = %d, want 1", got)
+	}
+	if _, exists := limiter.buckets[rateLimitKeyHash("auth:login:email:first@example.test")]; exists {
+		t.Fatal("expired bucket remained after capacity cleanup")
+	}
+}
+
+func TestMemoryRateLimiterStoresFixedLengthHashedKeys(t *testing.T) {
+	limiter := newMemoryRateLimiterWithCapacity(1)
+	policy := rateLimitPolicy{Limit: 1, Window: time.Minute}
+	rawKey := "auth:login:email:" + strings.Repeat("sensitive-user-input", 1_000)
+
+	if decision := limiter.Allow(rawKey, policy, time.Unix(100, 0)); !decision.Allowed {
+		t.Fatal("expected request to be allowed")
+	}
+	if _, exists := limiter.buckets[rawKey]; exists {
+		t.Fatal("raw rate-limit key was retained in memory")
+	}
+	for key := range limiter.buckets {
+		if len(key) != sha256.Size*2 {
+			t.Fatalf("stored key length = %d, want %d", len(key), sha256.Size*2)
+		}
+		if key != rateLimitKeyHash(rawKey) {
+			t.Fatalf("stored key = %q, want SHA-256 hash", key)
+		}
+	}
+}
+
+func TestMemoryRateLimiterCapacityIsSafeUnderConcurrency(t *testing.T) {
+	const capacity = 8
+	limiter := newMemoryRateLimiterWithCapacity(capacity)
+	policy := rateLimitPolicy{Limit: 1, Window: time.Minute}
+	now := time.Unix(100, 0)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			limiter.Allow("auth:login:email:user"+strconv.Itoa(index)+"@example.test", policy, now)
+		}(i)
+	}
+	wg.Wait()
+
+	if got := len(limiter.buckets); got != capacity {
+		t.Fatalf("bucket count after concurrent admission = %d, want %d", got, capacity)
+	}
+}
+
 func TestWriteRateLimitExceededIncludesRetryAfter(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/login", nil)
@@ -562,6 +679,66 @@ func TestAllowRateLimitedRequestReturns429AfterExcess(t *testing.T) {
 	}
 	if got := second.Header().Get("Retry-After"); got == "" {
 		t.Fatalf("expected Retry-After header")
+	}
+}
+
+func TestPasswordChangeRateLimitBlocksAcrossChangedSourceIPs(t *testing.T) {
+	limiter := newMemoryRateLimiter()
+	now := time.Unix(100, 0)
+
+	for i := 0; i < passwordChangeUserRateLimitPolicy.Limit; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/configuracoes/perfil/senha", nil)
+		req.RemoteAddr = "198.51.100." + strconv.Itoa(10+i) + ":4321"
+		if !allowPasswordChangeRateLimit(httptest.NewRecorder(), req, limiter, "user-1", now.Add(time.Duration(i)*time.Second)) {
+			t.Fatalf("attempt %d unexpectedly blocked", i+1)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/configuracoes/perfil/senha", nil)
+	req.RemoteAddr = "203.0.113.10:4321"
+	rr := httptest.NewRecorder()
+	if allowPasswordChangeRateLimit(rr, req, limiter, "user-1", now.Add(time.Minute)) {
+		t.Fatal("expected global user password-change limit to block a new source IP")
+	}
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusTooManyRequests)
+	}
+}
+
+func TestNewHTTPServerUsesFiniteConnectionDeadlines(t *testing.T) {
+	server := newHTTPServer(":8080", http.NotFoundHandler())
+	if server.ReadHeaderTimeout != httpReadHeaderTimeout || server.ReadHeaderTimeout <= 0 {
+		t.Fatalf("ReadHeaderTimeout = %s, want %s", server.ReadHeaderTimeout, httpReadHeaderTimeout)
+	}
+	if server.ReadTimeout != httpReadTimeout || server.ReadTimeout <= 0 {
+		t.Fatalf("ReadTimeout = %s, want %s", server.ReadTimeout, httpReadTimeout)
+	}
+	if server.WriteTimeout != httpWriteTimeout || server.WriteTimeout <= 0 {
+		t.Fatalf("WriteTimeout = %s, want %s", server.WriteTimeout, httpWriteTimeout)
+	}
+	if server.IdleTimeout != httpIdleTimeout || server.IdleTimeout <= 0 {
+		t.Fatalf("IdleTimeout = %s, want %s", server.IdleTimeout, httpIdleTimeout)
+	}
+}
+
+func TestLimitTransactionMutationBodiesRunsBeforeNextHandler(t *testing.T) {
+	body := strings.Repeat("x", transactionRequestMaxBytes+1)
+	handler := limitTransactionMutationBodies(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := io.ReadAll(r.Body)
+		if err == nil {
+			t.Fatal("expected body limit error")
+		}
+		var maxErr *http.MaxBytesError
+		if !errors.As(err, &maxErr) {
+			t.Fatalf("read error = %v, want MaxBytesError", err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/transacoes", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusNoContent)
 	}
 }
 
@@ -665,9 +842,11 @@ func TestSecurityHeadersApplied(t *testing.T) {
 	assertHeader(t, rr, "Referrer-Policy", "strict-origin-when-cross-origin")
 	assertHeader(t, rr, "X-Frame-Options", "DENY")
 	assertHeader(t, rr, "Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
-	assertHeader(t, rr, "Content-Security-Policy-Report-Only", cspReportOnlyPolicy)
 	assertHeader(t, rr, "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 	assertHeader(t, rr, "Content-Security-Policy", cspEnforcingPolicy)
+	if got := rr.Header().Get("Content-Security-Policy-Report-Only"); got != "" {
+		t.Fatalf("report-only CSP remained active: %q", got)
+	}
 }
 
 func assertHeader(t *testing.T, rr *httptest.ResponseRecorder, name, want string) {

@@ -225,11 +225,7 @@ function filterLancamentosCategories(query) {
     items.forEach(function(item) {
         var name = normalizeSearchText(item.getAttribute('data-category-name') || '');
         var type = normalizeSearchText(item.getAttribute('data-category-type') || '');
-        if (!q || name.indexOf(q) !== -1 || type.indexOf(q) !== -1) {
-            item.style.display = '';
-        } else {
-            item.style.display = 'none';
-        }
+        item.classList.toggle('hidden', q && name.indexOf(q) === -1 && type.indexOf(q) === -1);
     });
 }
 

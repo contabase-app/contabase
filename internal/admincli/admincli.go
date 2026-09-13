@@ -189,6 +189,7 @@ func DisableUser2FAWithAudit(db *sql.DB, email string, audit RecoveryAudit) (Use
 		    totp_secret_enc = NULL,
 		    totp_backup_codes = '[]',
 		    totp_enabled_at = NULL,
+		    totp_last_used_step = -1,
 		    updated_at = unixepoch()
 		WHERE id = ?
 	`, userID); err != nil {
@@ -397,6 +398,9 @@ func revokeUserAuthStateTx(tx *sql.Tx, userID string) error {
 	}
 	if _, err := tx.Exec(`UPDATE pre_auth_sessions SET consumed_at = unixepoch() WHERE user_id = ? AND consumed_at IS NULL`, userID); err != nil {
 		return fmt.Errorf("erro ao revogar pre-auth: %w", err)
+	}
+	if _, err := tx.Exec(`UPDATE mfa_setup_challenges SET consumed_at = unixepoch() WHERE user_id = ? AND consumed_at IS NULL`, userID); err != nil {
+		return fmt.Errorf("erro ao revogar desafios de MFA: %w", err)
 	}
 	if _, err := tx.Exec(`DELETE FROM auth_lockouts WHERE user_id = ?`, userID); err != nil {
 		return fmt.Errorf("erro ao limpar bloqueios: %w", err)

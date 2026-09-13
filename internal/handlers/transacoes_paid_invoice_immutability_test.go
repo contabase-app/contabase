@@ -795,6 +795,7 @@ func seedPaidInvoiceImmutabilityScenario(t *testing.T, db *sql.DB) {
 func testPaidInvoiceMutationHandler(db *sql.DB) TransactionHandler {
 	return TransactionHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   testPaidInvoiceMutationTemplates(),
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",

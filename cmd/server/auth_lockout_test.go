@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -83,6 +84,51 @@ func TestUnknownUserDoesNotCreatePersistentLockout(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("expected no persistent lockout for unknown user, got %d", count)
+	}
+}
+
+func TestUnknownAndKnownInvalidLoginUseEquivalentPasswordWork(t *testing.T) {
+	db, authService, _ := setupTestDB(t)
+	defer db.Close()
+	tpl := authLockoutTemplateEngine{}
+
+	measure := func(email string) (time.Duration, string) {
+		started := time.Now()
+		rr := submitLoginForLockoutTest(t, db, authService, tpl, email, "wrong-password")
+		elapsed := time.Since(started)
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("login %q status = %d, want %d", email, rr.Code, http.StatusUnauthorized)
+		}
+		return elapsed, rr.Body.String()
+	}
+
+	// Warm the code and database paths before comparing medians.
+	measure("missing-warmup@test.local")
+	measure("user@test.local")
+	if _, err := db.Exec(`DELETE FROM auth_lockouts`); err != nil {
+		t.Fatalf("clear warmup lockout: %v", err)
+	}
+
+	const samples = 3
+	unknownDurations := make([]time.Duration, 0, samples)
+	knownDurations := make([]time.Duration, 0, samples)
+	var unknownBody, knownBody string
+	for i := 0; i < samples; i++ {
+		var elapsed time.Duration
+		elapsed, unknownBody = measure("missing@test.local")
+		unknownDurations = append(unknownDurations, elapsed)
+		elapsed, knownBody = measure("user@test.local")
+		knownDurations = append(knownDurations, elapsed)
+	}
+	slices.Sort(unknownDurations)
+	slices.Sort(knownDurations)
+	unknownMedian := unknownDurations[samples/2]
+	knownMedian := knownDurations[samples/2]
+	if unknownBody != knownBody {
+		t.Fatalf("generic login response differs: unknown=%q known=%q", unknownBody, knownBody)
+	}
+	if unknownMedian*3 < knownMedian || knownMedian*3 < unknownMedian {
+		t.Fatalf("login work is not equivalent: unknown median=%s known median=%s", unknownMedian, knownMedian)
 	}
 }
 

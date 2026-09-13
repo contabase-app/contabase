@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -25,6 +26,17 @@ type AutomaticBackupMetadata struct {
 }
 
 func ensureDailyAutomaticBackup(db *sql.DB, dbPath, backupDir string, civilNow time.Time, retentionDays int) error {
+	return ensureDailyAutomaticBackupContext(context.Background(), db, dbPath, backupDir, civilNow, retentionDays)
+}
+
+func ensureDailyAutomaticBackupContext(ctx context.Context, db *sql.DB, dbPath, backupDir string, civilNow time.Time, retentionDays int) error {
+	return ensureDailyAutomaticBackupWithPublication(ctx, db, dbPath, backupDir, civilNow, retentionDays, nil)
+}
+
+func ensureDailyAutomaticBackupWithPublication(ctx context.Context, db *sql.DB, dbPath, backupDir string, civilNow time.Time, retentionDays int, ops *backupPublicationOps) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if db == nil {
 		return fmt.Errorf("nil database")
 	}
@@ -45,28 +57,22 @@ func ensureDailyAutomaticBackup(db *sql.DB, dbPath, backupDir string, civilNow t
 	}
 
 	today := civilDay(civilNow)
-	if err := migrateLegacyAutomaticBackups(backupDir, today, retentionDays); err != nil {
-		return err
-	}
+	// Unattributed legacy files are preserved, never adopted as today's capture.
 
 	destPath := filepath.Join(backupDir, dailyAutomaticBackupName(today))
-	exists, err := ensureReadOnlyRegularBackup(destPath)
+	exists, err := confirmExistingBackup(ctx, destPath, ops)
 	if err != nil {
 		return err
 	}
 	if !exists {
-		tmp, err := os.CreateTemp(backupDir, ".contabase-daily-*.tmp")
+		stageDir, err := os.MkdirTemp(backupDir, ".contabase-daily-*")
 		if err != nil {
-			return fmt.Errorf("create daily backup staging file: %w", err)
+			return fmt.Errorf("create daily backup staging directory: %w", err)
 		}
-		tmpPath := tmp.Name()
-		if err := tmp.Close(); err != nil {
-			_ = os.Remove(tmpPath)
-			return fmt.Errorf("close daily backup staging file: %w", err)
-		}
-		defer func() { _ = os.Remove(tmpPath) }()
+		defer os.RemoveAll(stageDir)
+		tmpPath := filepath.Join(stageDir, "snapshot.db")
 
-		if err := CreateSQLiteBackupFile(db, dbPath, tmpPath); err != nil {
+		if err := CreateSQLiteBackupFileContext(ctx, db, dbPath, tmpPath); err != nil {
 			return fmt.Errorf("create daily automatic backup: %w", err)
 		}
 		info, err := os.Stat(tmpPath)
@@ -79,23 +85,30 @@ func ensureDailyAutomaticBackup(db *sql.DB, dbPath, backupDir string, civilNow t
 		if err := os.Chmod(tmpPath, 0o444); err != nil {
 			return fmt.Errorf("protect daily backup staging file: %w", err)
 		}
-		published, err := publishFileNoReplace(tmpPath, destPath)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		published, err := publishDailyBackup(ctx, tmpPath, destPath, ops)
 		if err != nil {
 			return fmt.Errorf("publish daily automatic backup: %w", err)
 		}
 		if !published {
-			if _, err := ensureReadOnlyRegularBackup(destPath); err != nil {
+			if exists, err := confirmExistingBackup(ctx, destPath, ops); err != nil {
 				return err
+			} else if !exists {
+				return fmt.Errorf("concurrent daily backup disappeared before confirmation")
 			}
 		}
 	}
 
-	if err := pruneAutomaticBackups(backupDir, today, retentionDays); err != nil {
+	if err := pruneAutomaticBackups(ctx, backupDir, today, retentionDays, ops); err != nil {
 		return err
 	}
 	return nil
 }
 
+// ListDailyAutomaticBackups inventories filenames only, including unattributed
+// legacy daily files. It does not certify provenance, integrity or completion.
 func ListDailyAutomaticBackups(dir string, limit int) ([]AutomaticBackupMetadata, error) {
 	if limit <= 0 {
 		return nil, nil
@@ -137,160 +150,56 @@ func ListDailyAutomaticBackups(dir string, limit int) ([]AutomaticBackupMetadata
 	return items, nil
 }
 
-func migrateLegacyAutomaticBackups(dir string, today time.Time, retentionDays int) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return fmt.Errorf("read automatic backup directory for migration: %w", err)
-	}
-	cutoff := today.AddDate(0, 0, -(retentionDays - 1))
-	type legacyCandidate struct {
-		name       string
-		capturedAt time.Time
-	}
-	byDay := make(map[string][]legacyCandidate)
-	for _, entry := range entries {
-		capturedAt, ok := parseLegacyAutomaticBackupName(entry.Name())
-		if !ok || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
-			continue
-		}
-		day := civilDayInLocation(capturedAt, today.Location())
-		if day.Before(cutoff) || day.After(today) {
-			continue
-		}
-		key := day.Format("20060102")
-		byDay[key] = append(byDay[key], legacyCandidate{name: entry.Name(), capturedAt: capturedAt})
-	}
-
-	keys := make([]string, 0, len(byDay))
-	for key := range byDay {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		day, err := time.ParseInLocation("20060102", key, today.Location())
-		if err != nil {
-			return fmt.Errorf("parse legacy automatic backup day: %w", err)
-		}
-		destPath := filepath.Join(dir, dailyAutomaticBackupName(day))
-		exists, err := ensureReadOnlyRegularBackup(destPath)
+// Retention owns only verified protocol pairs. Legacy, unknown and mismatched
+// files are preserved. Deletion is serialized with publication/reconfirmation.
+func pruneAutomaticBackups(ctx context.Context, dir string, today time.Time, retentionDays int, ops *backupPublicationOps) error {
+	return withBackupPublicationLock(ctx, dir, func() error {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
 			return err
 		}
-		if exists {
-			continue
-		}
-		candidates := byDay[key]
-		sort.Slice(candidates, func(i, j int) bool {
-			if candidates[i].capturedAt.Equal(candidates[j].capturedAt) {
-				return candidates[i].name < candidates[j].name
+		cutoff := today.AddDate(0, 0, -(retentionDays - 1))
+		for _, entry := range entries {
+			day, ok := parseDailyAutomaticBackupName(entry.Name())
+			if !ok || !civilDayInLocation(day, today.Location()).Before(cutoff) {
+				continue
 			}
-			return candidates[i].capturedAt.Before(candidates[j].capturedAt)
-		})
-		sourcePath := filepath.Join(dir, candidates[0].name)
-		if err := os.Chmod(sourcePath, 0o444); err != nil {
-			return fmt.Errorf("protect legacy automatic backup %q: %w", candidates[0].name, err)
-		}
-		published, err := publishFileNoReplace(sourcePath, destPath)
-		if err != nil {
-			return fmt.Errorf("adopt legacy automatic backup %q: %w", candidates[0].name, err)
-		}
-		if !published {
-			if _, err := ensureReadOnlyRegularBackup(destPath); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func pruneAutomaticBackups(dir string, today time.Time, retentionDays int) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return fmt.Errorf("read automatic backup directory for retention: %w", err)
-	}
-	cutoff := today.AddDate(0, 0, -(retentionDays - 1))
-	changed := false
-	for _, entry := range entries {
-		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			continue
-		}
-		name := entry.Name()
-		if day, ok := parseDailyAutomaticBackupName(name); ok {
-			day = civilDayInLocation(day, today.Location())
-			if day.Before(cutoff) && !day.After(today) {
-				if err := os.Remove(filepath.Join(dir, name)); err != nil {
-					return fmt.Errorf("remove expired daily automatic backup %q: %w", name, err)
+			path := filepath.Join(dir, entry.Name())
+			pair, err := openDailyBackupPair(ctx, path)
+			if err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
 				}
-				changed = true
+				continue // No proof of ownership: no deletion.
 			}
-			continue
-		}
-
-		capturedAt, ok := parseLegacyAutomaticBackupName(name)
-		if !ok {
-			continue
-		}
-		day := civilDayInLocation(capturedAt, today.Location())
-		if day.After(today) {
-			continue
-		}
-		dailyPath := filepath.Join(dir, dailyAutomaticBackupName(day))
-		if day.Before(cutoff) {
-			if err := os.Remove(filepath.Join(dir, name)); err != nil {
-				return fmt.Errorf("remove expired legacy automatic backup %q: %w", name, err)
+			if pair == nil {
+				continue
 			}
-			changed = true
-			continue
-		}
-		if exists, err := ensureReadOnlyRegularBackup(dailyPath); err != nil {
-			return err
-		} else if exists {
-			if err := os.Remove(filepath.Join(dir, name)); err != nil {
-				return fmt.Errorf("remove duplicate legacy automatic backup %q: %w", name, err)
+			err = pair.checkIdentity(path)
+			if err == nil {
+				err = os.Remove(path)
 			}
-			changed = true
+			// Sync removal of the DB before removing its proof. A crash leaves an
+			// orphan proof, never an unproven file eligible for automated deletion.
+			if err == nil {
+				err = ops.directorySync(dir)
+			}
+			if err == nil {
+				err = sameBackupFile(pair.proof, dailyBackupProofPath(path))
+			}
+			if err == nil {
+				err = os.Remove(dailyBackupProofPath(path))
+			}
+			if err == nil {
+				err = ops.directorySync(dir)
+			}
+			err = errors.Join(err, pair.close())
+			if err != nil {
+				return fmt.Errorf("retain daily backups: %w", err)
+			}
 		}
-	}
-	if changed {
-		if err := syncDirectory(dir); err != nil {
-			return fmt.Errorf("sync automatic backup retention: %w", err)
-		}
-	}
-	return nil
-}
-
-func publishFileNoReplace(sourcePath, destPath string) (bool, error) {
-	if err := os.Link(sourcePath, destPath); err != nil {
-		if os.IsExist(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	if err := syncDirectory(filepath.Dir(destPath)); err != nil {
-		return true, err
-	}
-	return true, nil
-}
-
-func ensureReadOnlyRegularBackup(path string) (bool, error) {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("inspect daily automatic backup: %w", err)
-	}
-	if !info.Mode().IsRegular() || info.Size() == 0 {
-		return false, fmt.Errorf("daily automatic backup path is not a non-empty regular file")
-	}
-	if err := os.Chmod(path, 0o444); err != nil {
-		return false, fmt.Errorf("protect daily automatic backup: %w", err)
-	}
-	return true, nil
+		return nil
+	})
 }
 
 func syncDirectory(dir string) error {
@@ -298,8 +207,7 @@ func syncDirectory(dir string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return f.Sync()
+	return errors.Join(f.Sync(), f.Close())
 }
 
 func dailyAutomaticBackupName(day time.Time) string {

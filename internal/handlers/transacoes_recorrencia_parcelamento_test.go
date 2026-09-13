@@ -578,6 +578,7 @@ func TestRecurringDailyTogglePaymentOnlySelectedOccurrence(t *testing.T) {
 
 	toggleHandler := TransactionHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   testPaidInvoiceMutationTemplates(),
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",

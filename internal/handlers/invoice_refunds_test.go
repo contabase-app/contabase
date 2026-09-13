@@ -204,6 +204,128 @@ func TestRegistrarReembolsoGeralBloqueiaExcessoEInvoicePaga(t *testing.T) {
 	}
 }
 
+func TestAtualizarERemoverReembolsoDeItemMantemHistoricoAuditavel(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedInvoicePaymentScenario(t, db)
+	h := TransactionHandler{DB: db, Templates: testOOBTemplates(t), WorkspaceID: "ws-test", UserID: "user-test"}
+
+	create := httptest.NewRecorder()
+	h.HandleRegistrarReembolso(create, formPost("/transacoes/purchase-test/reembolso", url.Values{
+		"valor": {"50,00"}, "descricao": {"Estorno inicial"},
+	}), "purchase-test")
+	if create.Code != http.StatusOK {
+		t.Fatalf("create status = %d, body=%q", create.Code, create.Body.String())
+	}
+	var refundID string
+	if err := db.QueryRow(`SELECT id FROM transaction_refunds WHERE transaction_id='purchase-test' AND reversed_at IS NULL`).Scan(&refundID); err != nil {
+		t.Fatal(err)
+	}
+
+	update := httptest.NewRecorder()
+	h.HandleAtualizarReembolso(update, formPost("/transacoes/purchase-test/reembolsos/"+refundID+"/editar", url.Values{
+		"valor": {"75,00"}, "descricao": {"Estorno corrigido"},
+	}), "purchase-test", refundID)
+	if update.Code != http.StatusOK {
+		t.Fatalf("update status = %d, body=%q", update.Code, update.Body.String())
+	}
+	var activeAmount, activeCount, reversedCount int64
+	if err := db.QueryRow(`SELECT COALESCE(SUM(amount_cents), 0), COUNT(1) FROM transaction_refunds WHERE transaction_id='purchase-test' AND reversed_at IS NULL`).Scan(&activeAmount, &activeCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transaction_refunds WHERE transaction_id='purchase-test' AND reversed_at IS NOT NULL`).Scan(&reversedCount); err != nil {
+		t.Fatal(err)
+	}
+	if activeAmount != 7500 || activeCount != 1 || reversedCount != 1 {
+		t.Fatalf("transaction refunds active=%d/%d reversed=%d, want 7500/1/1", activeAmount, activeCount, reversedCount)
+	}
+	var replacementID string
+	if err := db.QueryRow(`SELECT id FROM transaction_refunds WHERE transaction_id='purchase-test' AND reversed_at IS NULL`).Scan(&replacementID); err != nil {
+		t.Fatal(err)
+	}
+
+	remove := httptest.NewRecorder()
+	h.HandleRemoverReembolso(remove, formPost("/transacoes/purchase-test/reembolsos/"+replacementID+"/remover", nil), "purchase-test", replacementID)
+	if remove.Code != http.StatusOK {
+		t.Fatalf("remove status = %d, body=%q", remove.Code, remove.Body.String())
+	}
+	if err := db.QueryRow(`SELECT COUNT(1) FROM transaction_refunds WHERE transaction_id='purchase-test' AND reversed_at IS NULL`).Scan(&activeCount); err != nil {
+		t.Fatal(err)
+	}
+	if activeCount != 0 {
+		t.Fatalf("active transaction refunds = %d, want 0", activeCount)
+	}
+	snapshot, err := loadInvoiceFinancialSnapshotDB(db, "ws-test", "invoice-2026-08")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Total != 25000 {
+		t.Fatalf("invoice total after refund removal = %d, want 25000", snapshot.Total)
+	}
+}
+
+func TestAtualizarERemoverReembolsoGeralMantemHistoricoAuditavel(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedInvoicePaymentScenario(t, db)
+	h := FaturasHandler{DB: db, Templates: testOOBTemplates(t), WorkspaceID: "ws-test", UserID: "user-test"}
+
+	create := httptest.NewRecorder()
+	h.HandleRegistrarReembolsoGeral(create, formPost("/cartoes/faturas/reembolso", url.Values{
+		"invoice_id": {"invoice-2026-08"}, "valor": {"50,00"}, "descricao": {"Crédito inicial"},
+	}))
+	if create.Code != http.StatusOK {
+		t.Fatalf("create status = %d, body=%q", create.Code, create.Body.String())
+	}
+	var refundID string
+	if err := db.QueryRow(`SELECT id FROM invoice_refunds WHERE invoice_id='invoice-2026-08' AND reversed_at IS NULL`).Scan(&refundID); err != nil {
+		t.Fatal(err)
+	}
+
+	update := httptest.NewRecorder()
+	h.HandleAtualizarReembolsoGeral(update, formPost("/cartoes/faturas/reembolsos/"+refundID+"/editar", url.Values{
+		"invoice_id": {"invoice-2026-08"}, "valor": {"70,00"}, "descricao": {"Crédito corrigido"},
+	}), refundID)
+	if update.Code != http.StatusOK {
+		t.Fatalf("update status = %d, body=%q", update.Code, update.Body.String())
+	}
+	var activeAmount, activeCount, reversedCount int64
+	if err := db.QueryRow(`SELECT COALESCE(SUM(amount_cents), 0), COUNT(1) FROM invoice_refunds WHERE invoice_id='invoice-2026-08' AND reversed_at IS NULL`).Scan(&activeAmount, &activeCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(1) FROM invoice_refunds WHERE invoice_id='invoice-2026-08' AND reversed_at IS NOT NULL`).Scan(&reversedCount); err != nil {
+		t.Fatal(err)
+	}
+	if activeAmount != 7000 || activeCount != 1 || reversedCount != 1 {
+		t.Fatalf("general refunds active=%d/%d reversed=%d, want 7000/1/1", activeAmount, activeCount, reversedCount)
+	}
+	var replacementID string
+	if err := db.QueryRow(`SELECT id FROM invoice_refunds WHERE invoice_id='invoice-2026-08' AND reversed_at IS NULL`).Scan(&replacementID); err != nil {
+		t.Fatal(err)
+	}
+
+	remove := httptest.NewRecorder()
+	h.HandleRemoverReembolsoGeral(remove, formPost("/cartoes/faturas/reembolsos/"+replacementID+"/remover", url.Values{
+		"invoice_id": {"invoice-2026-08"},
+	}), replacementID)
+	if remove.Code != http.StatusOK {
+		t.Fatalf("remove status = %d, body=%q", remove.Code, remove.Body.String())
+	}
+	if err := db.QueryRow(`SELECT COUNT(1) FROM invoice_refunds WHERE invoice_id='invoice-2026-08' AND reversed_at IS NULL`).Scan(&activeCount); err != nil {
+		t.Fatal(err)
+	}
+	if activeCount != 0 {
+		t.Fatalf("active general refunds = %d, want 0", activeCount)
+	}
+	snapshot, err := loadInvoiceFinancialSnapshotDB(db, "ws-test", "invoice-2026-08")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Total != 25000 {
+		t.Fatalf("invoice total after general refund removal = %d, want 25000", snapshot.Total)
+	}
+}
+
 func TestRefundFormsPrefillOnlyItemAvailableAmount(t *testing.T) {
 	for _, tc := range []struct {
 		name        string

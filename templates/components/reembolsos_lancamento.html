@@ -1,0 +1,25 @@
+{{define "reembolsos-lancamento"}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/sheet-form.css"}}">
+<div class="fixed inset-0 z-[100]">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation"></div>
+    <div class="absolute inset-x-0 bottom-0 flex justify-center overflow-hidden md:inset-0 md:items-center md:px-4 md:py-8">
+        <section class="sheet-in sheet-shell relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl border md:rounded-xl" aria-labelledby="refunds-title">
+            <div class="sheet-drag mx-auto mt-4 h-1 w-10 rounded-full md:hidden"></div>
+            <header class="sheet-topbar flex items-center gap-3 px-4 pb-3 pt-4 sm:px-6 md:pt-5">
+                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-[var(--cb-success)]"><i data-lucide="undo-2" class="h-5 w-5"></i></span>
+                <div class="min-w-0 flex-1"><h2 id="refunds-title" class="text-base font-bold text-[var(--cb-text-main)]">Reembolsos</h2><p class="truncate text-xs text-[var(--cb-text-muted)]">{{.TransactionLabel}}</p></div>
+                <button type="button" class="sheet-close-btn flex h-11 w-11 items-center justify-center rounded-full border" data-onclick="closeBottomSheet" aria-label="Fechar"><i data-lucide="x" class="h-5 w-5"></i></button>
+            </header>
+            <div class="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 pb-5 pt-2 sm:px-6">
+                {{range .Refunds}}
+                <div class="flex items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3">
+                    <div class="min-w-0 flex-1"><p class="truncate text-sm font-bold text-[var(--cb-text-main)]">{{.Description}}</p><p class="mt-0.5 text-xs font-bold text-[var(--cb-success)]" data-sensitive>- R$ {{.Amount.Reais}}{{.Amount.Cents}}</p></div>
+                    <button type="button" hx-get="/transacoes/{{$.TransactionID}}/reembolsos/{{.ID}}/editar" hx-target="#bottom-sheet-container" hx-swap="innerHTML" class="btn-tactile inline-flex h-9 w-9 items-center justify-center rounded-xl text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)]" aria-label="Editar reembolso"><i data-lucide="pencil" class="h-4 w-4"></i></button>
+                    <button type="button" hx-post="/transacoes/{{$.TransactionID}}/reembolsos/{{.ID}}/remover" hx-swap="none" hx-confirm="Remover este reembolso? O saldo da fatura será recalculado." class="btn-tactile inline-flex h-9 w-9 items-center justify-center rounded-xl text-[var(--cb-text-muted)] hover:bg-red-500/10 hover:text-[var(--cb-danger)]" aria-label="Remover reembolso"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
+                </div>
+                {{end}}
+            </div>
+        </section>
+    </div>
+</div>
+{{end}}

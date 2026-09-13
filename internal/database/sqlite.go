@@ -6,7 +6,6 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -70,6 +69,7 @@ CREATE TABLE IF NOT EXISTS users (
     totp_secret_enc TEXT,
     totp_backup_codes TEXT NOT NULL DEFAULT '[]',
     totp_enabled_at INTEGER,
+    totp_last_used_step INTEGER NOT NULL DEFAULT -1,
     last_notifications_clear_at INTEGER NOT NULL DEFAULT 0,
     deleted_at      INTEGER NOT NULL DEFAULT 0,
     deleted_reason  TEXT,
@@ -124,13 +124,14 @@ CREATE TABLE IF NOT EXISTS user_notification_dismissals (
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
-    id           TEXT PRIMARY KEY,
-    user_id      TEXT NOT NULL,
-    workspace_id TEXT NOT NULL,
-    token_hash   TEXT NOT NULL UNIQUE,
-    expires_at   INTEGER NOT NULL,
-    revoked_at   INTEGER,
-    created_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+    id                 TEXT PRIMARY KEY,
+    user_id            TEXT NOT NULL,
+    workspace_id       TEXT NOT NULL,
+    token_hash         TEXT NOT NULL UNIQUE,
+    expires_at         INTEGER NOT NULL,
+    revoked_at         INTEGER,
+    created_at         INTEGER NOT NULL DEFAULT (unixepoch()),
+    reauthenticated_at INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
 );
@@ -140,6 +141,17 @@ CREATE TABLE IF NOT EXISTS pre_auth_sessions (
     user_id      TEXT NOT NULL,
     token_hash   TEXT NOT NULL UNIQUE,
     method       TEXT NOT NULL CHECK (method IN ('TOTP')),
+    expires_at   INTEGER NOT NULL,
+    consumed_at  INTEGER,
+    created_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS mfa_setup_challenges (
+    id           TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL,
+    token_hash   TEXT NOT NULL UNIQUE,
+    secret_enc   TEXT NOT NULL,
     expires_at   INTEGER NOT NULL,
     consumed_at  INTEGER,
     created_at   INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -487,6 +499,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user_id        ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at     ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_pre_auth_sessions_user_id ON pre_auth_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_pre_auth_sessions_expires_at ON pre_auth_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_mfa_setup_challenges_user_id ON mfa_setup_challenges(user_id);
+CREATE INDEX IF NOT EXISTS idx_mfa_setup_challenges_expires_at ON mfa_setup_challenges(expires_at);
 CREATE INDEX IF NOT EXISTS idx_auth_audit_events_user_created ON auth_audit_events(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_auth_audit_events_type_created ON auth_audit_events(event_type, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_auth_lockouts_locked_until ON auth_lockouts(locked_until);
@@ -1019,43 +1033,6 @@ func createPreMigrationBackup(db *sql.DB, dbPath string) (string, error) {
 	return dest, nil
 }
 
-// CreateSQLiteBackupFile checkpoints WAL and copies a disk-backed SQLite database to destPath.
-func CreateSQLiteBackupFile(db *sql.DB, dbPath, destPath string) error {
-	if db == nil {
-		return fmt.Errorf("nil database")
-	}
-	dbPath = sqliteFilePath(strings.TrimSpace(dbPath))
-	destPath = strings.TrimSpace(destPath)
-	if !sqliteDatabaseFileExists(dbPath) {
-		return fmt.Errorf("sqlite database file not found")
-	}
-	if destPath == "" {
-		return fmt.Errorf("backup destination path is required")
-	}
-
-	srcAbs, err := filepath.Abs(dbPath)
-	if err != nil {
-		return fmt.Errorf("failed to resolve database path: %w", err)
-	}
-	destAbs, err := filepath.Abs(destPath)
-	if err != nil {
-		return fmt.Errorf("failed to resolve backup destination path: %w", err)
-	}
-	if srcAbs == destAbs {
-		return fmt.Errorf("backup destination must be different from database path")
-	}
-	if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
-		return fmt.Errorf("failed to create backup destination directory: %w", err)
-	}
-	if err := checkpointWAL(db); err != nil {
-		return fmt.Errorf("failed to checkpoint WAL before backup: %w", err)
-	}
-	if err := copyFile(srcAbs, destAbs); err != nil {
-		return err
-	}
-	return nil
-}
-
 func nextBackupPath(dir, prefix string) (string, error) {
 	timestamp := time.Now().Format("20060102-150405")
 	for i := 0; ; i++ {
@@ -1151,13 +1128,13 @@ func startSQLiteRuntimeJobs(parent context.Context, db *sql.DB, dbPath string, h
 		}()
 	}
 
-	start("auto_backup", automaticBackupCheckInterval, func(context.Context) {
+	start("auto_backup", automaticBackupCheckInterval, func(ctx context.Context) {
 		loc, err := resolveCivilRepairTimezone()
 		if err != nil {
 			log.Printf("auto backup timezone failed: %v", err)
 			return
 		}
-		if err := ensureDailyAutomaticBackup(db, dbPath, paths.BackupsDir(), time.Now().In(loc), AutomaticBackupRetentionDays); err != nil {
+		if err := ensureDailyAutomaticBackupContext(ctx, db, dbPath, paths.BackupsDir(), time.Now().In(loc), AutomaticBackupRetentionDays); err != nil {
 			log.Printf("auto backup failed: %v", err)
 		}
 	})
@@ -1405,21 +1382,4 @@ func materializeMonthlyBoxRecharges(ctx context.Context, db *sql.DB, civilNow ti
 	}
 	committed = true
 	return nil
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Sync()
 }

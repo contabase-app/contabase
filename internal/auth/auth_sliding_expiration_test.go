@@ -2,11 +2,12 @@ package auth_test
 
 import (
 	"database/sql"
-	"github.com/contabase-app/contabase/internal/auth"
-	"github.com/contabase-app/contabase/internal/database"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/contabase-app/contabase/internal/auth"
+	"github.com/contabase-app/contabase/internal/database"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -145,4 +146,96 @@ func TestResolveAndRefreshSession(t *testing.T) {
 			t.Fatal("expected not to refresh")
 		}
 	})
+}
+
+func TestResolveAndRefreshSessionEnforcesAbsoluteLifetime(t *testing.T) {
+	tests := []struct {
+		name             string
+		remember         bool
+		initialTTL       time.Duration
+		absoluteLifetime time.Duration
+	}{
+		{"standard", false, 24 * time.Hour, 7 * 24 * time.Hour},
+		{"remember", true, 30 * 24 * time.Hour, 90 * 24 * time.Hour},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db, svc, userID, workspaceID := setupTestDB(t)
+			defer db.Close()
+			token, _, err := svc.CreateSession(userID, workspaceID, tc.initialTTL, tc.remember)
+			if err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now().Unix()
+			if _, err := db.Exec(`UPDATE sessions SET created_at = ?, expires_at = ?`, now-int64(tc.absoluteLifetime/time.Second)-1, now+int64(tc.initialTTL/time.Second)); err != nil {
+				t.Fatalf("age session: %v", err)
+			}
+			if _, _, _, refreshed, err := svc.ResolveAndRefreshSession(token); !errors.Is(err, sql.ErrNoRows) || refreshed {
+				t.Fatalf("absolute-expired session: refreshed=%v err=%v", refreshed, err)
+			}
+		})
+	}
+}
+
+func TestResolveAndRefreshSessionCapsRefreshAtAbsoluteLifetime(t *testing.T) {
+	db, svc, userID, workspaceID := setupTestDB(t)
+	defer db.Close()
+	token, _, err := svc.CreateSession(userID, workspaceID, 24*time.Hour, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Unix()
+	absoluteExpiresAt := now + int64((6*time.Hour)/time.Second)
+	createdAt := absoluteExpiresAt - int64((7*24*time.Hour)/time.Second)
+	if _, err := db.Exec(`UPDATE sessions SET created_at = ?, expires_at = ?`, createdAt, now+11*3600); err != nil {
+		t.Fatalf("prepare near-absolute session: %v", err)
+	}
+
+	_, _, maxAge, refreshed, err := svc.ResolveAndRefreshSession(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !refreshed {
+		t.Fatal("expected over-limit expiration to be capped")
+	}
+	if maxAge < int((5*time.Hour+59*time.Minute)/time.Second) || maxAge > int((6*time.Hour)/time.Second) {
+		t.Fatalf("capped max age = %d, want approximately 6h", maxAge)
+	}
+	var storedExpiresAt int64
+	if err := db.QueryRow(`SELECT expires_at FROM sessions`).Scan(&storedExpiresAt); err != nil {
+		t.Fatalf("load capped expiration: %v", err)
+	}
+	if storedExpiresAt != absoluteExpiresAt {
+		t.Fatalf("stored expiration = %d, want absolute cap %d", storedExpiresAt, absoluteExpiresAt)
+	}
+	if _, _, secondMaxAge, secondRefresh, err := svc.ResolveAndRefreshSession(token); err != nil || secondRefresh || secondMaxAge != 0 {
+		t.Fatalf("capped session rewrote again: maxAge=%d refreshed=%v err=%v", secondMaxAge, secondRefresh, err)
+	}
+}
+
+func TestCreateSessionCapsExcessiveRequestedTTL(t *testing.T) {
+	tests := []struct {
+		name       string
+		remember   bool
+		requested  time.Duration
+		maximumAge time.Duration
+	}{
+		{"standard", false, 30 * 24 * time.Hour, 7 * 24 * time.Hour},
+		{"remember", true, 365 * 24 * time.Hour, 90 * 24 * time.Hour},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db, svc, userID, workspaceID := setupTestDB(t)
+			defer db.Close()
+			startedAt := time.Now()
+			_, expiresAt, err := svc.CreateSession(userID, workspaceID, tc.requested, tc.remember)
+			if err != nil {
+				t.Fatal(err)
+			}
+			age := expiresAt.Sub(startedAt)
+			if age < tc.maximumAge-time.Second || age > tc.maximumAge+time.Second {
+				t.Fatalf("created lifetime = %s, want %s", age, tc.maximumAge)
+			}
+		})
+	}
 }

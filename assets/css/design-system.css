@@ -365,7 +365,7 @@
   background-color: var(--cb-surface-3);
 }
 
-/* Invoice actions are horizontal rows on small screens and tiles on desktop. */
+/* Invoice actions stay full-width rows at every breakpoint for clear priority. */
 .cb-invoice-action {
   min-height: 3.25rem;
   flex-direction: row;
@@ -386,23 +386,11 @@
 }
 .cb-invoice-action-label > span { display: inline; }
 .cb-invoice-action-label > span + span::before { content: " "; }
-@media (min-width: 768px) {
-  .cb-invoice-action {
-    min-height: 7rem;
-    flex-direction: column;
-    gap: 0.625rem;
-    padding: 1rem 0.5rem;
-    font-size: 0.5625rem;
-    line-height: 1.3;
-    letter-spacing: 0.04em;
-  }
-  .cb-invoice-action-label {
-    display: grid;
-    gap: 0.125rem;
-    text-align: center;
-  }
-  .cb-invoice-action-label > span { display: block; }
-  .cb-invoice-action-label > span + span::before { content: none; }
+
+/* Swipe is a touch interaction. Keep this guidance out of pointer-only UIs. */
+.cb-v2-swipe-hint { display: none; }
+@media (any-pointer: coarse) {
+  .cb-v2-swipe-hint { display: flex; }
 }
 .cb-button-ghost {
   background-color: transparent;
@@ -598,6 +586,69 @@
 .dark .cb-status-chip-info    { background: color-mix(in srgb, var(--cb-accent) 18%, transparent); color: color-mix(in srgb, var(--cb-accent) 90%, var(--cb-text-main)); }
 .dark .cb-status-chip-neutral { background: var(--cb-surface-3); color: var(--cb-text-subtle); }
 
+/* Superfícies semânticas estáticas para templates autenticados. Valores por
+   registro (cor de conta, largura e posição) continuam explícitos no ponto de uso. */
+.cb-flash-danger {
+  border-color: color-mix(in srgb, var(--cb-danger) 25%, var(--cb-border-subtle));
+  background: color-mix(in srgb, var(--cb-danger) 8%, transparent);
+  color: var(--cb-danger);
+}
+.cb-flash-success {
+  border-color: color-mix(in srgb, var(--cb-success) 25%, var(--cb-border-subtle));
+  background: color-mix(in srgb, var(--cb-success) 8%, transparent);
+  color: var(--cb-success);
+}
+.cb-tone-accent { --cb-tone: var(--cb-accent); }
+.cb-tone-info { --cb-tone: var(--cb-info); }
+.cb-tone-success { --cb-tone: var(--cb-success); }
+.cb-tone-warning { --cb-tone: var(--cb-warning); }
+.cb-tone-danger { --cb-tone: var(--cb-danger); }
+.cb-tone-surface { background: color-mix(in srgb, var(--cb-tone) 10%, transparent); }
+.cb-tone-icon { background: color-mix(in srgb, var(--cb-tone) 12%, transparent); }
+.cb-tone-icon-bordered { border: 1px solid color-mix(in srgb, var(--cb-tone) 20%, transparent); }
+.cb-tone-state-panel {
+  border: 1px solid color-mix(in srgb, var(--cb-tone) 20%, var(--cb-border-subtle));
+  background: color-mix(in srgb, var(--cb-tone) 5%, transparent);
+}
+.cb-tone-notice {
+  background: color-mix(in srgb, var(--cb-tone) 10%, transparent);
+  color: color-mix(in srgb, var(--cb-tone) 75%, var(--cb-text-main));
+}
+.cb-tone-text-muted { color: color-mix(in srgb, var(--cb-tone) 65%, var(--cb-text-muted)); }
+
+/* Estados finitos de categoria, fatura e vencimento. Esses estados não
+   carregam dados do usuário e podem permanecer em folhas externas sob CSP. */
+.cb-category-type-income {
+  background: color-mix(in srgb, var(--cb-success) 10%, transparent);
+  color: var(--cb-success);
+}
+.cb-category-type-expense {
+  background: color-mix(in srgb, var(--cb-danger) 10%, transparent);
+  color: var(--cb-danger);
+}
+.cb-invoice-row-overdue,
+.cb-invoice-row-overdue:hover {
+  background: color-mix(in srgb, var(--cb-danger) 6%, var(--cb-surface-1));
+}
+.cb-row-dense.cb-overdue-payable,
+.cb-row-dense.cb-overdue-payable:hover {
+  border-color: color-mix(in srgb, var(--cb-danger) 20%, var(--cb-border-subtle));
+  background: color-mix(in srgb, var(--cb-danger) 6%, var(--cb-surface-1));
+}
+.cb-row-dense.cb-overdue-receivable,
+.cb-row-dense.cb-overdue-receivable:hover {
+  border-color: color-mix(in srgb, var(--cb-warning) 20%, var(--cb-border-subtle));
+  background: color-mix(in srgb, var(--cb-warning) 6%, var(--cb-surface-1));
+}
+.cb-invoice-payable-icon {
+  background: color-mix(in srgb, var(--cb-danger) 12%, transparent);
+  color: var(--cb-danger);
+}
+.cb-invoice-receivable-icon {
+  background: color-mix(in srgb, var(--cb-text-subtle) 12%, transparent);
+  color: var(--cb-text-subtle);
+}
+
 /* Meta menu — ações discretas no canto do card */
 .cb-meta-menu {
   position: relative;
@@ -741,3 +792,36 @@
   background-color: color-mix(in srgb, var(--cb-warning) 8%, transparent);
   border-left-color: color-mix(in srgb, var(--cb-warning) 50%, transparent);
 }
+
+/* Authenticated workspace palette. The concrete value is supplied only by
+   /workspace/colors.css after strict hexadecimal validation. */
+[data-cb-color] {
+  --ic: var(--cb-runtime-color-value, #6b7280);
+  --v2-provider: var(--cb-runtime-color-value, #6b7280);
+  --emblem-color: var(--cb-runtime-color-value, #6b7280);
+}
+
+.emblem-wrap-solid {
+  background-color: var(--ic, #6b7280);
+}
+
+.icon-colored,
+.text-colored {
+  color: var(--ic, #6b7280);
+}
+
+.icon-wrap-colored {
+  border-color: color-mix(in srgb, var(--ic, #6b7280) 38%, transparent);
+  background-color: color-mix(in srgb, var(--ic, #6b7280) 13%, transparent);
+}
+
+.cb-runtime-color-text {
+  color: var(--cb-runtime-color-value, #6b7280);
+}
+
+/* Dynamic layout uses the Web Animations API so CSP can reject style attributes. */
+[data-swipe-content] { transform: translateX(0); }
+[data-swipe-bg-left],
+[data-swipe-bg-right] { opacity: 0; transform: scaleX(0.88); }
+[data-swipe-notification] { touch-action: pan-y; }
+#global-tooltip { top: 0; left: 0; }

@@ -148,6 +148,57 @@ func TestWithAuthMissingSession(t *testing.T) {
 	}
 }
 
+func TestWithAuthClearsSessionPastAbsoluteLifetime(t *testing.T) {
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatalf("failed to open memory db: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		INSERT INTO workspaces (id, name) VALUES ('ws1', 'Workspace 1');
+		INSERT INTO users (id, name, email, password_hash) VALUES ('admin123', 'Admin', 'admin@example.com', 'hash');
+		INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ('ws1', 'admin123', 'ADMIN');
+	`); err != nil {
+		t.Fatalf("failed to insert data: %v", err)
+	}
+	authService := auth.NewService(db)
+	sessionToken, _, err := authService.CreateSession("admin123", "ws1", 24*time.Hour, false)
+	if err != nil {
+		t.Fatalf("failed to create session: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE sessions SET created_at = unixepoch() - (8 * 86400), expires_at = unixepoch() + 86400`); err != nil {
+		t.Fatalf("age session: %v", err)
+	}
+	csrfSigner, err := newCSRFSigner()
+	if err != nil {
+		t.Fatalf("csrf signer: %v", err)
+	}
+	handlerCalled := false
+	handler := withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		handlerCalled = true
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionToken})
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if handlerCalled {
+		t.Fatal("expired session reached authenticated handler")
+	}
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusSeeOther)
+	}
+	cleared := false
+	for _, cookie := range rr.Result().Cookies() {
+		if cookie.Name == sessionCookieName && cookie.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Fatal("expired session cookie was not cleared")
+	}
+}
+
 func TestWithAuthForbiddenResponse(t *testing.T) {
 	db, err := database.Open(":memory:")
 	if err != nil {

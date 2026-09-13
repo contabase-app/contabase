@@ -13,13 +13,12 @@
 
     // Multi-level bulk delete state reset.
     // Called before/after filter swaps and from lancamentos-filters change handler.
-    // Level 1: DOM-level force hide (style.display + hidden class)
+    // Level 1: DOM-level force hide with the shared hidden class.
     // Level 2: Clear form inputs + abort pending HTMX requests
     window.resetLancamentosBulkState = function() {
         // Level 1: DOM-level force hide on modal and actions bar
         var modal = document.getElementById('bulk-delete-modal');
         if (modal) {
-            modal.style.display = 'none';
             if (!modal.classList.contains('hidden')) {
                 modal.classList.add('hidden');
             }
@@ -27,7 +26,6 @@
 
         var bar = document.getElementById('bulk-actions-bar');
         if (bar) {
-            bar.style.display = 'none';
             if (!bar.classList.contains('hidden')) {
                 bar.classList.add('hidden');
             }

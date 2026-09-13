@@ -120,6 +120,45 @@ func TestMonthSelectorResponsiveContract(t *testing.T) {
 	}
 }
 
+func TestAppShellKeepsConfirmationAndSwipeRuntimeAcrossHTMXNavigation(t *testing.T) {
+	raw, err := os.ReadFile(resolveTemplatePath(t, "templates/components/app_shell.html"))
+	if err != nil {
+		t.Fatalf("read app shell: %v", err)
+	}
+	body := string(raw)
+	for _, want := range []string{
+		`{{define "app-v2-shared-overlays"}}`,
+		`id="global-confirm-modal"`,
+		`id="global-delete-scope-modal"`,
+		`{{template "app-v2-shared-overlays" .}}`,
+		`<script src="/assets/js/modals-global.js"></script>`,
+		`assetPath "/assets/js/faturas.js"`,
+		`<script src="/assets/js/swipe.js"></script>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("app shell missing shared interaction runtime %q", want)
+		}
+	}
+
+	for _, page := range []string{"contas.html", "faturas.html", "faturas_index.html", "lancamentos.html"} {
+		pageRaw, err := os.ReadFile(resolveTemplatePath(t, "templates/pages/"+page))
+		if err != nil {
+			t.Fatalf("read %s: %v", page, err)
+		}
+		pageBody := string(pageRaw)
+		for _, redundant := range []string{
+			`{{template "lancamentos-global-overlays" .}}`,
+			`<script src="/assets/js/modals-global.js"></script>`,
+			`<script src="{{assetPath "/assets/js/faturas.js"}}"></script>`,
+			`<script src="/assets/js/swipe.js"></script>`,
+		} {
+			if strings.Contains(pageBody, redundant) {
+				t.Fatalf("%s must rely on the app-shell runtime, not duplicate %q", page, redundant)
+			}
+		}
+	}
+}
+
 func TestGlobalProviderSelectorIsLoadedByAppShell(t *testing.T) {
 	markup, err := os.ReadFile(resolveTemplatePath(t, "templates/components/app_shell.html"))
 	if err != nil {

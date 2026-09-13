@@ -39,6 +39,7 @@ body {
     font-size: 0.85rem; font-weight: 700;
     letter-spacing: 0.06em; text-transform: uppercase;
 }
+.receipt-hidden { display: none; }
 .title { margin: 0; font-size: 1.25rem; letter-spacing: 0.08em; text-transform: uppercase; }
 .meta { margin: 0.2rem 0 0; font-size: 0.85rem; color: #52525b; }
 .company { text-align: right; font-size: 0.9rem; color: #3f3f46; }

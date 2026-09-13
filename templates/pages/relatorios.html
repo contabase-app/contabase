@@ -235,8 +235,8 @@
                     <div class="space-y-2.5 text-xs flex-1 w-full">
                         {{range .RevenueByCategoryCaixa}}
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10" style="{{colorStyle "background-color" .Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.Name}}</span></div>
-                            <span class="whitespace-nowrap" style="{{colorStyle "color" .Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10 cb-report-stroke-dot" data-report-stroke="{{.Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.Name}}</span></div>
+                            <span class="whitespace-nowrap cb-report-stroke-text" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                         </div>
                         {{end}}
                     </div>
@@ -266,8 +266,8 @@
                     <div class="space-y-2.5 text-xs flex-1 w-full">
                         {{range .BusinessCostsCaixa}}
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10" style="{{colorStyle "background-color" .Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
-                            <span class="whitespace-nowrap" style="{{colorStyle "color" .Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10 cb-report-stroke-dot" data-report-stroke="{{.Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
+                            <span class="whitespace-nowrap cb-report-stroke-text" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                         </div>
                         {{end}}
                     </div>
@@ -296,12 +296,12 @@
                     </svg>
                     <div class="space-y-3 text-xs flex-1 w-full">
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full" style="background-color:rgb(0, 212, 146)"></span><span class="font-semibold" style="color:rgb(0, 212, 146)">Essencial</span></div>
-                            <span style="color:rgb(0, 212, 146)" data-sensitive>{{if .DonutCaixaEssentialPercentLabel}}{{.DonutCaixaEssentialPercentLabel}}{{else}}{{.DonutCaixaEssentialPercent}}%{{end}} · R$ {{.DonutCaixaEssentialTotal.Reais}}{{.DonutCaixaEssentialTotal.Cents}}</span>
+                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full reports-legend-essential reports-legend-dot"></span><span class="font-semibold reports-legend-essential">Essencial</span></div>
+                            <span class="reports-legend-essential" data-sensitive>{{if .DonutCaixaEssentialPercentLabel}}{{.DonutCaixaEssentialPercentLabel}}{{else}}{{.DonutCaixaEssentialPercent}}%{{end}} · R$ {{.DonutCaixaEssentialTotal.Reais}}{{.DonutCaixaEssentialTotal.Cents}}</span>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full" style="background-color:rgb(103, 68, 241)"></span><span class="font-semibold" style="color:rgb(103, 68, 241)">Estilo de Vida</span></div>
-                            <span style="color:rgb(103, 68, 241)" data-sensitive>{{if .DonutCaixaLifestylePercentLabel}}{{.DonutCaixaLifestylePercentLabel}}{{else}}{{.DonutCaixaLifestylePercent}}%{{end}} · R$ {{.DonutCaixaLifestyleTotal.Reais}}{{.DonutCaixaLifestyleTotal.Cents}}</span>
+                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full reports-legend-lifestyle reports-legend-dot"></span><span class="font-semibold reports-legend-lifestyle">Estilo de Vida</span></div>
+                            <span class="reports-legend-lifestyle" data-sensitive>{{if .DonutCaixaLifestylePercentLabel}}{{.DonutCaixaLifestylePercentLabel}}{{else}}{{.DonutCaixaLifestylePercent}}%{{end}} · R$ {{.DonutCaixaLifestyleTotal.Reais}}{{.DonutCaixaLifestyleTotal.Cents}}</span>
                         </div>
                     </div>
                 </div>
@@ -456,8 +456,8 @@
                     <div class="space-y-2.5 text-xs flex-1 w-full">
                         {{range .RevenueByCategory}}
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10" style="{{colorStyle "background-color" .Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.Name}}</span></div>
-                            <span class="whitespace-nowrap" style="{{colorStyle "color" .Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10 cb-report-stroke-dot" data-report-stroke="{{.Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.Name}}</span></div>
+                            <span class="whitespace-nowrap cb-report-stroke-text" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                         </div>
                         {{end}}
                     </div>
@@ -487,8 +487,8 @@
                     <div class="space-y-2.5 text-xs flex-1 w-full">
                         {{range .BusinessCosts}}
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10" style="{{colorStyle "background-color" .Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
-                            <span class="whitespace-nowrap" style="{{colorStyle "color" .Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10 cb-report-stroke-dot" data-report-stroke="{{.Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
+                            <span class="whitespace-nowrap cb-report-stroke-text" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                         </div>
                         {{end}}
                     </div>
@@ -517,12 +517,12 @@
                     </svg>
                     <div class="space-y-3 text-xs flex-1 w-full">
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full" style="background-color:rgb(0, 212, 146)"></span><span class="font-semibold" style="color:rgb(0, 212, 146)">Essencial</span></div>
-                            <span style="color:rgb(0, 212, 146)" data-sensitive>{{if .DonutEssentialPercentLabel}}{{.DonutEssentialPercentLabel}}{{else}}{{.DonutEssentialPercent}}%{{end}} · R$ {{.DonutEssentialTotal.Reais}}{{.DonutEssentialTotal.Cents}}</span>
+                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full reports-legend-essential reports-legend-dot"></span><span class="font-semibold reports-legend-essential">Essencial</span></div>
+                            <span class="reports-legend-essential" data-sensitive>{{if .DonutEssentialPercentLabel}}{{.DonutEssentialPercentLabel}}{{else}}{{.DonutEssentialPercent}}%{{end}} · R$ {{.DonutEssentialTotal.Reais}}{{.DonutEssentialTotal.Cents}}</span>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full" style="background-color:rgb(103, 68, 241)"></span><span class="font-semibold" style="color:rgb(103, 68, 241)">Estilo de Vida</span></div>
-                            <span style="color:rgb(103, 68, 241)" data-sensitive>{{if .DonutLifestylePercentLabel}}{{.DonutLifestylePercentLabel}}{{else}}{{.DonutLifestylePercent}}%{{end}} · R$ {{.DonutLifestyleTotal.Reais}}{{.DonutLifestyleTotal.Cents}}</span>
+                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full reports-legend-lifestyle reports-legend-dot"></span><span class="font-semibold reports-legend-lifestyle">Estilo de Vida</span></div>
+                            <span class="reports-legend-lifestyle" data-sensitive>{{if .DonutLifestylePercentLabel}}{{.DonutLifestylePercentLabel}}{{else}}{{.DonutLifestylePercent}}%{{end}} · R$ {{.DonutLifestyleTotal.Reais}}{{.DonutLifestyleTotal.Cents}}</span>
                         </div>
                     </div>
                 </div>
@@ -741,8 +741,8 @@
                     <div class="space-y-2.5 text-xs flex-1 w-full">
                         {{range .ContabilReceitasMacro}}
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10" style="{{colorStyle "background-color" .Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
-                            <span class="whitespace-nowrap" style="{{colorStyle "color" .Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10 cb-report-stroke-dot" data-report-stroke="{{.Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
+                            <span class="whitespace-nowrap cb-report-stroke-text" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                         </div>
                         {{end}}
                     </div>
@@ -772,8 +772,8 @@
                     <div class="space-y-2.5 text-xs flex-1 w-full">
                         {{range .ContabilDespesasMacro}}
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10" style="{{colorStyle "background-color" .Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
-                            <span class="whitespace-nowrap" style="{{colorStyle "color" .Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10 cb-report-stroke-dot" data-report-stroke="{{.Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
+                            <span class="whitespace-nowrap cb-report-stroke-text" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                         </div>
                         {{end}}
                     </div>

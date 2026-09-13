@@ -67,8 +67,12 @@ func TestInvoicePaymentTemporalHistoryCashExtratoAndAccountClosingT0T4(t *testin
 			if err != nil {
 				t.Fatalf("build realized cash: %v", err)
 			}
-			if len(cash) != tt.wantRows || SumCashEvents(cash) != tt.wantNet {
-				t.Fatalf("cash rows/net = %d/%d, want %d/%d", len(cash), SumCashEvents(cash), tt.wantRows, tt.wantNet)
+			net, err := SumCashEvents(cash)
+			if err != nil {
+				t.Fatalf("sum realized cash: %v", err)
+			}
+			if len(cash) != tt.wantRows || net != tt.wantNet {
+				t.Fatalf("cash rows/net = %d/%d, want %d/%d", len(cash), net, tt.wantRows, tt.wantNet)
 			}
 			if income, expense := cashDirectionCounts(cash); income != tt.wantIncome || expense != tt.wantExpense {
 				t.Fatalf("cash income/expense = %d/%d, want %d/%d", income, expense, tt.wantIncome, tt.wantExpense)
@@ -127,8 +131,12 @@ func TestInvoicePaymentTemporalHistorySameSecondUsesPostReversalEquality(t *test
 	if err != nil {
 		t.Fatalf("build same-second cash: %v", err)
 	}
-	if len(cash) != 2 || SumCashEvents(cash) != 0 {
-		t.Fatalf("same-second cash rows/net = %d/%d, want 2/0", len(cash), SumCashEvents(cash))
+	cashNet, err := SumCashEvents(cash)
+	if err != nil {
+		t.Fatalf("sum same-second cash: %v", err)
+	}
+	if len(cash) != 2 || cashNet != 0 {
+		t.Fatalf("same-second cash rows/net = %d/%d, want 2/0", len(cash), cashNet)
 	}
 	if income, expense := cashDirectionCounts(cash); income != 1 || expense != 1 {
 		t.Fatalf("same-second cash income/expense = %d/%d, want 1/1", income, expense)
@@ -280,8 +288,12 @@ func TestInvoicePaymentTemporalHistoryWorkspaceIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query invoice cash events: %v", err)
 	}
-	if len(events) != 2 || SumCashEvents(events) != 0 {
-		t.Fatalf("workspace cash events rows/net = %d/%d, want 2/0", len(events), SumCashEvents(events))
+	eventNet, err := SumCashEvents(events)
+	if err != nil {
+		t.Fatalf("sum workspace cash events: %v", err)
+	}
+	if len(events) != 2 || eventNet != 0 {
+		t.Fatalf("workspace cash events rows/net = %d/%d, want 2/0", len(events), eventNet)
 	}
 	h := RelatoriosHandler{DB: db, WorkspaceID: reversalWorkspaceID}
 	targets, err := h.queryInvoiceAllocationTargets(context.Background(), paidAt-1, paidAt+1, "paid")

@@ -50,6 +50,133 @@ func TestSchedulePendingExpenseAndIncome(t *testing.T) {
 	}
 }
 
+func TestScheduledPaymentUsesCurrentTransactionVersion(t *testing.T) {
+	for _, kind := range []string{"personal", "business"} {
+		for _, tc := range []struct {
+			name, account, typ      string
+			amount, checking, extra int64
+		}{
+			{"amount", "checking-test", "EXPENSE", 20000, 80000, 50000},
+			{"account", "checking-extra", "EXPENSE", 10000, 100000, 40000},
+			{"type", "checking-test", "INCOME", 10000, 110000, 50000},
+			{"all", "checking-extra", "INCOME", 20000, 100000, 70000},
+		} {
+			t.Run(kind+"/"+tc.name, func(t *testing.T) {
+				db := openTestDB(t)
+				defer db.Close()
+				row, now := seedStaleScheduledPayment(t, db, kind)
+				execTestSQL(t, db, `UPDATE transactions SET account_id = ?, type = ?, amount = ?, description = 'Edited description' WHERE id = ? AND workspace_id = ?`, tc.account, tc.typ, tc.amount, row.ID, row.WorkspaceID)
+				ok, err := executeScheduledPayment(context.Background(), db, row, now)
+				if err != nil || !ok {
+					t.Fatalf("execute = %t, %v", ok, err)
+				}
+				var status, account, typ string
+				var amount, paidAt int64
+				if err := db.QueryRow(`SELECT status, account_id, type, amount, paid_at FROM transactions WHERE id = ? AND workspace_id = ?`, row.ID, row.WorkspaceID).Scan(&status, &account, &typ, &amount, &paidAt); err != nil {
+					t.Fatal(err)
+				}
+				if status != "paid" || account != tc.account || typ != tc.typ || amount != tc.amount || paidAt != row.ScheduledAt {
+					t.Fatalf("paid transaction differs: %s %s %s %d %d", status, account, typ, amount, paidAt)
+				}
+				assertScheduledAccountBalances(t, db, tc.checking, tc.extra)
+				var history int
+				if err := db.QueryRow(`SELECT COUNT(*) FROM transaction_status_history WHERE transaction_id = ? AND workspace_id = ? AND source = 'automatic'`, row.ID, row.WorkspaceID).Scan(&history); err != nil || history != 1 {
+					t.Fatalf("history = %d, %v", history, err)
+				}
+				var title, message string
+				if err := db.QueryRow(`SELECT title, message FROM user_notifications WHERE workspace_id = ? AND type = ?`, row.WorkspaceID, scheduledPaymentNotificationType).Scan(&title, &message); err != nil {
+					t.Fatal(err)
+				}
+				wantTitle := "Pagamento automático executado"
+				if tc.typ == "INCOME" {
+					wantTitle = "Recebimento automático executado"
+				}
+				if title != wantTitle || !strings.Contains(message, "Edited description") {
+					t.Fatalf("notification uses stale version: %s / %s", title, message)
+				}
+				if ok, err := executeScheduledPayment(context.Background(), db, row, now); err != nil || ok {
+					t.Fatalf("duplicate execution = %t, %v", ok, err)
+				}
+				assertScheduledAccountBalances(t, db, tc.checking, tc.extra)
+			})
+		}
+	}
+}
+
+func TestScheduledPaymentRevalidatesCandidateEligibility(t *testing.T) {
+	for _, kind := range []string{"personal", "business"} {
+		for _, tc := range []struct{ name, mutation string }{
+			{"cancelled", `UPDATE transactions SET scheduled_payment_at = NULL WHERE id = 'stale-scheduled'`},
+			{"rescheduled", `UPDATE transactions SET scheduled_payment_at = scheduled_payment_at + 86400 WHERE id = 'stale-scheduled'`},
+			{"card", `UPDATE transactions SET account_id = 'card-test' WHERE id = 'stale-scheduled'`},
+			{"deleted", `DELETE FROM transactions WHERE id = 'stale-scheduled'`},
+			{"foreign-workspace", ""},
+		} {
+			t.Run(kind+"/"+tc.name, func(t *testing.T) {
+				db := openTestDB(t)
+				defer db.Close()
+				row, now := seedStaleScheduledPayment(t, db, kind)
+				if tc.mutation != "" {
+					execTestSQL(t, db, tc.mutation)
+				} else {
+					row.WorkspaceID = "different-workspace"
+				}
+				if ok, err := executeScheduledPayment(context.Background(), db, row, now); err != nil || ok {
+					t.Fatalf("ineligible execution = %t, %v", ok, err)
+				}
+				assertScheduledAccountBalances(t, db, 100000, 50000)
+				var effects int
+				if err := db.QueryRow(`SELECT (SELECT COUNT(*) FROM transaction_status_history WHERE transaction_id = 'stale-scheduled') + (SELECT COUNT(*) FROM user_notifications WHERE type = ?)`, scheduledPaymentNotificationType).Scan(&effects); err != nil || effects != 0 {
+					t.Fatalf("ineligible side effects = %d, %v", effects, err)
+				}
+			})
+		}
+	}
+}
+
+func TestScheduledPaymentCurrentVersionRollsBackOnHistoryFailure(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	row, now := seedStaleScheduledPayment(t, db, "business")
+	execTestSQL(t, db, `UPDATE transactions SET amount = 20000 WHERE id = 'stale-scheduled'`)
+	execTestSQL(t, db, `CREATE TRIGGER fail_scheduled_history BEFORE INSERT ON transaction_status_history BEGIN SELECT RAISE(ABORT, 'injected history failure'); END`)
+	if ok, err := executeScheduledPayment(context.Background(), db, row, now); err == nil || ok {
+		t.Fatalf("expected rollback, got %t, %v", ok, err)
+	}
+	assertScheduledAccountBalances(t, db, 100000, 50000)
+	var status string
+	var executed sql.NullInt64
+	if err := db.QueryRow(`SELECT status, scheduled_payment_executed_at FROM transactions WHERE id = ?`, row.ID).Scan(&status, &executed); err != nil || status != "pending" || executed.Valid {
+		t.Fatalf("failed execution persisted: %s %v %v", status, executed, err)
+	}
+}
+
+func seedStaleScheduledPayment(t *testing.T, db *sql.DB, kind string) (scheduledPaymentDueRow, time.Time) {
+	t.Helper()
+	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
+	seedInvoicePaymentScenario(t, db)
+	execTestSQL(t, db, `UPDATE workspaces SET type = ? WHERE id = 'ws-test'`, kind)
+	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance) VALUES ('checking-extra', 'ws-test', 'Extra', 'CHECKING', 50000, 50000)`)
+	insertScheduledPaymentTestTransaction(t, db, "stale-scheduled", models.TransactionTypeExpense, "checking-test", "", "pending", nil)
+	execTestSQL(t, db, `UPDATE transactions SET amount = 10000, scheduled_payment_at = ?, scheduled_payment_date_civil = '2026-07-18', scheduled_payment_created_by = 'user-test' WHERE id = 'stale-scheduled'`, testAppCivilDate("2026-07-18"))
+	now := time.Date(2026, 7, 18, 18, 0, 0, 0, time.UTC)
+	rows, err := queryDueScheduledPayments(context.Background(), db, now)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("candidates=%d, err=%v", len(rows), err)
+	}
+	return rows[0], now
+}
+
+func assertScheduledAccountBalances(t *testing.T, db *sql.DB, checking, extra int64) {
+	t.Helper()
+	for account, want := range map[string]int64{"checking-test": checking, "checking-extra": extra} {
+		var got int64
+		if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id = ? AND workspace_id = 'ws-test'`, account).Scan(&got); err != nil || got != want {
+			t.Fatalf("%s balance=%d, err=%v; want %d", account, got, err, want)
+		}
+	}
+}
+
 func TestScheduleRejectsPaidCardAndTransferTransactions(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()

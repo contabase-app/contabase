@@ -20,6 +20,14 @@ import (
 var ErrInvalidCredentials = errors.New("invalid credentials")
 var ErrInactiveAccount = errors.New("inactive account")
 var ErrPreAuthNotFound = errors.New("pre-auth session not found")
+var ErrTOTPReplay = errors.New("totp code was already used")
+
+const (
+	standardSessionTTL                = 24 * time.Hour
+	rememberedSessionTTL              = 30 * 24 * time.Hour
+	standardSessionAbsoluteLifetime   = 7 * 24 * time.Hour
+	rememberedSessionAbsoluteLifetime = 90 * 24 * time.Hour
+)
 
 type TemporaryPasswordState struct {
 	Required  bool
@@ -73,6 +81,10 @@ func (s *Service) CreateSession(userID, workspaceID string, ttl time.Duration, i
 	if err != nil {
 		return "", time.Time{}, err
 	}
+	_, absoluteLifetime := sessionLifetimes(isRemember)
+	if ttl > absoluteLifetime {
+		ttl = absoluteLifetime
+	}
 	now := time.Now()
 	expiresAt := now.Add(ttl)
 	tokenHash := hashToken(token)
@@ -80,12 +92,21 @@ func (s *Service) CreateSession(userID, workspaceID string, ttl time.Duration, i
 	if isRemember {
 		flag = 1
 	}
-	_, err = s.DB.Exec(
-		`INSERT INTO sessions (id, user_id, workspace_id, token_hash, expires_at, is_remember, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		uuid.NewString(), userID, workspaceID, tokenHash, expiresAt.Unix(), flag, now.Unix(),
-	)
+	res, err := s.DB.Exec(`
+		INSERT INTO sessions (id, user_id, workspace_id, token_hash, expires_at, is_remember, created_at, reauthenticated_at)
+		SELECT ?, u.id, ?, ?, ?, ?, ?, ?
+		FROM users u
+		WHERE u.id = ? AND lower(trim(u.status)) = 'active' AND u.deleted_at = 0
+	`, uuid.NewString(), workspaceID, tokenHash, expiresAt.Unix(), flag, now.Unix(), now.Unix(), userID)
 	if err != nil {
 		return "", time.Time{}, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if affected != 1 {
+		return "", time.Time{}, ErrInactiveAccount
 	}
 	return token, expiresAt, nil
 }
@@ -94,12 +115,12 @@ func (s *Service) ResolveAndRefreshSession(token string) (string, string, int, b
 	tokenHash := hashToken(token)
 	now := time.Now().Unix()
 	var userID, workspaceID string
-	var expiresAt int64
+	var expiresAt, createdAt int64
 	var isRemember int
 	err := s.DB.QueryRow(
-		`SELECT s.user_id, s.workspace_id, s.expires_at, s.is_remember FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.deleted_at = 0`,
+		`SELECT s.user_id, s.workspace_id, s.expires_at, s.created_at, s.is_remember FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.deleted_at = 0 AND lower(trim(u.status)) = 'active'`,
 		tokenHash, now,
-	).Scan(&userID, &workspaceID, &expiresAt, &isRemember)
+	).Scan(&userID, &workspaceID, &expiresAt, &createdAt, &isRemember)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", "", 0, false, sql.ErrNoRows
@@ -110,24 +131,149 @@ func (s *Service) ResolveAndRefreshSession(token string) (string, string, int, b
 		return "", "", 0, false, sql.ErrNoRows
 	}
 
-	var ttl int64
-	if isRemember == 1 {
-		ttl = 30 * 24 * 3600
-	} else {
-		ttl = 24 * 3600
+	ttl, absoluteLifetime := sessionLifetimes(isRemember == 1)
+	ttlSeconds := int64(ttl / time.Second)
+	absoluteExpiresAt := createdAt + int64(absoluteLifetime/time.Second)
+	if createdAt <= 0 || now >= absoluteExpiresAt {
+		return "", "", 0, false, sql.ErrNoRows
 	}
 
-	remaining := expiresAt - now
-	if remaining < ttl/2 {
-		newExpiresAt := now + ttl
-		_, updateErr := s.DB.Exec(`UPDATE sessions SET expires_at = ? WHERE token_hash = ?`, newExpiresAt, tokenHash)
+	targetExpiresAt := expiresAt
+	if targetExpiresAt > absoluteExpiresAt {
+		targetExpiresAt = absoluteExpiresAt
+	}
+	remaining := targetExpiresAt - now
+	if remaining < ttlSeconds/2 {
+		slidingExpiresAt := now + ttlSeconds
+		if slidingExpiresAt > absoluteExpiresAt {
+			slidingExpiresAt = absoluteExpiresAt
+		}
+		if slidingExpiresAt > targetExpiresAt {
+			targetExpiresAt = slidingExpiresAt
+		}
+	}
+	if targetExpiresAt != expiresAt {
+		result, updateErr := s.DB.Exec(`
+			UPDATE sessions
+			SET expires_at = ?
+			WHERE token_hash = ?
+			  AND revoked_at IS NULL
+			  AND expires_at > ?
+			  AND EXISTS (
+				SELECT 1
+				FROM users u
+				WHERE u.id = sessions.user_id
+				  AND u.deleted_at = 0
+				  AND lower(trim(u.status)) = 'active'
+			  )
+		`, targetExpiresAt, tokenHash, now)
 		if updateErr != nil {
 			return "", "", 0, false, updateErr
 		}
-		return userID, workspaceID, int(ttl), true, nil
+		affected, updateErr := result.RowsAffected()
+		if updateErr != nil {
+			return "", "", 0, false, updateErr
+		}
+		if affected != 1 {
+			return "", "", 0, false, sql.ErrNoRows
+		}
+		return userID, workspaceID, int(targetExpiresAt - now), true, nil
 	}
 
 	return userID, workspaceID, 0, false, nil
+}
+
+func sessionLifetimes(isRemember bool) (time.Duration, time.Duration) {
+	if isRemember {
+		return rememberedSessionTTL, rememberedSessionAbsoluteLifetime
+	}
+	return standardSessionTTL, standardSessionAbsoluteLifetime
+}
+
+func (s *Service) SessionRecentlyAuthenticated(token string, now time.Time, window time.Duration) (bool, error) {
+	if strings.TrimSpace(token) == "" || window <= 0 {
+		return false, nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	var reauthenticatedAt, createdAt int64
+	var isRemember int
+	err := s.DB.QueryRow(`
+		SELECT s.reauthenticated_at, s.created_at, s.is_remember
+		FROM sessions s
+		JOIN users u ON u.id = s.user_id
+		WHERE s.token_hash = ?
+		  AND s.revoked_at IS NULL
+		  AND s.expires_at > ?
+		  AND u.deleted_at = 0
+		  AND lower(trim(u.status)) = 'active'
+	`, hashToken(token), now.Unix()).Scan(&reauthenticatedAt, &createdAt, &isRemember)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	_, absoluteLifetime := sessionLifetimes(isRemember == 1)
+	nowUnix := now.Unix()
+	if createdAt <= 0 || nowUnix >= createdAt+int64(absoluteLifetime/time.Second) {
+		return false, nil
+	}
+	if reauthenticatedAt <= 0 || reauthenticatedAt > nowUnix {
+		return false, nil
+	}
+	return nowUnix-reauthenticatedAt <= int64(window/time.Second), nil
+}
+
+func (s *Service) MarkSessionReauthenticated(token, userID string, now time.Time) error {
+	if strings.TrimSpace(token) == "" || strings.TrimSpace(userID) == "" {
+		return sql.ErrNoRows
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	nowUnix := now.Unix()
+	result, err := s.DB.Exec(`
+		UPDATE sessions
+		SET reauthenticated_at = ?
+		WHERE token_hash = ?
+		  AND user_id = ?
+		  AND revoked_at IS NULL
+		  AND expires_at > ?
+		  AND created_at > 0
+		  AND (
+			(COALESCE(is_remember, 0) = 1 AND created_at + ? > ?)
+			OR (COALESCE(is_remember, 0) != 1 AND created_at + ? > ?)
+		  )
+		  AND EXISTS (
+			SELECT 1
+			FROM users u
+			WHERE u.id = sessions.user_id
+			  AND u.deleted_at = 0
+			  AND lower(trim(u.status)) = 'active'
+		  )
+	`,
+		nowUnix,
+		hashToken(token),
+		userID,
+		nowUnix,
+		int64(rememberedSessionAbsoluteLifetime/time.Second), nowUnix,
+		int64(standardSessionAbsoluteLifetime/time.Second), nowUnix,
+	)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Service) RevokeSession(token string) error {
@@ -414,6 +560,132 @@ func (s *Service) ReplaceBackupCodeHashesIfCurrent(userID, currentJSON, nextJSON
 	return affected == 1, nil
 }
 
+func (s *Service) CreateMFASetupChallenge(userID, secretEnc string, ttl time.Duration) (string, time.Time, error) {
+	token, err := randomToken()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	expiresAt := time.Now().Add(ttl)
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE mfa_setup_challenges SET consumed_at = unixepoch() WHERE user_id = ? AND consumed_at IS NULL`, userID); err != nil {
+		return "", time.Time{}, err
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO mfa_setup_challenges (id, user_id, token_hash, secret_enc, expires_at, created_at)
+		VALUES (?, ?, ?, ?, ?, unixepoch())
+	`, uuid.NewString(), userID, hashToken(token), secretEnc, expiresAt.Unix()); err != nil {
+		return "", time.Time{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", time.Time{}, err
+	}
+	return token, expiresAt, nil
+}
+
+func (s *Service) ResolveMFASetupChallenge(token, userID string) (string, error) {
+	var secretEnc string
+	err := s.DB.QueryRow(`
+		SELECT secret_enc
+		FROM mfa_setup_challenges
+		WHERE token_hash = ? AND user_id = ? AND consumed_at IS NULL AND expires_at > unixepoch()
+	`, hashToken(token), userID).Scan(&secretEnc)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrPreAuthNotFound
+	}
+	return strings.TrimSpace(secretEnc), err
+}
+
+func (s *Service) CompleteMFASetupChallenge(token, userID, secretEnc, backupCodesJSON, keepSessionToken string) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`
+		UPDATE mfa_setup_challenges
+		SET consumed_at = unixepoch()
+		WHERE token_hash = ? AND user_id = ? AND secret_enc = ? AND consumed_at IS NULL AND expires_at > unixepoch()
+	`, hashToken(token), userID, secretEnc)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return ErrPreAuthNotFound
+	}
+	if _, err := tx.Exec(`
+		UPDATE users
+		SET totp_enabled = 1, totp_secret_enc = ?, totp_backup_codes = ?, totp_enabled_at = unixepoch(), totp_last_used_step = -1, updated_at = unixepoch()
+		WHERE id = ?
+	`, secretEnc, backupCodesJSON, userID); err != nil {
+		return err
+	}
+	if err := revokeOtherAuthArtifactsTx(tx, userID, keepSessionToken); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Service) DisableTOTPAndRevokeOtherSessions(userID, keepSessionToken string) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`
+		UPDATE users
+		SET totp_enabled = 0, totp_secret_enc = NULL, totp_backup_codes = '[]', totp_enabled_at = NULL, totp_last_used_step = -1, updated_at = unixepoch()
+		WHERE id = ?
+	`, userID); err != nil {
+		return err
+	}
+	if err := revokeOtherAuthArtifactsTx(tx, userID, keepSessionToken); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Service) ChangePasswordAndRevokeAuthArtifacts(userID, passwordHash, keepSessionToken string) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`
+		UPDATE users
+		SET password_hash = ?, must_change_password = 0, temporary_password_expires_at = NULL, updated_at = unixepoch()
+		WHERE id = ?
+	`, passwordHash, userID); err != nil {
+		return err
+	}
+	if err := revokeOtherAuthArtifactsTx(tx, userID, keepSessionToken); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func revokeOtherAuthArtifactsTx(tx *sql.Tx, userID, keepSessionToken string) error {
+	if strings.TrimSpace(keepSessionToken) == "" {
+		if _, err := tx.Exec(`UPDATE sessions SET revoked_at = unixepoch() WHERE user_id = ? AND revoked_at IS NULL`, userID); err != nil {
+			return err
+		}
+	} else if _, err := tx.Exec(`UPDATE sessions SET revoked_at = unixepoch() WHERE user_id = ? AND token_hash != ? AND revoked_at IS NULL`, userID, hashToken(keepSessionToken)); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE pre_auth_sessions SET consumed_at = unixepoch() WHERE user_id = ? AND consumed_at IS NULL`, userID); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`UPDATE mfa_setup_challenges SET consumed_at = unixepoch() WHERE user_id = ? AND consumed_at IS NULL`, userID)
+	return err
+}
+
 func (s *Service) CreatePreAuthSession(userID, method string, ttl time.Duration, rememberMe bool) (string, time.Time, error) {
 	token, err := randomToken()
 	if err != nil {
@@ -426,12 +698,21 @@ func (s *Service) CreatePreAuthSession(userID, method string, ttl time.Duration,
 	if rememberMe {
 		flag = 1
 	}
-	_, err = s.DB.Exec(`
+	res, err := s.DB.Exec(`
 		INSERT INTO pre_auth_sessions (id, user_id, token_hash, method, expires_at, remember_me, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, uuid.NewString(), userID, tokenHash, method, expiresAt.Unix(), flag, now.Unix())
+		SELECT ?, u.id, ?, ?, ?, ?, ?
+		FROM users u
+		WHERE u.id = ? AND lower(trim(u.status)) = 'active' AND u.deleted_at = 0
+	`, uuid.NewString(), tokenHash, method, expiresAt.Unix(), flag, now.Unix(), userID)
 	if err != nil {
 		return "", time.Time{}, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if affected != 1 {
+		return "", time.Time{}, ErrInactiveAccount
 	}
 	return token, expiresAt, nil
 }
@@ -441,9 +722,11 @@ func (s *Service) ResolvePreAuthSession(token string) (string, string, bool, err
 	var id, userID string
 	var rememberMeFlag int
 	err := s.DB.QueryRow(`
-		SELECT id, user_id, COALESCE(remember_me, 0)
-		FROM pre_auth_sessions
-		WHERE token_hash = ? AND consumed_at IS NULL AND expires_at > unixepoch()
+		SELECT p.id, p.user_id, COALESCE(p.remember_me, 0)
+		FROM pre_auth_sessions p
+		JOIN users u ON u.id = p.user_id
+		WHERE p.token_hash = ? AND p.consumed_at IS NULL AND p.expires_at > unixepoch()
+		  AND lower(trim(u.status)) = 'active' AND u.deleted_at = 0
 		LIMIT 1
 	`, tokenHash).Scan(&id, &userID, &rememberMeFlag)
 	if err != nil {
@@ -471,6 +754,75 @@ func (s *Service) ConsumePreAuthSession(token string) error {
 	}
 	if affected != 1 {
 		return ErrPreAuthNotFound
+	}
+	return nil
+}
+
+// ConsumePreAuthSessionWithTOTP consumes both authentication artifacts in one
+// transaction. A TOTP time-step can only be accepted once per user, including
+// when two valid pre-auth sessions race with the same six-digit code.
+func (s *Service) ConsumePreAuthSessionWithTOTP(token, userID string, timeStep int64) error {
+	if timeStep < 0 {
+		return ErrTOTPReplay
+	}
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	res, err := tx.Exec(`
+		UPDATE pre_auth_sessions
+		SET consumed_at = unixepoch()
+		WHERE token_hash = ? AND user_id = ? AND consumed_at IS NULL AND expires_at > unixepoch()
+	`, hashToken(token), userID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return ErrPreAuthNotFound
+	}
+
+	res, err = tx.Exec(`
+		UPDATE users
+		SET totp_last_used_step = ?
+		WHERE id = ? AND totp_enabled = 1 AND totp_last_used_step < ?
+	`, timeStep, userID, timeStep)
+	if err != nil {
+		return err
+	}
+	affected, err = res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return ErrTOTPReplay
+	}
+	return tx.Commit()
+}
+
+func (s *Service) ConsumeTOTPTimeStep(userID string, timeStep int64) error {
+	if timeStep < 0 {
+		return ErrTOTPReplay
+	}
+	res, err := s.DB.Exec(`
+		UPDATE users
+		SET totp_last_used_step = ?
+		WHERE id = ? AND totp_enabled = 1 AND totp_last_used_step < ?
+	`, timeStep, userID, timeStep)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return ErrTOTPReplay
 	}
 	return nil
 }

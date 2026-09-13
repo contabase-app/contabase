@@ -5,6 +5,56 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Candidata atual
 
+- **v1.0.0-beta.4 — preparação local — 13 de setembro de 2026** — *Remediação pré-produção e correções financeiras*
+
+  Esta candidata inicia a correção faseada da auditoria de segurança. Anexos de lançamentos recebem extensão canônica a partir do conteúdo reconhecido, sem confiar no nome enviado. Todos os downloads de anexos, inclusive os já gravados, passam a ser binários forçados com `attachment` e `nosniff`, bloqueando a interpretação de HTML no origin da aplicação.
+
+  A segunda fase exige reautenticação com senha atual e, quando existente, o TOTP já cadastrado para configurar, trocar, desativar MFA ou regenerar códigos de recuperação. O segredo de setup passou para um desafio cifrado e de uso único no servidor. Sessões e pré-autenticações recusam usuários pendentes, e alterações de senha ou MFA revogam outros artefatos de acesso atomicamente. Códigos TOTP não podem concluir duas pré-autenticações no mesmo intervalo.
+
+  A terceira fase estabelece deadlines HTTP finitos e bloqueia corpos multipart de lançamentos acima de 11 MiB antes do parsing, mantendo o limite de 10 MiB por arquivo. A origem usada em logs e limites passa a vir somente da cadeia `X-Forwarded-For` emitida por um proxy direto configurado, percorrida do hop mais próximo para o cliente. Trocas de senha recebem limites por usuário e por usuário/IP antes do bcrypt.
+
+  A quarta fase atualiza o módulo, os builds Docker e os artifacts para Go 1.26.6. As dependências `x/text`, `x/crypto`, `x/image` e transitivas receberam versões corrigidas; o gate de Release executa um scanner de vulnerabilidades fixado e falha se o binário Linux tiver sido compilado por toolchain diferente da declarada.
+
+  A quinta fase preserva o usuário e o workspace autenticados na auditoria de operações de segurança. A identidade é transportada por um contexto interno criado antes da autenticação, inclusive quando a requisição troca de contexto, e nunca por cabeçalhos enviados pelo cliente.
+
+  A sexta fase uniformiza o custo principal do login inválido. Contas existentes, inexistentes e bloqueadas passam pela verificação bcrypt e por uma consulta de lockout antes da mesma resposta genérica, sem preencher a tabela persistente com identidades controladas por terceiros.
+
+  A sétima fase homologa RBAC e isolamento de workspace com a matriz fixa de `ADMIN`, `MANAGER` e `USER`. A troca de workspace usa a própria rota registrada no servidor, deriva vínculo e papel do banco e recusa workspace alheio, cookie de papel forjado e membership removido. Os handlers de administração de workspaces agora repetem internamente a exigência de `ADMIN` para criação, edição e exclusão.
+
+  A oitava fase fecha duas superfícies HTTP de endurecimento. Fotos de perfil exigem autenticação e somente são entregues quando pertencem ao workspace ativo. A seed B2B de desenvolvimento deixa de alterar dados por `GET`: sua execução exige `POST`, CSRF válido, permissão, limite por usuário/workspace e `APP_DEBUG=true`.
+
+  A nona fase limita a vida total das sessões mesmo quando há atividade contínua. Sessões comuns mantêm a janela renovável de 24 horas, com teto absoluto de sete dias; “manter conectado” mantém a janela de 30 dias, com teto de noventa dias. Sessões antigas além do limite são recusadas e têm o cookie removido.
+
+  A décima fase exige confirmação recente da identidade antes de exportar ou importar backup e de alterar usuários, workspaces ou configuração da auditoria. A janela dura dez minutos por sessão e é renovada somente com a senha atual e, quando habilitado, o TOTP atual. Sessões anteriores à atualização continuam utilizáveis, mas precisam dessa confirmação para executar as operações protegidas.
+
+  A décima primeira fase torna efetiva a política de scripts do navegador. Somente JavaScript externo servido pelo próprio origin é aceito; scripts inline, `eval`, atributos como `onclick`, URLs `javascript:`, frames e objetos são bloqueados. A cobertura percorre os templates embarcados e os arquivos Go de produção que emitem HTML. Estilos inline permanecem temporariamente permitidos para compatibilidade com temas e valores visuais dinâmicos.
+
+  A décima segunda fase limita a memória usada pelo rate limit. O processo mantém no máximo 10.000 identidades, guarda somente hashes de tamanho fixo e recusa novas identidades quando todos os buckets ainda estão ativos, sem expulsar a proteção de alvos existentes. Instalações com múltiplas réplicas precisam aplicar um limite compartilhado no proxy ou edge, pois os buckets da aplicação não atravessam processos.
+
+  A décima terceira fase executa a imagem Docker local atrás de um proxy TLS confiável, com configuração de produção e dados totalmente descartáveis. As 45 verificações cobrem fronteira HTTPS/Host, cookies, CSP, RBAC, isolamento entre workspaces, fotos, CSRF, anexos/XSS, limite de upload, rate limit, reautenticação administrativa, backup e trilhas de auditoria. O teste em navegador confirmou login, Dashboard e seletor de workspace sem scripts inline, atributos executáveis, URLs `javascript:` ou erros no console. Durante o smoke, dois defeitos adicionais foram encontrados e corrigidos: headers internos `X-SecOps-*` não chegam mais ao cliente, e um redirecionamento para reautenticação não é mais registrado como backup exportado.
+
+  A décima quarta fase inicia a retirada segura de CSS inline. A CSP agora permite elementos de estilo apenas quando vêm de arquivos do próprio origin; os três blocos `<style>` existentes foram movidos para os stylesheets oficiais, e o HTMX foi configurado para não criar CSS embutido no navegador. A exceção `unsafe-inline` ficou restrita aos atributos `style` usados por cores, temas, barras e animações calculadas. O smoke real confirmou Dashboard, formulário, seletor e tela de bloqueio HTTP sem erros ou violações.
+
+  A décima quinta fase transfere 69 atributos de estilo estáticos de templates para classes semânticas nos CSS oficiais. Avisos, ícones, painéis de estado e legendas mantêm a aparência e o contraste nos dois temas. O controle de categorias troca a rotação inline por uma classe manipulada pelo script externo. A regressão agora rejeita todo novo atributo `style` estático, com exceção explícita dos três fallbacks `display:none` que o JavaScript usa para revelar as iniciais quando o carregamento de avatar falha.
+
+  A décima sexta fase elimina essa exceção de fallback e as escritas de `style.display` dos caminhos migrados. Avatar, pesquisa de categorias, filtros de macro, barra em lote e modais globais agora usam as classes `hidden` e `flex`; estados finitos de vencimento, categoria, contato e ícone de fatura vêm dos CSS externos. A regressão passa a rejeitar todo atributo `style` estático, sem exceções.
+
+  A décima sétima fase remove os 12 atributos de cor das legendas dos gráficos de relatórios. O template passa a usar `data-report-stroke`, um atributo inerte associado apenas à paleta fechada emitida pelo servidor, e o helper que marcava CSS como confiável deixa de existir. Uma cor não prevista não recebe regra no stylesheet e não pode criar CSS arbitrário.
+
+  As fases seguintes concluem a retirada de CSS inline: temas passam para estados `data-*`, barras usam `<progress>` nativo, e as 48 cores configuráveis são resolvidas por uma folha autenticada que aceita somente hexadecimal estrito e consulta o workspace ativo. Swipe, descarte de notificações e tooltip preservam movimentos calculados com a Web Animations API, sem escrever em `element.style`. A CSP agora aplica `style-src-attr 'none'`; testes de regressão rejeitam atributos de estilo em templates e escritas inline nos scripts de produção. O script antigo do banner PWA, sem inclusão ou elementos correspondentes, foi removido.
+
+  **Correções funcionais posteriores.** A candidata também reúne as correções concluídas depois da remediação de segurança. Editar os metadados de uma conta não altera mais o saldo, e a conciliação passa a ser uma operação própria, com histórico imutável de saldo anterior, posterior, diferença, autor e data, controle de versão otimista e sem criar lançamento, receita, despesa ou vínculo de fatura. O fechamento e a reconstrução histórica consideram esses ajustes, revertendo os posteriores ao período consultado. Recorrências deixam de ser excluídas por ações em lote: a seleção em massa bloqueia essas ocorrências em vez de removê-las, preservando a série e o histórico.
+
+  O rateio de faturas passa a considerar reembolsos ativos — o integral remove o item, o parcial reduz o peso e o geral é distribuído sobre os pesos líquidos —, e os somatórios de relatórios, a alocação de pagamentos e os agregados de saldo falham de forma explícita quando o total excede o intervalo representável, em vez de exibir valor incorreto. A exportação responde com erro sem iniciar o download.
+
+  O backup de banco SQLite online passa a usar o snapshot coordenado do próprio SQLite, com origem somente leitura, publicação atômica e comportamento fail-closed: um arquivo cuja consistência não pode ser garantida não é publicado como válido. A aplicação de migrations antigas também foi corrigida para preservar os dados existentes. As sugestões de descrição voltam a funcionar no shell atual e encontram descrições antigas antes ignoradas, e o toggle de pagamento foi endurecido contra contenção do banco.
+
+  **Escopo restante:** domínio, certificado, firewall, proxy/edge compartilhado, instalação e atualização precisam ser homologados na infraestrutura real antes da publicação. O rate limit global em múltiplas réplicas continua dependente do proxy ou edge compartilhado. A homologação visual desktop/mobile das telas financeiras alteradas, o smoke autenticado das conciliações e os smokes de atualização continuam pendentes.
+
+  **Distribuição:** nenhuma publicação é feita nesta preparação. A tag imutável, o prerelease, os artifacts e o canal Beta permanecem bloqueados até a conclusão das fases, validação e autorização explícita.
+
+## Marco anterior
+
 - **v1.0.0-beta.3 — preparação local — 2 de setembro de 2026** — *Shell V2 definitivo e identidade visual das instituições*
 
   A terceira candidata da linha 1.0 promove a interface autenticada para um único shell canônico nas rotas definitivas. Dashboard, lançamentos, metas, contas, relatórios, contatos, faturas, notificações, ajuda e configurações compartilham navegação, tema, workspace e ações globais. O layout anterior, seu CSS sem consumidores e a rota temporária `/dashboard-v2` foram removidos; o aviso de segurança do token de setup e o rodapé com versão/timezone foram preservados no shell atual.

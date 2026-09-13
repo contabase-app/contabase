@@ -61,30 +61,16 @@ func handleRequiredPasswordChangeSubmit(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	if _, err := db.Exec(`
-		UPDATE users
-		SET password_hash = ?,
-		    must_change_password = 0,
-		    temporary_password_expires_at = NULL,
-		    updated_at = unixepoch()
-		WHERE id = ?
-	`, string(hash), ctx.UserID); err != nil {
-		handleRequiredPasswordChangePage(w, tpl, csrfToken, "Não foi possível atualizar a senha.")
-		return
-	}
-
 	currentToken := ctx.SessionToken
 	if strings.TrimSpace(currentToken) == "" {
 		if cookie, err := r.Cookie(sessionCookieName); err == nil {
 			currentToken = cookie.Value
 		}
 	}
-	if strings.TrimSpace(currentToken) != "" {
-		_ = authService.RevokeUserSessionsExcept(ctx.UserID, currentToken)
-	} else {
-		_ = authService.RevokeAllUserSessions(ctx.UserID)
+	if err := authService.ChangePasswordAndRevokeAuthArtifacts(ctx.UserID, string(hash), currentToken); err != nil {
+		handleRequiredPasswordChangePage(w, tpl, csrfToken, "Não foi possível atualizar a senha.")
+		return
 	}
-	_ = authService.RevokeAllUserPreAuthSessions(ctx.UserID)
 	writeAuthAuditEvent(db, r, ctx.UserID, ctx.ActiveWorkspaceID, "TEMPORARY_PASSWORD_CHANGED", map[string]string{"method": "required_change"})
 	log.Printf("temporary password changed: user=%s", ctx.UserID)
 	http.Redirect(w, r, "/", http.StatusSeeOther)

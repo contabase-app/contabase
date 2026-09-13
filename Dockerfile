@@ -14,7 +14,7 @@ COPY scripts/build-css.sh scripts/build-css.sh
 
 RUN bash scripts/build-css.sh
 
-FROM golang:1.26-bookworm AS builder
+FROM golang:1.26.6-bookworm AS builder
 
 WORKDIR /app
 

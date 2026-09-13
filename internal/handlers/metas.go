@@ -697,12 +697,7 @@ func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Requ
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Unix()
 	monthEnd := time.Date(now.Year(), now.Month()+1, 0, 23, 59, 59, 0, time.UTC).Unix()
 
-	rows, err := h.DB.Query(`
-		SELECT t.id, t.description, t.amount, t.date,
-			COALESCE(a.name, ''),
-			COALESCE(a.type, '')
-		FROM transactions t
-		LEFT JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+	const historyFilter = `
 		WHERE t.workspace_id = ?
 			AND t.category_id IN (
 				SELECT id
@@ -711,10 +706,31 @@ func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Requ
 				  AND (id = ? OR parent_id = ?)
 			)
 			AND t.type = 'EXPENSE'
-			AND t.date >= ? AND t.date <= ?
+			AND t.date >= ? AND t.date <= ?`
+	args := []any{h.WorkspaceID, h.WorkspaceID, catID, catID, monthStart, monthEnd}
+	// Read the full aggregate and the limited list from the same snapshot.
+	readTx, err := h.DB.BeginTx(r.Context(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	defer readTx.Rollback()
+	var totalSpent int64
+	if err := readTx.QueryRowContext(r.Context(), `SELECT COALESCE(SUM(t.amount), 0) FROM transactions t `+historyFilter, args...).Scan(&totalSpent); err != nil {
+		log.Printf("query limit history total error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	rows, err := readTx.QueryContext(r.Context(), `
+		SELECT t.id, t.description, t.amount, t.date,
+			COALESCE(a.name, ''),
+			COALESCE(a.type, '')
+		FROM transactions t
+		LEFT JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		`+historyFilter+`
 		ORDER BY t.date DESC
 		LIMIT 50
-	`, h.WorkspaceID, h.WorkspaceID, catID, catID, monthStart, monthEnd)
+	`, args...)
 	if err != nil {
 		log.Printf("query limit history error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -731,23 +747,32 @@ func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Requ
 		AccountLabel string
 	}
 	var transactions []LimitTx
-	var totalSpent int64
 	for rows.Next() {
 		var tx LimitTx
 		var amount int64
 		var dateUnix int64
 		var accountType string
 		if err := rows.Scan(&tx.ID, &tx.Description, &amount, &dateUnix, &tx.AccountName, &accountType); err != nil {
-			continue
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
 		}
 		tx.DateLabel = formatDateLabel(dateUnix)
 		tx.Amount = MoneyMinor(amount)
 		tx.AccountLabel = transactionAccountLabel(accountType)
-		totalSpent += amount
 		transactions = append(transactions, tx)
 	}
 	if err := rows.Err(); err != nil {
 		log.Printf("limit history rows error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if err := rows.Close(); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if err := readTx.Commit(); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	catColor = normalizeUIThemeColor(catColor)

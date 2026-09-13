@@ -6,6 +6,32 @@
 .btn-tactile { transition: all 0.15s ease; }
 .btn-tactile:active { transform: scale(0.97); }
 
+/* Cores fixas da legenda dos gráficos de composição. */
+.reports-legend-essential { color: rgb(0, 212, 146); }
+.reports-legend-lifestyle { color: rgb(103, 68, 241); }
+.reports-legend-dot { background-color: currentColor; }
+
+/* Paleta fechada entregue pelo servidor para os gráficos de composição. */
+[data-report-stroke="#10B981"] { --cb-report-stroke: #10B981; }
+[data-report-stroke="#6366F1"] { --cb-report-stroke: #6366F1; }
+[data-report-stroke="#F59E0B"] { --cb-report-stroke: #F59E0B; }
+[data-report-stroke="#EC4899"] { --cb-report-stroke: #EC4899; }
+[data-report-stroke="#14B8A6"] { --cb-report-stroke: #14B8A6; }
+[data-report-stroke="#8B5CF6"] { --cb-report-stroke: #8B5CF6; }
+[data-report-stroke="#F97316"] { --cb-report-stroke: #F97316; }
+[data-report-stroke="#06B6D4"] { --cb-report-stroke: #06B6D4; }
+[data-report-stroke="rgb(16 185 129)"] { --cb-report-stroke: rgb(16 185 129); }
+[data-report-stroke="rgb(99 102 241)"] { --cb-report-stroke: rgb(99 102 241); }
+[data-report-stroke="rgb(236 72 153)"] { --cb-report-stroke: rgb(236 72 153); }
+[data-report-stroke="rgb(245 158 11)"] { --cb-report-stroke: rgb(245 158 11); }
+[data-report-stroke="rgb(14 165 233)"] { --cb-report-stroke: rgb(14 165 233); }
+[data-report-stroke="rgb(168 85 247)"] { --cb-report-stroke: rgb(168 85 247); }
+[data-report-stroke="rgb(239 68 68)"] { --cb-report-stroke: rgb(239 68 68); }
+[data-report-stroke="rgb(249 115 22)"] { --cb-report-stroke: rgb(249 115 22); }
+[data-report-stroke="rgb(234 179 8)"] { --cb-report-stroke: rgb(234 179 8); }
+.cb-report-stroke-dot { background-color: var(--cb-report-stroke); }
+.cb-report-stroke-text { color: var(--cb-report-stroke); }
+
 /* DRE Table */
 .reports-dre-th {
     border: 1px solid var(--cb-border-subtle);

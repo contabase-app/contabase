@@ -39,14 +39,15 @@ Os seguintes recursos estão presentes e operacionais no código atual:
 - Cookies seguros: `HttpOnly`, `SameSite=Lax` e `Secure`.
 - Sessões de usuário hashadas com SHA-256 no banco de dados; botões ativos de revogação remota ("Sair dos outros dispositivos").
 - Proteção CSRF via HMAC (Double-submit mitigation).
-- Limitadores de acesso em memória temporária contra requisições agressivas em rotas autenticáveis (Rate Limiting restrito a Single-Instance node).
+- Limitadores de acesso em memória temporária contra requisições agressivas em rotas autenticáveis, com chaves hashadas, limpeza de expirados e teto de 10.000 buckets por processo.
 - Bloqueio persistente e temporário (Account Lockout) em banco de dados contra força bruta focada em tentativas repetidas de senha ou 2FA.
 - Códigos de recuperação do 2FA operacionais, com formato canônico e uso unico por login bem-sucedido.
 - Setup inicial e restore em modo bootstrap protegidos por `CONTABASE_SETUP_TOKEN` forte, configurado localmente pelo operador.
 
 **Prevenção de Abuso:**
 - Isolamento rígido financeiro por filtro de Workspaces em nível de handlers.
-- Sanitização local e políticas de Headers HTTP baseadas em Content-Security-Policy parciais. Redução progressiva de inline JS em andamento (D.5.3.9).
+- Content-Security-Policy efetiva para scripts: somente arquivos do próprio origin são aceitos; JavaScript inline, `eval`, atributos executáveis, URLs `javascript:`, frames e objetos são bloqueados.
+- Elementos `<style>` e atributos `style` são bloqueados. Regras estáticas vêm de arquivos do próprio origin; cores livres passam por validação hexadecimal e por uma folha autenticada limitada ao workspace ativo; movimentos e posições calculados usam a Web Animations API sem criar CSS inline. A cobertura de regressão impede que templates ou scripts reintroduzam essas superfícies.
 - Headers `Cache-Control: no-store` para respostas autenticadas sensíveis e parciais HTMX.
 - Mitigação de CSV Injection nas exportações CSV disponíveis para campos textuais controlados por usuários.
 
@@ -57,6 +58,7 @@ Os seguintes recursos estão presentes e operacionais no código atual:
 As funções abaixo estão **parcialmente implementadas** ou planejadas, devendo ser consideradas instáveis ou residuais nesta versão:
 
 - **Autenticação em Dois Fatores (2FA TOTP):** Já ativa no motor interno, com recovery codes operacionais e recuperável via Admin CLI, pendendo polimentos finais de UX em UI externa pública.
+- **Rate limiting distribuído:** os buckets da aplicação são locais a cada processo. Instalações com mais de uma réplica devem aplicar limites compartilhados no proxy/edge para que a cota seja global.
 
 ---
 

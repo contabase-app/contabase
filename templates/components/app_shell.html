@@ -23,10 +23,12 @@
     <link rel="stylesheet" href="/assets/css/style.css">
     <link rel="stylesheet" href="/assets/css/geist-sans.css">
     <link rel="stylesheet" href="{{assetPath "/assets/css/design-system.css"}}">
+    <link rel="stylesheet" href="/workspace/colors.css" data-workspace-colors>
     <link rel="stylesheet" href="/assets/css/app-shell.css">
-    <meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":true,"allowEval":false}'>
+    <meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":true,"allowEval":false,"includeIndicatorStyles":false}'>
     <script src="/assets/js/htmx.min.js"></script>
     <script src="/assets/js/lucide.min.js"></script>
+    <script src="{{assetPath "/assets/js/runtime-motion.js"}}"></script>
 {{end}}
 
 {{define "app-v2-document-head-end"}}
@@ -214,14 +216,57 @@
 {{template "app-v2-navigation" .}}
 {{end}}
 
+{{/* Shared confirmation, payment and deletion overlays must live in the app shell.
+     HTMX navigation replaces only #main-content, so page-local overlays would be absent
+     after a partial navigation. */}}
+{{define "app-v2-shared-overlays"}}
+<div id="payment-confirm-modal" data-contabase-overlay data-overlay-priority="120" data-overlay-close="closePaymentConfirmModal" data-overlay-close-method="hidden" class="fixed inset-0 z-[120] hidden items-end justify-center bg-black/60 p-4 md:items-center" role="dialog" aria-modal="true" aria-labelledby="payment-confirm-title" data-onclick-self="closePaymentConfirmModal">
+    <div class="w-full max-w-md rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-5 shadow-2xl">
+        <div class="mb-4 flex items-center justify-between gap-3">
+            <div class="min-w-0"><h3 class="text-sm font-bold text-[var(--cb-text-main)]" id="payment-confirm-title">Confirmar pagamento</h3><p class="mt-1 text-xs text-[var(--cb-text-muted)]" id="payment-confirm-description"></p></div>
+            <button type="button" class="btn-tactile flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-2)]" data-onclick="closePaymentConfirmModal" aria-label="Fechar"><i data-lucide="x" class="h-4 w-4"></i></button>
+        </div>
+        <form id="payment-confirm-form" hx-post="" hx-target="" hx-swap="" class="space-y-3.5">
+            <input type="hidden" name="context" id="payment-confirm-context" value="">
+            <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Modo de confirmação">
+                <label class="payment-mode-option flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 py-2 text-xs font-semibold text-[var(--cb-text-main)]"><input type="radio" name="payment_action" value="paid" checked class="h-4 w-4 accent-emerald-600" data-payment-mode><span>Pagar agora</span></label>
+                <label class="payment-mode-option flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 py-2 text-xs font-semibold text-[var(--cb-text-main)]"><input type="radio" name="payment_action" value="scheduled" class="h-4 w-4 accent-violet-600" data-payment-mode><span>Agendar</span></label>
+            </div>
+            <label class="hidden payment-mode-option cursor-pointer items-center gap-2 rounded-xl border border-violet-500/20 bg-violet-500/10 px-3 py-2 text-xs font-semibold text-violet-700 dark:text-violet-200" id="payment-clear-schedule-option"><input type="radio" name="payment_action" value="clear_schedule" class="h-4 w-4 accent-violet-600" data-payment-mode><span>Remover agendamento ativo</span></label>
+            <label class="block" id="payment-paid-date-row"><span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Data de pagamento</span><input type="date" name="payment_date" id="payment-confirm-date" required data-payment-confirm-date class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]"></label>
+            <label class="hidden" id="payment-scheduled-date-row"><span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Data agendada</span><input type="date" name="scheduled_payment_date" id="payment-scheduled-date" class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]"></label>
+            <div id="payment-account-readonly-row"><span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]" data-payment-account-label>Conta de pagamento</span><p id="payment-account-readonly" class="mt-1 text-xs font-semibold text-[var(--cb-text-main)]">—</p><p id="payment-account-readonly-effect" class="mt-1 text-[11px] leading-snug text-[var(--cb-text-muted)]">Será debitado desta conta.</p><p id="payment-account-hint" class="mt-1 text-[11px] leading-snug text-[var(--cb-text-muted)]">Para trocar a conta, edite o lançamento antes de pagar.</p></div>
+            <label class="hidden" id="payment-account-select-row"><span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]" data-payment-account-label>Conta de pagamento</span><select name="payment_account_id" id="payment-account-select" class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs font-semibold text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]"></select><p id="payment-account-select-effect" class="mt-1 text-[11px] leading-snug text-[var(--cb-text-muted)]">Será debitado desta conta.</p></label>
+            <div class="rounded-xl px-3 py-2 text-xs font-semibold cb-tone-accent cb-tone-notice"><span id="payment-confirm-summary">Será marcado como pago em --/--/----</span></div>
+            <button type="submit" class="cb-button cb-button-primary btn-tactile flex h-10 w-full items-center justify-center gap-2 rounded-xl text-xs font-bold" id="payment-confirm-submit"><i data-lucide="check" class="h-4 w-4"></i>Pagar agora</button>
+        </form>
+    </div>
+</div>
+
+<div id="global-confirm-modal" data-contabase-overlay data-overlay-priority="220" data-overlay-close="cancelGlobalConfirm" data-overlay-close-method="hidden" class="fixed inset-0 z-[220] hidden flex-col items-center justify-center bg-black/50 backdrop-blur-sm p-4 dark:bg-black/70" role="dialog" aria-modal="true" aria-labelledby="global-confirm-title" data-onclick-self="cancelGlobalConfirm">
+    <div class="cb-modal w-full max-w-sm rounded-2xl p-5 shadow-xl"><div class="mb-4 flex items-start gap-3"><span id="global-confirm-icon-bg" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]"><i id="global-confirm-icon" data-lucide="circle-help" class="w-5 h-5"></i></span><div class="min-w-0 flex-1"><h3 id="global-confirm-title" class="text-sm font-bold text-[var(--cb-text-main)]">Confirmação</h3><p id="global-confirm-msg" class="mt-1 text-xs leading-relaxed text-[var(--cb-text-muted)]"></p></div></div><div class="flex items-center justify-end gap-2"><button type="button" data-onclick="cancelGlobalConfirm" class="cb-button cb-button-secondary btn-tactile h-9 rounded-xl px-4 text-xs font-semibold">Cancelar</button><button id="global-confirm-btn" type="button" data-onclick="submitGlobalConfirm" class="cb-button cb-button-primary btn-tactile h-9 rounded-xl px-4 text-xs font-semibold">Confirmar</button></div></div>
+</div>
+
+<div id="global-delete-scope-modal" data-contabase-overlay data-overlay-priority="219" data-overlay-close-method="hidden" class="fixed inset-0 z-[220] hidden flex-col items-center justify-center bg-black/50 backdrop-blur-sm p-4 dark:bg-black/70" role="dialog" aria-modal="true" aria-labelledby="global-delete-scope-title" data-onclick-self="cancelGlobalDelete">
+    <div class="cb-modal w-full max-w-sm rounded-2xl p-5 shadow-xl"><p class="text-xs font-semibold uppercase tracking-wide text-[var(--cb-danger)]">Recorrência detectada</p><h3 id="global-delete-scope-title" class="mt-2 text-sm font-bold text-[var(--cb-text-main)]">Este lançamento faz parte de uma série.</h3><p class="mt-1 text-xs text-[var(--cb-text-muted)]">Como deseja excluir?</p><div class="mt-4 space-y-2"><label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3"><input type="radio" name="gdel_choice" value="single" checked class="mt-0.5 h-4 w-4"><span class="text-xs text-[var(--cb-text-main)]">Apenas este lançamento</span></label><label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3"><input type="radio" name="gdel_choice" value="future" class="mt-0.5 h-4 w-4"><span class="text-xs text-[var(--cb-text-main)]">Este e os próximos</span></label><label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3"><input type="radio" name="gdel_choice" value="all" class="mt-0.5 h-4 w-4"><span class="text-xs text-[var(--cb-text-main)]">Toda a série</span></label></div><div class="mt-4 flex items-center justify-end gap-2"><button type="button" class="cb-button cb-button-secondary btn-tactile h-9 rounded-xl px-3 text-xs font-semibold" data-onclick="cancelGlobalDelete">Cancelar</button><button type="button" data-onclick="submitGlobalDelete" class="cb-button btn-tactile h-9 rounded-xl bg-[var(--cb-danger)] px-4 text-xs font-bold text-white">Confirmar exclusão</button></div></div>
+</div>
+{{end}}
+
 {{define "app-v2-document-end"}}
     {{template "app-v2-footer" .}}
     </div>
     <div id="bottom-sheet-container" data-contabase-overlay data-overlay-priority="10" data-overlay-close="closeBottomSheet" data-overlay-close-method="innerHTML"></div>
     <div id="picker-modal-container"></div>
+    {{template "app-v2-shared-overlays" .}}
 
+    <script src="/assets/js/modals-global.js"></script>
+    <script src="{{assetPath "/assets/js/payment-confirm.js"}}"></script>
+    <script src="{{assetPath "/assets/js/faturas.js"}}"></script>
+    <script src="/assets/js/predictive-description.js"></script>
+    <script src="/assets/js/swipe.js"></script>
     <script src="/assets/js/theme-toggle.js"></script>
     <script src="/assets/js/core-utils.js"></script>
+    <script src="{{assetPath "/assets/js/runtime-colors.js"}}"></script>
     <script src="/assets/js/dashboard-tabs.js"></script>
     <script src="/assets/js/money-mask.js"></script>
     <script src="/assets/js/installment-preview.js"></script>
@@ -234,6 +279,7 @@
     <script src="/assets/js/hx-events.js"></script>
     <script src="/assets/js/tooltip.js"></script>
     <script src="/assets/js/htmx-lifecycle.js"></script>
+    <script src="/assets/js/backup-dropzone.js"></script>
     <script src="{{assetPath "/assets/js/config-selects.js"}}"></script>
     <script src="{{assetPath "/assets/js/month-selector.js"}}"></script>
     <script src="/assets/js/app-shell.js"></script>

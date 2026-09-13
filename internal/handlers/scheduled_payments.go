@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/contabase-app/contabase/internal/services"
 
 	"github.com/google/uuid"
+	sqliteDriver "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 const scheduledPaymentNotificationType = "transaction.scheduled_payment.executed"
@@ -73,6 +76,10 @@ func runScheduledPaymentExecutor(ctx context.Context, db *sql.DB, now time.Time)
 }
 
 func RunDueScheduledPayments(ctx context.Context, db *sql.DB, now time.Time) (int, error) {
+	return runDueScheduledPayments(ctx, db, now, executeScheduledPayment)
+}
+
+func runDueScheduledPayments(ctx context.Context, db *sql.DB, now time.Time, execute func(context.Context, *sql.DB, scheduledPaymentDueRow, time.Time) (bool, error)) (int, error) {
 	if db == nil {
 		return 0, nil
 	}
@@ -82,7 +89,7 @@ func RunDueScheduledPayments(ctx context.Context, db *sql.DB, now time.Time) (in
 	}
 	processed := 0
 	for _, row := range rows {
-		ok, err := executeScheduledPayment(ctx, db, row, now)
+		ok, err := execute(ctx, db, row, now)
 		if err != nil {
 			return processed, err
 		}
@@ -149,6 +156,40 @@ func queryDueScheduledPayments(ctx context.Context, db *sql.DB, now time.Time) (
 }
 
 func executeScheduledPayment(ctx context.Context, db *sql.DB, row scheduledPaymentDueRow, now time.Time) (bool, error) {
+	return executeScheduledPaymentWithRetry(ctx, db, row, now, nil)
+}
+
+// afterReload is a per-call synchronization hook for real SQLite conflict tests.
+// Production callers leave it nil; it is never shared between executor runs.
+func executeScheduledPaymentWithRetry(ctx context.Context, db *sql.DB, row scheduledPaymentDueRow, now time.Time, afterReload func() error) (bool, error) {
+	const maxAttempts = 3
+	for attempt := 1; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		// Pass the original candidate by value. Each attempt opens a new
+		// transaction and reloads every financial field; no snapshot is reused.
+		ok, err := executeScheduledPaymentAttempt(ctx, db, row, now, afterReload)
+		if ctxErr := ctx.Err(); ctxErr != nil && err != nil {
+			return false, ctxErr
+		}
+		var sqliteErr *sqliteDriver.Error
+		if err == nil || attempt == maxAttempts || !errors.As(err, &sqliteErr) || sqliteErr.Code() != sqlite3.SQLITE_BUSY_SNAPSHOT {
+			return ok, err
+		}
+		// The failed attempt has already rolled back before this bounded wait.
+		// Other persistence/integrity errors retain the batch's fail-fast policy.
+		timer := time.NewTimer(time.Duration(attempt) * 10 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return false, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func executeScheduledPaymentAttempt(ctx context.Context, db *sql.DB, row scheduledPaymentDueRow, now time.Time, afterReload func() error) (executed bool, err error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -156,12 +197,54 @@ func executeScheduledPayment(ctx context.Context, db *sql.DB, row scheduledPayme
 	committed := false
 	defer func() {
 		if !committed {
-			_ = tx.Rollback()
+			if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+				// Do not expose the original snapshot error to retry classification
+				// when rollback itself failed and transaction state is uncertain.
+				err = fmt.Errorf("scheduled payment rollback failed: %w (original error: %v)", rollbackErr, err)
+			}
 		}
 	}()
 
 	nowUnix := now.Unix()
 	tomorrowStart := appNextDayStartUnix(now)
+
+	// Candidate selection precedes this transaction. Reload the eligible row so
+	// the payment, balance, history and notification all use the current version.
+	err = tx.QueryRowContext(ctx, `
+		SELECT t.id, t.workspace_id, t.user_id, t.scheduled_payment_created_by, t.type, t.amount,
+		       t.account_id, a.type, t.description, t.scheduled_payment_at, t.scheduled_payment_date_civil, t.paid_at
+		FROM transactions t
+		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		WHERE t.id = ? AND t.workspace_id = ?
+		  AND t.status = 'pending'
+		  AND t.scheduled_payment_at = ?
+		  AND t.scheduled_payment_at < ?
+		  AND t.scheduled_payment_executed_at IS NULL
+		  AND t.type IN (?, ?)
+		  AND t.destination_account_id IS NULL
+		  AND t.invoice_id IS NULL
+		  AND a.type != ?
+		  AND NOT EXISTS (
+		      SELECT 1 FROM invoice_payments ip
+		      WHERE (ip.transaction_id = t.id OR ip.reversal_transaction_id = t.id)
+		        AND ip.workspace_id = t.workspace_id
+		  )
+	`, row.ID, row.WorkspaceID, row.ScheduledAt, tomorrowStart, models.TransactionTypeIncome, models.TransactionTypeExpense, models.AccountTypeCreditCard).Scan(
+		&row.ID, &row.WorkspaceID, &row.UserID, &row.CreatedBy, &row.Type, &row.Amount,
+		&row.AccountID, &row.AccountType, &row.Description, &row.ScheduledAt, &row.ScheduledDateCivil, &row.PaidAt,
+	)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	if afterReload != nil {
+		if err := afterReload(); err != nil {
+			return false, err
+		}
+	}
 
 	// Resolve paid_at and paid_date_civil for the payment.
 	var paidAt int64

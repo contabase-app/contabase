@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -100,6 +101,65 @@ func TestHandleHistoricoLimiteShowsAccountContext(t *testing.T) {
 	body := rr.Body.String()
 	assertContains(t, body, "Cartão · Cartão A")
 	assertContains(t, body, "Compra no cartão")
+}
+
+func TestLimitHistoryTotalIsIndependentOfDisplayedRows(t *testing.T) {
+	for _, kind := range []string{"personal", "business"} {
+		for _, count := range []int{0, 49, 50, 51} {
+			t.Run(fmt.Sprintf("%s/%d", kind, count), func(t *testing.T) {
+				db := openTestDB(t)
+				defer db.Close()
+				seedHistoryScenario(t, db)
+				execTestSQL(t, db, `UPDATE workspaces SET type = ? WHERE id = 'ws-a'`, kind)
+				execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type) VALUES ('limit-account-a', 'ws-a', 'A', 'CHECKING'), ('limit-account-b', 'ws-b', 'B', 'CHECKING')`)
+				execTestSQL(t, db, `INSERT INTO categories (id, workspace_id, name, type, parent_id) VALUES ('limit-child', 'ws-a', 'Child', 'EXPENSE', 'a-cat'), ('limit-unrelated', 'ws-a', 'Other', 'EXPENSE', NULL)`)
+				execTestSQL(t, db, `INSERT INTO cost_limits (id, workspace_id, category_id, max_amount_monthly) VALUES ('limit-a', 'ws-a', 'a-cat', 50500), ('limit-b', 'ws-b', 'b-cat', 50500)`)
+				now := appTime(time.Now())
+				date := time.Date(now.Year(), now.Month(), 15, 12, 0, 0, 0, time.UTC)
+				insert := func(id, ws, user, account, category, typ, status string, at int64) {
+					t.Helper()
+					execTestSQL(t, db, `INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status) VALUES (?, ?, ?, ?, ?, ?, 1000, ?, ?, ?)`, id, ws, user, account, category, typ, at, id, status)
+				}
+				for i := 0; i < count; i++ {
+					category, status := "a-cat", "paid"
+					if i%2 == 0 {
+						category, status = "limit-child", "pending"
+					}
+					insert(fmt.Sprintf("included-%d", i), "ws-a", "user-a", "limit-account-a", category, "EXPENSE", status, date.Unix())
+				}
+				insert("other-workspace", "ws-b", "user-b", "limit-account-b", "b-cat", "EXPENSE", "paid", date.Unix())
+				insert("foreign-reference", "ws-b", "user-b", "limit-account-b", "a-cat", "EXPENSE", "paid", date.Unix())
+				insert("other-category", "ws-a", "user-a", "limit-account-a", "limit-unrelated", "EXPENSE", "paid", date.Unix())
+				insert("other-type", "ws-a", "user-a", "limit-account-a", "a-cat", "INCOME", "paid", date.Unix())
+				insert("previous-month", "ws-a", "user-a", "limit-account-a", "a-cat", "EXPENSE", "paid", date.AddDate(0, -1, 0).Unix())
+				insert("next-month", "ws-a", "user-a", "limit-account-a", "a-cat", "EXPENSE", "paid", date.AddDate(0, 1, 0).Unix())
+				tpl := template.Must(template.New("limit-test").Parse(`{{define "limit-history"}}spent={{.Spent.Reais}}{{.Spent.Cents}};remaining={{.Remaining.Reais}}{{.Remaining.Cents}};percent={{.Percent}};count={{len .Transactions}};business={{.IsBusiness}};{{range .Transactions}}{{.Description}};{{end}}{{end}}`))
+				h := MetasHandler{DB: db, Templates: tpl, WorkspaceID: "ws-a", UserID: "user-a"}
+				rr := httptest.NewRecorder()
+				h.HandleHistoricoLimite(rr, httptest.NewRequest(http.MethodGet, "/metas/limite/historico?limit_id=limit-a", nil))
+				if rr.Code != http.StatusOK {
+					t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+				}
+				want := fmt.Sprintf("spent=%d,00;remaining=%d,00;percent=%d;count=%d;business=%t;", count*10, max(0, 505-count*10), count*1000*100/50500, min(count, 50), kind == "business")
+				if !strings.HasPrefix(rr.Body.String(), want) {
+					t.Fatalf("body=%s; want prefix=%s", rr.Body.String(), want)
+				}
+				if strings.Count(rr.Body.String(), "included-") != min(count, 50) {
+					t.Fatalf("list length does not preserve LIMIT 50: %s", rr.Body.String())
+				}
+				for _, excluded := range []string{"other-workspace", "foreign-reference", "other-category", "other-type", "previous-month", "next-month"} {
+					if strings.Contains(rr.Body.String(), excluded) {
+						t.Fatalf("unexpected row %s in response", excluded)
+					}
+				}
+				foreign := httptest.NewRecorder()
+				h.HandleHistoricoLimite(foreign, httptest.NewRequest(http.MethodGet, "/metas/limite/historico?limit_id=limit-b", nil))
+				if foreign.Code != http.StatusNotFound {
+					t.Fatalf("foreign limit status=%d, want 404", foreign.Code)
+				}
+			})
+		}
+	}
 }
 
 func TestHandleHistoricoCaixinhaEmptyBoxShowsEmptyState(t *testing.T) {

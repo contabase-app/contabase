@@ -75,16 +75,24 @@ func TestTOTPActivationPersistsDisplayedRecoveryCodesAndLoginConsumesOnce(t *tes
 	if err != nil {
 		t.Fatalf("generate TOTP code: %v", err)
 	}
+	secretEnc, err := encryptTextForAuth(testTOTPSecret)
+	if err != nil {
+		t.Fatalf("encrypt setup secret: %v", err)
+	}
+	challengeToken, _, err := authService.CreateMFASetupChallenge(userID, secretEnc, 5*time.Minute)
+	if err != nil {
+		t.Fatalf("create setup challenge: %v", err)
+	}
 	activationForm := url.Values{
-		"totp_secret": {testTOTPSecret},
-		"code":        {code},
+		"mfa_setup_token": {challengeToken},
+		"code":            {code},
 	}
 	activationReq := httptest.NewRequest(http.MethodPost, "/configuracoes/seguranca/totp/confirmar", strings.NewReader(activationForm.Encode()))
 	activationReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	activationRR := httptest.NewRecorder()
 	activationTpl := &recoveryCodesTemplateEngine{}
 
-	handleTOTPSetupConfirm(activationRR, activationReq, activationTpl, authService, db, userID)
+	handleTOTPSetupConfirm(activationRR, activationReq, activationTpl, authService, db, userID, "")
 
 	if activationRR.Code != http.StatusOK {
 		t.Fatalf("activation status = %d, want %d", activationRR.Code, http.StatusOK)
@@ -134,6 +142,54 @@ func TestTOTPActivationPersistsDisplayedRecoveryCodesAndLoginConsumesOnce(t *tes
 
 	assertRecoveryCodeLoginStatus(t, db, authService, userID, usedCode, http.StatusUnauthorized)
 	assertRecoveryCodeLoginStatus(t, db, authService, userID, "INVALID1", http.StatusUnauthorized)
+}
+
+func TestTOTPSetupRequiresReauthenticationAndExistingFactor(t *testing.T) {
+	t.Setenv("AUTH_ENCRYPTION_KEY", testAuthEncryptionKey("totp-step-up"))
+	db, authService, userID := setupTestDB(t)
+	defer db.Close()
+
+	tpl := &recoveryCodesTemplateEngine{}
+	withoutPassword := httptest.NewRequest(http.MethodPost, "/configuracoes/seguranca/totp/setup", strings.NewReader(""))
+	withoutPassword.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	handleTOTPSetupStart(httptest.NewRecorder(), withoutPassword, tpl, authService, userID)
+	if tpl.name != "perfil-2fa-reauth" {
+		t.Fatalf("setup without password template = %q, want reauth", tpl.name)
+	}
+
+	passwordOnly := url.Values{"current_password": {"secret123"}}
+	passwordOnlyReq := httptest.NewRequest(http.MethodPost, "/configuracoes/seguranca/totp/setup", strings.NewReader(passwordOnly.Encode()))
+	passwordOnlyReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	handleTOTPSetupStart(httptest.NewRecorder(), passwordOnlyReq, tpl, authService, userID)
+	if tpl.name != "perfil-2fa-setup" {
+		t.Fatalf("initial setup template = %q, want setup", tpl.name)
+	}
+
+	encSecret, err := encryptTextForAuth(testTOTPSecret)
+	if err != nil {
+		t.Fatalf("encrypt existing secret: %v", err)
+	}
+	if err := authService.UpdateTOTPSetup(userID, encSecret, "[]", true); err != nil {
+		t.Fatalf("enable existing totp: %v", err)
+	}
+	passwordOnlyReq = httptest.NewRequest(http.MethodPost, "/configuracoes/seguranca/totp/setup", strings.NewReader(passwordOnly.Encode()))
+	passwordOnlyReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	handleTOTPSetupStart(httptest.NewRecorder(), passwordOnlyReq, tpl, authService, userID)
+	if tpl.name != "perfil-2fa-reauth" {
+		t.Fatalf("replacement without factor template = %q, want reauth", tpl.name)
+	}
+
+	code, err := totp.GenerateCode(testTOTPSecret, time.Now())
+	if err != nil {
+		t.Fatalf("generate current code: %v", err)
+	}
+	withFactor := url.Values{"current_password": {"secret123"}, "current_totp_code": {code}}
+	withFactorReq := httptest.NewRequest(http.MethodPost, "/configuracoes/seguranca/totp/setup", strings.NewReader(withFactor.Encode()))
+	withFactorReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	handleTOTPSetupStart(httptest.NewRecorder(), withFactorReq, tpl, authService, userID)
+	if tpl.name != "perfil-2fa-setup" {
+		t.Fatalf("replacement with current factor template = %q, want setup", tpl.name)
+	}
 }
 
 func TestTOTPLoginStillAcceptsAuthenticatorCode(t *testing.T) {

@@ -153,16 +153,14 @@
 
         if (logoImage) {
             logoImage.classList.add('hidden');
-            logoImage.style.display = '';
             logoImage.removeAttribute('src');
         }
         if (logoFallback) {
             logoFallback.classList.add('hidden');
-            logoFallback.style.display = '';
             logoFallback.textContent = '';
         }
         if (placeholder) placeholder.classList.remove('hidden');
-        if (logoWrap) logoWrap.style.removeProperty('background-color');
+        if (logoWrap && typeof window.clearRuntimeColor === 'function') window.clearRuntimeColor(logoWrap);
 
         if (!choice) {
             if (name) name.textContent = 'Escolha a instituição';
@@ -186,7 +184,9 @@
                 logoFallback.className = 'hidden emblem-text emblem-len-' + providerMark.length;
             }
             if (placeholder) placeholder.classList.add('hidden');
-            if (logoWrap && providerColor) logoWrap.style.backgroundColor = providerColor;
+            if (logoWrap && providerColor && typeof window.applyRuntimeColor === 'function') {
+                window.applyRuntimeColor(logoWrap, providerColor);
+            }
         }
     }
 

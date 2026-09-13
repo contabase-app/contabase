@@ -7,6 +7,8 @@ import (
 	"encoding/csv"
 	"fmt"
 	"log"
+	"math"
+	"math/bits"
 	"net/http"
 	"sort"
 	"strconv"
@@ -893,8 +895,14 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 			return data, fmt.Errorf("build caixa previsao totals: %w", err)
 		}
 		allForecastEvents := append(append([]CashEvent{}, realized...), projected...)
-		totalReceitas = SumCashIncome(allForecastEvents)
-		totalDespesas = SumCashExpense(allForecastEvents)
+		totalReceitas, err = SumCashIncome(allForecastEvents)
+		if err != nil {
+			return data, fmt.Errorf("sum caixa previsao income: %w", err)
+		}
+		totalDespesas, err = SumCashExpense(allForecastEvents)
+		if err != nil {
+			return data, fmt.Errorf("sum caixa previsao expense: %w", err)
+		}
 	} else {
 		if err := h.DB.QueryRowContext(ctx, `
 			SELECT COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
@@ -907,7 +915,10 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 		}
 	}
 
-	saldo := totalReceitas - totalDespesas
+	saldo, err := subInt64Checked(totalReceitas, totalDespesas)
+	if err != nil {
+		return data, fmt.Errorf("saldo realizado: %w", err)
+	}
 	data.TotalReceitas = MoneyMinor(totalReceitas)
 	data.TotalDespesas = MoneyMinor(totalDespesas)
 	data.SaldoLiquido = MoneyMinor(saldo)
@@ -920,7 +931,6 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 	tS = time.Now()
 
 	var realizedEvents, projectedEvents []CashEvent
-	var err error
 	if tab == "caixa" {
 		if modo == "previsao" {
 			realizedEvents, projectedEvents, err = BuildPrevisaoCashFlowData(h.DB, h.WorkspaceID, period)
@@ -940,28 +950,46 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 			return data, fmt.Errorf("build cash flow data: %w", err)
 		}
 	}
-	realizedIncomeTotal := SumCashIncome(realizedEvents)
-	realizedExpenseTotal := SumCashExpense(realizedEvents)
-	realizedCashTotal := SumCashEvents(realizedEvents)
-	projectedIncomeTotal := SumCashIncome(projectedEvents)
-	projectedExpenseTotal := SumCashExpense(projectedEvents)
-	projectedCashTotal := SumCashEvents(projectedEvents)
+	var realizedIncomeTotal, realizedExpenseTotal, realizedCashTotal int64
+	if realizedIncomeTotal, err = SumCashIncome(realizedEvents); err != nil {
+		return data, fmt.Errorf("sum realized income: %w", err)
+	}
+	if realizedExpenseTotal, err = SumCashExpense(realizedEvents); err != nil {
+		return data, fmt.Errorf("sum realized expense: %w", err)
+	}
+	if realizedCashTotal, err = SumCashEvents(realizedEvents); err != nil {
+		return data, fmt.Errorf("sum realized cash: %w", err)
+	}
+	var projectedIncomeTotal, projectedExpenseTotal, projectedCashTotal int64
+	if projectedIncomeTotal, err = SumCashIncome(projectedEvents); err != nil {
+		return data, fmt.Errorf("sum projected income: %w", err)
+	}
+	if projectedExpenseTotal, err = SumCashExpense(projectedEvents); err != nil {
+		return data, fmt.Errorf("sum projected expense: %w", err)
+	}
+	if projectedCashTotal, err = SumCashEvents(projectedEvents); err != nil {
+		return data, fmt.Errorf("sum projected cash: %w", err)
+	}
 	var monthIncomeTotal, monthExpenseTotal, monthResultTotal int64
 	if tab == "caixa" && modo == "realizado" {
 		monthIncomeTotal = realizedIncomeTotal
 		monthExpenseTotal = realizedExpenseTotal
 		monthResultTotal = realizedCashTotal
-	} else if tab == "caixa" {
-		monthIncomeTotal = realizedIncomeTotal + projectedIncomeTotal
-		monthExpenseTotal = realizedExpenseTotal + projectedExpenseTotal
-		monthResultTotal = realizedCashTotal + projectedCashTotal
-		projectedIncomeTotal = monthIncomeTotal
-		projectedExpenseTotal = monthExpenseTotal
-		projectedCashTotal = monthResultTotal
 	} else {
-		monthIncomeTotal = realizedIncomeTotal + projectedIncomeTotal
-		monthExpenseTotal = realizedExpenseTotal + projectedExpenseTotal
-		monthResultTotal = realizedCashTotal + projectedCashTotal
+		if monthIncomeTotal, err = addReportInt64Checked(realizedIncomeTotal, projectedIncomeTotal); err != nil {
+			return data, fmt.Errorf("total mensal de receitas: %w", err)
+		}
+		if monthExpenseTotal, err = addReportInt64Checked(realizedExpenseTotal, projectedExpenseTotal); err != nil {
+			return data, fmt.Errorf("total mensal de despesas: %w", err)
+		}
+		if monthResultTotal, err = addReportInt64Checked(realizedCashTotal, projectedCashTotal); err != nil {
+			return data, fmt.Errorf("resultado mensal: %w", err)
+		}
+		if tab == "caixa" {
+			projectedIncomeTotal = monthIncomeTotal
+			projectedExpenseTotal = monthExpenseTotal
+			projectedCashTotal = monthResultTotal
+		}
 	}
 
 	data.RealizedIncomeTotal = MoneyMinor(realizedIncomeTotal)
@@ -1012,13 +1040,18 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 	tS = time.Now()
 
 	var totalBalance int64
-	_ = h.DB.QueryRowContext(ctx, `SELECT COALESCE(SUM(current_balance), 0) FROM accounts WHERE workspace_id = ? AND type != 'CREDIT_CARD' AND archived_at IS NULL`, h.WorkspaceID).Scan(&totalBalance)
+	if err := h.DB.QueryRowContext(ctx, `SELECT COALESCE(SUM(current_balance), 0) FROM accounts WHERE workspace_id = ? AND type != 'CREDIT_CARD' AND archived_at IS NULL`, h.WorkspaceID).Scan(&totalBalance); err != nil {
+		return data, fmt.Errorf("query saldo acumulado: %w", err)
+	}
 	var saldoAcumulado int64
 	if tab == "caixa" && modo == "realizado" {
 		saldoAcumulado = totalBalance
 	} else {
 		selectedMonth := time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC)
-		saldoAcumulado = calcProjectedAccumulatedBalance(h.DB, h.WorkspaceID, totalBalance, selectedMonth)
+		saldoAcumulado, err = calcProjectedAccumulatedBalance(h.DB, h.WorkspaceID, totalBalance, selectedMonth)
+		if err != nil {
+			return data, fmt.Errorf("saldo acumulado projetado: %w", err)
+		}
 	}
 	data.SaldoAcumulado = MoneyMinor(saldoAcumulado)
 	data.SaldoAcumuladoNegativo = saldoAcumulado < 0
@@ -1054,7 +1087,7 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 		var total int64
 		var catID, name, icon, color, parentID, parentName, parentIcon, parentColor string
 		if err := catRows.Scan(&catID, &name, &icon, &color, &parentID, &parentName, &parentIcon, &parentColor, &total); err != nil {
-			continue
+			return data, fmt.Errorf("scan category breakdown row: %w", err)
 		}
 		rawBars = append(rawBars, categoriaBreakdownRow{
 			ID:          catID,
@@ -1149,7 +1182,10 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 				continue
 			}
 			income, expense := caixaRowIncomeExpense(row)
-			result := income - expense
+			result, err := subInt64Checked(income, expense)
+			if err != nil {
+				return data, fmt.Errorf("resultado mensal projetado: %w", err)
+			}
 			data.ProjectedIncomeTotal = MoneyMinor(income)
 			data.ProjectedExpenseTotal = MoneyMinor(expense)
 			data.ProjectedCashTotal = MoneyMinor(result)
@@ -2525,19 +2561,21 @@ func (h *RelatoriosHandler) queryInvoiceAllocationTargets(ctx context.Context, s
 }
 
 func (h *RelatoriosHandler) queryInvoiceAllocationItems(ctx context.Context, invoiceID string) ([]invoiceAllocationItem, int64, error) {
+	// Linked refunds reduce each item's weight. General invoice refunds already
+	// reduce the allocation target, so they are shared in these net proportions.
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT
 			t.id,
 			COALESCE(t.category_id, '') AS category_id,
 			COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro') AS macro_group,
-			t.amount
+			`+transactionNetAmountTSQL+` AS net_amount
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
 		WHERE t.workspace_id = ?
 		  AND t.invoice_id = ?
 		  AND t.type = 'EXPENSE'
-		ORDER BY t.amount DESC, t.id ASC
+		ORDER BY net_amount DESC, t.id ASC
 	`, h.WorkspaceID, invoiceID)
 	if err != nil {
 		return nil, 0, err
@@ -2553,6 +2591,9 @@ func (h *RelatoriosHandler) queryInvoiceAllocationItems(ctx context.Context, inv
 		}
 		if item.Amount <= 0 {
 			continue
+		}
+		if total > math.MaxInt64-item.Amount {
+			return nil, 0, fmt.Errorf("invoice allocation total exceeds monetary range")
 		}
 		items = append(items, item)
 		total += item.Amount
@@ -2570,9 +2611,11 @@ func allocateInvoiceItemShares(items []invoiceAllocationItem, total, target int6
 	shares := make([]invoiceAllocationShare, 0, len(items))
 	var allocated int64
 	for _, item := range items {
-		numerator := item.Amount * target
-		amount := numerator / total
-		remainder := numerator % total
+		// The product may exceed int64 even though the resulting share cannot:
+		// each positive item is at most total, and target fits in int64.
+		hi, lo := bits.Mul64(uint64(item.Amount), uint64(target))
+		quotient, residual := bits.Div64(hi, lo, uint64(total))
+		amount, remainder := int64(quotient), int64(residual)
 		shares = append(shares, invoiceAllocationShare{
 			CategoryID: item.CategoryID,
 			MacroGroup: item.MacroGroup,

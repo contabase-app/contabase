@@ -9,6 +9,61 @@
 
 
 @layer components {
+    .cb-remote-access-blocked {
+        background: radial-gradient(circle at top, #1f1734 0%, #0b0b11 58%, #08080d 100%);
+    }
+
+    .pk-item {
+        display: flex;
+        width: 100%;
+        align-items: flex-start;
+        gap: .75rem;
+        border-radius: .75rem;
+        padding: .75rem;
+        text-align: left;
+    }
+    .pk-item:hover { background: var(--cb-surface-3); }
+    .pk-item-child { padding-left: 1.75rem; }
+    .pk-dot {
+        display: flex;
+        height: 2.5rem;
+        width: 2.5rem;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+        padding-top: .125rem;
+    }
+    .pk-dot::before {
+        content: '';
+        display: block;
+        height: .625rem;
+        width: .625rem;
+        border-radius: 9999px;
+        background: #64748b;
+    }
+    .pk-dot-parent::before { background: var(--cb-accent); }
+    .pk-dot-child::before { background: #64748b; }
+    .pk-name {
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--cb-text-main);
+        font-size: .875rem;
+        font-weight: 600;
+    }
+    .pk-hint {
+        margin-top: .25rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--cb-text-muted);
+        font-size: .625rem;
+        font-weight: 500;
+        line-height: 1;
+    }
+
     .btn-tactile {
         transition: all 0.15s cubic-bezier(0.22, 1, 0.36, 1);
     }
@@ -60,5 +115,18 @@
   .htmx-request {
     opacity: 0.8;
     transition: opacity 150ms ease-in-out;
+  }
+
+  /* Indicador HTMX oculto em idle; visível durante request global
+     ou como fallback do botão desabilitado no form de backup. */
+  .htmx-indicator {
+    opacity: 0;
+  }
+
+  .htmx-request .htmx-indicator,
+  .htmx-request.htmx-indicator,
+  [data-backup-dropzone] button[type="submit"][data-disabled-by-htmx] .htmx-indicator {
+    opacity: 1;
+    transition: opacity 200ms ease-in;
   }
 }

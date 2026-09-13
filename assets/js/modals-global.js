@@ -3,6 +3,16 @@
 
 window._gConfirmState = null;
 
+function showGlobalModal(modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+}
+
+function hideGlobalModal(modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
 window.openGlobalConfirm = function(msg, onConfirm, isDestructive, customTitle) {
     var modal = document.getElementById('global-confirm-modal');
     var msgEl = document.getElementById('global-confirm-msg');
@@ -31,13 +41,13 @@ window.openGlobalConfirm = function(msg, onConfirm, isDestructive, customTitle) 
     }
     if (typeof window.refreshIcons === 'function') window.refreshIcons();
 
-    modal.style.display = 'flex';
+    showGlobalModal(modal);
     if (typeof window.overlayDidOpen === 'function') window.overlayDidOpen('global-confirm');
 };
 
 window.submitGlobalConfirm = function() {
     var modal = document.getElementById('global-confirm-modal');
-    if (modal) modal.style.display = 'none';
+    if (modal) hideGlobalModal(modal);
     if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
     if (window._gConfirmState && window._gConfirmState.issueRequest) {
         window._gConfirmState.issueRequest(true);
@@ -47,7 +57,7 @@ window.submitGlobalConfirm = function() {
 
 window.cancelGlobalConfirm = function() {
     var modal = document.getElementById('global-confirm-modal');
-    if (modal) modal.style.display = 'none';
+    if (modal) hideGlobalModal(modal);
     window._gConfirmState = null;
     if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
 };
@@ -60,7 +70,7 @@ window.openSwipeDeleteModal = function(txId, row) {
     var modal = document.getElementById('global-delete-scope-modal');
     if (modal) {
         modal.querySelectorAll('input[name="gdel_choice"]').forEach(function(r) { r.checked = r.value === 'single'; });
-        modal.style.display = 'flex';
+        showGlobalModal(modal);
         if (typeof window.overlayDidOpen === 'function') window.overlayDidOpen('global-delete-scope');
     }
 };
@@ -113,14 +123,14 @@ window.submitGlobalDelete = function() {
     var scope = chosen ? chosen.value : 'single';
     var txId = window._gDeleteState.txId;
     if (!txId) return;
-    modal.style.display = 'none';
+    hideGlobalModal(modal);
     if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
     window.deleteTransactionAndRefresh(txId, scope);
 };
 
 window.cancelGlobalDelete = function() {
     var modal = document.getElementById('global-delete-scope-modal');
-    if (modal) modal.style.display = 'none';
+    if (modal) hideGlobalModal(modal);
     window._gDeleteState = { txId: null };
     if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
 };

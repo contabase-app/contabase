@@ -5,10 +5,10 @@
         var img = e.target;
         if (!img || img.tagName !== 'IMG') return;
         if (!img.hasAttribute('data-avatar-fallback')) return;
-        img.style.display = 'none';
+        img.classList.add('receipt-hidden');
         var fallback = img.nextElementSibling;
         if (fallback && fallback.hasAttribute('data-avatar-text')) {
-            fallback.style.display = '';
+            fallback.classList.remove('receipt-hidden');
         }
     }, true);
 

@@ -181,6 +181,14 @@
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
+.cb-contact-avatar-client {
+  background: color-mix(in srgb, var(--cb-success) 12%, transparent);
+  color: var(--cb-success);
+}
+.cb-contact-avatar-vendor {
+  background: color-mix(in srgb, var(--cb-warning) 12%, transparent);
+  color: var(--cb-warning);
+}
 
 .cb-contact-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
 .cb-contact-action {

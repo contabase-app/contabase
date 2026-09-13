@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/contabase-app/contabase/internal/models"
@@ -35,7 +36,20 @@ var (
 	errInvoicePaymentReversalInvalidInput = errors.New("invalid invoice payment reversal input")
 	errInvoicePaymentReversalStructural   = errors.New("inconsistent invoice payment financial link")
 	errInvoicePaymentReversalLinkConflict = errors.New("invoice payment reversal link conflict")
+	errInvoicePaymentSumOverflow          = errors.New("invoice payment sum exceeds int64 range")
 )
+
+// addInt64Checked soma dois int64 detectando overflow/underflow sem saturação
+// ou wrap. Retorna erro identificável em vez de um valor silenciosamente errado.
+func addInt64Checked(a, b int64) (int64, error) {
+	if b > 0 && a > math.MaxInt64-b {
+		return 0, errInvoicePaymentSumOverflow
+	}
+	if b < 0 && a < math.MinInt64-b {
+		return 0, errInvoicePaymentSumOverflow
+	}
+	return a + b, nil
+}
 
 const invoicePaymentReversalDescription = "Reversão de pagamento de fatura"
 
@@ -84,7 +98,11 @@ func loadActiveInvoicePaymentTimelineTx(tx *sql.Tx, workspaceID, invoiceID strin
 		if err := rows.Scan(&amount, &paidAt); err != nil {
 			return timeline, err
 		}
-		timeline.ActiveSum += amount
+		sum, err := addInt64Checked(timeline.ActiveSum, amount)
+		if err != nil {
+			return timeline, err
+		}
+		timeline.ActiveSum = sum
 		thresholdReached := (invoiceTotal > 0 && timeline.ActiveSum >= invoiceTotal) || (invoiceTotal <= 0 && timeline.ActiveSum > 0)
 		if timeline.ThresholdPaidAt == nil && thresholdReached {
 			value := paidAt
@@ -367,7 +385,10 @@ func reconcileInvoiceAfterPaymentReversalTx(
 	closingCivil sql.NullString,
 	reversalDate CivilDate,
 ) (int64, string, *int64, error) {
-	invoiceTotal := sumInvoiceTotalTx(tx, workspaceID, invoiceID)
+	invoiceTotal, err := sumInvoiceTotalTx(tx, workspaceID, invoiceID)
+	if err != nil {
+		return 0, "", nil, err
+	}
 
 	timeline, err := loadActiveInvoicePaymentTimelineTx(tx, workspaceID, invoiceID, invoiceTotal)
 	if err != nil {

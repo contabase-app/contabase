@@ -451,6 +451,21 @@ html[data-theme="light"] .cb-v2-theme-icon-light { display: block; }
 }
 .cb-v2-workspace-list > button:hover { border-color: var(--v2-border-strong) !important; background: var(--v2-surface-hover) !important; }
 
+/* Workspace themes are server-normalized to this finite set. Keeping the
+   palette here removes the inline CSS that used to be emitted by /workspace/list. */
+.cb-v2-workspace-list > button[data-workspace-active="true"][data-workspace-theme="violeta"] { border-color: rgb(103 68 241 / 44%) !important; background: rgb(103 68 241 / 14%) !important; }
+.cb-v2-workspace-list > button[data-workspace-theme="violeta"] > .cb-v2-workspace-choice-icon { color: rgb(103 68 241); }
+.cb-v2-workspace-list > button[data-workspace-active="true"][data-workspace-theme="laranja"] { border-color: rgb(196 137 82 / 44%) !important; background: rgb(196 137 82 / 14%) !important; }
+.cb-v2-workspace-list > button[data-workspace-theme="laranja"] > .cb-v2-workspace-choice-icon { color: rgb(196 137 82); }
+.cb-v2-workspace-list > button[data-workspace-active="true"][data-workspace-theme="amarelo"] { border-color: rgb(184 166 82 / 44%) !important; background: rgb(184 166 82 / 14%) !important; }
+.cb-v2-workspace-list > button[data-workspace-theme="amarelo"] > .cb-v2-workspace-choice-icon { color: rgb(184 166 82); }
+.cb-v2-workspace-list > button[data-workspace-active="true"][data-workspace-theme="azul"] { border-color: rgb(37 99 235 / 44%) !important; background: rgb(37 99 235 / 14%) !important; }
+.cb-v2-workspace-list > button[data-workspace-theme="azul"] > .cb-v2-workspace-choice-icon { color: rgb(37 99 235); }
+.cb-v2-workspace-list > button[data-workspace-active="true"][data-workspace-theme="esmeralda"] { border-color: rgb(5 150 105 / 44%) !important; background: rgb(5 150 105 / 14%) !important; }
+.cb-v2-workspace-list > button[data-workspace-theme="esmeralda"] > .cb-v2-workspace-choice-icon { color: rgb(5 150 105); }
+.cb-v2-workspace-list > button[data-workspace-active="true"][data-workspace-theme="rosa"] { border-color: rgb(191 120 160 / 44%) !important; background: rgb(191 120 160 / 14%) !important; }
+.cb-v2-workspace-list > button[data-workspace-theme="rosa"] > .cb-v2-workspace-choice-icon { color: rgb(191 120 160); }
+
 .cb-v2-indicator,
 .cb-v2-feedback {
     position: fixed;

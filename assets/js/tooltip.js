@@ -11,12 +11,15 @@ function ensureGlobalTooltip() {
 function hideGlobalTooltip() {
     var tip = document.getElementById('global-tooltip');
     if (!tip) return;
+    if (window.cbRuntimeMotion) window.cbRuntimeMotion.cancel(tip);
     tip.classList.add('hidden');
     tip.textContent = '';
 }
 
 function showGlobalTooltip(trigger, text) {
     if (!trigger || !text) return;
+    var motion = window.cbRuntimeMotion;
+    if (!motion || !motion.supported) return;
     var tip = ensureGlobalTooltip();
     tip.textContent = text;
     tip.classList.remove('hidden');
@@ -29,8 +32,7 @@ function showGlobalTooltip(trigger, text) {
     if (top + tip.offsetHeight > window.innerHeight - 8) {
         top = Math.max(10, rect.top - tip.offsetHeight - 10);
     }
-    tip.style.top = top + 'px';
-    tip.style.left = left + 'px';
+    motion.hold(tip, { transform: 'translate3d(' + left + 'px, ' + top + 'px, 0)' });
 }
 
 function resolveTooltipText(btn) {

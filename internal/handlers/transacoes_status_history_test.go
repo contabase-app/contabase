@@ -130,6 +130,7 @@ func TestHistoryRespectsWorkspaceIsolation(t *testing.T) {
 
 	handler := TransactionHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   testBulkPaymentTemplates(),
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",

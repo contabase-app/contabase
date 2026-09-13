@@ -33,6 +33,9 @@ func TestConfiguracoesShellRenderContract(t *testing.T) {
 		`data-v2-nav-group-key="settings"`,
 		`data-v2-nav-group-key="administration"`,
 		`href="/configuracoes/perfil"`,
+		`id="global-confirm-modal"`,
+		`/assets/js/modals-global.js`,
+		`/assets/js/swipe.js`,
 	} {
 		assertContains(t, body, want)
 	}
@@ -165,11 +168,11 @@ func TestConfiguracoesAdminBackupsShowsSafeAutomaticBackupMetadata(t *testing.T)
 	for _, want := range []string{
 		`DATA_DIR/backups/`,
 		`retenção: últimos 7 dias`,
-		`Backups diários protegidos`,
+		`Arquivos diários encontrados`,
 		backupName,
 		`25/08/2026 14:25`,
 		`13 B`,
-		`A presença do arquivo não substitui a validação periódica de restauração.`,
+		`não confirma procedência, integridade nem conclusão da rotina.`,
 	} {
 		assertContains(t, body, want)
 	}

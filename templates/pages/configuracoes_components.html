@@ -48,7 +48,7 @@
                 </button>
                 {{range .AccountProviders}}
                 <button type="button" class="cb-provider-choice" data-provider-choice data-provider-slug="{{.Slug}}" data-provider-name="{{.Name}}" data-provider-logo="{{if .LogoPath}}{{assetPath .LogoPath}}{{end}}" data-provider-mark="{{.Mark}}" data-provider-color="{{.Color}}" data-provider-search-text="{{.Name}}" aria-pressed="false">
-                    <span class="cb-provider-choice-logo" style="--ic: {{.Color}}">
+                    <span class="cb-provider-choice-logo" data-cb-color="{{.Color}}">
                         {{if .LogoPath}}<img src="{{assetPath .LogoPath}}" alt="" class="institution-logo" data-avatar-fallback><span class="hidden emblem-text emblem-len-{{len .Mark}}" data-avatar-text>{{.Mark}}</span>{{else}}<span class="emblem-text emblem-len-{{len .Mark}}">{{.Mark}}</span>{{end}}
                     </span>
                     <span class="cb-provider-choice-copy"><strong>{{.Name}}</strong></span>
@@ -88,11 +88,10 @@
 <section class="border-b border-[var(--cb-border-subtle)] last:border-b-0" data-cat-parent-block data-cat-parent-id="{{.ID}}">
     <div class="flex items-center justify-between py-2.5 md:py-3 group" data-cat-parent-header>
         <button type="button" class="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer btn-tactile" data-cat-toggle aria-label="Expandir subcategorias" aria-expanded="false">
-            <span class="flex items-center justify-center w-4 h-4 shrink-0 transition-transform duration-200" data-cat-chevron style="transform: rotate(-90deg)">
+            <span class="flex items-center justify-center w-4 h-4 shrink-0 transition-transform duration-200 -rotate-90" data-cat-chevron>
                 <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-[var(--cb-text-muted)]"></i>
             </span>
-            <span class="flex h-7 w-7 items-center justify-center rounded-md transition-colors shrink-0"
-                style="{{if eq .Type "INCOME"}}background: color-mix(in srgb, var(--cb-success) 10%, transparent); color: var(--cb-success){{else}}background: color-mix(in srgb, var(--cb-danger) 10%, transparent); color: var(--cb-danger){{end}}">
+            <span class="flex h-7 w-7 items-center justify-center rounded-md transition-colors shrink-0 {{if eq .Type "INCOME"}}cb-category-type-income{{else}}cb-category-type-expense{{end}}">
                 <i data-lucide="{{if eq .Type "INCOME"}}arrow-up-right{{else}}arrow-down-right{{end}}" class="h-3.5 w-3.5"></i>
             </span>
             <p class="text-sm font-semibold text-[var(--cb-text-main)] truncate" data-cat-name>{{.Name}}</p>
@@ -209,7 +208,7 @@
 {{define "config-contas-row"}}
 <article class="cb-row-dense group flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between overflow-hidden">
     <div class="flex items-center gap-3 min-w-0">
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" data-cb-color="{{.Color}}">
             {{template "financial-emblem" .}}
         </span>
         <div class="min-w-0 flex-1">
@@ -220,6 +219,9 @@
     <div class="flex items-center justify-between sm:justify-end gap-1 sm:shrink-0">
         <p class="text-sm font-semibold text-[var(--cb-text-main)] sm:mr-2" data-sensitive>{{.Balance}}</p>
         <div class="flex items-center gap-1">
+            <button type="button" class="cb-button cb-button-secondary h-8 px-2 text-xs"
+                hx-get="/configuracoes/contas/{{.ID}}/conciliar" hx-target="closest article" hx-swap="outerHTML"
+                aria-label="Conciliar saldo de {{.Name}}">Conciliar</button>
             <button type="button" class="h-6 w-6 rounded-md border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] flex items-center justify-center text-[var(--cb-text-subtle)] transition-all hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] active:scale-95 btn-tactile"
                 hx-post="/configuracoes/contas/{{.ID}}/subir"
                 hx-target="#settings-dynamic-payload"
@@ -253,10 +255,49 @@
 </article>
 {{end}}
 
+{{define "config-contas-conciliar"}}
+<article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 space-y-4">
+    <div>
+        <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">Conciliar saldo · {{.Name}}</h3>
+        <p class="text-sm text-[var(--cb-text-muted)]">Saldo atual: <strong data-sensitive>{{.Balance}}</strong></p>
+        <p class="text-xs text-[var(--cb-text-muted)]">A diferença fica no histórico de conciliação. Não gera receita ou despesa nos relatórios.</p>
+    </div>
+    {{if .Error}}<p role="alert" class="text-sm text-[var(--cb-danger)]">{{.Error}}</p>{{end}}
+    {{if .Success}}<p role="status" class="text-sm text-[var(--cb-success)]">{{.Success}}</p>{{end}}
+    <form hx-post="/configuracoes/contas/{{.ID}}/conciliar" hx-target="closest article" hx-swap="outerHTML" class="space-y-3">
+        <input type="hidden" name="balance_version" value="{{.Version}}">
+        <input type="hidden" name="request_id" value="{{.RequestID}}">
+        <div>
+            <label class="cb-label" for="target-balance-{{.ID}}">Saldo correto</label>
+            <input id="target-balance-{{.ID}}" type="text" name="target_balance" value="{{.BalanceInput}}" class="cb-input" required>
+            <p class="text-xs text-[var(--cb-text-muted)]">Use vírgula para centavos. Valores negativos são permitidos.</p>
+        </div>
+        <div>
+            <label class="cb-label" for="balance-reason-{{.ID}}">Motivo da conciliação</label>
+            <input id="balance-reason-{{.ID}}" type="text" name="reason" maxlength="500" required class="cb-input" placeholder="Ex.: conferência com o extrato bancário">
+        </div>
+        <div class="flex flex-wrap justify-end gap-2">
+            <button type="button" class="cb-button cb-button-secondary" hx-get="/configuracoes/contas/{{.ID}}" hx-target="closest article" hx-swap="outerHTML">Voltar</button>
+            <button type="submit" class="cb-button cb-button-primary">Confirmar conciliação</button>
+        </div>
+    </form>
+    <div class="space-y-2">
+        <h4 class="text-sm font-semibold">Histórico de conciliação · últimos 50 ajustes</h4>
+        {{range .History}}
+        <div class="rounded-lg border border-[var(--cb-border-subtle)] p-3 text-sm space-y-1">
+            <p data-sensitive>{{.Before}} → {{.After}} · Diferença: {{.Delta}}</p>
+            <p class="break-words">{{.Reason}}</p>
+            <p class="text-xs text-[var(--cb-text-muted)]">{{.Date}} · {{.Author}}</p>
+        </div>
+        {{else}}<p class="text-sm text-[var(--cb-text-muted)]">Nenhuma conciliação registrada.</p>{{end}}
+    </div>
+</article>
+{{end}}
+
 {{define "config-contas-row-archived"}}
 <article class="group flex items-center justify-between rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 opacity-60 transition-all hover:opacity-80">
     <div class="flex items-center gap-3 min-w-0">
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid grayscale select-none" style="--ic: {{.Color}}">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid grayscale select-none" data-cb-color="{{.Color}}">
             {{template "financial-emblem" .}}
         </span>
         <div class="min-w-0">
@@ -269,7 +310,7 @@
     </div>
     <div class="flex items-center gap-3 shrink-0">
         <p class="text-sm font-semibold text-[var(--cb-text-muted)]" data-sensitive>{{.Balance}}</p>
-        <button type="button" class="h-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-3 text-xs font-semibold flex items-center gap-1 transition-all active:scale-95" style="color: var(--cb-success); --hover-bg: color-mix(in srgb, var(--cb-success) 10%, transparent)"
+        <button type="button" class="h-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-3 text-xs font-semibold flex items-center gap-1 text-[var(--cb-success)] transition-all active:scale-95"
             hx-post="/configuracoes/contas/{{.ID}}/reativar"
             hx-target="#settings-dynamic-payload"
             hx-swap="outerHTML"
@@ -286,7 +327,7 @@
         <div>
             <label class="cb-label">Nome da conta</label>
             <div class="flex items-center gap-2">
-                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" data-cb-color="{{.Color}}">
                     {{template "financial-emblem" .}}
                 </span>
                 <input type="text" name="name" value="{{.Name}}" placeholder="Nome da conta"
@@ -305,9 +346,8 @@
             </div>
             <div>
                 <label class="cb-label">Saldo atual</label>
-                <input type="text" name="balance" inputmode="decimal" value="{{.Balance}}" placeholder="0,00"
-                    data-money-mask
-                    class="cb-input">
+                <p class="cb-input" data-sensitive>{{.Balance}}</p>
+                <p class="text-xs text-[var(--cb-text-muted)]">Editar os dados da conta preserva o saldo.</p>
             </div>
         </div>
         <div class="grid grid-cols-2 gap-3">
@@ -353,7 +393,7 @@
 <article class="cb-row-dense group">
     <div class="flex items-center justify-between gap-3 mb-2">
         <div class="flex items-center gap-3 min-w-0">
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" data-cb-color="{{.Color}}">
                 {{template "financial-emblem" .}}
             </span>
             <p class="text-sm font-medium text-[var(--cb-text-main)] truncate">{{.Name}}</p>
@@ -401,7 +441,7 @@
 <article class="group rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-4 opacity-60 transition-all hover:opacity-80">
     <div class="flex items-center justify-between gap-3 mb-2">
         <div class="flex items-center gap-3 min-w-0">
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" data-cb-color="{{.Color}}">
                 {{template "financial-emblem" .}}
             </span>
             <div class="min-w-0">
@@ -409,7 +449,7 @@
                 <span class="cb-status-chip cb-status-chip-warning">Arquivado</span>
             </div>
         </div>
-        <button type="button" class="h-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-3 text-xs font-semibold flex items-center gap-1 shrink-0 transition-all active:scale-95" style="color: var(--cb-success)"
+        <button type="button" class="h-8 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-3 text-xs font-semibold flex items-center gap-1 shrink-0 text-[var(--cb-success)] transition-all active:scale-95"
             hx-post="/configuracoes/cartoes/{{.AccountID}}/reativar"
             hx-target="#settings-dynamic-payload"
             hx-swap="outerHTML"
@@ -431,7 +471,7 @@
         <div>
             <label class="cb-label">Nome do cartão</label>
             <div class="flex items-center gap-2">
-                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" style="--ic: {{.Color}}">
+                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" data-cb-color="{{.Color}}">
                     {{template "financial-emblem" .}}
                 </span>
                 <input type="text" name="name" value="{{.Name}}" placeholder="Nome do cartão"
@@ -508,7 +548,7 @@
     <p class="mt-3 text-xs text-[var(--cb-text-muted)]">Chave manual: <code class="text-[var(--cb-text-main)]">{{.TOTPSecret}}</code></p>
     <form class="mt-4 space-y-3" hx-post="/configuracoes/seguranca/totp/confirmar" hx-target="#totp-area" hx-swap="innerHTML">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-        <input type="hidden" name="totp_secret" value="{{.TOTPSecret}}">
+        <input type="hidden" name="mfa_setup_token" value="{{.MFASetupToken}}">
         <label class="block text-sm text-[var(--cb-text-main)]">Código de 6 dígitos</label>
         <input type="text" name="code" maxlength="6" inputmode="numeric" class="cb-input w-44" placeholder="123456">
         <div class="flex items-center gap-2">
@@ -517,6 +557,28 @@
                 hx-get="/configuracoes/seguranca/totp/cancelar" hx-target="#totp-area" hx-swap="innerHTML">
                 Cancelar
             </button>
+        </div>
+    </form>
+</div>
+{{end}}
+
+{{define "perfil-2fa-reauth"}}
+<div class="mt-4 rounded-xl border border-[var(--cb-warning)]/35 bg-[var(--cb-surface-2)] p-4">
+    <p class="text-sm font-semibold text-[var(--cb-text-main)]">{{.Title}}</p>
+    {{if .Error}}<p class="mt-2 text-xs text-[var(--cb-danger)]">{{.Error}}</p>{{end}}
+    <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Esta ação exige sua senha atual{{if .RequiresCurrentFactor}} e o código do 2FA já configurado{{end}}.</p>
+    <form class="mt-4 space-y-3" hx-post="{{.SecurityAction}}" hx-target="#totp-area" hx-swap="innerHTML">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <label class="block text-sm text-[var(--cb-text-main)]">Senha atual</label>
+        <input type="password" name="current_password" autocomplete="current-password" required class="cb-input w-full" placeholder="Sua senha atual">
+        {{if .RequiresCurrentFactor}}
+        <label class="block text-sm text-[var(--cb-text-main)]">Código do autenticador</label>
+        <input type="text" name="current_totp_code" maxlength="6" inputmode="numeric" autocomplete="one-time-code" required class="cb-input w-44" placeholder="123456">
+        {{end}}
+        <div class="flex items-center gap-2">
+            <button class="cb-button cb-button-primary h-10 px-4 text-xs">Confirmar identidade</button>
+            <button type="button" class="cb-button cb-button-secondary h-10 px-4 text-xs"
+                hx-get="/configuracoes/seguranca/totp/cancelar" hx-target="#totp-area" hx-swap="innerHTML">Cancelar</button>
         </div>
     </form>
 </div>

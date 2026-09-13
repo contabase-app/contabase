@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -72,6 +73,9 @@ func parseCurrency(raw string) (int64, error) {
 		}
 	}
 
+	if reais < 0 || centavos < 0 || reais > (math.MaxInt64-centavos)/100 {
+		return 0, fmt.Errorf("valor fora do limite suportado")
+	}
 	total := reais*100 + centavos
 	if negative {
 		total = -total

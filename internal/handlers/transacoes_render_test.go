@@ -271,9 +271,9 @@ func TestLancamentosBulkPaidUsesPaymentDateModalContract(t *testing.T) {
 		t.Fatal("bulk paid action must open payment-date modal, not submit directly")
 	}
 
-	layoutBytes, err := os.ReadFile(resolveTemplatePath(t, "templates/pages/lancamentos.html"))
+	layoutBytes, err := os.ReadFile(resolveTemplatePath(t, "templates/components/app_shell.html"))
 	if err != nil {
-		t.Fatalf("read lancamentos template: %v", err)
+		t.Fatalf("read app shell template: %v", err)
 	}
 	layout := string(layoutBytes)
 	assertContains(t, layout, `name="payment_date"`)

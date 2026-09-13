@@ -178,10 +178,10 @@ func TestContasListPartialRendersWithMinimalData(t *testing.T) {
 	}
 }
 
-func TestPaymentConfirmModalIsAvailableFromLancamentos(t *testing.T) {
-	layoutBytes, err := os.ReadFile(filepath.Join(projectRoot(), "templates/pages/lancamentos.html"))
+func TestPaymentConfirmModalIsAvailableFromAppShell(t *testing.T) {
+	layoutBytes, err := os.ReadFile(filepath.Join(projectRoot(), "templates/components/app_shell.html"))
 	if err != nil {
-		t.Fatalf("read lancamentos template: %v", err)
+		t.Fatalf("read app shell template: %v", err)
 	}
 	layout := string(layoutBytes)
 	for _, want := range []string{
@@ -191,7 +191,7 @@ func TestPaymentConfirmModalIsAvailableFromLancamentos(t *testing.T) {
 		`/assets/js/payment-confirm.js`,
 	} {
 		if !strings.Contains(layout, want) {
-			t.Fatalf("lancamentos missing payment modal contract %q", want)
+			t.Fatalf("app shell missing payment modal contract %q", want)
 		}
 	}
 }

@@ -36,12 +36,16 @@ type invoicePaymentWriterTestHooks struct {
 
 type FaturaData struct {
 	AppShellAccess
-	Title                   string
-	UserName                string
-	UserInitials            string
-	ProfilePhotoURL         string
-	NotificationCount       int
-	OOB                     bool
+	Title             string
+	UserName          string
+	UserInitials      string
+	ProfilePhotoURL   string
+	NotificationCount int
+	OOB               bool
+	// OOBContent replaces the complete invoice composition in the invoice hub.
+	// It prevents the summary, action panel and transaction list from settling
+	// at different moments after a financial mutation.
+	OOBContent              bool
 	InvoiceID               string
 	CardName                string
 	CardIcon                string
@@ -104,6 +108,10 @@ type FaturaData struct {
 	ShowSensitiveWarning    bool
 	SensitiveWarningText    string
 	HideMonthNavigation     bool
+	// IsFaturasIndex distinguishes the invoice hub from the direct, shareable
+	// invoice detail route. The hub already presents the selected card in its
+	// carousel, so repeating the card identity in the detail is unnecessary.
+	IsFaturasIndex bool
 }
 
 // FaturasIndexData is the read-only workspace overview. It selects one card
@@ -139,7 +147,17 @@ type InvoicePaymentRow struct {
 }
 
 type InvoiceGeneralRefundRow struct {
+	ID          string
 	DateLabel   string
+	Amount      MoneyDisplay
+	Description string
+}
+
+// TransactionRefundRow is an active, auditable refund entry. Refund records
+// are never overwritten or deleted: corrections reverse the original entry
+// and create a replacement, preserving the financial audit trail.
+type TransactionRefundRow struct {
+	ID          string
 	Amount      MoneyDisplay
 	Description string
 }
@@ -1170,6 +1188,12 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 	defer rows.Close()
 
 	data.Transactions = scanInvoiceTransactionRows(rows)
+	if err := rows.Close(); err != nil {
+		return data, fmt.Errorf("close fatura txs: %w", err)
+	}
+	if err := attachActiveTransactionRefundRows(db, workspaceID, data.Transactions); err != nil {
+		return data, fmt.Errorf("query invoice refund entries: %w", err)
+	}
 	if data.Status != models.InvoiceStatusPaid {
 		data.Transactions = append(data.Transactions, projectedRecurringInvoiceRows(db, workspaceID, data.AccountID, data.Reference)...)
 	}
@@ -2267,6 +2291,7 @@ func configureFaturaForIndex(data *FaturaData, accountID string, mes, ano int) {
 	previous := selected.AddDate(0, -1, 0)
 	next := selected.AddDate(0, 1, 0)
 	data.HideMonthNavigation = true
+	data.IsFaturasIndex = true
 	data.MesAnteriorURL = faturasIndexURL(accountID, int(previous.Month()), previous.Year(), data.SortOrder)
 	data.MesSeguinteURL = faturasIndexURL(accountID, int(next.Month()), next.Year(), data.SortOrder)
 	data.MonthOptions = buildFaturasIndexMonthOptions(accountID, selected, data.SortOrder)
@@ -2465,9 +2490,9 @@ func sumInvoiceTotal(db *sql.DB, workspaceID, invoiceID string) (int64, error) {
 	return total, nil
 }
 
-func sumInvoiceTotalTx(tx *sql.Tx, workspaceID, invoiceID string) int64 {
+func sumInvoiceTotalTx(tx *sql.Tx, workspaceID, invoiceID string) (int64, error) {
 	var total int64
-	tx.QueryRow(`
+	if err := tx.QueryRow(`
 		SELECT COALESCE(SUM(t.amount - COALESCE((
 			SELECT SUM(r.amount_cents) FROM transaction_refunds r
 			WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
@@ -2476,8 +2501,10 @@ func sumInvoiceTotalTx(tx *sql.Tx, workspaceID, invoiceID string) int64 {
 			WHERE ir.workspace_id = ? AND ir.invoice_id = ? AND ir.reversed_at IS NULL
 		), 0) FROM transactions t
 		WHERE t.workspace_id = ? AND t.invoice_id = ? AND t.type = 'EXPENSE'
-	`, workspaceID, invoiceID, workspaceID, invoiceID).Scan(&total)
-	return total
+	`, workspaceID, invoiceID, workspaceID, invoiceID).Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, nil
 }
 
 func sumCardOutstandingLimit(db *sql.DB, workspaceID, cardAccountID string) (int64, error) {
@@ -2655,7 +2682,7 @@ func buildInvoicePaymentRows(payments []models.InvoicePayment, nameMap map[strin
 
 func queryActiveInvoiceGeneralRefunds(db *sql.DB, workspaceID, invoiceID string) ([]InvoiceGeneralRefundRow, error) {
 	rows, err := db.Query(`
-		SELECT amount_cents, description, created_at
+		SELECT id, amount_cents, description, created_at
 		FROM invoice_refunds
 		WHERE workspace_id = ?
 		  AND invoice_id = ?
@@ -2669,18 +2696,68 @@ func queryActiveInvoiceGeneralRefunds(db *sql.DB, workspaceID, invoiceID string)
 
 	var result []InvoiceGeneralRefundRow
 	for rows.Next() {
+		var id, description string
 		var amount, createdAt int64
-		var description string
-		if err := rows.Scan(&amount, &description, &createdAt); err != nil {
+		if err := rows.Scan(&id, &amount, &description, &createdAt); err != nil {
 			return nil, err
 		}
 		result = append(result, InvoiceGeneralRefundRow{
+			ID:          id,
 			DateLabel:   formatDateTimeLabel(createdAt),
 			Amount:      MoneyMinor(amount),
 			Description: description,
 		})
 	}
 	return result, rows.Err()
+}
+
+func attachActiveTransactionRefundRows(db *sql.DB, workspaceID string, transactions []TransactionRow) error {
+	ids := make([]string, 0, len(transactions))
+	byID := make(map[string]*TransactionRow, len(transactions))
+	for i := range transactions {
+		if transactions[i].ID == "" || transactions[i].IsProjected {
+			continue
+		}
+		ids = append(ids, transactions[i].ID)
+		byID[transactions[i].ID] = &transactions[i]
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(ids)), ",")
+	args := make([]interface{}, 0, len(ids)+1)
+	args = append(args, workspaceID)
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	rows, err := db.Query(`
+		SELECT id, transaction_id, amount_cents, description
+		FROM transaction_refunds
+		WHERE workspace_id = ?
+		  AND reversed_at IS NULL
+		  AND transaction_id IN (`+placeholders+`)
+		ORDER BY created_at DESC, id DESC
+	`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var refundID, transactionID, description string
+		var amount int64
+		if err := rows.Scan(&refundID, &transactionID, &amount, &description); err != nil {
+			return err
+		}
+		if transaction := byID[transactionID]; transaction != nil {
+			transaction.RefundEntries = append(transaction.RefundEntries, TransactionRefundRow{
+				ID:          refundID,
+				Amount:      MoneyMinor(amount),
+				Description: description,
+			})
+		}
+	}
+	return rows.Err()
 }
 
 func coalesceString(s *string, fallback string) string {

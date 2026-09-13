@@ -310,9 +310,10 @@
 
     ns.updateIcon = function(wrapper, icon, iconName, color) {
         Object.values(colorClasses).flat().forEach(function(c) { wrapper.classList.remove(c); icon.classList.remove(c); });
-        wrapper.style.backgroundColor = '';
-        wrapper.style.borderColor = '';
-        icon.style.color = '';
+        if (typeof window.clearRuntimeColor === 'function') {
+            window.clearRuntimeColor(wrapper);
+            window.clearRuntimeColor(icon);
+        }
         var cls = colorClasses[color] || colorClasses.indigo;
         wrapper.classList.add(cls[0]);
         icon.classList.add(cls[1]);
@@ -322,22 +323,17 @@
 
     ns.updateAccountIcon = function(wrapper, icon, iconText, iconImage, iconName, colorHex, providerMark, providerLogoURL) {
         Object.values(colorClasses).flat().forEach(function(c) { wrapper.classList.remove(c); icon.classList.remove(c); });
-        wrapper.style.backgroundColor = '';
-        wrapper.style.borderColor = '';
-        icon.style.color = '';
-        if (iconText) {
-            iconText.style.color = '';
+        if (typeof window.applyRuntimeColor === 'function') {
+            window.applyRuntimeColor(wrapper, colorHex, '#6B7280');
+            window.applyRuntimeColor(icon, colorHex, '#6B7280');
+            window.applyRuntimeColor(iconText, colorHex, '#6B7280');
         }
-        wrapper.style.setProperty('--ic', colorHex || '#6B7280');
-        wrapper.style.borderWidth = '1px';
-        wrapper.style.borderStyle = 'solid';
         if (iconImage) {
             iconImage.classList.add('hidden');
             iconImage.removeAttribute('src');
         }
         if (providerLogoURL && providerLogoURL.trim() !== '' && iconImage) {
             iconImage.src = providerLogoURL;
-            iconImage.style.display = '';
             iconImage.classList.remove('hidden');
             if (iconText) {
                 iconText.classList.add('hidden');
@@ -349,7 +345,7 @@
         if (providerMark && providerMark.trim() !== '') {
             if (iconText) {
                 iconText.textContent = providerMark;
-                iconText.className = 'font-bold uppercase tracking-wider select-none emblem-text emblem-len-' + providerMark.length;
+                iconText.className = 'font-bold uppercase tracking-wider select-none emblem-text cb-runtime-color-text emblem-len-' + providerMark.length;
                 iconText.classList.remove('hidden');
             }
             icon.classList.add('hidden');
@@ -394,9 +390,10 @@
             ns.updateIcon(categoryIconWrapEl, categoryIconEl, payload.icon, payload.color);
         } else {
             categoryIconEl.setAttribute('data-lucide', payload.icon);
-            categoryIconEl.style.color = payload.color;
-            categoryIconWrapEl.style.borderColor = payload.color;
-            categoryIconWrapEl.style.backgroundColor = payload.color + '22';
+            if (typeof window.applyRuntimeColor === 'function') {
+                window.applyRuntimeColor(categoryIconEl, payload.color);
+                window.applyRuntimeColor(categoryIconWrapEl, payload.color);
+            }
             if (typeof cb.onRefreshIcons === 'function') cb.onRefreshIcons();
         }
 

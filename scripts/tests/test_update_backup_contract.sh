@@ -104,13 +104,6 @@ write_shims() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'cmd:git %s\n' "$*" >> "$EVENT_LOG"
-if [ "${TEST_MODE:-}" = docker ] && [ "${TEST_SCENARIO:-}" = pre_start ] && [ "${1:-}" = pull ]; then
-  printf 'event:failure point=git_pull\n' >> "$EVENT_LOG"
-  exit 44
-fi
-if [ "${1:-}" = pull ] && ! grep -q 'event:first_mutation' "$EVENT_LOG"; then
-  printf 'event:first_mutation cmd=git_pull\n' >> "$EVENT_LOG"
-fi
 exec "$REAL_GIT" "$@"
 SHIM
 
@@ -118,11 +111,22 @@ SHIM
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'cmd:docker %s\n' "$*" >> "$EVENT_LOG"
+if [ "${1:-}" = exec ]; then
+  cat "$RUNTIME_VERSION_FILE"
+  exit 0
+fi
 case "$*" in
   'compose '*config*) exit 0 ;;
   'compose '*"ps -q contabase"*) printf 'fixture-container\n'; exit 0 ;;
+  inspect*'{{.Id}}'*) printf 'fixture-container\n'; exit 0 ;;
+  inspect*'State.Health'*) printf 'healthy\n'; exit 0 ;;
+  inspect*'RestartCount'*) printf '0\n'; exit 0 ;;
+  inspect*'com.docker.compose.service'*) printf 'contabase\n'; exit 0 ;;
+  inspect*'com.docker.compose.project.working_dir'*) printf '<no value>\n'; exit 0 ;;
+  inspect*'com.docker.compose.project'*) printf 'fixture-project\n'; exit 0 ;;
+  inspect*'Mounts'*) printf '/app/data\n'; exit 0 ;;
+  inspect*'Config.Image'*) printf 'contabase:fixture-old\n'; exit 0 ;;
   inspect*'.Image'*) printf 'sha256:fixture-old\n'; exit 0 ;;
-  inspect*'.Config.Image'*) printf 'contabase:fixture-old\n'; exit 0 ;;
   'image tag '*|'image rm '*) exit 0 ;;
   'compose '*port*) printf '127.0.0.1:8080\n'; exit 0 ;;
   'compose '*logs*) exit 0 ;;
@@ -138,6 +142,7 @@ if [ "${1:-}" = compose ]; then
       exit 0
       ;;
     *' up '*' --build '*)
+      printf '%s\n' "${VERSION:-}" > "$RUNTIME_VERSION_FILE"
       printf 'event:start_new_runtime cmd=docker_compose_up_build\n' >> "$EVENT_LOG"
       if [ "${TEST_SCENARIO:-}" = post_start ]; then
         printf 'event:failure point=new_runtime_start\n' >> "$EVENT_LOG"
@@ -146,6 +151,7 @@ if [ "${1:-}" = compose ]; then
       exit 0
       ;;
     *' up '*' --no-build '*)
+      printf '%s\n' "${PREVIOUS_RUNTIME_VERSION:-v0.1.0-beta.7}" > "$RUNTIME_VERSION_FILE"
       printf 'event:start_old_runtime cmd=docker_compose_up_no_build\n' >> "$EVENT_LOG"
       exit 0
       ;;
@@ -245,6 +251,16 @@ map_path() {
 }
 args=(); for arg in "$@"; do args+=("$(map_path "$arg")"); done
 printf 'cmd:cp %s\n' "${args[*]}" >> "$EVENT_LOG"
+destination="${args[${#args[@]}-1]:-}"
+if [ "${TEST_MODE:-}" = docker ] && [ "${TEST_SCENARIO:-}" = pre_start ]; then
+  case "$destination" in
+    *.pre-update-*.bak)
+      printf 'event:first_mutation cmd=cp\n' >> "$EVENT_LOG"
+      printf 'event:failure point=env_backup\n' >> "$EVENT_LOG"
+      exit 53
+      ;;
+  esac
+fi
 if grep -q 'event:backup_success' "$EVENT_LOG" && ! grep -q 'event:first_mutation' "$EVENT_LOG"; then
   printf 'event:first_mutation cmd=cp\n' >> "$EVENT_LOG"
 fi
@@ -311,7 +327,6 @@ SHIM
   cat > "$bin/find" <<'SHIM'
 #!/usr/bin/env bash
 set -euo pipefail
-if [ "${FORCE_FIND_DENY:-0}" = 1 ] && [ "${1:-}" = "$TEST_DATA_DIR" ]; then exit 50; fi
 if [[ "${1:-}" = /opt/contabase* ]]; then
   first="$TEST_APP_DIR${1#/opt/contabase}"; shift
   exec "$REAL_FIND" "$first" "$@"
@@ -419,6 +434,28 @@ make_git_fixture() {
   write_fake_backup_helper "$seed/scripts/ops/backup.sh"
   printf 'v0.1.0-beta.7\n' > "$seed/VERSION"
   printf 'module github.com/contabase-app/contabase\n\ngo 1.24\n' > "$seed/go.mod"
+  cat > "$seed/.gitignore" <<'IGN'
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.env
+.env.*
+!*.example
+compose.local.yaml
+compose.local.yml
+docker-compose.override.yml
+*.bak
+IGN
+  cat > "$seed/Dockerfile" <<'DOCKER'
+FROM scratch
+DOCKER
+  cat > "$seed/docker-compose.yml" <<'COMPOSE'
+services:
+  contabase:
+    image: contabase:fixture
+COMPOSE
   cat > "$seed/scripts/build-css.sh" <<'SHIM'
 #!/usr/bin/env bash
 exit 0
@@ -449,6 +486,8 @@ prepare_runtime_env() {
   : > "$EVENT_LOG"; : > "$ARGS_LOG"
   printf 'synthetic-db\n' > "$TEST_DATA_DIR/contabase.db"
   printf 'synthetic-upload\n' > "$TEST_DATA_DIR/uploads/file.txt"
+  export RUNTIME_VERSION_FILE="$root/runtime-version" PREVIOUS_RUNTIME_VERSION="v0.1.0-beta.7"
+  printf 'v0.1.0-beta.7\n' > "$RUNTIME_VERSION_FILE"
 }
 
 run_docker() {
@@ -466,7 +505,12 @@ ENV
   export TEST_DATA_DIR="$repo/data"; output="$root/output.log"
   if [ "$scenario" = inaccessible ]; then chmod 000 "$repo/data"; fi
   set +e
-  (cd "$repo" && CONTABASE_ASSUME_YES=1 HEALTHCHECK_ATTEMPTS=1 ./scripts/update-contabase-docker.sh --yes) >"$output" 2>&1
+  (cd "$repo" && CONTABASE_ASSUME_YES=1 HEALTHCHECK_ATTEMPTS=1 \
+    CONTABASE_STATE_FILE="$root/etc/contabase/install-state.env" \
+    CONTABASE_MODE_FILE="$root/etc/contabase/install-mode" \
+    CONTABASE_UPDATE_WRAPPER="$root/local-bin/contabase-update" \
+    CONTABASE_UPDATE_ALIAS="$root/local-bin/cb-update" \
+    ./scripts/update-contabase-docker.sh --yes) >"$output" 2>&1
   rc=$?; set -e; chmod 700 "$repo/data" 2>/dev/null || true; printf '%s' "$rc"
 }
 

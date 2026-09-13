@@ -143,7 +143,7 @@ window.contabaseInspectUI = function () {
         if (el.hasAttribute('data-dismiss-modal')) {
             var modalId = el.getAttribute('data-dismiss-modal');
             var modal = document.getElementById(modalId);
-            if (modal) modal.style.display = 'none';
+            if (modal) modal.classList.add('hidden');
         }
     });
 
@@ -170,11 +170,10 @@ window.contabaseInspectUI = function () {
         var img = e.target;
         if (!img || img.tagName !== 'IMG') return;
         if (!img.hasAttribute('data-avatar-fallback')) return;
-        img.style.display = 'none';
+        img.classList.add('hidden');
         var fallback = img.nextElementSibling;
         if (fallback && fallback.hasAttribute('data-avatar-text')) {
             fallback.classList.remove('hidden');
-            fallback.style.display = '';
         }
     }, true);
     // Navigation helpers

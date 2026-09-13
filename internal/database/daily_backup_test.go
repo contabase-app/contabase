@@ -2,13 +2,38 @@ package database
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestDailyAutomaticBackupCancellationPreservesPrevious(t *testing.T) {
+	db, path := openDailyBackupTestDB(t)
+	dir := t.TempDir()
+	day := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	if err := ensureDailyAutomaticBackup(db, path, dir, day, 7); err != nil {
+		t.Fatal(err)
+	}
+	previous := filepath.Join(dir, dailyAutomaticBackupName(day))
+	before := readDailyBackupBytes(t, previous)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := ensureDailyAutomaticBackupContext(ctx, db, path, dir, day.AddDate(0, 0, 1), 7); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err=%v", err)
+	}
+	if !bytes.Equal(before, readDailyBackupBytes(t, previous)) {
+		t.Fatal("previous backup changed")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("partial backup or staging left: %v %v", entries, err)
+	}
+}
 
 func TestEnsureDailyAutomaticBackupIsImmutableWithinCivilDay(t *testing.T) {
 	db, dbPath := openDailyBackupTestDB(t)
@@ -83,7 +108,7 @@ func TestEnsureDailyAutomaticBackupRetainsSevenCivilDays(t *testing.T) {
 	}
 }
 
-func TestEnsureDailyAutomaticBackupAdoptsEarliestLegacySnapshotAndRemovesDuplicates(t *testing.T) {
+func TestEnsureDailyAutomaticBackupPreservesLegacyAndCapturesCurrent(t *testing.T) {
 	db, dbPath := openDailyBackupTestDB(t)
 	backupDir := filepath.Join(t.TempDir(), "backups")
 	if err := os.MkdirAll(backupDir, 0o755); err != nil {
@@ -107,18 +132,25 @@ func TestEnsureDailyAutomaticBackupAdoptsEarliestLegacySnapshotAndRemovesDuplica
 		t.Fatalf("adopt legacy daily backup: %v", err)
 	}
 	dailyPath := filepath.Join(backupDir, "contabase-daily-20260825.db")
-	if got := dailyBackupMarkerCount(t, dailyPath); got != 1 {
-		t.Fatalf("adopted daily marker count = %d, want earliest state with 1 marker", got)
+	if got := dailyBackupMarkerCount(t, dailyPath); got != 2 {
+		t.Fatalf("daily marker count = %d, want current state with 2 markers", got)
 	}
 	assertDailyBackupReadOnly(t, dailyPath)
 	entries, err := os.ReadDir(backupDir)
 	if err != nil {
 		t.Fatalf("read migrated backup dir: %v", err)
 	}
+	legacyCount := 0
 	for _, entry := range entries {
 		if _, ok := parseLegacyAutomaticBackupName(entry.Name()); ok {
-			t.Fatalf("legacy duplicate remained after migration: %s", entry.Name())
+			legacyCount++
 		}
+	}
+	if legacyCount != 3 {
+		t.Fatalf("legacy files were removed: %d", legacyCount)
+	}
+	if got := dailyBackupMarkerCount(t, firstLegacy); got != 1 {
+		t.Fatalf("legacy changed: %d", got)
 	}
 }
 

@@ -1,56 +1,59 @@
 package main
 
 import (
-	"html/template"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strings"
 	"testing"
 )
 
-func TestSafeColorStyleAllowsKnownColorFormats(t *testing.T) {
-	tests := []struct {
-		name     string
-		property string
-		value    string
-		want     template.CSS
-	}{
-		{
-			name:     "rgb color",
-			property: "color",
-			value:    "rgb(239 68 68)",
-			want:     template.CSS("color:rgb(239 68 68)"),
-		},
-		{
-			name:     "hex background",
-			property: "background-color",
-			value:    "#22c55e",
-			want:     template.CSS("background-color:#22c55e"),
-		},
+func TestReportStrokePaletteUsesExternalStylesheet(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not determine repository root")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", ".."))
+
+	reportTemplate, err := os.ReadFile(filepath.Join(repoRoot, "templates", "pages", "relatorios.html"))
+	if err != nil {
+		t.Fatalf("read report template: %v", err)
+	}
+	if strings.Contains(string(reportTemplate), "colorStyle") || strings.Contains(string(reportTemplate), "style=") {
+		t.Fatal("report template must use inert data-report-stroke attributes instead of inline style")
+	}
+	if got := strings.Count(string(reportTemplate), `data-report-stroke="{{.Stroke}}"`); got != 12 {
+		t.Fatalf("report template has %d report stroke consumers, want 12", got)
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := safeColorStyle(tc.property, tc.value); got != tc.want {
-				t.Fatalf("safeColorStyle(%q, %q) = %q, want %q", tc.property, tc.value, got, tc.want)
-			}
-		})
+	handlerSource, err := os.ReadFile(filepath.Join(repoRoot, "internal", "handlers", "relatorios.go"))
+	if err != nil {
+		t.Fatalf("read report handler: %v", err)
 	}
-}
-
-func TestSafeColorStyleRejectsUnsafeValues(t *testing.T) {
-	tests := []struct {
-		name     string
-		property string
-		value    string
-	}{
-		{name: "unsupported property", property: "border-color", value: "#fff"},
-		{name: "expression", property: "color", value: "expression(alert(1))"},
-		{name: "url injection", property: "background-color", value: "url(javascript:alert(1))"},
+	paletteBlocks := regexp.MustCompile(`(?s)(?:strokeColors|colors)\s*:=\s*\[\]string\{(.*?)\}`).FindAllStringSubmatch(string(handlerSource), -1)
+	colorLiteral := regexp.MustCompile(`"(#[0-9A-Fa-f]{6}|rgb\([0-9 ,]+\))"`)
+	colors := make(map[string]struct{})
+	for _, block := range paletteBlocks {
+		for _, match := range colorLiteral.FindAllStringSubmatch(block[1], -1) {
+			colors[match[1]] = struct{}{}
+		}
+	}
+	if len(colors) != 17 {
+		t.Fatalf("report handlers expose %d stroke colors, want 17", len(colors))
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := safeColorStyle(tc.property, tc.value); got != "" {
-				t.Fatalf("safeColorStyle(%q, %q) = %q, want empty", tc.property, tc.value, got)
-			}
-		})
+	stylesheet, err := os.ReadFile(filepath.Join(repoRoot, "assets", "css", "relatorios.css"))
+	if err != nil {
+		t.Fatalf("read reports stylesheet: %v", err)
+	}
+	css := string(stylesheet)
+	for color := range colors {
+		if !strings.Contains(css, `data-report-stroke="`+color+`"`) {
+			t.Errorf("stylesheet does not map supported report stroke %q", color)
+		}
+	}
+	if !strings.Contains(css, ".cb-report-stroke-dot") || !strings.Contains(css, ".cb-report-stroke-text") {
+		t.Fatal("stylesheet must provide report stroke color consumers")
 	}
 }

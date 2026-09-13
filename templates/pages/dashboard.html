@@ -56,7 +56,7 @@
                             <div class="cb-v2-account-list">
                                 {{range .Accounts}}
                                 <a class="cb-v2-account-row" href="/lancamentos?conta={{.ID}}">
-                                    <span class="cb-v2-provider-mark{{if .ProviderLogoPath}} cb-v2-provider-mark--image{{end}}" style="--v2-provider: {{.Color}}">{{if .ProviderLogoPath}}<img src="{{assetPath .ProviderLogoPath}}" alt="" class="institution-logo" data-avatar-fallback><span class="hidden" data-avatar-text>{{.ProviderMark}}</span>{{else if .ProviderMark}}{{.ProviderMark}}{{else}}CB{{end}}</span>
+                                    <span class="cb-v2-provider-mark{{if .ProviderLogoPath}} cb-v2-provider-mark--image{{end}}" data-cb-color="{{.Color}}">{{if .ProviderLogoPath}}<img src="{{assetPath .ProviderLogoPath}}" alt="" class="institution-logo" data-avatar-fallback><span class="hidden" data-avatar-text>{{.ProviderMark}}</span>{{else if .ProviderMark}}{{.ProviderMark}}{{else}}CB{{end}}</span>
                                     <span class="cb-v2-account-copy"><strong>{{.Name}}</strong><small>{{.TypeLabel}}</small></span>
                                     <span class="cb-v2-account-amount"><strong data-sensitive>R$ {{.Money.Reais}}{{.Money.Cents}}</strong><small class="{{if eq .TrendDirection "up"}}is-positive{{else if eq .TrendDirection "down"}}is-negative{{end}}" data-sensitive>{{if eq .TrendDirection "up"}}↑{{else if eq .TrendDirection "down"}}↓{{end}} {{.TrendPercent}}</small></span>
                                 </a>
@@ -92,7 +92,7 @@
                                 {{if .Limits}}
                                 <div class="cb-v2-progress-list">
                                     {{range .Limits}}
-                                    <div class="cb-v2-progress-item"><div><strong>{{.CategoryName}}</strong><span data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}} / R$ {{.Limit.Reais}}{{.Limit.Cents}}</span></div><span class="cb-v2-progress {{if ge .Percent 90}}is-danger{{else if ge .Percent 70}}is-warning{{end}}" role="progressbar" aria-label="{{.CategoryName}}: {{.Percent}}% utilizado" aria-valuenow="{{.Percent}}" aria-valuemin="0" aria-valuemax="100"><span style="--v2-progress: {{.Percent}}%"></span></span></div>
+                                    <div class="cb-v2-progress-item"><div><strong>{{.CategoryName}}</strong><span data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}} / R$ {{.Limit.Reais}}{{.Limit.Cents}}</span></div><progress class="cb-v2-progress {{if ge .Percent 90}}is-danger{{else if ge .Percent 70}}is-warning{{end}}" value="{{.Percent}}" max="100" aria-label="{{.CategoryName}}: {{.Percent}}% utilizado">{{.Percent}}%</progress></div>
                                     {{end}}
                                 </div>
                                 {{else}}
@@ -105,7 +105,7 @@
                                 {{if .Boxes}}
                                 <div class="cb-v2-progress-list">
                                     {{range .Boxes}}
-                                    <div class="cb-v2-progress-item"><div><strong>{{.Name}}</strong><span class="{{if .IsNegative}}is-negative{{end}}" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}} / R$ {{.Target.Reais}}{{.Target.Cents}}</span></div><span class="cb-v2-progress {{if .IsNegative}}is-danger{{end}}" role="progressbar" aria-label="{{.Name}}: {{.Percent}}% atingido" aria-valuenow="{{.Percent}}" aria-valuemin="0" aria-valuemax="100"><span style="--v2-progress: {{.Percent}}%"></span></span></div>
+                                    <div class="cb-v2-progress-item"><div><strong>{{.Name}}</strong><span class="{{if .IsNegative}}is-negative{{end}}" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}} / R$ {{.Target.Reais}}{{.Target.Cents}}</span></div><progress class="cb-v2-progress {{if .IsNegative}}is-danger{{end}}" value="{{.Percent}}" max="100" aria-label="{{.Name}}: {{.Percent}}% atingido">{{.Percent}}%</progress></div>
                                     {{end}}
                                 </div>
                                 {{else}}

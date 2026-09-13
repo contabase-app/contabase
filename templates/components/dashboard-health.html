@@ -14,7 +14,7 @@
     {{if .IsBusiness}}
     <article class="cb-panel flex flex-col gap-2 relative">
         <div class="flex items-center justify-between gap-2">
-            <span class="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-success)]" style="background: color-mix(in srgb, var(--cb-success) 12%, transparent)">
+            <span class="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-success)] cb-tone-success cb-tone-icon">
                 <i data-lucide="coins" class="h-3.5 w-3.5"></i>
             </span>
             <button type="button" class="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--cb-border-strong)] text-[0.65rem] font-bold text-[var(--cb-text-muted)]" data-tooltip-trigger title="Receitas recebidas menos custos operacionais diretos pagos na competência atual.">i</button>
@@ -25,7 +25,7 @@
     </article>
     <article class="cb-panel flex flex-col gap-2 relative">
         <div class="flex items-center justify-between gap-2">
-            <span class="flex h-7 w-7 items-center justify-center rounded-lg text-sky-600 dark:text-sky-400" style="background: color-mix(in srgb, var(--cb-info) 12%, transparent)">
+            <span class="flex h-7 w-7 items-center justify-center rounded-lg text-sky-600 dark:text-sky-400 cb-tone-info cb-tone-icon">
                 <i data-lucide="gauge" class="h-3.5 w-3.5"></i>
             </span>
             <button type="button" class="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--cb-border-strong)] text-[0.65rem] font-bold text-[var(--cb-text-muted)]" data-tooltip-trigger title="(Lucro Bruto / Custos Operacionais Diretos) x 100.">i</button>
@@ -37,7 +37,7 @@
     {{else}}
     <article class="cb-panel flex flex-col gap-2 relative">
         <div class="flex items-center justify-between gap-2">
-            <span class="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-success)]" style="background: color-mix(in srgb, var(--cb-success) 12%, transparent)">
+            <span class="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-success)] cb-tone-success cb-tone-icon">
                 <i data-lucide="piggy-bank" class="h-3.5 w-3.5"></i>
             </span>
             <button type="button" class="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--cb-border-strong)] text-[0.65rem] font-bold text-[var(--cb-text-muted)]" data-tooltip-trigger title="Percentual da receita do mês que sobrou após despesas pagas.">i</button>
@@ -48,7 +48,7 @@
     </article>
     <article class="cb-panel flex flex-col gap-2 relative">
         <div class="flex items-center justify-between gap-2">
-            <span class="flex h-7 w-7 items-center justify-center rounded-lg text-sky-600 dark:text-sky-400" style="background: color-mix(in srgb, var(--cb-info) 12%, transparent)">
+            <span class="flex h-7 w-7 items-center justify-center rounded-lg text-sky-600 dark:text-sky-400 cb-tone-info cb-tone-icon">
                 <i data-lucide="calendar-clock" class="h-3.5 w-3.5"></i>
             </span>
             <button type="button" class="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--cb-border-strong)] text-[0.65rem] font-bold text-[var(--cb-text-muted)]" data-tooltip-trigger title="Simulação diária usando saldo atual, gasto variável médio, recorrências e faturas futuras.">i</button>

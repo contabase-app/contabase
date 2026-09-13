@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base32"
 	"encoding/base64"
@@ -211,13 +212,34 @@ func generateTOTPSetup(email string) (*otp.Key, string, error) {
 }
 
 func validateTOTPCode(secret, code string, now time.Time) bool {
-	ok, err := totp.ValidateCustom(strings.TrimSpace(code), strings.TrimSpace(secret), now, totp.ValidateOpts{
+	_, ok := matchingTOTPTimeStep(secret, code, now)
+	return ok
+}
+
+func matchingTOTPTimeStep(secret, code string, now time.Time) (int64, bool) {
+	secret = strings.TrimSpace(secret)
+	code = strings.TrimSpace(code)
+	if secret == "" || code == "" {
+		return -1, false
+	}
+	options := totp.ValidateOpts{
 		Period:    30,
 		Skew:      1,
 		Digits:    otp.DigitsSix,
 		Algorithm: otp.AlgorithmSHA1,
-	})
-	return err == nil && ok
+	}
+	currentStep := now.Unix() / int64(options.Period)
+	for _, offset := range []int64{-1, 0, 1} {
+		step := currentStep + offset
+		if step < 0 {
+			continue
+		}
+		candidate, err := totp.GenerateCodeCustom(secret, time.Unix(step*int64(options.Period), 0), options)
+		if err == nil && subtle.ConstantTimeCompare([]byte(candidate), []byte(code)) == 1 {
+			return step, true
+		}
+	}
+	return -1, false
 }
 
 func writeAuthAuditEvent(db *sql.DB, r *http.Request, userID, workspaceID, eventType string, metadata map[string]string) {

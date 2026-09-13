@@ -36,8 +36,7 @@
 
 {{define "contato-row-summary"}}
 <div class="cb-contact-summary">
-    <span class="cb-contact-avatar"
-        style="{{if eq .Type "client"}}background: color-mix(in srgb, var(--cb-success) 12%, transparent); color: var(--cb-success){{else}}background: color-mix(in srgb, var(--cb-warning) 12%, transparent); color: var(--cb-warning){{end}}">
+    <span class="cb-contact-avatar {{if eq .Type "client"}}cb-contact-avatar-client{{else}}cb-contact-avatar-vendor{{end}}">
         {{slice .Name 0 2 | upper}}
     </span>
     <div>

@@ -1,12 +1,5 @@
 {{define "dashboard-cards"}}
 <section id="dashboard-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} hx-trigger="refreshFinancials from:body" hx-get="/" hx-select="#dashboard-cards" hx-swap="outerHTML" class="cb-dashboard-cards-section w-full">
-    <style>
-    /* Force high-contrast black text on bright yellow credit card badges (like XP) */
-    .emblem-wrap-solid[style*="#FFE600"] .emblem-text,
-    .emblem-wrap-solid[style*="#ffe600"] .emblem-text {
-        color: #000000 !important;
-    }
-    </style>
     {{$cardCount := len .Cards}}
     {{if lt $cardCount 2}}
     <!-- zero or one card: flat grid matching the pair grid below -->
@@ -18,7 +11,7 @@
            hx-select="#main-content"
            hx-swap="innerHTML show:top"
            hx-push-url="true"
-           class="card-cc block w-full text-left relative overflow-hidden btn-tactile cursor-pointer p-3 sm:p-4" style="--ic: {{$card.Color}}">
+           class="card-cc block w-full text-left relative overflow-hidden btn-tactile cursor-pointer p-3 sm:p-4" data-cb-color="{{$card.Color}}">
             {{template "dashboard-card-inner" $card}}
         </a>
         {{end}}
@@ -48,7 +41,7 @@
            hx-select="#main-content"
            hx-swap="innerHTML show:top"
            hx-push-url="true"
-           class="card-cc cb-card-rail-item block w-full text-left relative overflow-hidden btn-tactile cursor-pointer p-3 sm:p-4" style="--ic: {{$card.Color}}">
+           class="card-cc cb-card-rail-item block w-full text-left relative overflow-hidden btn-tactile cursor-pointer p-3 sm:p-4" data-cb-color="{{$card.Color}}">
             {{template "dashboard-card-inner" $card}}
         </a>
         {{end}}
@@ -75,7 +68,7 @@
 <!-- Top Row: Name and Emblem Badge (Compact) -->
 <div class="flex items-center justify-between gap-3 mb-2 sm:mb-2.5 relative z-10">
     <h3 class="text-sm sm:text-base font-extrabold text-[var(--cb-text-main)] tracking-wide truncate leading-tight">{{.Name}}</h3>
-    <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none shrink-0" style="--ic: {{.Color}}">
+    <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/5 dark:border-white/10 emblem-wrap-solid select-none shrink-0" data-cb-color="{{.Color}}">
         {{template "financial-emblem" .}}
     </span>
 </div>
@@ -104,8 +97,8 @@
 <!-- Bottom Row: Limite Disponível & Chevron (Compact) -->
 <div class="flex items-center justify-between pt-2 sm:pt-2.5 pb-1 relative z-10">
     <div class="flex items-center gap-1.5">
-        <span class="flex h-5 w-5 items-center justify-center rounded bg-[color-mix(in srgb,var(--ic) 12%,transparent)] text-colored select-none shrink-0" style="--ic: {{.Color}}">
-            <i data-lucide="credit-card" class="h-3 w-3 icon-colored" style="--ic: {{.Color}}"></i>
+        <span class="flex h-5 w-5 items-center justify-center rounded bg-[color-mix(in srgb,var(--ic) 12%,transparent)] text-colored select-none shrink-0" data-cb-color="{{.Color}}">
+            <i data-lucide="credit-card" class="h-3 w-3 icon-colored" data-cb-color="{{.Color}}"></i>
         </span>
         <span class="cb-text-micro uppercase tracking-wider font-semibold text-[var(--cb-text-muted)]">Limite Disponível</span>
     </div>
@@ -117,10 +110,6 @@
     </div>
 </div>
 
-<!-- Edge-to-edge bottom limit bar -->
-<div class="card-cc-bar">
-    <div class="card-cc-bar-fill" style="width: {{.LimitPercent}}%"></div>
-</div>
 {{end}}
 
 {{define "dashboard-card-placeholder"}}

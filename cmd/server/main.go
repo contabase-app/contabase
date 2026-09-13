@@ -52,6 +52,14 @@ const (
 	bootstrapSetupTokenMinLength  = 32
 )
 
+func bindTransactionHandlerRuntimeDBs(h *handlers.TransactionHandler, dbs *database.RuntimeDBs) {
+	if h == nil || dbs == nil {
+		return
+	}
+	h.DB = dbs.DB
+	h.WriterDB = dbs.Immediate
+}
+
 func main() {
 	loadDotEnv(".env")
 	configureLogger()
@@ -127,7 +135,8 @@ func main() {
 	if baseURL == "" {
 		baseURL = "http://localhost:8080"
 	}
-	txBase := handlers.TransactionHandler{DB: db, Templates: tpl}
+	txBase := handlers.TransactionHandler{Templates: tpl}
+	bindTransactionHandlerRuntimeDBs(&txBase, runtimeDBs)
 	contatosBase := handlers.ContatosHandler{DB: db, Templates: tpl}
 	contasBase := handlers.ContasHandler{DB: db, Templates: tpl}
 	metasBase := handlers.MetasHandler{DB: db, Templates: tpl}
@@ -149,7 +158,7 @@ func main() {
 		runtimeDBs = newRuntimeDBs
 		db = newRuntimeDBs.DB
 		authService.DB = newRuntimeDBs.DB
-		txBase.DB = newRuntimeDBs.DB
+		bindTransactionHandlerRuntimeDBs(&txBase, newRuntimeDBs)
 		contatosBase.DB = newRuntimeDBs.DB
 		contasBase.DB = newRuntimeDBs.DB
 		metasBase.DB = newRuntimeDBs.DB
@@ -354,9 +363,7 @@ func main() {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	})
 
-	mux.HandleFunc("/uploads/profile/", func(w http.ResponseWriter, r *http.Request) {
-		serveProfileUpload(w, r)
-	})
+	mux.HandleFunc("/uploads/profile/", profileUploadRoute(authService, csrfSigner))
 
 	// Secure workspace logo serve — validates that the requesting user is a member of the workspace.
 	mux.HandleFunc("/uploads/workspaces/", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -525,60 +532,16 @@ func main() {
 		case http.MethodGet:
 			handleRequiredPasswordChangePage(w, tpl, csrfTokenFromRequestCookie(r), "")
 		case http.MethodPost:
+			if !allowPasswordChangeRateLimit(w, r, rateLimiter, ctx.UserID, time.Now()) {
+				return
+			}
 			handleRequiredPasswordChangeSubmit(w, r, tpl, authService, db, ctx, csrfTokenFromRequestCookie(r))
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}))
 
-	mux.HandleFunc("/workspace/switch", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		workspaceID := r.FormValue("workspace_id")
-		if workspaceID == "" {
-			slog.Error("workspace switch failed: empty workspace_id", "user_id", ctx.UserID)
-			http.Error(w, "workspace_id required", http.StatusBadRequest)
-			return
-		}
-		slog.Debug("workspace switch requested", "user_id", ctx.UserID, "workspace_id", workspaceID, "active_workspace_id", ctx.ActiveWorkspaceID)
-		member, err := authService.ResolveWorkspaceMember(ctx.UserID, workspaceID)
-		if err != nil {
-			slog.Error("workspace switch failed: membership not found", "user_id", ctx.UserID, "workspace_id", workspaceID, "error", err)
-			setSecOpsFailureHeaders(w, "security.tampering", "CRITICAL", "workspace_scope_violation", "")
-			w.Header().Set("X-SecOps-Meta-Workspace-Id", strings.TrimSpace(workspaceID))
-			http.Error(w, "workspace not found", http.StatusForbidden)
-			return
-		}
-		cookie, err := r.Cookie(sessionCookieName)
-		if err != nil || strings.TrimSpace(cookie.Value) == "" {
-			slog.Error("workspace switch failed: missing session cookie", "user_id", ctx.UserID, "workspace_id", workspaceID)
-			http.Error(w, "session not found", http.StatusUnauthorized)
-			return
-		}
-		if err := authService.UpdateSessionWorkspace(cookie.Value, workspaceID); err != nil {
-			slog.Error("workspace switch failed: unable to update session", "user_id", ctx.UserID, "workspace_id", workspaceID, "error", err)
-			http.Error(w, "unable to switch workspace", http.StatusInternalServerError)
-			return
-		}
-		slog.Debug("workspace switch session updated", "user_id", ctx.UserID, "workspace_id", workspaceID, "role", member.Role)
-		http.SetCookie(w, &http.Cookie{
-			Name:     "workspace_role",
-			Value:    member.Role,
-			Path:     "/",
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-			Secure:   shouldUseSecureCookie(r),
-			MaxAge:   86400 * 30,
-		})
-		if r.Header.Get("HX-Request") == "true" {
-			w.Header().Set("HX-Redirect", "/")
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-	}))
+	mux.HandleFunc("/workspace/switch", workspaceSwitchRoute(authService, csrfSigner))
 	mux.HandleFunc("/ajuda", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -694,30 +657,11 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(payload)
 	}))
-	mux.HandleFunc("/admin/seed-demo-b2b", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !strings.EqualFold(strings.TrimSpace(os.Getenv("APP_DEBUG")), "true") {
-			http.Error(w, "seed demo desabilitada fora do modo debug", http.StatusForbidden)
-			return
-		}
-		if !models.HasPermission(&ctx.Member, string(permConfigWrite)) {
-			respondForbidden(w, r)
-			return
-		}
-		if !allowRateLimit(w, r, workspaceUserRouteRateLimitKey("admin:debug:seed-demo-b2b", ctx, r.URL.Path), adminDebugMutationRateLimitPolicy) {
-			return
-		}
-		if err := seedDemoB2B(db, ctx.ActiveWorkspaceID, ctx.UserID); err != nil {
-			http.Error(w, "erro ao gerar seed demo B2B: "+err.Error(), http.StatusUnprocessableEntity)
-			return
-		}
-		slog.Warn("admin_action", "action", "seed_demo_b2b", "actor_user_id", ctx.UserID, "workspace_id", ctx.ActiveWorkspaceID, "client_ip", clientIP(r))
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		_, _ = w.Write([]byte("Seed demo B2B aplicada com sucesso para Abril, Maio e Junho de 2026."))
+	mux.HandleFunc("/workspace/colors.css", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		serveWorkspaceColorStyles(w, r, db, ctx.ActiveWorkspaceID)
 	}))
+	mux.HandleFunc("/admin/reautenticar", adminReauthRoute(authService, csrfSigner, tpl, rateLimiter, securitySettingsRateLimitPolicy))
+	mux.HandleFunc("/admin/seed-demo-b2b", seedDemoB2BRoute(db, authService, csrfSigner, rateLimiter, adminDebugMutationRateLimitPolicy))
 	mux.HandleFunc("/admin/backups/exportar", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -726,11 +670,14 @@ func main() {
 		if !requireGlobalAdmin(w, r, ctx) {
 			return
 		}
+		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/backups") {
+			return
+		}
 		if !allowRateLimit(w, r, userIPRateLimitKey("admin:backup:export", ctx, r), adminBackupExportRateLimitPolicy) {
 			return
 		}
 
-		backupPath, cleanup, err := createAdminExportBackup(db, dbFilePath)
+		backupPath, cleanup, err := createAdminExportBackupContext(r.Context(), db, dbFilePath)
 		if err != nil {
 			log.Printf("backup export prepare error: %v", err)
 			http.Error(w, "backup indisponivel", http.StatusInternalServerError)
@@ -1106,6 +1053,46 @@ func main() {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}))
+	mux.HandleFunc("/cartoes/faturas/reembolsos/", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		rest := strings.TrimPrefix(r.URL.Path, "/cartoes/faturas/reembolsos/")
+		parts := strings.Split(rest, "/")
+		if len(parts) != 2 || parts[0] == "" {
+			http.NotFound(w, r)
+			return
+		}
+		h := faturasBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		switch parts[1] {
+		case "editar":
+			if r.Method == http.MethodGet {
+				if !hasPermission(ctx.Role, permTransactionsRead) {
+					respondForbidden(w, r)
+					return
+				}
+				h.HandleFormEditarReembolsoGeral(w, r, parts[0])
+				return
+			}
+			if r.Method == http.MethodPost {
+				if !hasPermission(ctx.Role, permInvoicesStatusUpdate) {
+					respondForbidden(w, r)
+					return
+				}
+				h.HandleAtualizarReembolsoGeral(w, r, parts[0])
+				return
+			}
+		case "remover":
+			if r.Method == http.MethodPost {
+				if !hasPermission(ctx.Role, permInvoicesStatusUpdate) {
+					respondForbidden(w, r)
+					return
+				}
+				h.HandleRemoverReembolsoGeral(w, r, parts[0])
+				return
+			}
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}))
 	mux.HandleFunc(invoicePaymentReversalPath, invoicePaymentReversalRoute(authService, csrfSigner, &faturasBase))
 
 	mux.HandleFunc("/cartoes/faturas/", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1255,6 +1242,51 @@ func main() {
 			default:
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
+			return
+		}
+		if len(parts) == 2 && parts[1] == "reembolsos" {
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			if !hasPermission(ctx.Role, permTransactionsRead) {
+				respondForbidden(w, r)
+				return
+			}
+			h.HandleGerenciarReembolsos(w, r, id)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "reembolsos" && parts[2] != "" {
+			refundID, action := parts[2], parts[3]
+			switch action {
+			case "editar":
+				if r.Method == http.MethodGet {
+					if !hasPermission(ctx.Role, permTransactionsRead) {
+						respondForbidden(w, r)
+						return
+					}
+					h.HandleFormEditarReembolso(w, r, id, refundID)
+					return
+				}
+				if r.Method == http.MethodPost {
+					if !hasPermission(ctx.Role, permTransactionsUpdate) {
+						respondForbidden(w, r)
+						return
+					}
+					h.HandleAtualizarReembolso(w, r, id, refundID)
+					return
+				}
+			case "remover":
+				if r.Method == http.MethodPost {
+					if !hasPermission(ctx.Role, permTransactionsUpdate) {
+						respondForbidden(w, r)
+						return
+					}
+					h.HandleRemoverReembolso(w, r, id, refundID)
+					return
+				}
+			}
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		if len(parts) == 2 && parts[1] == "editar" {
@@ -1829,6 +1861,17 @@ func main() {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if len(parts) == 2 && parts[1] == "conciliar" {
+			switch r.Method {
+			case http.MethodGet:
+				h.HandleContaBalanceAdjustmentForm(w, r, id)
+			case http.MethodPost:
+				h.HandleContaBalanceAdjustment(w, r, id)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+			return
+		}
 		if len(parts) == 2 && parts[1] == "arquivar" {
 			if r.Method == http.MethodPost {
 				h.HandleContaArchive(w, r, id)
@@ -1988,6 +2031,9 @@ func main() {
 			respondForbidden(w, r)
 			return
 		}
+		if !allowPasswordChangeRateLimit(w, r, rateLimiter, ctx.UserID, time.Now()) {
+			return
+		}
 		h := newConfigHandler(ctx)
 		h.HandlePasswordChange(w, r)
 	}))
@@ -2028,7 +2074,7 @@ func main() {
 		if !allowRateLimit(w, r, userIPRateLimitKey("security:totp:confirm", ctx, r), securitySettingsRateLimitPolicy) {
 			return
 		}
-		handleTOTPSetupConfirm(w, r, tpl, authService, db, ctx.UserID)
+		handleTOTPSetupConfirm(w, r, tpl, authService, db, ctx.UserID, ctx.SessionToken)
 	}))
 	mux.HandleFunc("/configuracoes/seguranca/totp/cancelar", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if r.Method != http.MethodGet {
@@ -2041,14 +2087,14 @@ func main() {
 		handleTOTPCancel(w, r, tpl)
 	}))
 	mux.HandleFunc("/configuracoes/seguranca/totp/desativar", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		if r.Method != http.MethodPost {
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		if !allowRateLimit(w, r, userIPRateLimitKey("security:totp:disable", ctx, r), securitySettingsRateLimitPolicy) {
 			return
 		}
-		handleTOTPDisable(w, r, tpl, authService, db, ctx.UserID)
+		handleTOTPDisable(w, r, tpl, authService, db, ctx.UserID, ctx.SessionToken)
 	}))
 	mux.HandleFunc("/configuracoes/seguranca/backup-codes/regenerar", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if r.Method != http.MethodPost {
@@ -2125,6 +2171,9 @@ func main() {
 		if !requireGlobalAdmin(w, r, ctx) {
 			return
 		}
+		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/usuarios") {
+			return
+		}
 		if !allowRateLimit(w, r, userIPRateLimitKey("admin:identity:users-save", ctx, r), adminIdentityMutationRateLimitPolicy) {
 			return
 		}
@@ -2138,6 +2187,9 @@ func main() {
 			return
 		}
 		if !requireGlobalAdmin(w, r, ctx) {
+			return
+		}
+		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/usuarios") {
 			return
 		}
 		if !allowRateLimit(w, r, userIPRateLimitKey("admin:identity:reset-password", ctx, r), adminIdentityMutationRateLimitPolicy) {
@@ -2155,6 +2207,9 @@ func main() {
 		if !requireGlobalAdmin(w, r, ctx) {
 			return
 		}
+		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/usuarios") {
+			return
+		}
 		if !allowRateLimit(w, r, userIPRateLimitKey("admin:identity:disable-2fa", ctx, r), adminIdentityMutationRateLimitPolicy) {
 			return
 		}
@@ -2168,6 +2223,9 @@ func main() {
 			return
 		}
 		if !requireGlobalAdmin(w, r, ctx) {
+			return
+		}
+		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/usuarios") {
 			return
 		}
 		if !allowRateLimit(w, r, userIPRateLimitKey("admin:identity:revoke-sessions", ctx, r), adminIdentityMutationRateLimitPolicy) {
@@ -2199,6 +2257,9 @@ func main() {
 		if !requireGlobalAdmin(w, r, ctx) {
 			return
 		}
+		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/workspaces") {
+			return
+		}
 		if !allowRateLimit(w, r, userIPRateLimitKey("admin:identity:workspaces-edit", ctx, r), adminIdentityMutationRateLimitPolicy) {
 			return
 		}
@@ -2214,6 +2275,9 @@ func main() {
 		if !requireGlobalAdmin(w, r, ctx) {
 			return
 		}
+		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/workspaces") {
+			return
+		}
 		h := newConfigHandler(ctx)
 		workspaceID := strings.TrimSpace(r.FormValue("workspace_id"))
 		slog.Info("admin_action", "action", "admin_workspace_edit", "actor_user_id", ctx.UserID, "target_workspace_id", workspaceID, "client_ip", clientIP(r))
@@ -2225,6 +2289,9 @@ func main() {
 			return
 		}
 		if !requireGlobalAdmin(w, r, ctx) {
+			return
+		}
+		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/workspaces") {
 			return
 		}
 		if !allowRateLimit(w, r, userIPRateLimitKey("admin:identity:workspace-delete", ctx, r), adminIdentityMutationRateLimitPolicy) {
@@ -2245,6 +2312,9 @@ func main() {
 			return
 		}
 		if !requireGlobalAdmin(w, r, ctx) {
+			return
+		}
+		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/usuarios") {
 			return
 		}
 		if !allowRateLimit(w, r, userIPRateLimitKey("admin:identity:user-delete", ctx, r), adminIdentityMutationRateLimitPolicy) {
@@ -2301,10 +2371,10 @@ func main() {
 		slog.Debug("workspace list loaded", "user_id", ctx.UserID, "workspace_count", len(workspaces))
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		for _, ws := range workspaces {
-			active := ""
 			theme := handlers.ResolveWorkspaceTheme(ws.ThemeToken, ws.Type)
+			active := "false"
 			if ws.ID == ctx.ActiveWorkspaceID {
-				active = fmt.Sprintf(` style="border-color:rgb(%s/0.44);background:rgb(%s/0.14)"`, theme.AccentRGB, theme.AccentRGB)
+				active = "true"
 			}
 			typeLabel := "Pessoal"
 			if ws.Type == "business" {
@@ -2316,14 +2386,14 @@ func main() {
 					` hx-vals="{&quot;workspace_id&quot;:&quot;%s&quot;}"`+
 					` hx-target="body"`+
 					` hx-swap="none"`+
-					` onclick="closeWorkspaceDrawer()"`+
-					` class="w-full flex items-center gap-3 rounded-xl border border-zinc-200/60 dark:border-white/[0.08] bg-zinc-50/60 dark:bg-white/[0.04] px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-white/70 hover:bg-zinc-100/80 dark:hover:bg-white/[0.08] active:scale-95 transition-all"`+
-					`%s>`+
-					`<i data-lucide="layout-grid" class="w-4 h-4 shrink-0" style="color:rgb(%s)"></i><span class="min-w-0 flex-1">`+
+					` data-onclick="closeWorkspaceDrawer"`+
+					` class="cb-v2-workspace-choice w-full flex items-center gap-3 rounded-xl border border-zinc-200/60 dark:border-white/[0.08] bg-zinc-50/60 dark:bg-white/[0.04] px-4 py-3 text-left text-sm font-medium text-zinc-700 dark:text-white/70 hover:bg-zinc-100/80 dark:hover:bg-white/[0.08] active:scale-95 transition-all"`+
+					` data-workspace-theme="%s" data-workspace-active="%s">`+
+					`<i data-lucide="layout-grid" class="cb-v2-workspace-choice-icon w-4 h-4 shrink-0"></i><span class="min-w-0 flex-1">`+
 					`<span class="block truncate">%s</span>`+
 					`<span class="block text-[11px] text-zinc-500">%s · tema %s</span></span>`+
 					`</button>`,
-				template.HTMLEscapeString(ws.ID), active, theme.AccentRGB, template.HTMLEscapeString(ws.Name), typeLabel, strings.ToLower(template.HTMLEscapeString(theme.Nome)),
+				template.HTMLEscapeString(ws.ID), template.HTMLEscapeString(theme.Token), active, template.HTMLEscapeString(ws.Name), typeLabel, strings.ToLower(template.HTMLEscapeString(theme.Nome)),
 			)
 		}
 		if len(workspaces) == 0 {
@@ -2350,9 +2420,21 @@ func main() {
 		if err := coordinator.Read(func(current *serverRuntime) error {
 			var authErr error
 			preliminaryCtx, authErr = resolveAdminRestoreIdentity(w, r, current.DBs.DB)
-			return authErr
+			if authErr != nil {
+				return authErr
+			}
+			recent, authErr := auth.NewService(current.DBs.DB).SessionRecentlyAuthenticated(preliminaryCtx.SessionToken, time.Now(), recentAdminAuthenticationWindow)
+			if authErr != nil {
+				return authErr
+			}
+			if !recent {
+				return errRecentAdminAuthenticationRequired
+			}
+			return nil
 		}); err != nil {
-			if errors.Is(err, errRestoreRevalidationDenied) {
+			if errors.Is(err, errRecentAdminAuthenticationRequired) {
+				redirectToAdminReauthentication(w, r, "/admin/backups")
+			} else if errors.Is(err, errRestoreRevalidationDenied) {
 				respondForbidden(w, r)
 			} else {
 				http.Error(w, "service unavailable", http.StatusServiceUnavailable)
@@ -2441,6 +2523,10 @@ func main() {
 		})
 		if err != nil {
 			slog.Warn("admin_action", "action", "backup_import_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "restore_failed")
+			if errors.Is(err, errRecentAdminAuthenticationRequired) {
+				redirectToAdminReauthentication(w, r, "/admin/backups")
+				return
+			}
 			if errors.Is(err, errRestoreRevalidationDenied) {
 				respondForbidden(w, r)
 				return
@@ -2484,6 +2570,9 @@ func main() {
 			respondForbidden(w, r)
 			return
 		}
+		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/auditoria") {
+			return
+		}
 		h := newConfigHandler(ctx)
 		h.HandleAdminAuditoriaSave(w, r)
 	}))
@@ -2511,10 +2600,10 @@ func main() {
 
 	slog.Info("ContaBase rodando", "url", fmt.Sprintf("http://localhost:%s", port))
 	serverHandler := coordinator.Middleware(
-		securityAudit.Middleware(securityHeaders(enforceRemoteHTTPS(mux))),
+		securityAudit.Middleware(securityHeaders(enforceRemoteHTTPS(limitTransactionMutationBodies(mux)))),
 		isRuntimeLeaseBypassRequest,
 	)
-	server := &http.Server{Addr: ":" + port, Handler: serverHandler}
+	server := newHTTPServer(":"+port, serverHandler)
 	serveErr := make(chan error, 1)
 	go func() {
 		serveErr <- server.ListenAndServe()
@@ -2542,6 +2631,7 @@ type authContext struct {
 	Role              string
 	Member            models.WorkspaceMember
 	SessionToken      string
+	CSRFToken         string
 }
 
 func withAuth(authService *auth.Service, csrfSigner *csrfSigner, next func(http.ResponseWriter, *http.Request, authContext)) http.HandlerFunc {
@@ -2566,7 +2656,7 @@ func withAuth(authService *auth.Service, csrfSigner *csrfSigner, next func(http.
 			return
 		}
 		slog.Debug("withAuth request start", "method", r.Method, "path", r.URL.Path, "hx", r.Header.Get("HX-Request") == "true")
-		csrfSigner.ensureCookie(w, r)
+		csrfToken := csrfSigner.ensureCookie(w, r)
 		if isMutationMethod(r.Method) && !csrfRequestValid(csrfSigner, r) {
 			slog.Error("csrf validation failed", "method", r.Method, "path", r.URL.Path)
 			http.Error(w, "csrf token invalido", http.StatusForbidden)
@@ -2578,7 +2668,9 @@ func withAuth(authService *auth.Service, csrfSigner *csrfSigner, next func(http.
 			respondUnauthorized(w, r)
 			return
 		}
+		ctx.CSRFToken = csrfToken
 		slog.Debug("withAuth context resolved", "user_id", ctx.UserID, "workspace_id", ctx.ActiveWorkspaceID, "role", ctx.Role)
+		recordAuthenticatedAuditContext(r, ctx)
 
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 		w.Header().Set("Pragma", "no-cache")
@@ -2636,7 +2728,18 @@ func revalidateAdminRestoreRequest(w http.ResponseWriter, r *http.Request, db *s
 	if csrfSigner == nil || !csrfRequestValid(csrfSigner, r) {
 		return authContext{}, errRestoreRevalidationDenied
 	}
-	return resolveAdminRestoreIdentity(w, r, db)
+	ctx, err := resolveAdminRestoreIdentity(w, r, db)
+	if err != nil {
+		return authContext{}, err
+	}
+	recent, err := auth.NewService(db).SessionRecentlyAuthenticated(ctx.SessionToken, time.Now(), recentAdminAuthenticationWindow)
+	if err != nil {
+		return authContext{}, err
+	}
+	if !recent {
+		return authContext{}, errRecentAdminAuthenticationRequired
+	}
+	return ctx, nil
 }
 
 func temporaryPasswordPathAllowed(path string) bool {
@@ -3101,23 +3204,23 @@ func serveUploadedImage(w http.ResponseWriter, r *http.Request, fullPath, conten
 }
 
 func createAdminExportBackup(db *sql.DB, dbPath string) (string, func(), error) {
-	tmp, err := os.CreateTemp("", "contabase-export-*.db")
+	return createAdminExportBackupContext(context.Background(), db, dbPath)
+}
+
+func createAdminExportBackupContext(ctx context.Context, db *sql.DB, dbPath string) (string, func(), error) {
+	stageDir, err := os.MkdirTemp("", "contabase-export-*")
 	if err != nil {
 		return "", nil, err
 	}
-	tmpPath := tmp.Name()
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return "", nil, err
-	}
+	tmpPath := filepath.Join(stageDir, "snapshot.db")
 
-	if err := database.CreateSQLiteBackupFile(db, dbPath, tmpPath); err != nil {
-		_ = os.Remove(tmpPath)
+	if err := database.CreateSQLiteBackupFileContext(ctx, db, dbPath, tmpPath); err != nil {
+		_ = os.RemoveAll(stageDir)
 		return "", nil, err
 	}
 
 	cleanup := func() {
-		if err := os.Remove(tmpPath); err != nil && !os.IsNotExist(err) {
+		if err := os.RemoveAll(stageDir); err != nil {
 			log.Printf("backup export temp cleanup failed: %v", err)
 		}
 	}
@@ -3636,47 +3739,6 @@ func validateSQLiteIntegrity(db *sql.DB) error {
 	return nil
 }
 
-func safeColorStyle(property, value string) template.CSS {
-	property = strings.TrimSpace(strings.ToLower(property))
-	switch property {
-	case "color", "background-color":
-	default:
-		return template.CSS("")
-	}
-
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return template.CSS("")
-	}
-
-	if strings.HasPrefix(value, "#") {
-		hex := strings.TrimPrefix(value, "#")
-		if len(hex) != 3 && len(hex) != 6 {
-			return template.CSS("")
-		}
-		for _, ch := range hex {
-			if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') && (ch < 'A' || ch > 'F') {
-				return template.CSS("")
-			}
-		}
-		return template.CSS(property + ":" + value)
-	}
-
-	if strings.HasPrefix(value, "rgb(") && strings.HasSuffix(value, ")") {
-		for _, ch := range value {
-			switch {
-			case ch >= '0' && ch <= '9':
-			case ch == 'r' || ch == 'g' || ch == 'b' || ch == '(' || ch == ')' || ch == ' ' || ch == ',':
-			default:
-				return template.CSS("")
-			}
-		}
-		return template.CSS(property + ":" + value)
-	}
-
-	return template.CSS("")
-}
-
 func buildFuncMap() template.FuncMap {
 	fieldValue := func(data any, name string) (reflect.Value, bool) {
 		v := reflect.ValueOf(data)
@@ -3795,9 +3857,6 @@ func buildFuncMap() template.FuncMap {
 				}
 			}
 			return "text-emerald-600 dark:text-emerald-300"
-		},
-		"colorStyle": func(property, value string) template.CSS {
-			return safeColorStyle(property, value)
 		},
 		"fieldString": func(data any, name string) string {
 			f, ok := fieldValue(data, name)

@@ -13,10 +13,10 @@
             <div class="brand">
                 {{if .WorkspaceLogoLightURL}}
                 <img src="{{.WorkspaceLogoLightURL}}" alt="Logo da empresa" class="brand-logo" data-avatar-fallback>
-                <span data-avatar-text class="brand-fallback" style="display:none">{{.WorkspaceInitials}}</span>
+                <span data-avatar-text class="brand-fallback receipt-hidden">{{.WorkspaceInitials}}</span>
                 {{else if .WorkspaceLogoURL}}
                 <img src="{{.WorkspaceLogoURL}}" alt="Logo da empresa" class="brand-logo" data-avatar-fallback>
-                <span data-avatar-text class="brand-fallback" style="display:none">{{.WorkspaceInitials}}</span>
+                <span data-avatar-text class="brand-fallback receipt-hidden">{{.WorkspaceInitials}}</span>
                 {{else}}
                 <span class="brand-fallback">{{.WorkspaceInitials}}</span>
                 {{end}}

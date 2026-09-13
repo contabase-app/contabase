@@ -2,9 +2,41 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/contabase-app/contabase/internal/database"
 )
+
+func TestPredictiveSuggestionsSearchBeyondFirstHundredCandidates(t *testing.T) {
+	for _, kind := range []string{"personal", "business"} {
+		t.Run(kind, func(t *testing.T) {
+			db := openTestDB(t)
+			defer db.Close()
+			seedPredictiveScenario(t, db)
+			execTestSQL(t, db, `UPDATE workspaces SET type = ? WHERE id = 'ws-a'`, kind)
+			execTestSQL(t, db, `UPDATE transactions SET description = 'Pensão antiga', date = 1, created_at = 1 WHERE id = 'a-exp-1'`)
+			for i := 0; i < 105; i++ {
+				execTestSQL(t, db, `INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, created_at, updated_at)
+					VALUES (?, 'ws-a', 'user-a', 'a-check', 'a-expense-cat', 'EXPENSE', 100, ?, ?, 'paid', ?, ?)`,
+					fmt.Sprintf("recent-%d", i), i+2, fmt.Sprintf("Compra recente %03d", i), i+2, i+2)
+			}
+			h := TransactionHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+			for _, query := range []string{"pensao", "PENSÃO", "antiga"} {
+				got, err := h.queryPredictiveSuggestions(query, "EXPENSE")
+				if err != nil || len(got) != 1 || got[0].Description != "Pensão antiga" {
+					t.Fatalf("search %q beyond 100 candidates: got=%v err=%v", query, got, err)
+				}
+			}
+			got, err := h.queryPredictiveSuggestions("compra recente", "EXPENSE")
+			if err != nil || len(got) != 3 || got[0].Description != "Compra recente 104" {
+				t.Fatalf("rank and three-suggestion limit: got=%v err=%v", got, err)
+			}
+		})
+	}
+}
 
 func TestPredictiveSuggestionsFilterByExpense(t *testing.T) {
 	db := openTestDB(t)
@@ -369,4 +401,173 @@ func seedPredictiveDedupScenario(t *testing.T, db *sql.DB) {
 			('d-transf-1', 'ws-a', 'user-a', 'a-check', 'a-nubank', 'TRANSFER', 3000, ?, 'Teste', 'paid', 1, 1, ?, ?),
 			('d-transf-2', 'ws-a', 'user-a', 'a-check', 'a-savings', 'TRANSFER', 4000, ?, 'Teste', 'paid', 1, 1, ?, ?)
 	`, d5, nowUnix, nowUnix, d6, nowUnix, nowUnix)
+}
+
+func TestPredictiveSuggestionsExcludeArchivedOriginAccount(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedPredictiveScenario(t, db)
+
+	now := time.Now().UTC().Unix()
+	execTestSQL(t, db, `
+		INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, archived_at, created_at, updated_at)
+		VALUES ('a-archived', 'ws-a', 'Conta antiga', 'CHECKING', 0, 0, ?, ?, ?)
+	`, now, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, installment_number, total_installments, created_at, updated_at)
+		VALUES ('a-arch-tx', 'ws-a', 'user-a', 'a-archived', 'a-expense-cat', 'EXPENSE', 4200, ?, 'Despesa arquivada', 'paid', 1, 1, ?, ?)
+	`, now, now, now)
+
+	handler := TransactionHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+	got, err := handler.queryPredictiveSuggestions("arquivada", "EXPENSE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("archived origin account must not produce suggestions, got %v", got)
+	}
+
+	got, err = handler.queryPredictiveSuggestions("restaurante", "EXPENSE")
+	if err != nil || len(got) == 0 {
+		t.Fatalf("active accounts must keep producing suggestions: got=%v err=%v", got, err)
+	}
+}
+
+func TestPredictiveSuggestionsExcludeArchivedDestinationAccount(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedPredictiveScenario(t, db)
+
+	now := time.Now().UTC().Unix()
+	execTestSQL(t, db, `
+		INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, archived_at, created_at, updated_at)
+		VALUES ('a-dest-archived', 'ws-a', 'Poupanca antiga', 'CHECKING', 0, 0, ?, ?, ?)
+	`, now, now, now)
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, destination_account_id, type, amount, date, description, status, installment_number, total_installments, created_at, updated_at)
+		VALUES ('a-transf-arch', 'ws-a', 'user-a', 'a-check', 'a-dest-archived', 'TRANSFER', 3000, ?, 'Transfer arquivada', 'paid', 1, 1, ?, ?)
+	`, now, now, now)
+
+	handler := TransactionHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+	got, err := handler.queryPredictiveSuggestions("transfer arquivada", "TRANSFER")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("archived destination account must not produce transfer suggestions, got %v", got)
+	}
+
+	got, err = handler.queryPredictiveSuggestions("restaurante", "TRANSFER")
+	if err != nil || len(got) == 0 {
+		t.Fatalf("active destination transfer must remain suggested: got=%v err=%v", got, err)
+	}
+	for _, s := range got {
+		if s.DestinationAccountID == "" || s.DestinationAccountName == "" {
+			t.Fatalf("active transfer suggestion lost destination: %v", s)
+		}
+	}
+}
+
+func TestPredictiveSuggestionsExcludeRecurringExceptions(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedPredictiveScenario(t, db)
+
+	now := time.Now().UTC().Unix()
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, installment_number, total_installments, is_recurring_exception, created_at, updated_at)
+		VALUES ('a-exception', 'ws-a', 'user-a', 'a-check', 'a-expense-cat', 'EXPENSE', 2500, ?, 'Ocorrencia suprimida', 'paid', 1, 1, 1, ?, ?)
+	`, now, now, now)
+
+	handler := TransactionHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+	got, err := handler.queryPredictiveSuggestions("suprimida", "EXPENSE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("recurring exception must not feed suggestions, got %v", got)
+	}
+
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, installment_number, total_installments, is_recurring_exception, created_at, updated_at)
+		VALUES ('a-normal', 'ws-a', 'user-a', 'a-check', 'a-expense-cat', 'EXPENSE', 2500, ?, 'Ocorrencia normal', 'paid', 1, 1, 0, ?, ?)
+	`, now, now, now)
+	got, err = handler.queryPredictiveSuggestions("ocorrencia normal", "EXPENSE")
+	if err != nil || len(got) != 1 {
+		t.Fatalf("normal transaction must remain eligible: got=%v err=%v", got, err)
+	}
+}
+
+func TestPredictiveSuggestionsWhitespaceVariantsDedupe(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedPredictiveScenario(t, db)
+
+	now := time.Now().UTC().Unix()
+	for i, description := range []string{"Mercado", " Mercado", "Mercado ", "  Mercado  "} {
+		execTestSQL(t, db, `
+			INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, installment_number, total_installments, created_at, updated_at)
+			VALUES (?, 'ws-a', 'user-a', 'a-check', 'a-expense-cat', 'EXPENSE', 100, ?, ?, 'paid', 1, 1, ?, ?)
+		`, fmt.Sprintf("a-space-%d", i), now+int64(i), description, now, now)
+	}
+	execTestSQL(t, db, `
+		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, installment_number, total_installments, created_at, updated_at)
+		VALUES ('a-space-other', 'ws-a', 'user-a', 'a-check', 'a-expense-cat', 'EXPENSE', 100, ?, 'Mercado Livre', 'paid', 1, 1, ?, ?)
+	`, now+10, now, now)
+
+	handler := TransactionHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+	got, err := handler.queryPredictiveSuggestions("mercado", "EXPENSE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("space variants must dedupe into one suggestion while keeping distinct text: got=%v", got)
+	}
+	seen := map[string]int{}
+	for _, s := range got {
+		seen[strings.TrimSpace(strings.ToLower(s.Description))]++
+	}
+	if seen["mercado"] != 1 || seen["mercado livre"] != 1 {
+		t.Fatalf("unexpected deduplicated descriptions: %v (%v)", got, seen)
+	}
+}
+
+func TestPredictiveSuggestionsShortQueryNeverHitsDatabase(t *testing.T) {
+	db, err := database.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := TransactionHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+	for _, query := range []string{"", " ", "a", "á", "  a  "} {
+		got, err := handler.queryPredictiveSuggestions(query, "EXPENSE")
+		if err != nil {
+			t.Fatalf("query %q must return before touching the database: %v", query, err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("query %q must return no suggestions: %v", query, got)
+		}
+	}
+}
+
+func TestPredictiveSuggestionsMinimumTwoRunes(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedPredictiveScenario(t, db)
+
+	handler := TransactionHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+	got, err := handler.queryPredictiveSuggestions("ab", "EXPENSE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("two-rune query without matches must return empty, got %v", got)
+	}
+	// Unicode runes count as runes, not bytes: "çã" is a valid two-rune query.
+	if _, err := handler.queryPredictiveSuggestions("çã", "EXPENSE"); err != nil {
+		t.Fatalf("unicode query must be accepted: %v", err)
+	}
 }

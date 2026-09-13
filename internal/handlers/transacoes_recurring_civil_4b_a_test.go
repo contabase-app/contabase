@@ -206,6 +206,7 @@ func TestCivil4BA_CommonOccurrenceMutablePaymentStatusPreserved(t *testing.T) {
 	// Toggle payment via real public flow
 	toggleHandler := TransactionHandler{
 		DB:          db,
+		WriterDB:    db,
 		Templates:   p1ToggleTemplates(),
 		WorkspaceID: wsID,
 		UserID:      "u-p1-statusb",

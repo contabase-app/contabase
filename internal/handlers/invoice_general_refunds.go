@@ -18,9 +18,15 @@ type InvoiceGeneralRefundFormData struct {
 	InvoiceID          string
 	CardName           string
 	Reference          string
+	RefundID           string
 	PendingAmount      MoneyDisplay
 	AlreadyRefunded    MoneyDisplay
 	HasAlreadyRefunded bool
+	CurrentAmountInput string
+	Description        string
+	FormAction         string
+	SubmitLabel        string
+	IsEditing          bool
 }
 
 type invoiceGeneralRefundTarget struct {
@@ -28,6 +34,12 @@ type invoiceGeneralRefundTarget struct {
 	CardName  string
 	Reference string
 	Status    string
+}
+
+type activeInvoiceGeneralRefund struct {
+	ID          string
+	Amount      int64
+	Description string
 }
 
 func loadInvoiceGeneralRefundTarget(query interface {
@@ -64,6 +76,61 @@ func sumActiveInvoiceGeneralRefunds(query interface {
 	return total, err
 }
 
+func loadActiveInvoiceGeneralRefund(query interface {
+	QueryRow(query string, args ...interface{}) *sql.Row
+}, workspaceID, invoiceID, refundID string) (activeInvoiceGeneralRefund, error) {
+	var refund activeInvoiceGeneralRefund
+	err := query.QueryRow(`
+		SELECT id, amount_cents, description
+		FROM invoice_refunds
+		WHERE id = ?
+		  AND workspace_id = ?
+		  AND invoice_id = ?
+		  AND reversed_at IS NULL
+	`, refundID, workspaceID, invoiceID).Scan(&refund.ID, &refund.Amount, &refund.Description)
+	return refund, err
+}
+
+func invoiceGeneralRefundFormData(target invoiceGeneralRefundTarget, pending, refunded int64, refund activeInvoiceGeneralRefund) InvoiceGeneralRefundFormData {
+	data := InvoiceGeneralRefundFormData{
+		InvoiceID:          target.InvoiceID,
+		CardName:           target.CardName,
+		Reference:          target.Reference,
+		PendingAmount:      MoneyMinor(pending),
+		AlreadyRefunded:    MoneyMinor(refunded),
+		HasAlreadyRefunded: refunded > 0,
+		FormAction:         "/cartoes/faturas/reembolso",
+		SubmitLabel:        "Registrar reembolso",
+	}
+	if refund.ID != "" {
+		data.RefundID = refund.ID
+		data.CurrentAmountInput = formatCurrencyCentsBase(refund.Amount)
+		data.Description = refund.Description
+		data.FormAction = fmt.Sprintf("/cartoes/faturas/reembolsos/%s/editar", refund.ID)
+		data.SubmitLabel = "Salvar reembolso"
+		data.IsEditing = true
+	}
+	return data
+}
+
+func parseInvoiceGeneralRefundForm(r *http.Request) (int64, string, error) {
+	if err := r.ParseForm(); err != nil {
+		return 0, "", fmt.Errorf("formulário inválido")
+	}
+	amount, err := parseCurrency(r.FormValue("valor"))
+	if err != nil || amount <= 0 {
+		return 0, "", fmt.Errorf("informe um valor de reembolso válido")
+	}
+	description := strings.TrimSpace(r.FormValue("descricao"))
+	if description == "" {
+		return 0, "", fmt.Errorf("informe a descrição do reembolso")
+	}
+	if len([]rune(description)) > 240 {
+		return 0, "", fmt.Errorf("descrição do reembolso muito longa")
+	}
+	return amount, description, nil
+}
+
 func (h *FaturasHandler) HandleFormReembolsoGeral(w http.ResponseWriter, r *http.Request) {
 	invoiceID := strings.TrimSpace(r.URL.Query().Get("invoice_id"))
 	if invoiceID == "" {
@@ -98,14 +165,7 @@ func (h *FaturasHandler) HandleFormReembolsoGeral(w http.ResponseWriter, r *http
 		http.Error(w, "erro ao carregar reembolsos", http.StatusInternalServerError)
 		return
 	}
-	data := InvoiceGeneralRefundFormData{
-		InvoiceID:          target.InvoiceID,
-		CardName:           target.CardName,
-		Reference:          target.Reference,
-		PendingAmount:      MoneyMinor(pending),
-		AlreadyRefunded:    MoneyMinor(refunded),
-		HasAlreadyRefunded: refunded > 0,
-	}
+	data := invoiceGeneralRefundFormData(target, pending, refunded, activeInvoiceGeneralRefund{})
 	if err := h.Templates.ExecuteTemplate(w, "form-reembolso-fatura", data); err != nil {
 		http.Error(w, "erro ao exibir reembolso", http.StatusInternalServerError)
 	}
@@ -121,18 +181,9 @@ func (h *FaturasHandler) HandleRegistrarReembolsoGeral(w http.ResponseWriter, r 
 		http.Error(w, "fatura obrigatória", http.StatusBadRequest)
 		return
 	}
-	amount, err := parseCurrency(r.FormValue("valor"))
-	if err != nil || amount <= 0 {
-		http.Error(w, "informe um valor de reembolso válido", http.StatusBadRequest)
-		return
-	}
-	description := strings.TrimSpace(r.FormValue("descricao"))
-	if description == "" {
-		http.Error(w, "informe a descrição do reembolso", http.StatusBadRequest)
-		return
-	}
-	if len([]rune(description)) > 240 {
-		http.Error(w, "descrição do reembolso muito longa", http.StatusBadRequest)
+	amount, description, err := parseInvoiceGeneralRefundForm(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -192,5 +243,184 @@ func (h *FaturasHandler) HandleRegistrarReembolsoGeral(w http.ResponseWriter, r 
 	}
 	if err := transactionRenderer.renderInvoiceContextOOB(w, r, target.InvoiceID, true); err != nil {
 		http.Error(w, fmt.Sprintf("reembolso registrado; erro ao atualizar fatura: %v", err), http.StatusInternalServerError)
+	}
+}
+
+func (h *FaturasHandler) HandleFormEditarReembolsoGeral(w http.ResponseWriter, r *http.Request, refundID string) {
+	invoiceID := strings.TrimSpace(r.URL.Query().Get("invoice_id"))
+	if invoiceID == "" {
+		http.Error(w, "fatura obrigatória", http.StatusBadRequest)
+		return
+	}
+	target, err := loadInvoiceGeneralRefundTarget(h.DB, h.WorkspaceID, invoiceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, "erro ao carregar fatura", http.StatusInternalServerError)
+		return
+	}
+	if target.Status == models.InvoiceStatusPaid {
+		http.Error(w, "fatura paga não permite alterar reembolso", http.StatusConflict)
+		return
+	}
+	refund, err := loadActiveInvoiceGeneralRefund(h.DB, h.WorkspaceID, invoiceID, refundID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, "erro ao carregar reembolso", http.StatusInternalServerError)
+		return
+	}
+	snapshot, err := loadInvoiceFinancialSnapshotDB(h.DB, h.WorkspaceID, invoiceID)
+	if err != nil {
+		http.Error(w, "erro ao calcular saldo da fatura", http.StatusInternalServerError)
+		return
+	}
+	refunded, err := sumActiveInvoiceGeneralRefunds(h.DB, h.WorkspaceID, invoiceID)
+	if err != nil {
+		http.Error(w, "erro ao carregar reembolsos", http.StatusInternalServerError)
+		return
+	}
+	pending := CalculateInvoicePendingAmount(snapshot.Total, snapshot.EffectivePaid) + refund.Amount
+	if err := h.Templates.ExecuteTemplate(w, "form-reembolso-fatura", invoiceGeneralRefundFormData(target, pending, refunded, refund)); err != nil {
+		http.Error(w, "erro ao exibir reembolso", http.StatusInternalServerError)
+	}
+}
+
+func (h *FaturasHandler) HandleAtualizarReembolsoGeral(w http.ResponseWriter, r *http.Request, refundID string) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulário inválido", http.StatusBadRequest)
+		return
+	}
+	invoiceID := strings.TrimSpace(r.FormValue("invoice_id"))
+	if invoiceID == "" {
+		http.Error(w, "fatura obrigatória", http.StatusBadRequest)
+		return
+	}
+	amount, description, err := parseInvoiceGeneralRefundForm(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	tx, err := h.DB.Begin()
+	if err != nil {
+		http.Error(w, "erro ao iniciar atualização do reembolso", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+	target, err := loadInvoiceGeneralRefundTarget(tx, h.WorkspaceID, invoiceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, "erro ao validar fatura", http.StatusInternalServerError)
+		return
+	}
+	if target.Status == models.InvoiceStatusPaid {
+		http.Error(w, "fatura paga não permite alterar reembolso", http.StatusConflict)
+		return
+	}
+	refund, err := loadActiveInvoiceGeneralRefund(tx, h.WorkspaceID, invoiceID, refundID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, "erro ao carregar reembolso", http.StatusInternalServerError)
+		return
+	}
+	snapshot, err := loadInvoiceFinancialSnapshotTx(tx, h.WorkspaceID, invoiceID)
+	if err != nil {
+		http.Error(w, "erro ao calcular saldo da fatura", http.StatusInternalServerError)
+		return
+	}
+	if amount > CalculateInvoicePendingAmount(snapshot.Total, snapshot.EffectivePaid)+refund.Amount {
+		http.Error(w, "reembolso maior que o saldo pendente da fatura", http.StatusConflict)
+		return
+	}
+	now := time.Now().Unix()
+	if _, err := tx.Exec(`UPDATE invoice_refunds SET reversed_at = ?, reversed_by = ? WHERE id = ? AND workspace_id = ? AND invoice_id = ? AND reversed_at IS NULL`, now, h.UserID, refundID, h.WorkspaceID, invoiceID); err != nil {
+		http.Error(w, "não foi possível atualizar o reembolso", http.StatusInternalServerError)
+		return
+	}
+	if _, err := tx.Exec(`INSERT INTO invoice_refunds (id, workspace_id, invoice_id, amount_cents, description, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, uuid.NewString(), h.WorkspaceID, invoiceID, amount, description, h.UserID, now); err != nil {
+		http.Error(w, "não foi possível atualizar o reembolso", http.StatusConflict)
+		return
+	}
+	if err := reconcileInvoiceAfterCompositionMutationTx(tx, h.WorkspaceID, invoiceID, now); err != nil {
+		respondInvoiceCompositionError(w, err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "erro ao concluir atualização do reembolso", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("HX-Trigger", `{"refreshFinancials":true,"app:toast-success":{"value":"Reembolso atualizado"}}`)
+	transactionRenderer := TransactionHandler{DB: h.DB, Templates: h.Templates, WorkspaceID: h.WorkspaceID, UserID: h.UserID}
+	if err := transactionRenderer.renderInvoiceContextOOB(w, r, invoiceID, true); err != nil {
+		http.Error(w, fmt.Sprintf("reembolso atualizado; erro ao atualizar fatura: %v", err), http.StatusInternalServerError)
+	}
+}
+
+func (h *FaturasHandler) HandleRemoverReembolsoGeral(w http.ResponseWriter, r *http.Request, refundID string) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulário inválido", http.StatusBadRequest)
+		return
+	}
+	invoiceID := strings.TrimSpace(r.FormValue("invoice_id"))
+	if invoiceID == "" {
+		http.Error(w, "fatura obrigatória", http.StatusBadRequest)
+		return
+	}
+	tx, err := h.DB.Begin()
+	if err != nil {
+		http.Error(w, "erro ao iniciar remoção do reembolso", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+	target, err := loadInvoiceGeneralRefundTarget(tx, h.WorkspaceID, invoiceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, "erro ao validar fatura", http.StatusInternalServerError)
+		return
+	}
+	if target.Status == models.InvoiceStatusPaid {
+		http.Error(w, "fatura paga não permite remover reembolso", http.StatusConflict)
+		return
+	}
+	now := time.Now().Unix()
+	result, err := tx.Exec(`UPDATE invoice_refunds SET reversed_at = ?, reversed_by = ? WHERE id = ? AND workspace_id = ? AND invoice_id = ? AND reversed_at IS NULL`, now, h.UserID, refundID, h.WorkspaceID, invoiceID)
+	if err != nil {
+		http.Error(w, "não foi possível remover o reembolso", http.StatusInternalServerError)
+		return
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		http.Error(w, "não foi possível remover o reembolso", http.StatusInternalServerError)
+		return
+	}
+	if affected != 1 {
+		http.NotFound(w, r)
+		return
+	}
+	if err := reconcileInvoiceAfterCompositionMutationTx(tx, h.WorkspaceID, invoiceID, now); err != nil {
+		respondInvoiceCompositionError(w, err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "erro ao concluir remoção do reembolso", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("HX-Trigger", `{"refreshFinancials":true,"app:toast-success":{"value":"Reembolso removido"}}`)
+	transactionRenderer := TransactionHandler{DB: h.DB, Templates: h.Templates, WorkspaceID: h.WorkspaceID, UserID: h.UserID}
+	if err := transactionRenderer.renderInvoiceContextOOB(w, r, invoiceID, true); err != nil {
+		http.Error(w, fmt.Sprintf("reembolso removido; erro ao atualizar fatura: %v", err), http.StatusInternalServerError)
 	}
 }

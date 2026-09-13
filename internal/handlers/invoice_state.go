@@ -374,7 +374,10 @@ func computeInvoiceStateTx(tx *sql.Tx, workspaceID, invoiceID string) (InvoiceCo
 	`, workspaceID, invoiceID, workspaceID).Scan(&closingUnix, &status); err != nil {
 		return InvoiceComputedState{}, err
 	}
-	total := sumInvoiceTotalTx(tx, workspaceID, invoiceID)
+	total, err := sumInvoiceTotalTx(tx, workspaceID, invoiceID)
+	if err != nil {
+		return InvoiceComputedState{}, err
+	}
 	paidActive, err := sumActiveInvoicePaymentsTx(tx, workspaceID, invoiceID)
 	if err != nil {
 		return InvoiceComputedState{}, err

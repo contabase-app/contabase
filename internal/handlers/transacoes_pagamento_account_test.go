@@ -423,7 +423,7 @@ func TestTogglePagamentoChangesAccountInBusinessWorkspace(t *testing.T) {
 		VALUES ('business-payment', 'ws-payment-business', 'business-user', 'business-origin', 'INCOME', 1234, ?, 'Recebimento', 'pending', 1, 1, ?, ?)
 	`, time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC).Unix(), now, now)
 
-	handler := TransactionHandler{DB: db, Templates: testPaidInvoiceMutationTemplates(), WorkspaceID: "ws-payment-business", UserID: "business-user"}
+	handler := TransactionHandler{DB: db, WriterDB: db, Templates: testPaidInvoiceMutationTemplates(), WorkspaceID: "ws-payment-business", UserID: "business-user"}
 	rr := httptest.NewRecorder()
 	handler.HandleTogglePagamento(rr, formPost("/transacoes/business-payment/status-pagamento", url.Values{
 		"payment_action":     {"paid"},

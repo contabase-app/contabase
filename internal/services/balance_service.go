@@ -2,10 +2,14 @@ package services
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"math"
 
 	"github.com/contabase-app/contabase/internal/models"
 )
+
+var ErrBalanceOutOfRange = errors.New("saldo resultante fora do intervalo int64")
 
 func ApplyBalanceEffect(tx *sql.Tx, workspaceID, trType, accType, paymentStatus string, amount int64, accountID, destAccountID string, now int64) error {
 	if paymentStatus != models.PaymentStatusPaid {
@@ -17,18 +21,18 @@ func ApplyBalanceEffect(tx *sql.Tx, workspaceID, trType, accType, paymentStatus 
 		if accType == models.AccountTypeCreditCard {
 			return nil
 		}
-		return execOneTx(tx, `UPDATE accounts SET current_balance = current_balance - ?, updated_at = ? WHERE id = ? AND workspace_id = ?`, amount, now, accountID, workspaceID)
+		return changeAccountBalanceTx(tx, workspaceID, accountID, amount, true, now)
 	case models.TransactionTypeIncome:
 		if accType == models.AccountTypeCreditCard {
 			return nil
 		}
-		return execOneTx(tx, `UPDATE accounts SET current_balance = current_balance + ?, updated_at = ? WHERE id = ? AND workspace_id = ?`, amount, now, accountID, workspaceID)
+		return changeAccountBalanceTx(tx, workspaceID, accountID, amount, false, now)
 	case models.TransactionTypeTransfer:
-		if err := execOneTx(tx, `UPDATE accounts SET current_balance = current_balance - ?, updated_at = ? WHERE id = ? AND workspace_id = ?`, amount, now, accountID, workspaceID); err != nil {
+		if err := changeAccountBalanceTx(tx, workspaceID, accountID, amount, true, now); err != nil {
 			return err
 		}
 		if destAccountID != "" {
-			return execOneTx(tx, `UPDATE accounts SET current_balance = current_balance + ?, updated_at = ? WHERE id = ? AND workspace_id = ?`, amount, now, destAccountID, workspaceID)
+			return changeAccountBalanceTx(tx, workspaceID, destAccountID, amount, false, now)
 		}
 	}
 	return nil
@@ -40,25 +44,46 @@ func ReverseBalanceEffect(tx *sql.Tx, workspaceID, trType, accType string, amoun
 		if accType == models.AccountTypeCreditCard {
 			return nil
 		}
-		return execOneTx(tx, `UPDATE accounts SET current_balance = current_balance + ?, updated_at = ? WHERE id = ? AND workspace_id = ?`, amount, now, accountID, workspaceID)
+		return changeAccountBalanceTx(tx, workspaceID, accountID, amount, false, now)
 	case models.TransactionTypeIncome:
 		if accType == models.AccountTypeCreditCard {
 			return nil
 		}
-		return execOneTx(tx, `UPDATE accounts SET current_balance = current_balance - ?, updated_at = ? WHERE id = ? AND workspace_id = ?`, amount, now, accountID, workspaceID)
+		return changeAccountBalanceTx(tx, workspaceID, accountID, amount, true, now)
 	case models.TransactionTypeTransfer:
-		if err := execOneTx(tx, `UPDATE accounts SET current_balance = current_balance + ?, updated_at = ? WHERE id = ? AND workspace_id = ?`, amount, now, accountID, workspaceID); err != nil {
+		if err := changeAccountBalanceTx(tx, workspaceID, accountID, amount, false, now); err != nil {
 			return err
 		}
 		if destAccountID != "" {
-			return execOneTx(tx, `UPDATE accounts SET current_balance = current_balance - ?, updated_at = ? WHERE id = ? AND workspace_id = ?`, amount, now, destAccountID, workspaceID)
+			return changeAccountBalanceTx(tx, workspaceID, destAccountID, amount, true, now)
 		}
 	}
 	return nil
 }
 
-func execOneTx(tx *sql.Tx, query string, args ...interface{}) error {
-	res, err := tx.Exec(query, args...)
+// The caller owns the transaction and must roll it back on any error, including
+// failure on the second side of a transfer. The predicate guards the arithmetic
+// in the same write, so SQLite cannot promote an overflowing integer to REAL.
+func changeAccountBalanceTx(tx *sql.Tx, workspaceID, accountID string, amount int64, subtract bool, now int64) error {
+	operator, comparison := "+", "<="
+	bound := int64(math.MaxInt64)
+	if subtract {
+		operator = "-"
+		if amount > 0 {
+			comparison, bound = ">=", math.MinInt64+amount
+		} else if amount < 0 {
+			bound = math.MaxInt64 + amount
+		}
+	} else if amount > 0 {
+		bound = math.MaxInt64 - amount
+	} else if amount < 0 {
+		comparison, bound = ">=", math.MinInt64-amount
+	}
+	// Only fixed operators are interpolated; values and scope stay parameterized.
+	// None of the bound calculations negate amount (which can be MinInt64).
+	query := `UPDATE accounts SET current_balance = current_balance ` + operator + ` ?, updated_at = ?
+		WHERE id = ? AND workspace_id = ? AND typeof(current_balance) = 'integer' AND current_balance ` + comparison + ` ?`
+	res, err := tx.Exec(query, amount, now, accountID, workspaceID, bound)
 	if err != nil {
 		return err
 	}
@@ -66,8 +91,21 @@ func execOneTx(tx *sql.Tx, query string, args ...interface{}) error {
 	if err != nil {
 		return err
 	}
-	if affected != 1 {
-		return fmt.Errorf("operação não autorizada ou registro não encontrado")
+	if affected == 1 {
+		return nil
 	}
-	return nil
+	if affected != 0 {
+		return fmt.Errorf("atualização de saldo afetou %d contas", affected)
+	}
+	var storage string
+	if err := tx.QueryRow(`SELECT typeof(current_balance) FROM accounts WHERE id = ? AND workspace_id = ?`, accountID, workspaceID).Scan(&storage); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("operação não autorizada ou registro não encontrado")
+		}
+		return err
+	}
+	if storage != "integer" {
+		return fmt.Errorf("saldo persistido não é INTEGER")
+	}
+	return ErrBalanceOutOfRange
 }

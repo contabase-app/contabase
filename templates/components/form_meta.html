@@ -40,8 +40,8 @@
                     hx-push-url="false"
                     class="cb-input flex h-12 w-full items-center justify-between gap-3 text-left transition-all hover:border-[var(--cb-border-focus)] active:scale-[0.99]">
                     <span class="flex min-w-0 items-center gap-3">
-                        <span id="categoriaIconWrap_limite" class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border icon-wrap-colored" style="--ic: {{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}">
-                            <i id="categoriaIcon_limite" data-lucide="{{if .CategoryIcon}}{{.CategoryIcon}}{{else}}tag{{end}}" class="h-3.5 w-3.5 icon-colored" style="--ic: {{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}"></i>
+                        <span id="categoriaIconWrap_limite" class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border icon-wrap-colored" data-cb-color="{{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}">
+                            <i id="categoriaIcon_limite" data-lucide="{{if .CategoryIcon}}{{.CategoryIcon}}{{else}}tag{{end}}" class="h-3.5 w-3.5 icon-colored" data-cb-color="{{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}"></i>
                         </span>
                         <span class="min-w-0">
                             <span id="categoriaNome_limite" class="block truncate text-sm font-semibold cb-text-main">{{if .CategoryName}}{{.CategoryName}}{{else}}Buscar categoria...{{end}}</span>
@@ -76,8 +76,8 @@
                     hx-push-url="false"
                     class="cb-input flex h-12 w-full items-center justify-between gap-3 text-left transition-all hover:border-[var(--cb-border-focus)] active:scale-[0.99]">
                     <span class="flex min-w-0 items-center gap-3">
-                        <span id="categoriaIconWrap_caixinha" class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border icon-wrap-colored" style="--ic: {{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}">
-                            <i id="categoriaIcon_caixinha" data-lucide="{{if .CategoryIcon}}{{.CategoryIcon}}{{else}}tag{{end}}" class="h-3.5 w-3.5 icon-colored" style="--ic: {{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}"></i>
+                        <span id="categoriaIconWrap_caixinha" class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border icon-wrap-colored" data-cb-color="{{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}">
+                            <i id="categoriaIcon_caixinha" data-lucide="{{if .CategoryIcon}}{{.CategoryIcon}}{{else}}tag{{end}}" class="h-3.5 w-3.5 icon-colored" data-cb-color="{{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}"></i>
                         </span>
                         <span class="min-w-0">
                             <span id="categoriaNome_caixinha" class="block truncate text-sm font-semibold cb-text-main">{{if .CategoryName}}{{.CategoryName}}{{else}}Sem categoria{{end}}</span>

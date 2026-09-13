@@ -918,6 +918,119 @@ func TestRuntimeBindingUsesG2ForAuthReadWriteAndInvoiceWriterOnSameMux(t *testin
 	}
 }
 
+func TestRuntimeRebindsTransactionWriterDBToG2(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DATA_DIR", root)
+	g1 := openFullBindingRuntime(t, filepath.Join(root, "g1.db"), "g1")
+	g2DBs := openFullBindingDBs(t, filepath.Join(root, "g2.db"), "g2")
+
+	txBase := handlers.TransactionHandler{Templates: runtimeBindingTemplate{}}
+	bindTransactionHandlerRuntimeDBs(&txBase, g1.DBs)
+	coordinator := newServerRuntimeCoordinator(g1, func(runtime *serverRuntime) {
+		bindTransactionHandlerRuntimeDBs(&txBase, runtime.DBs)
+	})
+	defer coordinator.Close()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/transacoes/", func(w http.ResponseWriter, r *http.Request) {
+		h := txBase
+		h.WorkspaceID = "ws-binding"
+		h.UserID = "user-binding"
+		h.HandleTogglePagamento(w, r, "tx-binding")
+	})
+	handler := coordinator.Middleware(mux, isRuntimeLeaseBypassRequest)
+
+	seedBindingToggleFixture(t, g1.DBs.DB, "tx-binding")
+	assertBindingTogglePaid(t, handler, g1.DBs.DB, "tx-binding")
+
+	oldDB := g1.DBs.DB
+	oldImmediate := g1.DBs.Immediate
+	var g2 *serverRuntime
+	if err := coordinator.Replace(nil, func(old *serverRuntime) (*serverRuntime, error) {
+		if err := old.Close(); err != nil {
+			return nil, err
+		}
+		var err error
+		g2, err = startServerRuntime(g2DBs, serverRuntimeOptions{
+			scheduledInterval: time.Hour,
+			recurringInterval: time.Hour,
+			sessionInterval:   time.Hour,
+		})
+		return g2, err
+	}); err != nil {
+		t.Fatalf("replace G1 with G2: %v", err)
+	}
+	if oldDB.Ping() == nil || oldImmediate.Ping() == nil {
+		t.Fatalf("G1 remained operational after G2 publication")
+	}
+	if g2 == nil {
+		t.Fatal("G2 runtime was not published")
+	}
+	defer g2.Close()
+
+	seedBindingToggleFixture(t, g2.DBs.DB, "tx-binding")
+	assertBindingTogglePaid(t, handler, g2.DBs.DB, "tx-binding")
+}
+
+func seedBindingToggleFixture(t *testing.T, db *sql.DB, txID string) {
+	t.Helper()
+	now := time.Now().Unix()
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{
+			query: `INSERT INTO users (id, name, email, password_hash, created_at, updated_at)
+				VALUES ('user-binding', 'Binding', 'binding@example.test', 'hash', ?, ?)`,
+			args: []any{now, now},
+		},
+		{
+			query: `INSERT INTO workspaces (id, name, type, created_at, updated_at)
+				VALUES ('ws-binding', 'Binding', 'personal', ?, ?)`,
+			args: []any{now, now},
+		},
+		{
+			query: `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
+				VALUES ('ws-binding', 'user-binding', 'ADMIN', ?)`,
+			args: []any{now},
+		},
+		{
+			query: `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at)
+				VALUES ('checking-binding', 'ws-binding', 'Checking', 'CHECKING', 100000, 100000, ?, ?)`,
+			args: []any{now, now},
+		},
+		{
+			query: `INSERT INTO transactions (id, workspace_id, user_id, account_id, type, amount, date, description, status, installment_number, total_installments, created_at, updated_at)
+				VALUES (?, 'ws-binding', 'user-binding', 'checking-binding', 'EXPENSE', 12345, ?, 'Toggle Binding', 'pending', 1, 1, ?, ?)`,
+			args: []any{txID, now, now, now},
+		},
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement.query, statement.args...); err != nil {
+			t.Fatalf("seed binding toggle fixture: %v", err)
+		}
+	}
+}
+
+func assertBindingTogglePaid(t *testing.T, handler http.Handler, db *sql.DB, txID string) {
+	t.Helper()
+	form := url.Values{"payment_action": {"paid"}, "payment_date": {"2026-07-14"}}
+	req := httptest.NewRequest(http.MethodPost, "/transacoes/"+txID+"/status-pagamento", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("toggle status = %d, body = %q", rr.Code, rr.Body.String())
+	}
+	var status string
+	if err := db.QueryRow(`SELECT status FROM transactions WHERE id = ?`, txID).Scan(&status); err != nil {
+		t.Fatalf("query toggled transaction: %v", err)
+	}
+	if status != "paid" {
+		t.Fatalf("transaction status = %q, want paid", status)
+	}
+}
+
 func assertHealthStatus(t *testing.T, handler http.Handler, want int) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)

@@ -64,6 +64,49 @@ func TestMigration61CreatesInvoiceGeneralRefundAuditContract(t *testing.T) {
 	}
 }
 
+func TestMigration63AddsSessionRecentReauthentication(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open raw memory database: %v", err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`CREATE TABLE sessions (
+		id TEXT PRIMARY KEY,
+		user_id TEXT NOT NULL,
+		workspace_id TEXT NOT NULL,
+		token_hash TEXT NOT NULL UNIQUE,
+		expires_at INTEGER NOT NULL,
+		revoked_at INTEGER,
+		created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+		is_remember INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		t.Fatalf("create legacy sessions fixture: %v", err)
+	}
+	seedAppliedMigrationsBefore(t, db, 63)
+	if err := runMigrations(db); err != nil {
+		t.Fatalf("run migration 63: %v", err)
+	}
+
+	assertMigrationApplied(t, db, 63)
+	assertColumnExists(t, db, "sessions", "reauthenticated_at")
+
+	now := time.Now().Unix()
+	if _, err := db.Exec(`
+		INSERT INTO sessions (id, user_id, workspace_id, token_hash, expires_at)
+		VALUES ('session-m63', 'user-m63', 'ws-m63', 'token-m63', ?)
+	`, now+3600); err != nil {
+		t.Fatalf("insert session using migration 63 default: %v", err)
+	}
+	var reauthenticatedAt int64
+	if err := db.QueryRow(`SELECT reauthenticated_at FROM sessions WHERE id = 'session-m63'`).Scan(&reauthenticatedAt); err != nil {
+		t.Fatalf("query sessions.reauthenticated_at: %v", err)
+	}
+	if reauthenticatedAt != 0 {
+		t.Fatalf("existing-session default = %d, want 0", reauthenticatedAt)
+	}
+}
+
 func TestLegacyInvoiceBackfillClosingDayStartsNextCycle(t *testing.T) {
 	closingUnix, dueUnix, reference := calculateInvoiceDates(
 		time.Date(2026, time.September, 1, 12, 0, 0, 0, time.UTC),
@@ -770,6 +813,7 @@ func TestDestructiveMigrationsRequireExplicitReview(t *testing.T) {
 
 	allowlist := map[int]string{
 		12: "categories rebuild — destructive migration reviewed and allowed",
+		27: "cost_limits timestamps on populated SQLite tables — transactional preservation covered by F10",
 		30: "box_virtual_ledger rebuild — destructive migration reviewed and allowed",
 		31: "box_virtual_ledger rebuild — destructive migration reviewed and allowed",
 		35: "accounts rebuild to add WALLET type and icon column — destructive migration reviewed and allowed",

@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"database/sql"
+	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -626,7 +628,7 @@ func TestReportHelpersCompraCartaoPagamentoFaturaNaoDuplicaCaixa(t *testing.T) {
 	if invoicePaymentCount != 1 {
 		t.Fatalf("invoice payment events = %d, want 1 as the only cash event for card spending", invoicePaymentCount)
 	}
-	if got := SumCashExpense(realized); got != 30000 {
+	if got := mustSumCashExpense(t, realized); got != 30000 {
 		t.Fatalf("realized expense = %d, want 30000 without duplicated invoice payment", got)
 	}
 }
@@ -827,7 +829,7 @@ func TestReportHelpersBusinessCustosPorMacroGrupo(t *testing.T) {
 		t.Fatalf("BuildCashFlowData: %v", err)
 	}
 
-	netCash := SumCashEvents(realized)
+	netCash := mustSumCashEvents(t, realized)
 	if netCash != 400000 {
 		t.Fatalf("business net cash = %d, want 400000 (500000 income - 100000 expenses)", netCash)
 	}
@@ -1180,6 +1182,33 @@ func TestReportHelpersReportPeriod(t *testing.T) {
 	}
 }
 
+func mustSumCashEvents(t *testing.T, events []CashEvent) int64 {
+	t.Helper()
+	total, err := SumCashEvents(events)
+	if err != nil {
+		t.Fatalf("SumCashEvents: %v", err)
+	}
+	return total
+}
+
+func mustSumCashIncome(t *testing.T, events []CashEvent) int64 {
+	t.Helper()
+	total, err := SumCashIncome(events)
+	if err != nil {
+		t.Fatalf("SumCashIncome: %v", err)
+	}
+	return total
+}
+
+func mustSumCashExpense(t *testing.T, events []CashEvent) int64 {
+	t.Helper()
+	total, err := SumCashExpense(events)
+	if err != nil {
+		t.Fatalf("SumCashExpense: %v", err)
+	}
+	return total
+}
+
 func TestReportHelpersSumCashEvents(t *testing.T) {
 	events := []CashEvent{
 		{IsIncome: true, AmountCents: 100000},
@@ -1188,9 +1217,71 @@ func TestReportHelpersSumCashEvents(t *testing.T) {
 		{IsIncome: false, AmountCents: 20000},
 	}
 
-	net := SumCashEvents(events)
+	net := mustSumCashEvents(t, events)
 	if net != 100000 {
 		t.Fatalf("SumCashEvents = %d, want 100000 (150000 income - 50000 expense)", net)
+	}
+}
+
+// TestSumCashExactLimits garante que valores exatamente nos limites de int64
+// permanecem válidos: nada de rejeitar a fronteira legítima.
+func TestSumCashExactLimits(t *testing.T) {
+	cases := []struct {
+		name   string
+		events []CashEvent
+		call   func([]CashEvent) (int64, error)
+		want   int64
+	}{
+		{"SumCashIncome MaxInt64 sozinho", []CashEvent{{IsIncome: true, AmountCents: math.MaxInt64}}, SumCashIncome, math.MaxInt64},
+		{"SumCashIncome zero + MaxInt64", []CashEvent{{IsIncome: true, AmountCents: 0}, {IsIncome: true, AmountCents: math.MaxInt64}}, SumCashIncome, math.MaxInt64},
+		{"SumCashIncome MaxInt64-1 + 1", []CashEvent{{IsIncome: true, AmountCents: math.MaxInt64 - 1}, {IsIncome: true, AmountCents: 1}}, SumCashIncome, math.MaxInt64},
+		{"SumCashIncome MinInt64 sozinho", []CashEvent{{IsIncome: true, AmountCents: math.MinInt64}}, SumCashIncome, math.MinInt64},
+		{"SumCashIncome MinInt64+1 + (-1)", []CashEvent{{IsIncome: true, AmountCents: math.MinInt64 + 1}, {IsIncome: true, AmountCents: -1}}, SumCashIncome, math.MinInt64},
+		{"SumCashExpense MaxInt64 sozinho", []CashEvent{{AmountCents: math.MaxInt64}}, SumCashExpense, math.MaxInt64},
+		{"SumCashEvents MaxInt64 receita isolada", []CashEvent{{IsIncome: true, AmountCents: math.MaxInt64}}, SumCashEvents, math.MaxInt64},
+		{"SumCashEvents MinInt64 receita isolada", []CashEvent{{IsIncome: true, AmountCents: math.MinInt64}}, SumCashEvents, math.MinInt64},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.call(tc.events)
+			if err != nil {
+				t.Fatalf("exact int64 limit must succeed: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSumCashOverflowAndUnderflow garante que ultrapassar int64 em qualquer
+// direção falha de forma explícita, sem saturação e sem wrap silencioso.
+func TestSumCashOverflowAndUnderflow(t *testing.T) {
+	cases := []struct {
+		name   string
+		events []CashEvent
+		call   func([]CashEvent) (int64, error)
+	}{
+		{"SumCashIncome MaxInt64 + 1", []CashEvent{{IsIncome: true, AmountCents: math.MaxInt64}, {IsIncome: true, AmountCents: 1}}, SumCashIncome},
+		{"SumCashIncome MinInt64 + (-1)", []CashEvent{{IsIncome: true, AmountCents: math.MinInt64}, {IsIncome: true, AmountCents: -1}}, SumCashIncome},
+		{"SumCashExpense MaxInt64 + 1", []CashEvent{{AmountCents: math.MaxInt64}, {AmountCents: 1}}, SumCashExpense},
+		{"SumCashEvents net MaxInt64 + 1", []CashEvent{{IsIncome: true, AmountCents: math.MaxInt64}, {IsIncome: true, AmountCents: 1}}, SumCashEvents},
+		{"SumCashEvents net MinInt64 - 1", []CashEvent{{IsIncome: true, AmountCents: math.MinInt64}, {AmountCents: 1}}, SumCashEvents},
+		{"SumCashEvents zero - MinInt64", []CashEvent{{AmountCents: math.MinInt64}}, SumCashEvents},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.call(tc.events)
+			if err == nil {
+				t.Fatalf("expected overflow/underflow error, got %d", got)
+			}
+			if !errors.Is(err, errReportAggregateOverflow) {
+				t.Fatalf("expected errReportAggregateOverflow, got %v", err)
+			}
+			if got != 0 {
+				t.Fatalf("error path must not return a value, got %d", got)
+			}
+		})
 	}
 }
 
@@ -1270,8 +1361,8 @@ func TestRelatoriosCashFlowKPIsInData(t *testing.T) {
 		t.Fatalf("BuildCashFlowData: %v", err)
 	}
 
-	realizedNet := SumCashEvents(realized)
-	projectedNet := SumCashEvents(projected)
+	realizedNet := mustSumCashEvents(t, realized)
+	projectedNet := mustSumCashEvents(t, projected)
 
 	if realizedNet != 110000 {
 		t.Fatalf("realized net = %d, want 110000 (150000 income - 40000 expense)", realizedNet)
@@ -1638,9 +1729,9 @@ func TestSumCashIncomeExpenseSeparation(t *testing.T) {
 		{IsIncome: true, AmountCents: 25000, Description: "Bonus"},
 	}
 
-	income := SumCashIncome(events)
-	expense := SumCashExpense(events)
-	net := SumCashEvents(events)
+	income := mustSumCashIncome(t, events)
+	expense := mustSumCashExpense(t, events)
+	net := mustSumCashEvents(t, events)
 
 	if income != 175000 {
 		t.Fatalf("SumCashIncome = %d, want 175000", income)
@@ -1680,10 +1771,10 @@ func TestRelatoriosCashFlowTabIncomeExpenseSeparation(t *testing.T) {
 		t.Fatalf("BuildCashFlowData: %v", err)
 	}
 
-	realizedIncome := SumCashIncome(realized)
-	realizedExpense := SumCashExpense(realized)
-	projectedIncome := SumCashIncome(projected)
-	projectedExpense := SumCashExpense(projected)
+	realizedIncome := mustSumCashIncome(t, realized)
+	realizedExpense := mustSumCashExpense(t, realized)
+	projectedIncome := mustSumCashIncome(t, projected)
+	projectedExpense := mustSumCashExpense(t, projected)
 
 	if realizedIncome != 150000 {
 		t.Fatalf("realized income = %d, want 150000", realizedIncome)
@@ -1828,8 +1919,8 @@ func TestRelatoriosCashFlowTabInvoiceAsProjectedExpense(t *testing.T) {
 		t.Fatalf("BuildCashFlowData: %v", err)
 	}
 
-	projectedExpense := SumCashExpense(projected)
-	projectedIncome := SumCashIncome(projected)
+	projectedExpense := mustSumCashExpense(t, projected)
+	projectedIncome := mustSumCashIncome(t, projected)
 
 	if projectedExpense < 35000 {
 		t.Fatalf("projected expense = %d, want at least 35000 (invoice pending)", projectedExpense)

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +20,53 @@ import (
 	"github.com/contabase-app/contabase/internal/handlers"
 	"github.com/contabase-app/contabase/internal/models"
 )
+
+func TestAdminRestoreOnlineSnapshotPreservesCommittedBusinessState(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DATA_DIR", root)
+	sourcePath := filepath.Join(root, "source.db")
+	source := createRestoreTestDB(t, sourcePath, "snapshot")
+	defer source.Close()
+	if _, err := source.Exec(`
+		PRAGMA wal_autocheckpoint=0;
+		CREATE TABLE financial_state(a INTEGER NOT NULL, b INTEGER NOT NULL, counter INTEGER NOT NULL);
+		CREATE TABLE financial_history(seq INTEGER PRIMARY KEY, amount INTEGER NOT NULL);
+		INSERT INTO financial_state VALUES(1000,1000,0);
+		BEGIN IMMEDIATE;
+		UPDATE financial_state SET a=a-50,b=b+50,counter=counter+1;
+		INSERT INTO financial_history VALUES(1,50);
+		COMMIT;
+	`); err != nil {
+		t.Fatal(err)
+	}
+	candidate := filepath.Join(root, "new-backup.db")
+	if err := contabaseDB.CreateSQLiteBackupFileContext(context.Background(), source, sourcePath, candidate); err != nil {
+		t.Fatal(err)
+	}
+	// Later source changes must not change the captured generation.
+	if _, err := source.Exec(`BEGIN IMMEDIATE;
+		UPDATE financial_state SET a=a-50,b=b+50,counter=counter+1;
+		INSERT INTO financial_history VALUES(2,50); COMMIT;`); err != nil {
+		t.Fatal(err)
+	}
+	livePath := filepath.Join(root, "restored.db")
+	current := createRestoreTestServerRuntime(t, livePath, "before-restore")
+	_, refreshed, err := restoreAdminBackupFromFile(current, "file:"+livePath, livePath, candidate, openRestoreTestRuntimeDBs, startRestoreTestServerRuntime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer refreshed.Close()
+	assertRestoreMarker(t, livePath, "snapshot")
+	if err := validateSQLiteIntegrity(refreshed.DBs.DB); err != nil {
+		t.Fatal(err)
+	}
+	var a, b, counter, count, sum int
+	err = refreshed.DBs.DB.QueryRow(`SELECT a,b,counter,(SELECT count(*) FROM financial_history),
+		(SELECT sum(amount) FROM financial_history) FROM financial_state`).Scan(&a, &b, &counter, &count, &sum)
+	if err != nil || a != 950 || b != 1050 || counter != 1 || count != 1 || sum != 50 {
+		t.Fatalf("restored impossible/unexpected snapshot: %d %d %d %d %d err=%v", a, b, counter, count, sum, err)
+	}
+}
 
 func TestAdminImportBackupValidCandidate(t *testing.T) {
 	dir := t.TempDir()
@@ -384,7 +434,10 @@ func TestAdminBackupImportFormPreventsDuplicateSubmits(t *testing.T) {
 		`hx-encoding="multipart/form-data"`,
 		`hx-sync="this:drop"`,
 		`hx-disabled-elt="find button[type='submit']"`,
+		`hx-indicator="#htmx-indicator"`,
 		`type="submit"`,
+		`type="file"`,
+		`name="backup_file"`,
 		`required`,
 		`Importando...`,
 		`accept=".db"`,
@@ -578,5 +631,115 @@ func assertSidecarDoesNotContain(t *testing.T, path, stale string) {
 	}
 	if string(data) == stale {
 		t.Fatalf("sidecar %s still contains stale content", filepath.Base(path))
+	}
+}
+
+func TestAdminBackupImportShellLoadsDropzoneScript(t *testing.T) {
+	tpl := template.Must(template.New("backup-shell").Funcs(buildFuncMap()).ParseFiles("../../templates/components/app_shell.html"))
+	var out bytes.Buffer
+	if err := tpl.ExecuteTemplate(&out, "app-v2-document-end", nil); err != nil {
+		t.Fatal(err)
+	}
+	const asset = "/assets/js/backup-dropzone.js"
+	if strings.Count(out.String(), `src="`+asset+`"`) != 1 {
+		t.Fatal("app shell must load the backup dropzone script exactly once")
+	}
+	if _, err := os.Stat("../.." + asset); err != nil {
+		t.Fatalf("backup dropzone script referenced by shell must exist: %v", err)
+	}
+}
+
+type compiledCSSRule struct {
+	selectors []string
+	decls     map[string]string
+}
+
+func collectCompiledCSSRules(css string, rules *[]compiledCSSRule) {
+	for {
+		open := strings.Index(css, "{")
+		if open < 0 {
+			return
+		}
+		prelude := strings.TrimSpace(css[:open])
+		depth := 1
+		i := open + 1
+		for i < len(css) && depth > 0 {
+			switch css[i] {
+			case '{':
+				depth++
+			case '}':
+				depth--
+			}
+			i++
+		}
+		body := css[open+1 : i-1]
+		quoteStripper := strings.NewReplacer(`"`, "", "'", "")
+		switch {
+		case strings.HasPrefix(prelude, "@") && strings.Contains(body, "{"):
+			collectCompiledCSSRules(body, rules)
+		case !strings.HasPrefix(prelude, "@"):
+			rule := compiledCSSRule{decls: map[string]string{}}
+			for _, selector := range strings.Split(prelude, ",") {
+				rule.selectors = append(rule.selectors, quoteStripper.Replace(strings.TrimSpace(selector)))
+			}
+			for _, decl := range strings.Split(body, ";") {
+				prop, value, found := strings.Cut(decl, ":")
+				if !found {
+					continue
+				}
+				rule.decls[strings.TrimSpace(prop)] = strings.TrimSpace(value)
+			}
+			*rules = append(*rules, rule)
+		}
+		css = css[i:]
+	}
+}
+
+func findCompiledCSSRule(rules []compiledCSSRule, selector string) (map[string]string, bool) {
+	for _, rule := range rules {
+		for _, candidate := range rule.selectors {
+			if candidate == selector {
+				return rule.decls, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func TestAdminBackupImportCompiledCSSIndicatorRules(t *testing.T) {
+	data, err := os.ReadFile("../../assets/css/style.css")
+	if err != nil {
+		t.Fatalf("read compiled css: %v", err)
+	}
+	var rules []compiledCSSRule
+	collectCompiledCSSRules(string(data), &rules)
+
+	idle, ok := findCompiledCSSRule(rules, ".htmx-indicator")
+	if !ok {
+		t.Fatal("compiled css must style .htmx-indicator")
+	}
+	if idle["opacity"] != "0" {
+		t.Fatalf("idle .htmx-indicator opacity = %q, want 0", idle["opacity"])
+	}
+
+	requestSelectors := []string{
+		".htmx-request .htmx-indicator",
+		".htmx-request.htmx-indicator",
+		"[data-backup-dropzone] button[type=submit][data-disabled-by-htmx] .htmx-indicator",
+	}
+	for _, selector := range requestSelectors {
+		decls, ok := findCompiledCSSRule(rules, selector)
+		if !ok {
+			t.Fatalf("compiled css must style %q", selector)
+		}
+		if decls["opacity"] != "1" {
+			t.Fatalf("request-state %q opacity = %q, want 1", selector, decls["opacity"])
+		}
+		switch decls["transition"] {
+		case "opacity 200ms ease-in", "opacity .2s ease-in":
+			// minifier may rewrite 200ms as .2s
+		default:
+			t.Fatalf("request-state %q transition = %q, want opacity 200ms ease-in", selector, decls["transition"])
+		}
 	}
 }

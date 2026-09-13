@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/contabase-app/contabase/internal/models"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type login2FAData struct {
@@ -23,16 +23,19 @@ type login2FAData struct {
 }
 
 type securityPageData struct {
-	Title          string
-	CSRFToken      string
-	Error          string
-	Success        string
-	TOTPEnabled    bool
-	TOTPSecret     string
-	TOTPURI        string
-	TOTPQRCodeData string
-	QRCode         string
-	BackupCodes    []string
+	Title                 string
+	CSRFToken             string
+	Error                 string
+	Success               string
+	TOTPEnabled           bool
+	TOTPSecret            string
+	TOTPURI               string
+	TOTPQRCodeData        string
+	QRCode                string
+	BackupCodes           []string
+	SecurityAction        string
+	RequiresCurrentFactor bool
+	MFASetupToken         string
 }
 
 func setSecOpsFailureHeaders(w http.ResponseWriter, eventType, severity, reason, attemptedEmail string) {
@@ -233,8 +236,11 @@ func handleLogin2FASubmit(w http.ResponseWriter, r *http.Request, tpl handlers.T
 		return
 	}
 	valid := false
+	usedTOTPCode := false
+	var totpTimeStep int64
 	if code != "" {
-		valid = validateTOTPCode(secret, code, time.Now())
+		totpTimeStep, valid = matchingTOTPTimeStep(secret, code, time.Now())
+		usedTOTPCode = valid
 	}
 	if !valid && backupCode != "" {
 		payload, err := authService.GetBackupCodeHashes(userID)
@@ -279,9 +285,21 @@ func handleLogin2FASubmit(w http.ResponseWriter, r *http.Request, tpl handlers.T
 		handleLogin2FAPageWithStatus(w, tpl, csrfToken, "Código inválido.", http.StatusUnauthorized)
 		return
 	}
-	if err := authService.ConsumePreAuthSession(preAuthToken); err != nil {
+	var consumeErr error
+	if usedTOTPCode {
+		consumeErr = authService.ConsumePreAuthSessionWithTOTP(preAuthToken, userID, totpTimeStep)
+	} else {
+		consumeErr = authService.ConsumePreAuthSession(preAuthToken)
+	}
+	if consumeErr != nil {
 		_ = authService.RevokePreAuthSession(preAuthToken)
 		clearPreAuthCookie(w, r)
+		if errors.Is(consumeErr, auth.ErrTOTPReplay) {
+			writeAuthAuditEvent(db, r, userID, "", "LOGIN_FAIL", map[string]string{"stage": "totp", "reason": "replayed_code"})
+			setSecOpsFailureHeaders(w, "auth.2fa_failed", "HIGH", "replayed_totp", userEmail)
+			handleLogin2FAPageWithStatus(w, tpl, csrfToken, "Código já utilizado. Aguarde o próximo código.", http.StatusUnauthorized)
+			return
+		}
 		setSecOpsFailureHeaders(w, "auth.2fa_failed", "HIGH", "expired_challenge", userEmail)
 		handleLogin2FAPageWithStatus(w, tpl, csrfToken, "Sessão de autenticação expirada. Faça login novamente.", http.StatusUnauthorized)
 		return
@@ -338,6 +356,23 @@ func handleLoginSubmit(w http.ResponseWriter, r *http.Request, tpl handlers.Temp
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+	userID, authErr := authService.Authenticate(email, password)
+	if authErr != nil && !errors.Is(authErr, auth.ErrInactiveAccount) && !errors.Is(authErr, auth.ErrInvalidCredentials) {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	lockoutUserID := loginUserID
+	if !exists {
+		// Keep the lockout lookup on the same path without persisting attacker-
+		// controlled identities in auth_lockouts.
+		lockoutUserID = "00000000-0000-0000-0000-000000000000"
+	}
+	locked, err := isAuthLocked(db, lockoutUserID, time.Now())
+	if err != nil {
+		log.Printf("auth lockout check failed: user=%s err=%v", loginUserID, err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 	if !exists {
 		writeAuthAuditEvent(db, r, "", "", "LOGIN_FAIL", map[string]string{"email": normalizedEmail, "reason": "unknown_identity"})
 		logSecurityEvent(db, r, "", "", "auth.invalid_user", "WARNING", map[string]any{
@@ -346,12 +381,6 @@ func handleLoginSubmit(w http.ResponseWriter, r *http.Request, tpl handlers.Temp
 		})
 		w.WriteHeader(http.StatusUnauthorized)
 		handleLoginPage(w, tpl, csrfToken, "E-mail ou senha inválidos.")
-		return
-	}
-	locked, err := isAuthLocked(db, loginUserID, time.Now())
-	if err != nil {
-		log.Printf("auth lockout check failed: user=%s err=%v", loginUserID, err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	if locked {
@@ -364,11 +393,10 @@ func handleLoginSubmit(w http.ResponseWriter, r *http.Request, tpl handlers.Temp
 		handleLoginPage(w, tpl, csrfToken, "E-mail ou senha inválidos.")
 		return
 	}
-	userID, err := authService.Authenticate(email, password)
-	if err != nil {
-		if errors.Is(err, auth.ErrInactiveAccount) || errors.Is(err, auth.ErrInvalidCredentials) {
+	if authErr != nil {
+		if errors.Is(authErr, auth.ErrInactiveAccount) || errors.Is(authErr, auth.ErrInvalidCredentials) {
 			reason := "invalid_password"
-			if errors.Is(err, auth.ErrInactiveAccount) {
+			if errors.Is(authErr, auth.ErrInactiveAccount) {
 				reason = "inactive_account"
 			}
 			writeAuthAuditEvent(db, r, loginUserID, "", "LOGIN_FAIL", map[string]string{"email": normalizedEmail, "reason": reason})
@@ -457,10 +485,36 @@ func handleSecuritySettingsPage(w http.ResponseWriter, r *http.Request, tpl hand
 }
 
 func handleTOTPSetupStart(w http.ResponseWriter, r *http.Request, tpl handlers.TemplateEngine, authService *auth.Service, userID string) {
-	_ = authService
+	enabled, err := authService.IsTOTPEnabled(userID)
+	if err != nil {
+		http.Error(w, "falha ao verificar 2FA", http.StatusInternalServerError)
+		return
+	}
+	if r.Method == http.MethodGet {
+		renderSensitiveMFAAction(w, tpl, r, "/configuracoes/seguranca/totp/setup", enabled, "Confirme sua identidade para configurar 2FA.")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulário inválido", http.StatusBadRequest)
+		return
+	}
+	if err := verifySensitiveMFAAction(authService, userID, r.FormValue("current_password"), r.FormValue("current_totp_code")); err != nil {
+		renderSensitiveMFAActionWithError(w, tpl, r, "/configuracoes/seguranca/totp/setup", enabled, "Não foi possível confirmar sua identidade.")
+		return
+	}
 	var email string
 	_ = authService.DB.QueryRow(`SELECT email FROM users WHERE id = ?`, userID).Scan(&email)
 	key, qrData, err := generateTOTPSetup(email)
+	if err != nil {
+		http.Error(w, "falha ao iniciar TOTP", http.StatusInternalServerError)
+		return
+	}
+	secretEnc, err := encryptTextForAuth(key.Secret())
+	if err != nil {
+		http.Error(w, "falha ao preparar TOTP", http.StatusInternalServerError)
+		return
+	}
+	challengeToken, _, err := authService.CreateMFASetupChallenge(userID, secretEnc, 10*time.Minute)
 	if err != nil {
 		http.Error(w, "falha ao iniciar TOTP", http.StatusInternalServerError)
 		return
@@ -472,6 +526,7 @@ func handleTOTPSetupStart(w http.ResponseWriter, r *http.Request, tpl handlers.T
 		TOTPURI:        key.URL(),
 		TOTPQRCodeData: qrData,
 		QRCode:         qrData,
+		MFASetupToken:  challengeToken,
 	}
 	if err := tpl.ExecuteTemplate(w, "perfil-2fa-setup", data); err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -479,29 +534,33 @@ func handleTOTPSetupStart(w http.ResponseWriter, r *http.Request, tpl handlers.T
 	}
 }
 
-func handleTOTPSetupConfirm(w http.ResponseWriter, r *http.Request, tpl handlers.TemplateEngine, authService *auth.Service, db *sql.DB, userID string) {
+func handleTOTPSetupConfirm(w http.ResponseWriter, r *http.Request, tpl handlers.TemplateEngine, authService *auth.Service, db *sql.DB, userID, currentSessionToken string) {
 	if err := r.ParseForm(); err != nil {
 		log.Printf("totp confirm parse form error: user=%s err=%v", userID, err)
 		http.Error(w, "formulário inválido", http.StatusBadRequest)
 		return
 	}
-	secret := strings.TrimSpace(r.FormValue("totp_secret"))
-	secret = strings.ToUpper(strings.NewReplacer(" ", "", "\n", "", "\r", "", "\t", "").Replace(secret))
+	challengeToken := strings.TrimSpace(r.FormValue("mfa_setup_token"))
 	code := strings.TrimSpace(r.FormValue("code"))
-	if secret == "" || code == "" {
-		log.Printf("totp confirm missing fields: user=%s secret_empty=%t code_empty=%t", userID, secret == "", code == "")
-		http.Error(w, "secret e código são obrigatórios", http.StatusBadRequest)
+	if challengeToken == "" || code == "" {
+		log.Printf("totp confirm missing fields: user=%s challenge_empty=%t code_empty=%t", userID, challengeToken == "", code == "")
+		http.Error(w, "desafio e código são obrigatórios", http.StatusBadRequest)
+		return
+	}
+	enc, err := authService.ResolveMFASetupChallenge(challengeToken, userID)
+	if err != nil {
+		http.Error(w, "configuração expirada. Confirme sua identidade e tente novamente.", http.StatusUnauthorized)
+		return
+	}
+	secret, err := decryptTextForAuth(enc)
+	if err != nil {
+		log.Printf("totp confirm challenge decrypt error: user=%s err=%v", userID, err)
+		http.Error(w, "falha ao validar configuração", http.StatusInternalServerError)
 		return
 	}
 	if !validateTOTPCode(secret, code, time.Now()) {
-		log.Printf("totp confirm invalid code: user=%s secret_len=%d code_len=%d", userID, len(secret), len(code))
+		log.Printf("totp confirm invalid code: user=%s code_len=%d", userID, len(code))
 		http.Error(w, "código TOTP inválido", http.StatusBadRequest)
-		return
-	}
-	enc, err := encryptTextForAuth(secret)
-	if err != nil {
-		log.Printf("totp confirm encryption error: user=%s err=%v auth_key_configured=%t", userID, err, strings.TrimSpace(os.Getenv("AUTH_ENCRYPTION_KEY")) != "")
-		http.Error(w, "falha ao criptografar segredo", http.StatusInternalServerError)
 		return
 	}
 	codes, err := generateBackupCodes()
@@ -519,8 +578,8 @@ func handleTOTPSetupConfirm(w http.ResponseWriter, r *http.Request, tpl handlers
 		http.Error(w, "falha ao gerar backup codes", http.StatusInternalServerError)
 		return
 	}
-	if err := authService.UpdateTOTPSetup(userID, enc, hashesJSON, true); err != nil {
-		log.Printf("totp confirm persist error: user=%s secret_len=%d backup_codes=%d err=%v", userID, len(secret), len(codes), err)
+	if err := authService.CompleteMFASetupChallenge(challengeToken, userID, enc, hashesJSON, currentSessionToken); err != nil {
+		log.Printf("totp confirm persist error: user=%s backup_codes=%d err=%v", userID, len(codes), err)
 		http.Error(w, "falha ao salvar TOTP", http.StatusInternalServerError)
 		return
 	}
@@ -536,8 +595,20 @@ func handleTOTPSetupConfirm(w http.ResponseWriter, r *http.Request, tpl handlers
 	}
 }
 
-func handleTOTPDisable(w http.ResponseWriter, r *http.Request, tpl handlers.TemplateEngine, authService *auth.Service, db *sql.DB, userID string) {
-	if err := authService.DisableTOTP(userID); err != nil {
+func handleTOTPDisable(w http.ResponseWriter, r *http.Request, tpl handlers.TemplateEngine, authService *auth.Service, db *sql.DB, userID, currentSessionToken string) {
+	if r.Method == http.MethodGet {
+		renderSensitiveMFAAction(w, tpl, r, "/configuracoes/seguranca/totp/desativar", true, "Confirme sua identidade para desativar 2FA.")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulário inválido", http.StatusBadRequest)
+		return
+	}
+	if err := verifySensitiveMFAAction(authService, userID, r.FormValue("current_password"), r.FormValue("current_totp_code")); err != nil {
+		renderSensitiveMFAActionWithError(w, tpl, r, "/configuracoes/seguranca/totp/desativar", true, "Não foi possível confirmar sua identidade.")
+		return
+	}
+	if err := authService.DisableTOTPAndRevokeOtherSessions(userID, currentSessionToken); err != nil {
 		http.Error(w, "falha ao desativar TOTP", http.StatusInternalServerError)
 		return
 	}
@@ -549,7 +620,66 @@ func handleTOTPDisable(w http.ResponseWriter, r *http.Request, tpl handlers.Temp
 	}
 }
 
+func verifySensitiveMFAAction(authService *auth.Service, userID, currentPassword, currentTOTPCode string) error {
+	var storedHash string
+	if err := authService.DB.QueryRow(`SELECT password_hash FROM users WHERE id = ? AND lower(trim(status)) = 'active' AND deleted_at = 0`, userID).Scan(&storedHash); err != nil {
+		return err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(currentPassword)) != nil {
+		return auth.ErrInvalidCredentials
+	}
+	enabled, err := authService.IsTOTPEnabled(userID)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return nil
+	}
+	secretEnc, err := authService.GetEncryptedTOTPSecret(userID)
+	if err != nil {
+		return err
+	}
+	secret, err := decryptTextForAuth(secretEnc)
+	if err != nil {
+		return err
+	}
+	step, valid := matchingTOTPTimeStep(secret, currentTOTPCode, time.Now())
+	if !valid {
+		return auth.ErrInvalidCredentials
+	}
+	return authService.ConsumeTOTPTimeStep(userID, step)
+}
+
+func renderSensitiveMFAAction(w http.ResponseWriter, tpl handlers.TemplateEngine, r *http.Request, action string, requiresCurrentFactor bool, message string) {
+	data := securityPageData{
+		CSRFToken:             csrfTokenFromRequestCookie(r),
+		SecurityAction:        action,
+		RequiresCurrentFactor: requiresCurrentFactor,
+		Title:                 message,
+	}
+	if err := tpl.ExecuteTemplate(w, "perfil-2fa-reauth", data); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
+func renderSensitiveMFAActionWithError(w http.ResponseWriter, tpl handlers.TemplateEngine, r *http.Request, action string, requiresCurrentFactor bool, message string) {
+	data := securityPageData{
+		CSRFToken:             csrfTokenFromRequestCookie(r),
+		SecurityAction:        action,
+		RequiresCurrentFactor: requiresCurrentFactor,
+		Title:                 "Confirme sua identidade para continuar.",
+		Error:                 message,
+	}
+	if err := tpl.ExecuteTemplate(w, "perfil-2fa-reauth", data); err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+	}
+}
+
 func handleBackupCodesRegenerate(w http.ResponseWriter, r *http.Request, tpl handlers.TemplateEngine, authService *auth.Service, db *sql.DB, userID string) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulário inválido", http.StatusBadRequest)
+		return
+	}
 	enabled, err := authService.IsTOTPEnabled(userID)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -557,6 +687,10 @@ func handleBackupCodesRegenerate(w http.ResponseWriter, r *http.Request, tpl han
 	}
 	if !enabled {
 		http.Error(w, "TOTP não está habilitado", http.StatusBadRequest)
+		return
+	}
+	if err := verifySensitiveMFAAction(authService, userID, r.FormValue("current_password"), r.FormValue("current_totp_code")); err != nil {
+		http.Error(w, "não foi possível confirmar sua identidade", http.StatusUnauthorized)
 		return
 	}
 	codes, err := generateBackupCodes()

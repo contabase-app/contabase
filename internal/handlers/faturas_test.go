@@ -55,6 +55,9 @@ func TestFaturasPageUsesGlobalAppShell(t *testing.T) {
 		`cb-v2-faturas-header`,
 		`id="faturas-content"`,
 		`id="payment-confirm-modal"`,
+		`id="global-confirm-modal"`,
+		`/assets/js/modals-global.js`,
+		`/assets/js/swipe.js`,
 		`/assets/css/faturas.css?v=test`,
 		`/assets/js/payment-confirm.js?v=test`,
 		`/assets/js/faturas.js?v=test`,
@@ -95,6 +98,7 @@ func TestFaturasPageUsesGlobalAppShell(t *testing.T) {
 		`data-tooltip-text="Mover para próxima fatura"`,
 		`Esquerda (&larr;) para mover a cobrança para a próxima fatura`,
 		`Direita (&rarr;) para apagar o registro`,
+		`cb-v2-swipe-hint`,
 	} {
 		if !strings.Contains(out.String(), expected) {
 			t.Fatalf("faturas move action missing %q in %s", expected, out.String())
@@ -122,6 +126,41 @@ func TestFaturasPageUsesGlobalAppShell(t *testing.T) {
 	} {
 		if !strings.Contains(out.String(), expected) {
 			t.Fatalf("empty faturas page missing %q", expected)
+		}
+	}
+}
+
+func TestFaturasIndexOmiteCabecalhoDuplicadoEEscondeDicaDeSwipeEmDesktop(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join(projectRoot(), "templates/pages/faturas.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := template.Must(template.New("faturas").Funcs(template.FuncMap{
+		"assetPath": func(path string) string { return path },
+	}).Parse(string(content)))
+	data := FaturaData{
+		CardName:       "Cartão que só aparece na página direta",
+		Reference:      "2026-10",
+		IsFaturasIndex: true,
+	}
+	var out strings.Builder
+	if err := tpl.ExecuteTemplate(&out, "invoice-summary", data); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), data.CardName) {
+		t.Fatalf("invoice hub repeated selected card identity: %s", out.String())
+	}
+	styles, err := os.ReadFile(resolveTemplatePath(t, "assets/css/design-system.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		".cb-v2-swipe-hint { display: none; }",
+		"@media (any-pointer: coarse)",
+		".cb-v2-swipe-hint { display: flex; }",
+	} {
+		if !strings.Contains(string(styles), expected) {
+			t.Fatalf("missing touch-only swipe hint style %q", expected)
 		}
 	}
 }
@@ -2747,7 +2786,7 @@ func TestFaturaTemplateExpoeFluxoPagamentoParcial(t *testing.T) {
 		"R$ 750,00",
 		"Pagamento parcial",
 		"Reembolso geral",
-		"grid-cols-1 gap-2.5 pt-1 md:grid-cols-3 md:gap-2",
+		"grid-cols-1 gap-2.5 pt-1",
 		"cb-invoice-action",
 		"cb-invoice-action-label",
 		"<span>Quitar</span><span>fatura</span>",
@@ -2765,12 +2804,18 @@ func TestFaturaTemplateExpoeFluxoPagamentoParcial(t *testing.T) {
 	}
 }
 
-func TestInvoiceActionButtonsAdaptFromMobileRowsToDesktopTiles(t *testing.T) {
+func TestInvoiceActionButtonsStayFullWidthRowsAtEveryBreakpoint(t *testing.T) {
 	raw, err := os.ReadFile(resolveTemplatePath(t, "assets/css/design-system.css"))
 	if err != nil {
 		t.Fatalf("read design system: %v", err)
 	}
 	stylesheet := string(raw)
+	actionStart := strings.Index(stylesheet, ".cb-invoice-action {")
+	actionEnd := strings.Index(stylesheet, ".cb-button-ghost {")
+	if actionStart < 0 || actionEnd <= actionStart {
+		t.Fatal("invoice action stylesheet section not found")
+	}
+	actionStyles := stylesheet[actionStart:actionEnd]
 	for _, expected := range []string{
 		".cb-invoice-action {",
 		"min-height: 3.25rem",
@@ -2780,13 +2825,42 @@ func TestInvoiceActionButtonsAdaptFromMobileRowsToDesktopTiles(t *testing.T) {
 		"text-transform: none",
 		".cb-invoice-action-label",
 		"content: \" \"",
-		"min-height: 7rem",
-		"flex-direction: column",
-		"font-size: 0.5625rem",
 	} {
-		if !strings.Contains(stylesheet, expected) {
+		if !strings.Contains(actionStyles, expected) {
 			t.Fatalf("invoice action style missing %q", expected)
 		}
+	}
+	for _, unexpected := range []string{"min-height: 7rem", "flex-direction: column", "md:grid-cols-3"} {
+		if strings.Contains(actionStyles, unexpected) {
+			t.Fatalf("invoice actions must remain full-width rows, found %q", unexpected)
+		}
+	}
+}
+
+func TestInvoiceHubMutationRendersOneAtomicDetailReplacement(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	seedInvoicePaymentScenario(t, db)
+
+	templates := template.Must(template.New("test").Parse(`
+{{define "faturas-content"}}<section id="faturas-content" {{if .OOBContent}}hx-swap-oob="outerHTML"{{end}}>R$ {{.Total.Reais}}{{.Total.Cents}}</section>{{end}}
+{{define "invoice-summary"}}<section id="invoice-summary" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
+{{define "invoice-transactions"}}<section id="invoice-transactions" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
+{{define "dashboard-cards"}}<section id="dashboard-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
+`))
+	h := TransactionHandler{DB: db, Templates: templates, WorkspaceID: "ws-test", UserID: "user-test"}
+	req := httptest.NewRequest(http.MethodPost, "/transacoes/purchase-test/salvar", nil)
+	req.Header.Set("HX-Current-URL", "http://localhost:8080/faturas?cartao=card-test&mes=8&ano=2026")
+	rr := httptest.NewRecorder()
+	if err := h.renderInvoiceContextOOB(rr, req, "invoice-2026-08", true); err != nil {
+		t.Fatalf("render invoice hub context: %v", err)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `id="faturas-content" hx-swap-oob="outerHTML"`) {
+		t.Fatalf("invoice hub response must atomically replace its content: %s", body)
+	}
+	if strings.Contains(body, `id="invoice-summary" hx-swap-oob="outerHTML"`) || strings.Contains(body, `id="invoice-transactions" hx-swap-oob="outerHTML"`) {
+		t.Fatalf("invoice hub response must not emit competing nested OOB swaps: %s", body)
 	}
 }
 
