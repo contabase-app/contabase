@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"strings"
 
+	"github.com/contabase-app/contabase/internal/features"
 	"github.com/contabase-app/contabase/internal/models"
 )
 
@@ -11,6 +12,7 @@ import (
 // authenticated member in the active workspace. It does not authorize routes
 // or mutations; those checks remain with their respective handlers.
 type AppShellAccess struct {
+	Features features.Flags
 	// Section is empty outside settings. ConfiguracoesData owns it when a
 	// settings page is active; keeping it on the shared shell contract lets the
 	// global navigation render safely on every V2 page.
@@ -34,6 +36,7 @@ func QueryAppShellAccess(db *sql.DB, workspaceID, userID string, isBusiness bool
 	isManager := role == models.RoleManager || role == "GESTOR"
 	canManageOps := isManager || isAdmin
 	return AppShellAccess{
+		Features:                  features.FromEnv(),
 		CanManageOps:              canManageOps,
 		CanManageGlobal:           isAdmin,
 		CanManageWorkspaceProfile: isBusiness && canManageOps,

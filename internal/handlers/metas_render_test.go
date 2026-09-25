@@ -405,7 +405,14 @@ func testMetasFormTemplates(t *testing.T) *template.Template {
 	if err != nil {
 		t.Fatalf("read metas form template: %v", err)
 	}
-	return template.Must(template.New("metas-form-test").Parse(string(content)))
+	pickerPath := resolveTemplatePath(t, "templates/components/icon_picker.html")
+	pickerContent, err := os.ReadFile(pickerPath)
+	if err != nil {
+		t.Fatalf("read icon picker template: %v", err)
+	}
+	return template.Must(template.New("metas-form-test").
+		Funcs(withAppShellTestFuncs(template.FuncMap{})).
+		Parse(string(content) + string(pickerContent)))
 }
 
 func resolveTemplatePath(t *testing.T, relative string) string {

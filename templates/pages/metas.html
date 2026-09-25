@@ -92,7 +92,7 @@
 </section>
 
 {{if .Limites}}
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 w-full">
+<div class="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3 w-full">
     {{range .Limites}}
     {{template "metas-limit-card" .}}
     {{end}}
@@ -109,9 +109,7 @@
 {{end}}
 
 {{define "metas-limit-card"}}
-{{$variant := "healthy"}}
-{{if ge .Percent 100}}{{$variant = "danger"}}{{else if ge .Percent 80}}{{$variant = "warning"}}{{end}}
-<article data-meta-card class="cb-card-dense relative flex flex-col gap-2.5">
+<article data-meta-card class="cb-card-dense relative flex flex-col">
     <a data-meta-card-link
         href="/metas/limite/historico?limit_id={{.ID}}"
         hx-get="/metas/limite/historico?limit_id={{.ID}}"
@@ -121,14 +119,15 @@
         aria-label="Abrir histórico do limite {{.CategoryName}}"
         class="absolute inset-0 z-0 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cb-border-focus)] focus-visible:ring-inset"></a>
 
-    <div class="relative z-10 flex items-start justify-between gap-3 pointer-events-none">
-        <div class="flex items-center gap-2.5 min-w-0">
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-{{.CategoryColor}}-500/10 text-{{.CategoryColor}}-600 dark:text-{{.CategoryColor}}-400">
-                <i data-lucide="{{.CategoryIcon}}" class="w-3.5 h-3.5"></i>
+    <header class="relative z-10 flex items-start justify-between gap-3 pointer-events-none">
+        <div class="flex items-center gap-3 min-w-0">
+            <span class="cb-icon-choice-mark" title="{{.IconLabel}}">
+                <i data-lucide="{{.IconOrDefault}}" aria-hidden="true"></i>
+                <span class="sr-only">Ícone: {{.IconLabel}}</span>
             </span>
             <div class="min-w-0">
                 <p class="metas-card-title truncate">{{.CategoryName}}</p>
-                <p class="metas-card-subtitle">Máx: R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}</p>
+                <p class="metas-card-subtitle">Limite mensal</p>
             </div>
         </div>
         <div class="cb-meta-menu relative z-20 pointer-events-auto" data-caixinha-dropdown data-ck-mode="menu">
@@ -151,22 +150,23 @@
                 </div>
             </div>
         </div>
+    </header>
+
+    <div class="relative z-10 flex items-end justify-between gap-3 metas-box-balance">
+        <div class="min-w-0">
+            <p class="metas-box-label">Disponível</p>
+            <p class="metas-box-value metas-box-value-{{.Tone}}" data-sensitive>R$ {{.Remaining.Reais}}{{.Remaining.Cents}}</p>
+        </div>
     </div>
 
-    <div class="relative z-10 flex flex-col gap-2 pointer-events-none">
-        <div class="flex items-center justify-between gap-2">
-            <span class="cb-status-chip cb-status-chip-{{$variant}}">{{.Percent}}% usado</span>
-            {{if ge .Percent 100}}
-            <span class="cb-status-chip cb-status-chip-danger">Excedido</span>
-            {{end}}
-        </div>
+    <div class="relative z-10 metas-progress-wrap metas-progress-tone-{{.Tone}}" data-metas-p="{{if ge .Percent 100}}0{{else}}{{sub 100 .Percent}}{{end}}">
+        <progress class="metas-progress" {{if ge .Percent 100}}value="0"{{else}}value="{{sub 100 .Percent}}"{{end}} max="100" aria-label="{{.CategoryName}}: R$ {{.Remaining.Reais}}{{.Remaining.Cents}} disponíveis de R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}">{{if ge .Percent 100}}0{{else}}{{sub 100 .Percent}}{{end}}%</progress>
+        <span class="metas-progress-chip" aria-hidden="true">{{if ge .Percent 100}}Excedido{{else}}{{sub 100 .Percent}}%{{end}}</span>
+    </div>
 
-        <progress class="metas-progress metas-progress-{{$variant}}" value="{{.Percent}}" max="100" aria-label="{{.CategoryName}}: {{.Percent}}% usado">{{.Percent}}%</progress>
-
-        <div class="metas-metrics">
-            <span>Gasto: <span class="metas-value" data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}}</span></span>
-            <span>Restam: <span class="metas-value" data-sensitive>R$ {{.Remaining.Reais}}{{.Remaining.Cents}}</span></span>
-        </div>
+    <div class="relative z-10 metas-metrics pointer-events-none">
+        <span>Utilizado: <span class="metas-value" data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}}</span></span>
+        <span>Limite: <span class="metas-value" data-sensitive>R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}</span></span>
     </div>
 </article>
 {{end}}
@@ -208,7 +208,7 @@
 </section>
 
 {{if .Caixinhas}}
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 w-full">
+<div class="grid grid-cols-1 md:grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-3 w-full">
     {{range .Caixinhas}}
     {{template "metas-caixinha-card" .}}
     {{end}}
@@ -225,10 +225,6 @@
 {{end}}
 
 {{define "metas-caixinha-card"}}
-{{$variant := "accent"}}
-{{if ge .Percent 100}}{{$variant = "success"}}{{end}}
-{{if .IsNegative}}{{$variant = "danger"}}{{end}}
-
 {{$status := "info"}}
 {{$statusLabel := "Em andamento"}}
 {{if .IsNegative}}
@@ -253,7 +249,7 @@
     {{end}}
 {{end}}
 
-<article data-meta-card class="cb-card-dense relative flex flex-col gap-2.5">
+<article data-meta-card class="cb-card-dense relative flex flex-col">
     <a data-meta-card-link
         href="/metas/caixinha/historico?box_id={{.ID}}"
         hx-get="/metas/caixinha/historico?box_id={{.ID}}"
@@ -263,86 +259,97 @@
         aria-label="Abrir histórico da reserva {{.Name}}"
         class="absolute inset-0 z-0 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cb-border-focus)] focus-visible:ring-inset"></a>
 
-    <div class="relative z-10 flex items-start justify-between gap-3 pointer-events-none">
-        <div class="flex items-center gap-2.5 min-w-0">
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]">
-                <i data-lucide="{{.Icon}}" class="w-3.5 h-3.5 icon-colored" data-cb-color="{{.Color}}"></i>
+    <header class="relative z-10 flex items-start justify-between gap-3 pointer-events-none">
+        <div class="flex items-center gap-3 min-w-0">
+            <span class="cb-icon-choice-mark" title="{{.IconLabel}}">
+                <i data-lucide="{{.IconOrDefault}}" aria-hidden="true"></i><span class="sr-only">Ícone: {{.IconLabel}}</span>
             </span>
             <div class="min-w-0">
                 <p class="metas-card-title truncate">{{.Name}}</p>
-                <p class="metas-card-subtitle">{{.CategoryName}}</p>
+                <p class="metas-card-subtitle truncate">{{.CategoryName}}</p>
             </div>
         </div>
-        <div class="cb-meta-menu relative z-20 pointer-events-auto" data-caixinha-dropdown data-ck-mode="menu">
-            <button type="button" data-ck-toggle class="cb-meta-menu-toggle" aria-label="Ações da reserva" aria-expanded="false">
-                <i data-lucide="ellipsis-vertical" class="w-4 h-4"></i>
-                <span class="sr-only">Mais</span>
-            </button>
-            <div data-ck-panel class="metas-menu-panel hidden">
-                <div data-ck-mode-panel="menu">
-                    <button type="button" data-ck-close
-                        hx-get="/metas/caixinha/aporte/sheet?box_id={{.ID}}"
-                        hx-target="#bottom-sheet-container"
-                        hx-swap="innerHTML"
-                        class="cb-meta-menu-item">
-                        <i data-lucide="plus-circle" class="w-3.5 h-3.5 text-[var(--cb-accent)]"></i>Aportar
-                    </button>
-                    <button type="button" data-ck-close
-                        hx-get="/metas/caixinha/resgate/sheet?box_id={{.ID}}"
-                        hx-target="#bottom-sheet-container"
-                        hx-swap="innerHTML"
-                        class="cb-meta-menu-item">
-                        <i data-lucide="arrow-up-from-line" class="w-3.5 h-3.5 text-[var(--cb-warning)]"></i>Liberar
-                    </button>
-                    <button type="button" data-ck-close
-                        hx-get="/metas/novo?aba=caixinha&id={{.ID}}"
-                        hx-target="#bottom-sheet-container"
-                        hx-swap="innerHTML"
-                        hx-push-url="false"
-                        class="cb-meta-menu-item">
-                        <i data-lucide="pencil" class="w-3.5 h-3.5 cb-text-muted"></i>Editar
-                    </button>
-                    {{if .CategoryID}}
-                    <a href="/lancamentos?categoria={{.CategoryID}}" data-ck-close class="cb-meta-menu-item">
-                        <i data-lucide="list" class="w-3.5 h-3.5 cb-text-muted"></i>Lançamentos
-                    </a>
-                    {{else}}
-                    <button type="button" disabled class="cb-meta-menu-item opacity-50 cursor-not-allowed">
-                        <i data-lucide="list" class="w-3.5 h-3.5 cb-text-subtle"></i>Lançamentos
-                    </button>
-                    {{end}}
+        <div class="flex items-center gap-2 shrink-0">
+            <span class="cb-status-chip cb-status-chip-{{$status}}">{{$statusLabel}}</span>
+            <div class="cb-meta-menu relative z-20 pointer-events-auto" data-caixinha-dropdown data-ck-mode="menu">
+                <button type="button" data-ck-toggle class="cb-meta-menu-toggle" aria-label="Ações da reserva" aria-expanded="false">
+                    <i data-lucide="ellipsis-vertical" class="w-4 h-4"></i>
+                    <span class="sr-only">Mais</span>
+                </button>
+                <div data-ck-panel class="metas-menu-panel hidden">
+                    <div data-ck-mode-panel="menu">
+                        <button type="button" data-ck-close
+                            hx-get="/metas/caixinha/aporte/sheet?box_id={{.ID}}"
+                            hx-target="#bottom-sheet-container"
+                            hx-swap="innerHTML"
+                            class="cb-meta-menu-item">
+                            <i data-lucide="plus-circle" class="w-3.5 h-3.5 text-[var(--cb-accent)]"></i>Aportar
+                        </button>
+                        <button type="button" data-ck-close
+                            hx-get="/metas/caixinha/resgate/sheet?box_id={{.ID}}"
+                            hx-target="#bottom-sheet-container"
+                            hx-swap="innerHTML"
+                            class="cb-meta-menu-item">
+                            <i data-lucide="arrow-up-from-line" class="w-3.5 h-3.5 text-[var(--cb-warning)]"></i>Liberar
+                        </button>
+                        <button type="button" data-ck-close
+                            hx-get="/metas/novo?aba=caixinha&id={{.ID}}"
+                            hx-target="#bottom-sheet-container"
+                            hx-swap="innerHTML"
+                            hx-push-url="false"
+                            class="cb-meta-menu-item">
+                            <i data-lucide="pencil" class="w-3.5 h-3.5 cb-text-muted"></i>Editar
+                        </button>
+                        {{if .CategoryID}}
+                        <a href="/lancamentos?categoria={{.CategoryID}}" data-ck-close class="cb-meta-menu-item">
+                            <i data-lucide="list" class="w-3.5 h-3.5 cb-text-muted"></i>Lançamentos
+                        </a>
+                        {{else}}
+                        <button type="button" disabled class="cb-meta-menu-item opacity-50 cursor-not-allowed">
+                            <i data-lucide="list" class="w-3.5 h-3.5 cb-text-subtle"></i>Lançamentos
+                        </button>
+                        {{end}}
+                    </div>
                 </div>
             </div>
         </div>
+    </header>
+
+    <div class="relative z-10 flex items-end justify-between gap-3 metas-box-balance pointer-events-none">
+        <div class="min-w-0">
+            <p class="metas-box-label">Saldo</p>
+            <p class="metas-box-value metas-box-value-{{.ProgressTone}}" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</p>
+        </div>
+        <div class="text-right shrink-0">
+            <p class="metas-box-label">Alvo</p>
+            {{if ne .Target.Reais "0"}}
+            <p class="metas-box-target" data-sensitive>R$ {{.Target.Reais}}{{.Target.Cents}}</p>
+            {{else}}
+            <p class="metas-box-target metas-box-target-empty">Sem alvo</p>
+            {{end}}
+        </div>
     </div>
 
-    <div class="relative z-10 flex flex-col gap-2 pointer-events-none">
-        <div class="flex items-center justify-between gap-2">
-            <span class="cb-status-chip cb-status-chip-info">{{.Percent}}%</span>
-            <span class="cb-status-chip cb-status-chip-{{$status}}">{{$statusLabel}}</span>
-        </div>
+    {{if ne .Target.Reais "0"}}
+    <div class="relative z-10 metas-progress-wrap metas-progress-tone-{{.ProgressTone}}" data-metas-p="{{.Percent}}">
+        <progress class="metas-progress" value="{{.Percent}}" max="100" aria-label="{{.Name}}: {{.ProgressToneLabel}}, {{.Percent}}% atingido">{{.Percent}}%</progress>
+        <span class="metas-progress-chip" aria-hidden="true">{{.Percent}}%</span>
+    </div>
+    {{end}}
 
-        <progress class="metas-progress metas-progress-{{$variant}}" value="{{.Percent}}" max="100" aria-label="{{.Name}}: {{.Percent}}% atingido">{{.Percent}}%</progress>
-
-        <div class="metas-metrics">
-            <span>Saldo: <span class="metas-value" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</span></span>
-            <span>Alvo: <span class="metas-value" data-sensitive>R$ {{.Target.Reais}}{{.Target.Cents}}</span></span>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 metas-pace">
-            {{if .MonthlyRecharge.Reais}}
-            <span class="flex items-center gap-1">
-                <i data-lucide="repeat" class="w-3 h-3"></i>
-                Aporte R$ {{.MonthlyRecharge.Reais}}{{.MonthlyRecharge.Cents}}/mês
-            </span>
-            {{end}}
-            {{if .ForecastLabel}}
-            <span class="flex items-center gap-1">
-                <i data-lucide="calendar-clock" class="w-3 h-3"></i>
-                {{.ForecastLabel}}
-            </span>
-            {{end}}
-        </div>
+    <div class="relative z-10 metas-box-foot pointer-events-none">
+        {{if ne .MonthlyRecharge.Reais "0"}}
+        <span class="metas-box-foot-item">
+            <i data-lucide="repeat" aria-hidden="true"></i>
+            <span>Aporte <b class="metas-box-foot-value" data-sensitive>R$ {{.MonthlyRecharge.Reais}}{{.MonthlyRecharge.Cents}}/mês</b></span>
+        </span>
+        {{end}}
+        {{if .ForecastLabel}}
+        <span class="metas-box-foot-item">
+            <i data-lucide="calendar-clock" aria-hidden="true"></i>
+            <span>{{.ForecastLabel}}</span>
+        </span>
+        {{end}}
     </div>
 </article>
 {{end}}
@@ -417,7 +424,7 @@
             <div class="px-6 pt-4 md:pt-5 pb-3">
                 <div class="flex items-center gap-3">
                     <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]">
-                        <i data-lucide="{{.Icon}}" class="w-4 h-4 icon-colored" data-cb-color="{{.Color}}"></i>
+                        <i data-lucide="{{.IconOrDefault}}" class="w-4 h-4 icon-colored" data-cb-color="{{.Color}}" aria-hidden="true"></i><span class="sr-only">Ícone: {{.IconLabel}}</span>
                     </span>
                     <div class="pr-8 min-w-0">
                         <h2 class="text-sm font-semibold cb-text-main truncate">Aportar na reserva</h2>
@@ -556,8 +563,8 @@
         </div>
         <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-[var(--cb-border-strong)] md:hidden"></div>
         <div class="pt-4 md:pt-5 pb-1 flex items-center gap-3 px-6">
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-{{.CategoryColor}}-500/15">
-                <i data-lucide="{{.CategoryIcon}}" class="w-4 h-4 text-{{.CategoryColor}}-400"></i>
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl border icon-wrap-colored" data-cb-color="{{.CategoryColor}}">
+                <i data-lucide="{{.CategoryIcon}}" class="w-4 h-4 icon-colored" data-cb-color="{{.CategoryColor}}" aria-hidden="true"></i>
             </span>
             <div class="pr-8 min-w-0">
                 <h2 class="text-sm font-semibold cb-text-main truncate">{{.LimitName}}</h2>

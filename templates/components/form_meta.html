@@ -55,6 +55,7 @@
                 <span class="cb-label">Valor máximo mensal</span>
                 <input name="max_amount_monthly" inputmode="decimal" value="{{.MaxAmountInput}}" placeholder="R$ 0,00" data-money-mask class="cb-input font-semibold h-12">
             </label>
+            {{template "icon-picker" iconPickerData "limiteIcon" "icon_key" .LimitIconKey .CategoryIcon}}
         </form>
 
         <form id="meta-caixinha-form" class="{{if $isLimite}}hidden {{end}}space-y-3" hx-post="/metas/caixinha" hx-swap="none" hx-indicator="#htmx-indicator">
@@ -90,6 +91,7 @@
                     Remover categoria
                 </button>
             </div>
+            {{template "icon-picker" iconPickerData "caixinhaIcon" "icon_key" .BoxIconKey .BoxIconFallback}}
             <label class="block">
                 <span class="cb-label">Valor alvo (Opcional)</span>
                 <input name="target_amount" inputmode="decimal" value="{{.TargetAmountInput}}" placeholder="R$ 0,00" data-money-mask class="cb-input font-semibold h-12">

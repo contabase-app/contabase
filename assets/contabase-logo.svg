@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="223" height="38" viewBox="0 0 223 38" role="img" aria-labelledby="title desc">
-  <title id="title">ContaBase</title>
-  <desc id="desc">Monograma CB branco e violeta acompanhado do nome ContaBase.</desc>
-  <rect width="38" height="38" fill="#0A0B0F"/>
-  <path fill="#F7F7F8" d="m16.6 5.6-11.5 5.9v18.3h12.1v-5.9H11V15l5.6-2.8V5.6Z"/>
-  <path fill="#7C5CFF" fill-rule="evenodd" d="m17.8 5.6 12.7 5.9v18.3H17.8V5.6Zm4.6 8.1v10.9h4v-4.4l-1.9-1 1.9-1.2v-2.6l-4-1.7Z"/>
-  <text x="49" y="25.5" fill="#F7F7F8" font-family="Geist Sans, Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="-0.35">ContaBase</text>
-</svg>

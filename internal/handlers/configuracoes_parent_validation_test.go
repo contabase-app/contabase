@@ -453,7 +453,11 @@ func TestConfiguracoesCategoriasTemplateUsesCanonicalBusinessDefaultMacro(t *tes
 	if err != nil {
 		t.Fatalf("read components template: %v", err)
 	}
-	tpl := template.Must(template.New("categorias").Funcs(template.FuncMap{
+	pickerSource, err := os.ReadFile("../../templates/components/icon_picker.html")
+	if err != nil {
+		t.Fatalf("read icon picker template: %v", err)
+	}
+	tpl := template.Must(template.New("categorias").Funcs(withAppShellTestFuncs(template.FuncMap{
 		"assetPath": func(path string) string { return path + "?v=test" },
 		"filterCategories": func(categories []ConfigCategoryRow, typ string) []ConfigCategoryRow {
 			var filtered []ConfigCategoryRow
@@ -464,7 +468,8 @@ func TestConfiguracoesCategoriasTemplateUsesCanonicalBusinessDefaultMacro(t *tes
 			}
 			return filtered
 		},
-	}).Parse(string(compSource)))
+	})).Parse(string(compSource)))
+	tpl = template.Must(tpl.Parse(string(pickerSource)))
 	tpl = template.Must(tpl.Parse(string(source)))
 
 	var buf bytes.Buffer
@@ -1074,7 +1079,11 @@ func TestBusinessTemplateUsesDeduzoesImpostosWithAccent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read components template: %v", err)
 	}
-	tpl := template.Must(template.New("categorias-accent").Funcs(template.FuncMap{
+	pickerSource, err := os.ReadFile("../../templates/components/icon_picker.html")
+	if err != nil {
+		t.Fatalf("read icon picker template: %v", err)
+	}
+	tpl := template.Must(template.New("categorias-accent").Funcs(withAppShellTestFuncs(template.FuncMap{
 		"assetPath": func(path string) string { return path + "?v=test" },
 		"filterCategories": func(categories []ConfigCategoryRow, typ string) []ConfigCategoryRow {
 			var filtered []ConfigCategoryRow
@@ -1085,7 +1094,8 @@ func TestBusinessTemplateUsesDeduzoesImpostosWithAccent(t *testing.T) {
 			}
 			return filtered
 		},
-	}).Parse(string(compSource)))
+	})).Parse(string(compSource)))
+	tpl = template.Must(tpl.Parse(string(pickerSource)))
 	tpl = template.Must(tpl.Parse(string(source)))
 
 	data := ConfiguracoesData{

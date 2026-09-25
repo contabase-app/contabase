@@ -456,6 +456,7 @@ func testHistoryTemplates(t *testing.T) TemplateEngine {
 `
 	tpl := template.Must(template.New("history-test").Funcs(template.FuncMap{
 		"assetPath": func(path string) string { return path },
+		"sub":       func(a, b int) int { return a - b },
 	}).Parse(stubs + string(content)))
 	addAppShellTestStubs(tpl)
 	return tpl

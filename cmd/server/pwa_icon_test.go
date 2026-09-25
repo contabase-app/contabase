@@ -126,22 +126,29 @@ func assertDarkIconCorners(t *testing.T, name string, img image.Image) {
 
 func assertBrandMarkIsVisible(t *testing.T, name string, img image.Image) {
 	t.Helper()
-	hasWhiteC := false
-	hasVioletB := false
+	// A identidade atual é o símbolo em gradiente roxo/violeta sobre o canvas
+	// escuro. O teste garante que a arte da marca continua presente e
+	// distinguível do fundo, em vez de um ícone vazio ou só chapado.
+	hasViolet := false
+	hasBrandLight := false
+	hasLocalContrast := false
 	bounds := img.Bounds()
-	for y := bounds.Min.Y; y < bounds.Max.Y && (!hasWhiteC || !hasVioletB); y++ {
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			pixel := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
-			if pixel.R >= 235 && pixel.G >= 235 && pixel.B >= 235 {
-				hasWhiteC = true
+			if pixel.B >= 180 && pixel.B >= pixel.G+60 && pixel.R >= 40 && pixel.R <= 190 {
+				hasViolet = true
 			}
-			if pixel.R >= 90 && pixel.B >= 220 && pixel.B >= pixel.G+80 {
-				hasVioletB = true
+			if pixel.R >= 90 && pixel.G >= 60 && pixel.B >= 190 {
+				hasBrandLight = true
+			}
+			if pixel.R >= 120 && pixel.G >= 100 && pixel.B >= 220 {
+				hasLocalContrast = true
 			}
 		}
 	}
-	if !hasWhiteC || !hasVioletB {
-		t.Fatalf("install icon %s must keep the white C and violet B visible", name)
+	if !hasViolet || !hasBrandLight || !hasLocalContrast {
+		t.Fatalf("install icon %s must keep the violet brand mark visible (violet=%v light=%v contrast=%v)", name, hasViolet, hasBrandLight, hasLocalContrast)
 	}
 }
 

@@ -41,6 +41,20 @@
     --v2-fab-hover: #9c80ff;
     --v2-avatar-surface: #c6c8ff;
     --v2-avatar-text: #27215e;
+    /* Tons semânticos únicos da interface (ver internal/handlers/ui_tones.go).
+       Toda barra, chip ou percentual usa estes tokens em vez de cor solta. */
+    --v2-tone-ok: var(--v2-positive);
+    --v2-tone-attention: var(--v2-warning);
+    --v2-tone-near: color-mix(in srgb, var(--v2-warning) 55%, var(--v2-danger));
+    --v2-tone-exceeded: var(--v2-danger);
+    --v2-tone-initial: color-mix(in srgb, var(--v2-danger) 55%, var(--v2-muted));
+    --v2-tone-progress: var(--v2-accent);
+    --v2-tone-complete: var(--v2-positive);
+    --v2-tone-info: var(--v2-info);
+    --v2-tone-neutral: var(--v2-muted);
+    --v2-tone-danger: var(--v2-danger);
+    --v2-tone-soft: var(--v2-detail-surface);
+    --v2-tone-track: var(--v2-progress-track);
     --v2-z-navigation: 20;
     --v2-z-fab: 25;
     --v2-z-drawer: 50;
@@ -75,6 +89,18 @@ html[data-theme="light"] .cb-v2 {
     --v2-fab-hover: #5534bd;
     --v2-avatar-surface: #ddd9ff;
     --v2-avatar-text: #45318b;
+    --v2-tone-ok: var(--v2-positive);
+    --v2-tone-attention: var(--v2-warning);
+    --v2-tone-near: color-mix(in srgb, var(--v2-warning) 78%, var(--v2-danger));
+    --v2-tone-exceeded: var(--v2-danger);
+    --v2-tone-initial: color-mix(in srgb, var(--v2-danger) 62%, var(--v2-muted));
+    --v2-tone-progress: var(--v2-accent);
+    --v2-tone-complete: #0f7a4a;
+    --v2-tone-info: var(--v2-info);
+    --v2-tone-neutral: var(--v2-muted);
+    --v2-tone-danger: var(--v2-danger);
+    --v2-tone-soft: var(--v2-detail-surface);
+    --v2-tone-track: var(--v2-progress-track);
 }
 
 html[data-theme="light"] .cb-v2-body { color-scheme: light; }
@@ -113,8 +139,24 @@ html[data-theme="light"] .cb-v2-body { color-scheme: light; }
     letter-spacing: -0.025em;
 }
 
-.cb-v2-brand img,
-.cb-v2-appbar-brand img { width: 28px; height: 28px; }
+/*
+ * Logo horizontal oficial. A variante exibida segue o tema pelo mecanismo já
+ * existente (atributo data-theme no <html>), sem JS adicional. Com a sidebar
+ * recolhida o lockup é substituído apenas pelo símbolo.
+ * A altura fica entre 45px e 52px conforme a tela: o rodapé e a barra superior
+ * são estreitos no mobile, então o logo acompanha o espaço de cada recorte.
+ */
+.cb-v2-brand-lockup,
+.cb-v2-brand-mark { width: auto; height: 52px; }
+
+.cb-v2-brand-mark { display: none; width: 46px; height: 46px; }
+.cb-v2-brand-lockup-light { display: none; }
+
+html[data-theme="light"] .cb-v2-brand-lockup-dark { display: none; }
+html[data-theme="light"] .cb-v2-brand-lockup-light { display: inline-block; }
+
+.cb-v2.is-sidebar-collapsed .cb-v2-sidebar .cb-v2-brand-lockup { display: none; }
+.cb-v2.is-sidebar-collapsed .cb-v2-sidebar .cb-v2-brand-mark { display: inline-block; }
 
 .cb-v2-sidebar {
     position: fixed;
@@ -277,7 +319,6 @@ html[data-theme="light"] .cb-v2-body { color-scheme: light; }
 }
 .cb-v2.is-sidebar-collapsed .cb-v2-sidebar-toggle-close { display: none; }
 .cb-v2.is-sidebar-collapsed .cb-v2-sidebar-toggle-open { display: block; }
-.cb-v2.is-sidebar-collapsed .cb-v2-sidebar .cb-v2-brand span,
 .cb-v2.is-sidebar-collapsed .cb-v2-sidebar .cb-v2-nav-link span,
 .cb-v2.is-sidebar-collapsed .cb-v2-sidebar .cb-v2-settings-nav,
 .cb-v2.is-sidebar-collapsed .cb-v2-sidebar .cb-v2-quick-actions > p,
@@ -344,7 +385,7 @@ html[data-theme="light"] .cb-v2-body { color-scheme: light; }
 .cb-v2-appbar-actions { display: none; align-items: center; gap: 6px; }
 .cb-v2-appbar-start { display: none; gap: 5px; }
 .cb-v2-appbar-brand { font-size: 16px; }
-.cb-v2-appbar-brand img { width: 26px; height: 26px; }
+.cb-v2-appbar-brand .cb-v2-brand-lockup { height: 50px; }
 .cb-v2-menu-button { display: none; }
 
 .cb-v2-icon-button {
@@ -519,13 +560,34 @@ html[data-theme="light"] .cb-v2-theme-icon-light { display: block; }
         display: grid;
         grid-template-columns: repeat(5, 1fr);
         min-height: calc(68px + env(safe-area-inset-bottom));
-        padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
+        padding: 6px 14px calc(6px + env(safe-area-inset-bottom));
         border-top: 1px solid var(--v2-border);
         background: var(--v2-sidebar);
     }
-    .cb-v2-bottom-nav a { display: grid; min-height: 44px; place-items: center; border-radius: 10px; color: var(--v2-muted); }
+    .cb-v2-bottom-nav a {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        min-width: 0;
+        min-height: 46px;
+        padding: 5px 4px;
+        border-radius: 10px;
+        color: var(--v2-muted);
+    }
     .cb-v2-bottom-nav a.is-active { background: var(--v2-accent-soft); color: var(--v2-accent-on-soft); }
     .cb-v2-bottom-nav svg { width: 20px; height: 20px; }
+    .cb-v2-bottom-nav .cb-v2-bottom-nav-label {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 1;
+        letter-spacing: 0.01em;
+    }
     .cb-v2-bottom-nav a:nth-child(1) { grid-column: 1; }
     .cb-v2-bottom-nav a:nth-child(2) { grid-column: 2; }
     .cb-v2-bottom-nav a:nth-child(3) { grid-column: 4; }
@@ -547,7 +609,7 @@ html[data-theme="light"] .cb-v2-theme-icon-light { display: block; }
     .cb-v2-menu-button:focus-visible { outline: 0; }
     .cb-v2-menu-button svg { width: 22px; height: 22px; }
     .cb-v2-appbar-brand { gap: 9px; font-size: 17px; }
-    .cb-v2-appbar-brand img { width: 30px; height: 30px; }
+    .cb-v2-appbar-brand .cb-v2-brand-lockup { height: 48px; }
     .cb-v2-setup-notice-commands { display: grid; }
 }
 
@@ -557,7 +619,7 @@ html[data-theme="light"] .cb-v2-theme-icon-light { display: block; }
     .cb-v2-icon-button { width: 36px; height: 40px; }
     .cb-v2-menu-button { width: 44px; height: 44px; }
     .cb-v2-menu-button svg { width: 22px; height: 22px; }
-    .cb-v2-appbar-brand img { width: 28px; height: 28px; }
+    .cb-v2-appbar-brand .cb-v2-brand-lockup { height: 45px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -9,6 +9,13 @@ func withAppShellTestFuncs(funcs template.FuncMap) template.FuncMap {
 	funcs["SetupTokenStillConfigured"] = func(any) bool { return false }
 	funcs["appCurrentTime"] = func() any { return nil }
 	funcs["appVersion"] = func() string { return "test" }
+	funcs["publicURL"] = func(path string) string { return "https://contabase.test" + path }
+	funcs["sub"] = func(a, b int) int { return a - b }
+	for name, fn := range IconTemplateFuncs() {
+		if _, exists := funcs[name]; !exists {
+			funcs[name] = fn
+		}
+	}
 	return funcs
 }
 

@@ -1,0 +1,32 @@
+{{define "investimentos-page"}}
+{{template "app-v2-document-head-start" .}}
+{{template "app-v2-document-head-end" .}}
+<main id="main-content" class="cb-v2-main" data-page-section="investments" data-page-title="{{.Title}}">
+    {{template "app-v2-appbar" .}}
+    <div class="p-4 space-y-6">
+        <header><h1 class="text-2xl font-bold">Investimentos</h1><p class="mt-2">Acompanhe seus lotes e os valores registrados.</p></header>
+        <form method="get" action="/investimentos" class="flex flex-wrap items-end gap-3">
+            <div><label class="cb-label" for="investment-filter">Exibir investimentos</label><select id="investment-filter" name="status" class="cb-input">
+                <option value="ATIVAS" {{if eq .Filter "ATIVAS"}}selected{{end}}>Ativas</option>
+                <option value="RESGATADAS" {{if eq .Filter "RESGATADAS"}}selected{{end}}>Resgatadas</option>
+                <option value="ARQUIVADAS" {{if eq .Filter "ARQUIVADAS"}}selected{{end}}>Arquivadas</option>
+                <option value="TODAS" {{if eq .Filter "TODAS"}}selected{{end}}>Todas</option>
+            </select></div><button class="cb-button cb-button-secondary h-10 px-4 text-xs" type="submit">Filtrar</button>
+        </form>
+        <section class="cb-panel overflow-x-auto" aria-label="Lista de investimentos">
+            {{if .Investments}}
+            <table class="w-full text-sm text-left">
+                <thead><tr><th scope="col" class="p-3">Nome</th><th scope="col" class="p-3">Instituição</th><th scope="col" class="p-3">Tipo</th><th scope="col" class="p-3 text-right">Valor atual</th><th scope="col" class="p-3">Status</th><th scope="col" class="p-3">Vencimento</th></tr></thead>
+                <tbody>{{range .Investments}}<tr>
+                    <td class="p-3"><a href="/investimentos/{{.ID}}" class="underline font-semibold">{{.Name}}</a></td><td class="p-3">{{if .Institution}}{{.Institution}}{{else}}—{{end}}</td><td class="p-3">{{.Kind}}</td>
+                    <td class="p-3 text-right whitespace-nowrap">{{.CurrentValue}}</td><td class="p-3">{{.Status}}{{if .ArchivedAt}} · Arquivada{{end}}</td><td class="p-3 whitespace-nowrap">{{with .MaturityDate}}{{.}}{{else}}Sem vencimento{{end}}</td>
+                </tr>{{end}}</tbody>
+            </table>
+            {{else}}<div class="cb-empty-state"><h2 class="font-semibold">Nenhum investimento neste filtro</h2><p>Escolha outro filtro ou cadastre seu primeiro lote abaixo.</p><a href="#novo-investimento" class="underline">Criar investimento</a></div>{{end}}
+        </section>
+        <section id="novo-investimento" class="cb-panel space-y-4" aria-labelledby="investment-create-title"><h2 id="investment-create-title" class="text-lg font-semibold">Novo investimento</h2>{{template "investimento-form" .Form}}</section>
+    </div>
+</main>
+{{template "app-v2-shell-after-main" .}}
+{{template "app-v2-document-end" .}}
+{{end}}

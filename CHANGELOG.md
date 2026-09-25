@@ -11,6 +11,23 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
+## [v1.0.0-beta.5] — 2026-09-24 — Home renovada e identidade visual
+
+### Adicionado
+- **Ícones:** catálogo e seletor de ícones para categorias, limites e reservas, com migration 66 aditiva para as chaves dos ícones e normalização das categorias antigas sem escolha explícita.
+- **Identidade visual:** novos assets de marca para o shell, telas de acesso e PWA.
+
+### Alterado
+- **Home/Dashboard:** apresentação renovada dos resumos financeiros, limites e metas, com cartões compactos, ícones e barras de progresso.
+- **Metas e Limites:** cartões, resumos e formulários reorganizados para leitura e escolha de ícones.
+- **Lançamentos:** resumo por situação e resultado líquido apresentados de forma mais clara, incluindo ajustes de layout responsivo.
+
+### Corrigido
+- **Conta:** editar metadados mantém o saldo apenas para leitura no formulário.
+
+### Limitações conhecidas
+- A publicação da candidata depende de Release Preflight, artifacts, checksums, GHCR e smokes de instalação e atualização. O canal Beta permanece em `v1.0.0-beta.4` até a validação desses gates.
+
 ## [v1.0.0-beta.4] — 2026-09-13 — remediação pré-produção e correções financeiras
 
 ### Segurança

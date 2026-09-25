@@ -82,11 +82,26 @@
 
 .cb-v2-faturas-index-main .cb-v2-card-rail::-webkit-scrollbar { display: none; }
 
+/*
+ * O trilho só divide a tela quando cada cartão ainda cabe por inteiro.
+ * Em 1024px a conta de 3 por tela dava 208px por cartão e o piso antigo de
+ * 276px esticava dois cartões espremidos, com o nome reduzido a 84px de
+ * reticências. O cartão mantém a largura cheia (342px) e o trilho rola;
+ * a quantidade visível passa a ser consequência da largura real.
+ */
 .cb-v2-faturas-index-main .cb-v2-credit-card {
-    flex: 0 0 min(342px, calc((100% - 32px) / 3));
-    width: min(342px, calc((100% - 32px) / 3));
-    min-width: 276px;
+    flex: 0 0 342px;
+    width: 342px;
+    min-width: min(100%, 342px);
+    aspect-ratio: auto;
+    min-height: 190px;
     scroll-snap-align: start;
+}
+
+/* O cartão é alvo de navegação: o nome quebra em vez de virar reticências. */
+.cb-v2-faturas-index-main .cb-v2-credit-card .cb-v2-credit-card-top > strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .cb-v2-faturas-index-main .cb-v2-credit-card.is-selected {

@@ -20,12 +20,15 @@
                         <h1 id="dashboard-title">Olá, {{.UserFirstName}}</h1>
                         <p>Acompanhe a posição financeira e os compromissos próximos.</p>
                     </div>
-                    <nav class="cb-v2-context-actions" aria-label="Ações do Dashboard">
-                        <a href="/lancamentos"><i data-lucide="arrow-left-right"></i><span>Extrato</span></a>
-                        <a href="/contas"><i data-lucide="receipt-text"></i><span>Obrigações</span></a>
-                        <a href="/metas?aba=reservas"><i data-lucide="goal"></i><span>Reservas</span></a>
-                        <a href="/relatorios"><i data-lucide="chart-column"></i><span>Fechamento</span></a>
-                    </nav>
+                    <div class="cb-v2-quick-actions" aria-label="Ações rápidas">
+                        <p class="cb-v2-quick-label">Ações rápidas</p>
+                        <nav class="cb-v2-context-actions">
+                            <a href="/lancamentos"><i data-lucide="arrow-left-right" aria-hidden="true"></i><span>Extrato</span></a>
+                            <a href="/contas"><i data-lucide="receipt-text" aria-hidden="true"></i><span>Obrigações</span></a>
+                            <a href="/metas?aba=reservas"><i data-lucide="goal" aria-hidden="true"></i><span>Reservas</span></a>
+                            <a href="/relatorios"><i data-lucide="chart-column" aria-hidden="true"></i><span>Fechamento</span></a>
+                        </nav>
+                    </div>
                 </section>
 
                 <div class="cb-v2-grid">
@@ -33,7 +36,7 @@
                         <section class="cb-v2-panel cb-v2-financial-panel" aria-labelledby="v2-financial-title">
                             <header class="cb-v2-panel-header">
                                 <h2 id="v2-financial-title">Posição financeira</h2>
-                                <a href="/metas?aba=reservas" aria-label="Gerenciar reservas"><i data-lucide="arrow-up-right"></i></a>
+                                <a href="/metas?aba=reservas" aria-label="Gerenciar reservas"><i data-lucide="arrow-up-right" aria-hidden="true"></i></a>
                             </header>
                             <p class="cb-v2-label">Saldo total</p>
                             <p class="cb-v2-balance {{if .Balance.IsNegative}}is-negative{{end}}" data-sensitive>R$ {{.Balance.Money.Reais}}{{.Balance.Money.Cents}}</p>
@@ -63,26 +66,35 @@
                                 {{end}}
                             </div>
                             {{else}}
-                            <div class="cb-v2-empty-state"><i data-lucide="landmark"></i><p>Nenhuma conta cadastrada.</p><a href="/configuracoes/contas">Cadastrar conta</a></div>
+                            <div class="cb-v2-empty-state"><i data-lucide="landmark" aria-hidden="true"></i><p>Nenhuma conta cadastrada.</p><a href="/configuracoes/contas">Cadastrar conta</a></div>
                             {{end}}
                         </section>
                     </div>
 
                     <div class="cb-v2-right-column">
                         <section class="cb-v2-card-section" aria-labelledby="v2-cards-title">
-                            <div class="cb-v2-section-heading"><h2 id="v2-cards-title">Cartões e faturas</h2><div class="cb-v2-carousel-controls" aria-label="Navegar pelos cartões"><button type="button" class="cb-v2-carousel-control" data-v2-carousel-prev aria-label="Cartões anteriores" disabled><i data-lucide="chevron-left"></i></button><button type="button" class="cb-v2-carousel-control" data-v2-carousel-next aria-label="Próximos cartões" disabled><i data-lucide="chevron-right"></i></button></div></div>
+                            <div class="cb-v2-section-heading">
+                                <h2 id="v2-cards-title">Cartões e faturas</h2>
+                                <div class="cb-v2-section-tools">
+                                    <a href="/faturas" class="cb-v2-text-link">Ver todos</a>
+                                    <div class="cb-v2-carousel-controls" aria-label="Navegar pelos cartões">
+                                        <button type="button" class="cb-v2-carousel-control" data-v2-carousel-prev aria-label="Cartões anteriores" disabled><i data-lucide="chevron-left" aria-hidden="true"></i></button>
+                                        <button type="button" class="cb-v2-carousel-control" data-v2-carousel-next aria-label="Próximos cartões" disabled><i data-lucide="chevron-right" aria-hidden="true"></i></button>
+                                    </div>
+                                </div>
+                            </div>
                             {{if .Cards}}
-                            <div class="cb-v2-card-carousel" data-v2-card-group data-v2-show-more-initial="6">
+                            <div class="cb-v2-card-carousel" data-v2-card-group>
                             <div class="cb-v2-card-rail" data-v2-carousel role="region" aria-label="Cartões de crédito">
                                 {{range $index, $card := .Cards}}
                                 {{template "credit-card-tile" $card}}
                                 {{end}}
+                                {{if gt (len .Cards) 6}}<a href="/faturas" class="cb-v2-all-invoices-slide" data-v2-all-invoices-slide><i data-lucide="arrow-up-right" aria-hidden="true"></i><strong>Ver todas Faturas</strong><span>Consulte todos os cartões e faturas</span><span class="cb-v2-all-invoices-arrow" aria-hidden="true">→</span></a>{{end}}
                             </div>
-                            <div class="cb-v2-carousel-dots" data-v2-carousel-dots aria-hidden="true">{{range $index, $card := .Cards}}<span{{if eq $index 0}} class="is-active"{{end}}></span>{{end}}</div>
-                            {{if gt (len .Cards) 6}}<div class="cb-v2-mobile-cards-toggle"><button type="button" data-v2-mobile-cards-toggle aria-expanded="false"><span data-v2-show-more-label>Mostrar mais cartões</span></button></div>{{end}}
+                            <div class="cb-v2-carousel-dots" data-v2-carousel-dots aria-hidden="true"></div>
                             </div>
                             {{else}}
-                            <a class="cb-v2-empty-card" href="/configuracoes/cartoes"><i data-lucide="credit-card"></i><span><strong>Cadastre seu primeiro cartão</strong><small>Acompanhe faturas, vencimentos e limite disponível.</small></span><i data-lucide="arrow-up-right"></i></a>
+                            <a class="cb-v2-empty-card" href="/configuracoes/cartoes"><i data-lucide="credit-card" aria-hidden="true"></i><span><strong>Cadastre seu primeiro cartão</strong><small>Acompanhe faturas, vencimentos e limite disponível.</small></span><i data-lucide="arrow-up-right" aria-hidden="true"></i></a>
                             {{end}}
                         </section>
 
@@ -92,11 +104,24 @@
                                 {{if .Limits}}
                                 <div class="cb-v2-progress-list">
                                     {{range .Limits}}
-                                    <div class="cb-v2-progress-item"><div><strong>{{.CategoryName}}</strong><span data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}} / R$ {{.Limit.Reais}}{{.Limit.Cents}}</span></div><progress class="cb-v2-progress {{if ge .Percent 90}}is-danger{{else if ge .Percent 70}}is-warning{{end}}" value="{{.Percent}}" max="100" aria-label="{{.CategoryName}}: {{.Percent}}% utilizado">{{.Percent}}%</progress></div>
+                                    <div class="cb-v2-progress-item cb-v2-meter--{{.Tone}}">
+                                        <div class="cb-v2-progress-item-head">
+                                            <span class="cb-v2-progress-icon" title="{{.IconLabel}}">
+                                                <i data-lucide="{{.IconOrDefault}}" aria-hidden="true"></i>
+                                                <span class="sr-only">Ícone: {{.IconLabel}}</span>
+                                            </span>
+                                            <strong>{{.CategoryName}}</strong>
+                                            <span data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}} / R$ {{.Limit.Reais}}{{.Limit.Cents}}</span>
+                                        </div>
+                                        <div class="cb-v2-progress-bar">
+                                            <progress class="cb-v2-meter-track" value="{{.Percent}}" max="100" aria-label="{{.CategoryName}}: {{.ToneLabel}}, {{.PercentExact}}% de R$ {{.Limit.Reais}}{{.Limit.Cents}}">{{.PercentExact}}%</progress>
+                                            <span class="cb-v2-progress-label" aria-hidden="true">{{.PercentExact}}%</span>
+                                        </div>
+                                    </div>
                                     {{end}}
                                 </div>
                                 {{else}}
-                                <div class="cb-v2-empty-state"><i data-lucide="sliders-horizontal"></i><p>Nenhum limite definido.</p><a href="/metas?aba=limites">Criar limite</a></div>
+                                <div class="cb-v2-empty-state"><i data-lucide="sliders-horizontal" aria-hidden="true"></i><p>Nenhum limite definido.</p><a href="/metas?aba=limites">Criar limite</a></div>
                                 {{end}}
                             </section>
 
@@ -105,11 +130,24 @@
                                 {{if .Boxes}}
                                 <div class="cb-v2-progress-list">
                                     {{range .Boxes}}
-                                    <div class="cb-v2-progress-item"><div><strong>{{.Name}}</strong><span class="{{if .IsNegative}}is-negative{{end}}" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}} / R$ {{.Target.Reais}}{{.Target.Cents}}</span></div><progress class="cb-v2-progress {{if .IsNegative}}is-danger{{end}}" value="{{.Percent}}" max="100" aria-label="{{.Name}}: {{.Percent}}% atingido">{{.Percent}}%</progress></div>
+                                    <div class="cb-v2-progress-item cb-v2-meter--{{.ProgressTone}}">
+                                        <div class="cb-v2-progress-item-head">
+                                            <span class="cb-v2-progress-icon" title="{{.IconLabel}}">
+                                                <i data-lucide="{{.IconOrDefault}}" aria-hidden="true"></i>
+                                                <span class="sr-only">Ícone: {{.IconLabel}}</span>
+                                            </span>
+                                            <strong>{{.Name}}</strong>
+                                            <span class="{{if .IsNegative}}is-negative{{end}}" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}} / R$ {{.Target.Reais}}{{.Target.Cents}}</span>
+                                        </div>
+                                        <div class="cb-v2-progress-bar">
+                                            <progress class="cb-v2-meter-track" value="{{.Percent}}" max="100" aria-label="{{.Name}}: {{.ProgressToneLabel}}, {{.Percent}}% de R$ {{.Target.Reais}}{{.Target.Cents}}">{{.Percent}}%</progress>
+                                            <span class="cb-v2-progress-label" aria-hidden="true">{{.Percent}}%</span>
+                                        </div>
+                                    </div>
                                     {{end}}
                                 </div>
                                 {{else}}
-                                <div class="cb-v2-empty-state"><i data-lucide="goal"></i><p>Crie metas para acompanhar suas reservas.</p><a href="/metas?aba=reservas">Criar reserva</a></div>
+                                <div class="cb-v2-empty-state"><i data-lucide="goal" aria-hidden="true"></i><p>Crie metas para acompanhar suas reservas.</p><a href="/metas?aba=reservas">Criar reserva</a></div>
                                 {{end}}
                             </section>
                         </div>
@@ -121,10 +159,10 @@
                                 <button type="button" id="v2-tab-receivables" role="tab" aria-selected="false" aria-controls="v2-panel-receivables" data-v2-action-tab="receivables">A receber <span>{{.Receivable7dCount}}</span></button>
                             </div>
                             <div id="v2-panel-payables" role="tabpanel" aria-labelledby="v2-tab-payables" data-v2-action-panel="payables">
-                                {{if .PendingPayables}}<p class="cb-v2-action-total">Total <strong data-sensitive>R$ {{.Payable7dTotal.Reais}}{{.Payable7dTotal.Cents}}</strong> · {{.Payable7dCount}} itens</p><div class="cb-v2-action-list">{{range .PendingPayables}}<a class="cb-v2-action-row {{if .IsOverdue}}is-overdue{{end}}" href="/contas"><span class="cb-v2-action-dot" aria-hidden="true"></span><span><strong>{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</strong><small>{{.DueDateLabel}}{{if .IsOverdue}} · Vencido{{end}}</small></span><b data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</b></a>{{end}}</div>{{else}}<div class="cb-v2-empty-state"><i data-lucide="circle-check"></i><p>Nenhuma conta a pagar nos próximos 7 dias.</p></div>{{end}}
+                                {{if .PendingPayables}}<p class="cb-v2-action-total">Total <strong data-sensitive>R$ {{.Payable7dTotal.Reais}}{{.Payable7dTotal.Cents}}</strong> · {{.Payable7dCount}} itens</p><div class="cb-v2-action-list">{{range .PendingPayables}}<a class="cb-v2-action-row {{if .IsOverdue}}is-overdue{{end}}" href="/contas"><span class="cb-v2-action-dot" aria-hidden="true"></span><span><strong>{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</strong><small>{{.DueDateLabel}}{{if .IsOverdue}} · Vencido{{end}}</small></span><b data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</b></a>{{end}}</div>{{else}}<div class="cb-v2-empty-state"><i data-lucide="circle-check" aria-hidden="true"></i><p>Nenhuma conta a pagar nos próximos 7 dias.</p></div>{{end}}
                             </div>
                             <div id="v2-panel-receivables" role="tabpanel" aria-labelledby="v2-tab-receivables" data-v2-action-panel="receivables" hidden>
-                                {{if .PendingReceivables}}<p class="cb-v2-action-total">Total <strong class="is-positive" data-sensitive>R$ {{.Receivable7dTotal.Reais}}{{.Receivable7dTotal.Cents}}</strong> · {{.Receivable7dCount}} itens</p><div class="cb-v2-action-list">{{range .PendingReceivables}}<a class="cb-v2-action-row cb-v2-action-receivable {{if .IsOverdue}}is-overdue{{end}}" href="/contas"><span class="cb-v2-action-dot" aria-hidden="true"></span><span><strong>{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</strong><small>{{.DueDateLabel}}{{if .IsOverdue}} · Vencido{{end}}</small></span><b data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</b></a>{{end}}</div>{{else}}<div class="cb-v2-empty-state"><i data-lucide="circle-check"></i><p>Nenhum recebimento nos próximos 7 dias.</p></div>{{end}}
+                                {{if .PendingReceivables}}<p class="cb-v2-action-total">Total <strong class="is-positive" data-sensitive>R$ {{.Receivable7dTotal.Reais}}{{.Receivable7dTotal.Cents}}</strong> · {{.Receivable7dCount}} itens</p><div class="cb-v2-action-list">{{range .PendingReceivables}}<a class="cb-v2-action-row cb-v2-action-receivable {{if .IsOverdue}}is-overdue{{end}}" href="/contas"><span class="cb-v2-action-dot" aria-hidden="true"></span><span><strong>{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</strong><small>{{.DueDateLabel}}{{if .IsOverdue}} · Vencido{{end}}</small></span><b data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</b></a>{{end}}</div>{{else}}<div class="cb-v2-empty-state"><i data-lucide="circle-check" aria-hidden="true"></i><p>Nenhum recebimento nos próximos 7 dias.</p></div>{{end}}
                             </div>
                         </section>
                     </div>

@@ -53,3 +53,78 @@ func TestCustomPermissionsAreIgnoredForMVP(t *testing.T) {
 		}
 	}
 }
+
+func TestInvestmentPermissionTokens(t *testing.T) {
+	if PermissionInvestmentsRead != "investments:read" || PermissionInvestmentsWrite != "investments:write" {
+		t.Fatalf("unexpected investment tokens: %q / %q", PermissionInvestmentsRead, PermissionInvestmentsWrite)
+	}
+	if PermissionInvestmentsRead == "" || PermissionInvestmentsWrite == "" || PermissionInvestmentsRead == PermissionInvestmentsWrite {
+		t.Fatal("investment tokens must be nonempty and distinct")
+	}
+}
+
+func TestInvestmentPermissionsPreserveRoleMatrix(t *testing.T) {
+	for _, role := range []string{RoleAdmin, RoleManager, RoleUser, "UNKNOWN", "OWNER", ""} {
+		t.Run(role, func(t *testing.T) {
+			member := &WorkspaceMember{Role: role}
+			for _, token := range []string{PermissionInvestmentsRead, PermissionInvestmentsWrite, "investments:unknown"} {
+				// ADMIN intentionally accepts every nonempty token, including unknown ones.
+				if got, want := HasPermission(member, token), role == RoleAdmin; got != want {
+					t.Errorf("HasPermission(%q, %q) = %v, want %v", role, token, got, want)
+				}
+			}
+			for _, token := range []string{"", " \t\n"} {
+				if HasPermission(member, token) {
+					t.Errorf("role %q accepted empty token %q", role, token)
+				}
+			}
+		})
+	}
+	for _, token := range []string{PermissionInvestmentsRead, PermissionInvestmentsWrite} {
+		if HasPermission(nil, token) {
+			t.Errorf("nil member accepted %q", token)
+		}
+	}
+}
+
+func TestInvestmentCustomPermissionsRemainInert(t *testing.T) {
+	for _, token := range []string{PermissionInvestmentsRead, PermissionInvestmentsWrite, " INVESTMENTS:WRITE "} {
+		if IsAllowedCustomPermission(token) {
+			t.Errorf("custom permission %q unexpectedly allowed", token)
+		}
+	}
+	for _, role := range []string{RoleManager, RoleUser} {
+		for _, raw := range []string{"", "[]", `["investments:read"]`, `["investments:write"]`,
+			`["investments:read","investments:write"]`, "investments:read,investments:write"} {
+			t.Run(role+"/"+raw, func(t *testing.T) {
+				member := &WorkspaceMember{Role: role, CustomPermissionsRaw: raw}
+				for _, hydrated := range []bool{false, true} {
+					if hydrated {
+						member.CustomPermissions = ParsePermissionList(raw)
+					}
+					for _, token := range []string{PermissionInvestmentsRead, PermissionInvestmentsWrite} {
+						if HasPermission(member, token) {
+							t.Errorf("custom list granted %q (hydrated=%v)", token, hydrated)
+						}
+					}
+					if !HasPermission(member, "transactions:read") {
+						t.Error("legacy read permission lost")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestInvestmentPermissionsDoNotIntroduceWriteReadInheritance(t *testing.T) {
+	// No current role has only investments:write. Use the existing fixed-role
+	// counterexample to guard against introducing generic write -> read logic.
+	member := &WorkspaceMember{Role: RoleManager}
+	if !HasPermission(member, "goals:write") || HasPermission(member, "goals:read") {
+		t.Fatal("write must not implicitly grant the corresponding read token")
+	}
+	member.SetCustomPermissions([]string{PermissionInvestmentsWrite})
+	if HasPermission(member, PermissionInvestmentsWrite) || HasPermission(member, PermissionInvestmentsRead) {
+		t.Fatal("custom investment write must grant neither write nor read")
+	}
+}

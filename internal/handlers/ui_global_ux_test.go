@@ -318,9 +318,12 @@ func TestDashboardMobileSectionSpacing(t *testing.T) {
 	}
 	mobile := body[idx:]
 	if !strings.Contains(mobile, ".cb-v2-left-column { display: contents; }") {
-		t.Fatal("mobile dashboard should place accounts before cards without horizontal scrolling")
+		t.Fatal("mobile dashboard should flatten the layout columns")
 	}
-	if !strings.Contains(mobile, ".cb-v2-card-rail { display: grid;") {
-		t.Fatal("mobile dashboard should show credit cards in the vertical list")
+	if !strings.Contains(mobile, ".cb-v2-card-rail { display: flex;") || !strings.Contains(mobile, "scroll-snap-type: x mandatory") {
+		t.Fatal("mobile dashboard should show credit cards in a horizontal snap rail")
+	}
+	if !strings.Contains(mobile, ".cb-v2-card-rail > [data-v2-card-item]:nth-child(n+7) { display: none; }") {
+		t.Fatal("mobile dashboard should hide real cards after the sixth")
 	}
 }

@@ -91,8 +91,9 @@
             <span class="flex items-center justify-center w-4 h-4 shrink-0 transition-transform duration-200 -rotate-90" data-cat-chevron>
                 <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-[var(--cb-text-muted)]"></i>
             </span>
-            <span class="flex h-7 w-7 items-center justify-center rounded-md transition-colors shrink-0 {{if eq .Type "INCOME"}}cb-category-type-income{{else}}cb-category-type-expense{{end}}">
-                <i data-lucide="{{if eq .Type "INCOME"}}arrow-up-right{{else}}arrow-down-right{{end}}" class="h-3.5 w-3.5"></i>
+            <span class="flex h-7 w-7 items-center justify-center rounded-md transition-colors shrink-0 {{if eq .Type "INCOME"}}cb-category-type-income{{else}}cb-category-type-expense{{end}}" title="{{if eq .Type "INCOME"}}Receita{{else}}Despesa{{end}} · {{.IconLabel}}">
+                <i data-lucide="{{.IconOrDefault}}" class="h-3.5 w-3.5" aria-hidden="true"></i>
+                <span class="sr-only">{{if eq .Type "INCOME"}}Receita{{else}}Despesa{{end}} · {{.IconLabel}}</span>
             </span>
             <p class="text-sm font-semibold text-[var(--cb-text-main)] truncate" data-cat-name>{{.Name}}</p>
             <span class="cb-status-chip cb-status-chip-info truncate max-w-[130px]" data-cat-macro>
@@ -135,6 +136,10 @@
 <article class="group flex items-center justify-between pl-5 md:pl-7 pr-2 py-1.5" data-cat-name="{{.Name}}">
     <div class="flex items-center gap-2 min-w-0">
         <span class="w-1.5 h-full min-h-[16px] rounded-full bg-[var(--cb-border-subtle)] shrink-0 self-stretch" aria-hidden="true"></span>
+        <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[var(--cb-text-muted)]" title="{{.IconLabel}}">
+            <i data-lucide="{{.IconOrDefault}}" class="h-3 w-3" aria-hidden="true"></i>
+            <span class="sr-only">Ícone: {{.IconLabel}}</span>
+        </span>
         <p class="text-[13px] text-[var(--cb-text-muted)] truncate" data-cat-name>{{.Name}}</p>
     </div>
     <div class="flex items-center gap-1 shrink-0 ml-2">
@@ -162,6 +167,9 @@
         <div>
             <label class="cb-label">Nome da categoria</label>
             <input type="text" name="name" value="{{.Name}}" placeholder="Nome da categoria" class="cb-input">
+        </div>
+        <div class="max-w-sm">
+            {{template "icon-picker" iconPickerData "catEditIcon" "icon" .Icon .DerivedIconKey}}
         </div>
         <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
             <label class="space-y-1 block">
@@ -346,7 +354,7 @@
             </div>
             <div>
                 <label class="cb-label">Saldo atual</label>
-                <p class="cb-input" data-sensitive>{{.Balance}}</p>
+                <p class="cb-card-muted px-3 py-2.5 text-sm font-semibold cb-text-main" data-sensitive>{{.Balance}}</p>
                 <p class="text-xs text-[var(--cb-text-muted)]">Editar os dados da conta preserva o saldo.</p>
             </div>
         </div>

@@ -23,8 +23,15 @@ func TestDockerRuntimeImageCopiesCompleteAssetsTree(t *testing.T) {
 	}
 
 	for _, required := range []string{
-		"assets/contabase-monogram.svg",
+		"assets/branding/logo-dark.png",
+		"assets/branding/logo-light.png",
+		"assets/branding/logo-mark.png",
+		"assets/branding/og-dark.png",
+		"assets/branding/og-light.png",
 		"assets/favicon.ico",
+		"assets/favicon-16x16.png",
+		"assets/favicon-32x32.png",
+		"assets/apple-touch-icon.png",
 		"assets/manifest.json",
 		"assets/pwa-icon-dark-192x192.png",
 		"assets/pwa-icon-dark-512x512.png",

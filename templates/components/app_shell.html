@@ -15,6 +15,14 @@
     <meta name="theme-color" content="#0d121a">
     <meta name="mobile-web-app-capable" content="yes">
     <title>{{if .Title}}{{.Title}} | ContaBase{{else}}ContaBase{{end}}</title>
+    <meta name="description" content="Sua base financeira privada, self-hosted e sem telemetria.">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="ContaBase">
+    <meta property="og:title" content="{{if .Title}}{{.Title}} | ContaBase{{else}}ContaBase{{end}}">
+    <meta property="og:description" content="Sua base financeira privada, self-hosted e sem telemetria.">
+    <meta property="og:url" content="{{publicURL "/"}}">
+    <meta property="og:image" content="{{publicURL (assetPath "/assets/branding/og-dark.png")}}">
+    <meta name="twitter:card" content="summary_large_image">
     <link rel="shortcut icon" href="/assets/favicon.ico" type="image/x-icon">
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
@@ -35,7 +43,7 @@
 </head>
 <body class="cb-v2-body">
     <div id="htmx-indicator" class="cb-v2-indicator" aria-live="polite">
-        <img src="/assets/contabase-monogram.svg" alt="" aria-hidden="true">
+        <img src="{{assetPath "/assets/branding/logo-mark.png"}}" alt="" aria-hidden="true">
         Processando…
     </div>
     <div id="global-feedback" class="cb-v2-feedback hidden" aria-live="polite"></div>
@@ -43,10 +51,19 @@
         {{template "app-v2-desktop-sidebar" .}}
 {{end}}
 
+{{define "app-v2-brand-logo"}}
+{{/* Logo horizontal oficial. A variante acompanha o tema pelo mecanismo
+     existente (data-theme no <html>); recolhida, a sidebar mostra só o símbolo. */}}
+<img class="cb-v2-brand-lockup cb-v2-brand-lockup-dark" src="{{assetPath "/assets/branding/logo-dark.png"}}" alt="" aria-hidden="true">
+<img class="cb-v2-brand-lockup cb-v2-brand-lockup-light" src="{{assetPath "/assets/branding/logo-light.png"}}" alt="" aria-hidden="true">
+<img class="cb-v2-brand-mark" src="{{assetPath "/assets/branding/logo-mark.png"}}" alt="" aria-hidden="true">
+{{end}}
+
 {{define "app-v2-nav-links"}}
 <a class="cb-v2-nav-link {{if eq .Title "Dashboard"}}is-active{{end}}" data-v2-nav-section="dashboard" href="/"{{if eq .Title "Dashboard"}} aria-current="page"{{end}}><i data-lucide="layout-dashboard"></i><span>Painel</span></a>
 <a class="cb-v2-nav-link {{if or (eq .Title "Lançamentos") (eq .Title "Fluxo de Caixa")}}is-active{{end}}" data-v2-nav-section="transactions" href="/lancamentos"{{if or (eq .Title "Lançamentos") (eq .Title "Fluxo de Caixa")}} aria-current="page"{{end}}><i data-lucide="list"></i><span>Lançamentos</span></a>
 <a class="cb-v2-nav-link {{if eq .Title "Metas"}}is-active{{end}}" data-v2-nav-section="goals" href="/metas"{{if eq .Title "Metas"}} aria-current="page"{{end}}><i data-lucide="target"></i><span>Metas</span></a>
+{{if .Features.Investments}}<a class="cb-v2-nav-link {{if eq .Title "Investimentos"}}is-active{{end}}" data-v2-nav-section="investments" href="/investimentos"{{if eq .Title "Investimentos"}} aria-current="page"{{end}}><i data-lucide="chart-no-axes-combined"></i><span>Investimentos</span></a>{{end}}
 <a class="cb-v2-nav-link {{if eq .Title "Contas"}}is-active{{end}}" data-v2-nav-section="accounts" href="/contas"{{if eq .Title "Contas"}} aria-current="page"{{end}}><i data-lucide="receipt-text"></i><span>Contas</span></a>
 <a class="cb-v2-nav-link {{if or (eq .Title "Faturas") (eq .Title "Fatura")}}is-active{{end}}" data-v2-nav-section="invoices" href="/faturas"{{if or (eq .Title "Faturas") (eq .Title "Fatura")}} aria-current="page"{{end}}><i data-lucide="credit-card"></i><span>Faturas</span></a>
 <a class="cb-v2-nav-link {{if eq .Title "Relatórios"}}is-active{{end}}" data-v2-nav-section="reports" href="/relatorios"{{if eq .Title "Relatórios"}} aria-current="page"{{end}}><i data-lucide="chart-no-axes-combined"></i><span>Relatórios</span></a>
@@ -108,7 +125,7 @@
 {{define "app-v2-desktop-sidebar"}}
 <aside class="cb-v2-sidebar" data-v2-sidebar aria-label="Navegação principal">
     <div class="cb-v2-sidebar-header">
-        <a class="cb-v2-brand" href="/"><img src="/assets/contabase-monogram.svg" alt="" aria-hidden="true"><span>ContaBase</span></a>
+        <a class="cb-v2-brand" href="/" aria-label="ContaBase">{{template "app-v2-brand-logo" .}}</a>
         <button type="button" class="cb-v2-icon-button cb-v2-sidebar-toggle" data-v2-sidebar-toggle aria-expanded="true" aria-label="Recolher menu lateral" title="Recolher menu lateral"><i class="cb-v2-sidebar-toggle-close" data-lucide="panel-left-close"></i><i class="cb-v2-sidebar-toggle-open" data-lucide="panel-left-open"></i></button>
     </div>
     <div class="cb-v2-sidebar-body">
@@ -131,7 +148,7 @@
 <header class="cb-v2-appbar">
     <div class="cb-v2-appbar-start">
         <button type="button" class="cb-v2-icon-button cb-v2-menu-button" data-v2-menu-trigger aria-label="Abrir navegação"><i data-lucide="menu"></i></button>
-        <a class="cb-v2-appbar-brand" href="/"><img src="/assets/contabase-monogram.svg" alt="" aria-hidden="true"><span>ContaBase</span></a>
+        <a class="cb-v2-appbar-brand" href="/" aria-label="ContaBase">{{template "app-v2-brand-logo" .}}</a>
     </div>
     <div class="cb-v2-appbar-actions">
         <button type="button" class="cb-v2-icon-button" data-theme-toggle data-v2-theme-toggle aria-label="Alternar tema claro ou escuro" title="Alternar tema claro ou escuro"><i class="cb-v2-theme-icon-dark" data-lucide="sun" aria-hidden="true"></i><i class="cb-v2-theme-icon-light" data-lucide="moon" aria-hidden="true"></i></button>
@@ -163,7 +180,7 @@
 {{define "app-v2-drawer-navigation"}}
 <dialog class="cb-v2-drawer" data-v2-menu-dialog aria-label="Navegação">
     <div class="cb-v2-drawer-content">
-        <div class="cb-v2-drawer-header"><a class="cb-v2-brand" href="/"><img src="/assets/contabase-monogram.svg" alt="" aria-hidden="true"><span>ContaBase</span></a><button type="button" class="cb-v2-icon-button" data-v2-menu-close aria-label="Fechar navegação"><i data-lucide="x"></i></button></div>
+        <div class="cb-v2-drawer-header"><a class="cb-v2-brand" href="/" aria-label="ContaBase">{{template "app-v2-brand-logo" .}}</a><button type="button" class="cb-v2-icon-button" data-v2-menu-close aria-label="Fechar navegação"><i data-lucide="x"></i></button></div>
         <nav class="cb-v2-nav-list">
             {{template "app-v2-nav-links" .}}
         </nav>
@@ -179,10 +196,10 @@
 </dialog>
 
 <nav class="cb-v2-bottom-nav" aria-label="Navegação principal">
-    <a class="{{if eq .Title "Dashboard"}}is-active{{end}}" data-v2-nav-section="dashboard" href="/"{{if eq .Title "Dashboard"}} aria-current="page"{{end}} aria-label="Painel"><i data-lucide="layout-dashboard"></i><span class="sr-only">Painel</span></a>
-    <a class="{{if or (eq .Title "Lançamentos") (eq .Title "Fluxo de Caixa")}}is-active{{end}}" data-v2-nav-section="transactions" href="/lancamentos"{{if or (eq .Title "Lançamentos") (eq .Title "Fluxo de Caixa")}} aria-current="page"{{end}} aria-label="Lançamentos"><i data-lucide="list"></i><span class="sr-only">Lançamentos</span></a>
-    <a class="{{if eq .Title "Metas"}}is-active{{end}}" data-v2-nav-section="goals" href="/metas"{{if eq .Title "Metas"}} aria-current="page"{{end}} aria-label="Metas"><i data-lucide="target"></i><span class="sr-only">Metas</span></a>
-    <a class="{{if eq .Title "Contas"}}is-active{{end}}" data-v2-nav-section="accounts" href="/contas"{{if eq .Title "Contas"}} aria-current="page"{{end}} aria-label="Contas"><i data-lucide="receipt-text"></i><span class="sr-only">Contas</span></a>
+    <a class="{{if eq .Title "Dashboard"}}is-active{{end}}" data-v2-nav-section="dashboard" href="/"{{if eq .Title "Dashboard"}} aria-current="page"{{end}} aria-label="Início"><i data-lucide="layout-dashboard"></i><span class="cb-v2-bottom-nav-label">Início</span></a>
+    <a class="{{if or (eq .Title "Lançamentos") (eq .Title "Fluxo de Caixa")}}is-active{{end}}" data-v2-nav-section="transactions" href="/lancamentos"{{if or (eq .Title "Lançamentos") (eq .Title "Fluxo de Caixa")}} aria-current="page"{{end}} aria-label="Transações"><i data-lucide="list"></i><span class="cb-v2-bottom-nav-label">Transações</span></a>
+    <a class="{{if eq .Title "Metas"}}is-active{{end}}" data-v2-nav-section="goals" href="/metas"{{if eq .Title "Metas"}} aria-current="page"{{end}} aria-label="Metas"><i data-lucide="target"></i><span class="cb-v2-bottom-nav-label">Metas</span></a>
+    <a class="{{if eq .Title "Contas"}}is-active{{end}}" data-v2-nav-section="accounts" href="/contas"{{if eq .Title "Contas"}} aria-current="page"{{end}} aria-label="Contas"><i data-lucide="receipt-text"></i><span class="cb-v2-bottom-nav-label">Contas</span></a>
 </nav>
 {{end}}
 
@@ -281,6 +298,7 @@
     <script src="/assets/js/htmx-lifecycle.js"></script>
     <script src="/assets/js/backup-dropzone.js"></script>
     <script src="{{assetPath "/assets/js/config-selects.js"}}"></script>
+    <script src="{{assetPath "/assets/js/icon-picker.js"}}"></script>
     <script src="{{assetPath "/assets/js/month-selector.js"}}"></script>
     <script src="/assets/js/app-shell.js"></script>
 </body>

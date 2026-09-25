@@ -1,0 +1,53 @@
+{{define "investimento-detalhe-page"}}
+{{template "app-v2-document-head-start" .}}
+{{template "app-v2-document-head-end" .}}
+<main id="main-content" class="cb-v2-main" data-page-section="investments" data-page-title="{{.Title}}">
+    {{template "app-v2-appbar" .}}
+    <div class="p-4 space-y-6">
+        <header><a href="/investimentos" class="underline">Voltar para investimentos</a><h1 class="text-2xl font-bold mt-2">{{.Detail.Investment.Name}}</h1></header>
+        <section class="cb-panel" aria-label="Dados do investimento">
+            <dl class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div><dt class="cb-label">Instituição</dt><dd>{{with .Detail.Investment.Institution}}{{.}}{{else}}Não informada{{end}}</dd></div>
+                <div><dt class="cb-label">Tipo</dt><dd>{{.Detail.Investment.Kind}}</dd></div>
+                <div><dt class="cb-label">Valor aplicado</dt><dd class="font-semibold">{{.Principal}}</dd></div>
+                <div><dt class="cb-label">Valor atual</dt><dd class="font-semibold">{{.CurrentValue}}</dd>{{if .Detail.CurrentIsPrincipal}}<dd class="text-sm mt-2">Sem posição registrada: o valor atual corresponde ao valor aplicado.</dd>{{end}}</div>
+                <div><dt class="cb-label">Data da aplicação</dt><dd>{{.Detail.Investment.AppliedDate}}</dd></div>
+                <div><dt class="cb-label">Vencimento</dt><dd>{{with .Detail.Investment.MaturityDate}}{{.}}{{else}}Sem vencimento{{end}}</dd></div>
+                <div><dt class="cb-label">Regime de tributação</dt><dd>{{if eq .Detail.Investment.TaxRegime "IR_REGRESSIVO"}}IR regressivo{{else if eq .Detail.Investment.TaxRegime "ISENTO_PF"}}Isento para pessoa física{{else}}Manual{{end}}</dd></div>
+                <div><dt class="cb-label">Status</dt><dd>{{.Detail.Investment.Status}}{{if .Detail.Investment.ArchivedAt}} · Arquivada{{end}}</dd></div>
+            </dl>
+            <div class="mt-4"><h2 class="cb-label">Observações de rentabilidade</h2><p class="break-words">{{with .Detail.Investment.YieldNote}}{{.}}{{else}}Não informadas{{end}}</p></div>
+        </section>
+        <section class="cb-panel space-y-4" aria-labelledby="investment-history-title"><h2 id="investment-history-title" class="text-lg font-semibold">Histórico de posições</h2>
+            {{if .Valuations}}<table class="w-full text-sm text-left"><thead><tr><th scope="col" class="p-3">Data</th><th scope="col" class="p-3 text-right">Valor</th></tr></thead><tbody>{{range .Valuations}}<tr><td class="p-3">{{.Date}}</td><td class="p-3 text-right">{{.Value}}</td></tr>{{end}}</tbody></table>{{else}}<p>Nenhuma posição registrada.</p>{{end}}
+            {{if eq .Detail.Investment.Status "ATIVA"}}{{template "investimento-valuation-form" .Form}}{{end}}
+        </section>
+        {{if eq .Detail.Investment.Status "ATIVA"}}<section class="cb-panel space-y-4" aria-labelledby="investment-edit-title"><h2 id="investment-edit-title" class="text-lg font-semibold">Editar investimento</h2>{{template "investimento-form" .Form}}</section>{{end}}
+        {{if eq .Detail.Investment.Status "ATIVA"}}
+        <section class="cb-panel space-y-4" aria-labelledby="investment-redeem-title">
+            <h2 id="investment-redeem-title" class="text-lg font-semibold">Resgatar investimento</h2>
+            <p class="text-sm">Registre o valor final para encerrar este investimento. O resgate não pode ser desfeito e não movimenta o saldo das contas.</p>
+            <form method="post" action="/investimentos/{{.Detail.Investment.ID}}/resgatar" hx-post="/investimentos/{{.Detail.Investment.ID}}/resgatar" hx-swap="none" hx-indicator="#htmx-indicator" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{.Form.CSRFToken}}">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><label class="cb-label" for="investment-redeemed-date">Data do resgate</label><input id="investment-redeemed-date" type="date" name="redeemed_date" min="{{.Detail.Investment.AppliedDate}}" class="cb-input" required></div>
+                    <div><label class="cb-label" for="investment-final-amount">Valor final (centavos)</label><input id="investment-final-amount" type="number" inputmode="numeric" name="final_amount_cents" min="0" step="1" class="cb-input" aria-describedby="investment-redeem-help" required><p id="investment-redeem-help" class="text-sm mt-2">Ex.: 100000 para R$ 1.000,00. Zero é um valor final válido.</p></div>
+                </div>
+                <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm">Resgatar investimento</button>
+            </form>
+        </section>
+        {{else if not .Detail.Investment.ArchivedAt}}
+        <section class="cb-panel space-y-4" aria-labelledby="investment-archive-title">
+            <h2 id="investment-archive-title" class="text-lg font-semibold">Arquivar investimento</h2>
+            <p class="text-sm">O histórico será preservado em Arquivadas. O arquivamento não pode ser desfeito.</p>
+            <form method="post" action="/investimentos/{{.Detail.Investment.ID}}/arquivar" hx-post="/investimentos/{{.Detail.Investment.ID}}/arquivar" hx-swap="none" hx-indicator="#htmx-indicator">
+                <input type="hidden" name="csrf_token" value="{{.Form.CSRFToken}}">
+                <button type="submit" class="cb-button cb-button-secondary h-11 px-6 text-sm">Arquivar investimento</button>
+            </form>
+        </section>
+        {{end}}
+    </div>
+</main>
+{{template "app-v2-shell-after-main" .}}
+{{template "app-v2-document-end" .}}
+{{end}}

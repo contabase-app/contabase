@@ -1886,6 +1886,16 @@ END`,
 		name:    "account_balance_adjustments",
 		up:      migrateAccountBalanceAdjustments,
 	},
+	{
+		version: 65,
+		name:    "investments_and_valuations",
+		up:      migrateInvestmentsAndValuations,
+	},
+	{
+		version: 66,
+		name:    "icon_keys_for_categories_limits_and_boxes",
+		up:      migrateIconKeys,
+	},
 }
 
 func migrateTransactionRefunds(tx *sql.Tx) error {

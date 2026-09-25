@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/contabase-app/contabase/internal/categorycontract"
+	"github.com/contabase-app/contabase/internal/icons"
 	"github.com/google/uuid"
 )
 
@@ -165,8 +166,8 @@ func SeedWorkspaceCategoriesTx(tx *sql.Tx, workspaceID, workspaceType string) er
 			INSERT INTO categories
 				(id, workspace_id, name, icon, color, type, macro_group, parent_id, is_fixed, created_at)
 			VALUES
-				(?, ?, ?, 'tag', '#6b7280', ?, ?, NULL, 0, ?)
-		`, parentID, workspaceID, parent.Name, parent.Type, parent.MacroGroup, now); err != nil {
+				(?, ?, ?, ?, '#6b7280', ?, ?, NULL, 0, ?)
+		`, parentID, workspaceID, parent.Name, icons.CategoryIconOrDefault(parent.Name), parent.Type, parent.MacroGroup, now); err != nil {
 			return fmt.Errorf("seeder: falha ao inserir categoria pai '%s': %w", parent.Name, err)
 		}
 
@@ -175,8 +176,8 @@ func SeedWorkspaceCategoriesTx(tx *sql.Tx, workspaceID, workspaceType string) er
 				INSERT INTO categories
 					(id, workspace_id, name, icon, color, type, macro_group, parent_id, is_fixed, created_at)
 				VALUES
-					(?, ?, ?, 'tag', '#6b7280', ?, ?, ?, 0, ?)
-			`, uuid.NewString(), workspaceID, childName, parent.Type, parent.MacroGroup, parentID, now); err != nil {
+					(?, ?, ?, ?, '#6b7280', ?, ?, ?, 0, ?)
+			`, uuid.NewString(), workspaceID, childName, icons.CategoryIconOrDefault(childName), parent.Type, parent.MacroGroup, parentID, now); err != nil {
 				return fmt.Errorf("seeder: falha ao inserir subcategoria '%s' (pai: '%s'): %w", childName, parent.Name, err)
 			}
 		}
@@ -500,8 +501,8 @@ func ensureCanonicalCategoryTreeTx(tx *sql.Tx, workspaceID, workspaceType string
 				INSERT INTO categories
 					(id, workspace_id, name, icon, color, type, macro_group, parent_id, is_fixed, created_at)
 				VALUES
-					(?, ?, ?, 'tag', '#6b7280', ?, ?, NULL, 0, ?)
-			`, parentID, workspaceID, parent.Name, parent.Type, parent.MacroGroup, now); err != nil {
+					(?, ?, ?, ?, '#6b7280', ?, ?, NULL, 0, ?)
+			`, parentID, workspaceID, parent.Name, icons.CategoryIconOrDefault(parent.Name), parent.Type, parent.MacroGroup, now); err != nil {
 				return nil, nil, fmt.Errorf("category reseed: falha ao criar categoria pai %q: %w", parent.Name, err)
 			}
 			created = append(created, CategoryReseedItem{WorkspaceID: workspaceID, ID: parentID, Name: parent.Name, Type: parent.Type, MacroGroup: parent.MacroGroup})
@@ -521,8 +522,8 @@ func ensureCanonicalCategoryTreeTx(tx *sql.Tx, workspaceID, workspaceType string
 				INSERT INTO categories
 					(id, workspace_id, name, icon, color, type, macro_group, parent_id, is_fixed, created_at)
 				VALUES
-					(?, ?, ?, 'tag', '#6b7280', ?, ?, ?, 0, ?)
-			`, childID, workspaceID, childName, parent.Type, parent.MacroGroup, parentID, now); err != nil {
+					(?, ?, ?, ?, '#6b7280', ?, ?, ?, 0, ?)
+			`, childID, workspaceID, childName, icons.CategoryIconOrDefault(childName), parent.Type, parent.MacroGroup, parentID, now); err != nil {
 				return nil, nil, fmt.Errorf("category reseed: falha ao criar subcategoria %q: %w", childName, err)
 			}
 			created = append(created, CategoryReseedItem{WorkspaceID: workspaceID, ID: childID, Name: childName, Type: parent.Type, MacroGroup: parent.MacroGroup, ParentID: parentID, ParentName: parent.Name})

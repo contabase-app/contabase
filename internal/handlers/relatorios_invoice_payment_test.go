@@ -140,12 +140,12 @@ func TestLancamentosPreservaPagamentoFaturaComoMovimentoDeCaixa(t *testing.T) {
 	if len(data.Invoices) != 1 || data.Invoices[0].Reference != "2026-08" {
 		t.Fatalf("invoices = %#v, want consolidated 2026-08 invoice", data.Invoices)
 	}
-	paid, ok := lancamentosSummaryByKey(data, "pago")
+	saidas, ok := lancamentosSummaryByKey(data, "saidas_confirmadas")
 	if !ok {
 		t.Fatalf("paid summary not found: %#v", data.ResumoStatus)
 	}
-	if paid.Amount != "R$ 250,00" {
-		t.Fatalf("paid summary amount = %q, want R$ 250,00", paid.Amount)
+	if saidas.Amount != "R$ 250,00" {
+		t.Fatalf("paid summary amount = %q, want R$ 250,00", saidas.Amount)
 	}
 }
 

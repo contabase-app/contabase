@@ -60,14 +60,371 @@
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 
-/* === FILTER CHIPS === */
-[data-filter-chip] {
-    cursor: pointer;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
+/* === RESUMO DO FILTRO APLICADO ===
+   Uma superfície principal com cabeçalho compacto e as cinco métricas do
+   conjunto filtrado. Regra dura: valor monetário nunca recebe ellipsis, nunca
+   vaza do tile e nunca cria overflow horizontal na página. Para isso o valor
+   escala em duas dimensões — a largura real do tile (container query) e a faixa
+   de comprimento do próprio valor (`data-len`, calculado no handler).
+   O card é o container de layout: a grade decide quantas colunas cabem pela
+   largura REAL do card (que muda com a sidebar do shell), não pelo viewport. */
+.cb-resumo {
+    margin-bottom: 16px;
+    padding: 14px;
+    border: 1px solid var(--cb-border-subtle);
+    border-radius: 16px;
+    background: var(--cb-surface-1);
+    /* Container NOMEADO: as regras de layout do resumo apontam para ele por nome,
+       porque o próprio tile também é container (para escalar a fonte) e uma
+       consulta anônima resolveria contra o tile em vez do card. */
+    container: cb-resumo-card / inline-size;
 }
 
-[data-filter-chip] input { display: none; }
+/* --- cabeçalho --- */
+.cb-resumo-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--cb-border-subtle);
+}
+
+.cb-resumo-head-copy {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1 1 200px;
+    min-width: 0;
+}
+
+.cb-resumo-head-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    color: var(--v2-tone-progress);
+    background: color-mix(in srgb, var(--v2-tone-progress) 14%, transparent);
+}
+.cb-resumo-head-icon svg { width: 16px; height: 16px; }
+
+.cb-resumo-head-text { min-width: 0; }
+
+.cb-resumo-head-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+    color: var(--cb-text-main);
+}
+
+.cb-resumo-head-subtitle {
+    margin: 1px 0 0;
+    font-size: 11.5px;
+    line-height: 1.3;
+    color: var(--cb-text-muted);
+}
+
+.cb-resumo-head-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px 14px;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: auto;
+}
+
+.cb-resumo-total-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border: 1px solid var(--cb-border-subtle);
+    border-radius: 999px;
+    background: var(--cb-surface-2);
+    color: var(--cb-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.cb-resumo-liquido {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-shrink: 0;
+    min-width: 0;
+}
+
+.cb-resumo-liquido-label {
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--cb-text-muted);
+    white-space: nowrap;
+}
+
+/* Resultado líquido é informação auxiliar: nunca compete com as cinco métricas. */
+.cb-resumo-liquido-value {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.015em;
+    line-height: 1.15;
+    white-space: nowrap;
+    color: var(--v2-tone-ok);
+    font-size: clamp(12px, 3.4cqi, 15px);
+}
+.cb-resumo-liquido.is-negative .cb-resumo-liquido-value { color: var(--v2-tone-danger); }
+.cb-resumo-liquido-value[data-len="m"] { font-size: clamp(11px, 3cqi, 14px); }
+.cb-resumo-liquido-value[data-len="l"] { font-size: clamp(10px, 2.6cqi, 12px); }
+.cb-resumo-liquido-value[data-len="xl"] {
+    font-size: clamp(10px, 2.2cqi, 11px);
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+/* --- métricas --- */
+.cb-resumo-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.cb-resumo-metric {
+    --cb-resumo-metric-tone: var(--v2-tone-neutral);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 1px;
+    min-width: 0;
+    padding: 10px 11px;
+    border: 1px solid var(--cb-border-subtle);
+    border-radius: 12px;
+    background: var(--cb-surface-2);
+    container-type: inline-size;
+}
+
+.cb-resumo-metric-copy { display: contents; }
+
+.cb-resumo-tone-ok { --cb-resumo-metric-tone: var(--v2-tone-ok); }
+.cb-resumo-tone-danger { --cb-resumo-metric-tone: var(--v2-tone-danger); }
+.cb-resumo-tone-attention { --cb-resumo-metric-tone: var(--v2-tone-attention); }
+.cb-resumo-tone-progress { --cb-resumo-metric-tone: var(--v2-tone-progress); }
+
+.cb-resumo-metric-icon {
+    grid-area: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    color: var(--cb-resumo-metric-tone);
+    background: color-mix(in srgb, var(--cb-resumo-metric-tone) 14%, transparent);
+}
+.cb-resumo-metric-icon svg { width: 13px; height: 13px; }
+
+.cb-resumo-metric-label {
+    grid-area: 1 / 2;
+    min-width: 0;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.25;
+    color: var(--cb-text-muted);
+}
+
+/* O valor ocupa a largura inteira do tile: é o que permite escalar a fonte pelo
+   tile sem depender do rótulo ou do ícone. */
+.cb-resumo-metric-value {
+    grid-area: 2 / 1 / 3 / -1;
+    display: block;
+    min-width: 0;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.015em;
+    line-height: 1.15;
+    white-space: nowrap;
+    color: var(--cb-resumo-metric-tone);
+    font-size: clamp(13px, 12cqi, 19px);
+}
+.cb-resumo-metric-value[data-len="m"] { font-size: clamp(12px, 10cqi, 18px); }
+/* O piso entra em ação só em tile muito estreito (metade de um card de 320px);
+   para valores de 17 a 20 caracteres ele cede até 10px em vez de estourar. */
+.cb-resumo-metric-value[data-len="l"] { font-size: clamp(10px, 7.6cqi, 15px); }
+/* Acima de ~20 caracteres nenhum tile sustentaria o valor em uma linha legível;
+   aqui o valor pode quebrar (reflow) em vez de estourar ou sumir atrás de
+   ellipsis. Só acontece com valores na casa dos quintilhões de reais. */
+.cb-resumo-metric-value[data-len="xl"] {
+    font-size: clamp(10px, 6.4cqi, 12px);
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.cb-resumo-metric-count {
+    grid-area: 3 / 1 / 4 / -1;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.25;
+    color: var(--cb-text-subtle);
+}
+
+/* Pendente/Vencido/Agendado usam fonte menor que Entradas/Saídas: a hierarquia
+   é informação, não decoração. */
+.cb-resumo-metric.is-secondary .cb-resumo-metric-value { font-size: clamp(12px, 10cqi, 16px); }
+.cb-resumo-metric.is-secondary .cb-resumo-metric-value[data-len="m"] { font-size: clamp(11px, 8.6cqi, 15px); }
+.cb-resumo-metric.is-secondary .cb-resumo-metric-value[data-len="l"] { font-size: clamp(10px, 6.6cqi, 13px); }
+.cb-resumo-metric.is-secondary .cb-resumo-metric-value[data-len="xl"] { font-size: clamp(10px, 5.6cqi, 12px); }
+
+/* Rótulo curto só existe em telas estreitas (regra dentro do container abaixo). */
+.cb-resumo-label-short { display: none; }
+
+/* Card estreito (mobile): o resumo tem UMA superfície principal com três blocos —
+   cabeçalho, dois mini-cards direcionais e UMA faixa de lifecycle. Antes eram
+   cinco cards independentes, o que criava "lista dentro da lista" e empurrava a
+   lista real para baixo da dobra. */
+@container cb-resumo-card (max-width: 559px) {
+    /* Cabeçalho em fluxo vertical ALINHADO À ESQUERDA: nada ancorado à direita.
+       O pill de itens e o resultado líquido deixam de flutuar no lado direito e
+       passam a pertencer ao mesmo fluxo do título; o líquido vira par
+       label+valor na mesma linha, que quebra junto quando não couber. */
+    .cb-resumo-head {
+        display: block;
+        gap: 0;
+        padding-bottom: 9px;
+        margin-bottom: 9px;
+    }
+    .cb-resumo-head-copy { gap: 8px; }
+    .cb-resumo-head-icon { width: 26px; height: 26px; border-radius: 8px; }
+    .cb-resumo-head-icon svg { width: 14px; height: 14px; }
+    .cb-resumo-head-meta {
+        justify-content: flex-start;
+        margin: 6px 0 0;
+        gap: 4px 6px;
+    }
+    .cb-resumo-liquido {
+        flex-direction: row;
+        align-items: baseline;
+        gap: 6px;
+    }
+
+    /* mini-cards direcionais: mesmo desenho, padding enxuto */
+    .cb-resumo-metric.is-primary {
+        row-gap: 0;
+        padding: 8px 9px;
+    }
+
+    /* faixa única das três métricas de lifecycle */
+    .cb-resumo-lifecycle {
+        grid-column: 1 / -1;
+        border: 1px solid var(--cb-border-subtle);
+        border-radius: 12px;
+        background: var(--cb-surface-2);
+        overflow: hidden;
+    }
+    .cb-resumo-lifecycle-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    /* A célula NÃO é um card: a superfície é a faixa e a separação é um divisor. */
+    .cb-resumo-lifecycle .cb-resumo-metric {
+        row-gap: 0;
+        padding: 8px 9px;
+        border: 0;
+        border-radius: 0;
+        border-left: 1px solid var(--cb-border-subtle);
+        background: none;
+    }
+    .cb-resumo-lifecycle .cb-resumo-metric:first-child { border-left: 0; }
+    /* ícone menor: a faixa é informação secundária e o ícone é o que define a
+       altura da primeira linha em cada célula */
+    .cb-resumo-lifecycle .cb-resumo-metric-icon { width: 18px; height: 18px; border-radius: 6px; }
+    .cb-resumo-lifecycle .cb-resumo-metric-icon svg { width: 11px; height: 11px; }
+    /* Em três células estreitas, valores de 16+ caracteres não cabem em uma linha
+       sem descer abaixo do piso legível de fonte. Eles quebram de forma
+       deliberada (na prática, entre "R$" e o número) em vez de estourar a célula
+       ou virar ellipsis. Valores curtos seguem em uma linha.
+       `anywhere` (e não `break-word`) é obrigatório: só ele reduz o min-content
+       do valor, impedindo que a grade esprema o rótulo da métrica até cortá-lo. */
+    .cb-resumo-lifecycle .cb-resumo-metric-value[data-len="l"],
+    .cb-resumo-lifecycle .cb-resumo-metric-value[data-len="xl"] {
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    /* "Entradas"/"Saídas" em vez de "Entradas confirmadas"/"Saídas confirmadas",
+       como na referência mobile: o rótulo completo quebraria em duas linhas. Só
+       vale para as métricas que TÊM rótulo curto — as demais mantêm o texto. */
+    .cb-resumo-metric-label.has-short-label .cb-resumo-label-full { display: none; }
+    .cb-resumo-metric-label.has-short-label .cb-resumo-label-short { display: inline; }
+}
+
+/* Card muito estreito: a faixa de três células não sustentaria valor monetário
+   grande em fonte legível (em 360px uma célula pediria ~9,3px para
+   R$ 123.456.789,01). As três métricas viram três linhas DENTRO da mesma
+   superfície, com o valor dividindo a linha — nunca três cards separados. */
+@media (max-width: 379px) {
+    .cb-resumo-lifecycle-grid { grid-template-columns: minmax(0, 1fr); }
+    /* Linha compacta em FLEX, não em grade: aqui rótulo, valor e contagem
+       disputam a mesma linha e a faixa `auto` de uma grade cede até cortar o
+       rótulo. Com flex, rótulo e contagem são rígidos e quem cede espaço é o
+       valor — que com `overflow-wrap: anywhere` quebra em vez de empurrar. */
+    .cb-resumo-lifecycle .cb-resumo-metric {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 9px;
+        border-left: 0;
+        border-top: 1px solid var(--cb-border-subtle);
+    }
+    .cb-resumo-lifecycle .cb-resumo-metric:first-child { border-top: 0; }
+    .cb-resumo-lifecycle .cb-resumo-metric-icon { flex: 0 0 auto; }
+    .cb-resumo-lifecycle .cb-resumo-metric-label { flex: 0 0 auto; }
+    .cb-resumo-lifecycle .cb-resumo-metric-value {
+        flex: 1 1 auto;
+        min-width: 0;
+        text-align: right;
+    }
+    .cb-resumo-lifecycle .cb-resumo-metric-count {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+    /* Na linha compacta o valor divide espaço com rótulo e contagem. */
+    .cb-resumo-lifecycle .cb-resumo-metric-value { font-size: clamp(11px, 5cqi, 14px); }
+    .cb-resumo-lifecycle .cb-resumo-metric-value[data-len="m"] { font-size: clamp(11px, 4.6cqi, 13px); }
+    .cb-resumo-lifecycle .cb-resumo-metric-value[data-len="l"] { font-size: clamp(10px, 4cqi, 13px); }
+    .cb-resumo-lifecycle .cb-resumo-metric-value[data-len="xl"] { font-size: clamp(10px, 3.4cqi, 12px); }
+}
+
+/* Card médio: Entradas/Saídas em duas colunas e lifecycle em três, cada bloco
+   largo o bastante para valores grandes sem comprimir a fonte. A faixa de
+   lifecycle é agrupamento só de mobile: aqui no desktop os três tiles voltam a
+   ser itens diretos da grade, exatamente como antes. */
+@container cb-resumo-card (min-width: 560px) {
+    .cb-resumo-lifecycle,
+    .cb-resumo-lifecycle-grid { display: contents; }
+    .cb-resumo-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .cb-resumo-metric.is-primary { grid-column: span 3; }
+    .cb-resumo-metric.is-secondary { grid-column: span 2; }
+}
+
+/* Card largo: cinco métricas lado a lado. */
+@container cb-resumo-card (min-width: 940px) {
+    .cb-resumo-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .cb-resumo-metric.is-primary,
+    .cb-resumo-metric.is-secondary { grid-column: auto; }
+}
 
 /* === TRANSACTION ROW === */
 .tx-row:active { transform: none; }

@@ -16,6 +16,7 @@ services:
       - DB_FILE=/app/data/contabase.db
       - UPLOADS_DIR=/app/data/uploads
       - PORT=8080
+      - CONTABASE_FEATURE_INVESTMENTS
     volumes:
       - ./data:/app/data
     restart: unless-stopped

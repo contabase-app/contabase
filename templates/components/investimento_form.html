@@ -1,0 +1,31 @@
+{{define "investimento-form"}}
+<form method="post" action="{{.Action}}" hx-post="{{.Action}}" hx-swap="none" hx-indicator="#htmx-indicator" class="space-y-4">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    {{if not .IsEdit}}
+    <div><label class="cb-label" for="investment-account">Conta de investimento</label>
+        <select id="investment-account" name="account_id" class="cb-input" required>
+            <option value="">Selecione uma conta</option>
+            {{range .Accounts}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+        </select>
+        {{if not .Accounts}}<p class="text-sm mt-2">Cadastre uma conta do tipo Investimento em <a href="/configuracoes/contas" class="underline">Configurações → Contas</a> para começar.</p>{{end}}
+    </div>
+    {{end}}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div><label class="cb-label" for="investment-name">Nome</label><input id="investment-name" name="name" value="{{.Investment.Name}}" class="cb-input" maxlength="120" required></div>
+        <div><label class="cb-label" for="investment-institution">Instituição</label><input id="investment-institution" name="institution" value="{{.Investment.Institution}}" class="cb-input"></div>
+        <div><label class="cb-label" for="investment-kind">Tipo</label><input id="investment-kind" name="kind" value="{{.Investment.Kind}}" class="cb-input" maxlength="40" placeholder="Ex.: CDB, LCI, Tesouro" required></div>
+        <div><label class="cb-label" for="investment-tax">Regime de tributação</label><select id="investment-tax" name="tax_regime" class="cb-input" required>
+            <option value="IR_REGRESSIVO" {{if eq .Investment.TaxRegime "IR_REGRESSIVO"}}selected{{end}}>IR regressivo</option>
+            <option value="ISENTO_PF" {{if eq .Investment.TaxRegime "ISENTO_PF"}}selected{{end}}>Isento para pessoa física</option>
+            <option value="MANUAL" {{if eq .Investment.TaxRegime "MANUAL"}}selected{{end}}>Manual</option>
+        </select></div>
+        {{if not .IsEdit}}
+        <div><label class="cb-label" for="investment-principal">Valor aplicado (centavos)</label><input id="investment-principal" type="number" inputmode="numeric" name="principal_cents" min="1" step="1" class="cb-input" aria-describedby="investment-principal-help" required><p id="investment-principal-help" class="text-sm mt-2">Ex.: 100000 para R$ 1.000,00.</p></div>
+        <div><label class="cb-label" for="investment-applied">Data da aplicação</label><input id="investment-applied" type="date" name="applied_date" class="cb-input" required></div>
+        {{end}}
+        <div><label class="cb-label" for="investment-maturity">Vencimento (opcional)</label><input id="investment-maturity" type="date" name="maturity_date" value="{{with .Investment.MaturityDate}}{{.}}{{end}}" class="cb-input"></div>
+    </div>
+    <div><label class="cb-label" for="investment-yield">Observações de rentabilidade (opcional)</label><textarea id="investment-yield" name="yield_note" rows="3" class="cb-input">{{.Investment.YieldNote}}</textarea></div>
+    <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm" {{if and (not .IsEdit) (not .Accounts)}}disabled{{end}}>{{if .IsEdit}}Salvar alterações{{else}}Criar investimento{{end}}</button>
+</form>
+{{end}}

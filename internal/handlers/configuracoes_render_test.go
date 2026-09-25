@@ -600,6 +600,7 @@ func testConfiguracoesRenderTemplates(t *testing.T) *template.Template {
 	files := []string{
 		"templates/components/app_shell.html",
 		"templates/components/financial-emblem.html",
+		"templates/components/icon_picker.html",
 		"templates/pages/configuracoes.html",
 		"templates/pages/configuracoes_components.html",
 		"templates/pages/configuracoes_perfil.html",

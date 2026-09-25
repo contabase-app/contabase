@@ -247,28 +247,49 @@
 {{end}}
 
 {{define "lancamentos-resumo"}}
-<section id="lancamentosResumo" class="mb-4" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}>
-    <div class="cb-card-dense flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex items-center gap-2 text-[var(--cb-text-main)] shrink-0">
-            <span class="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-accent)] shrink-0 cb-tone-accent cb-tone-icon">
-                <i data-lucide="list-checks" class="w-3.5 h-3.5"></i>
-            </span>
-            <div class="min-w-0">
-                <span class="block text-sm font-bold tracking-tight">{{.MonthLabel}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-muted)]">Resumo dos itens visíveis</span>
+<section id="lancamentosResumo" class="cb-resumo" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} aria-labelledby="lancamentosResumoTitulo">
+    <div class="cb-resumo-head">
+        <div class="cb-resumo-head-copy">
+            <span class="cb-resumo-head-icon" aria-hidden="true"><i data-lucide="chart-column"></i></span>
+            <div class="cb-resumo-head-text">
+                <p class="cb-resumo-head-title" id="lancamentosResumoTitulo">Resumo do filtro aplicado</p>
+                <p class="cb-resumo-head-subtitle">Totais dos itens visíveis em {{.MonthLabel}}</p>
             </div>
         </div>
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs sm:justify-end sm:text-sm">
-            {{range .ResumoStatus}}
-            <div class="inline-flex items-center gap-1.5 whitespace-nowrap">
-                <span class="inline-block h-1.5 w-1.5 rounded-full {{.DotClasses}}"></span>
-                <span class="font-semibold text-[var(--cb-text-main)]">{{.Label}}</span>
-                <span class="font-bold {{if eq .Key "pago"}}text-emerald-600 dark:text-emerald-400{{else if eq .Key "pendente"}}text-amber-600 dark:text-amber-400{{else if eq .Key "vencido"}}text-red-600 dark:text-red-400{{else}}text-violet-600 dark:text-violet-400{{end}}" data-sensitive>{{.Amount}}</span>
-                {{if .Count}}
-                <span class="cb-text-micro text-[var(--cb-text-muted)]">({{.CountLabel}})</span>
-                {{end}}
+        <div class="cb-resumo-head-meta">
+            <span class="cb-resumo-total-chip"><span class="sr-only">Itens visíveis no filtro: </span>{{.ResumoTotalItensLabel}}</span>
+            {{if .ResumoLiquidoTemDados}}
+            <div class="cb-resumo-liquido {{if .ResumoLiquidoNegativo}}is-negative{{end}}">
+                <span class="cb-resumo-liquido-label">Resultado líquido</span>
+                <span class="cb-resumo-liquido-value" data-len="{{.ResumoLiquidoLen}}" data-sensitive>{{.ResumoLiquido}}</span>
             </div>
             {{end}}
+        </div>
+    </div>
+    <div class="cb-resumo-grid">
+        {{range .ResumoStatus}}{{if .Primary}}
+        <div class="cb-resumo-metric cb-resumo-tone-{{.Tone}} is-primary">
+            <span class="cb-resumo-metric-icon" aria-hidden="true"><i data-lucide="{{.Icon}}"></i></span>
+            <span class="cb-resumo-metric-copy">
+                <span class="cb-resumo-metric-label{{if .LabelShort}} has-short-label{{end}}"><span class="cb-resumo-label-full">{{.Label}}</span>{{if .LabelShort}}<span class="cb-resumo-label-short">{{.LabelShort}}</span>{{end}}</span>
+                <span class="cb-resumo-metric-value" data-len="{{.AmountLen}}" data-sensitive>{{.Amount}}</span>
+                <span class="cb-resumo-metric-count">{{.CountLabel}}</span>
+            </span>
+        </div>
+        {{end}}{{end}}
+        <div class="cb-resumo-lifecycle">
+            <div class="cb-resumo-lifecycle-grid">
+                {{range .ResumoStatus}}{{if not .Primary}}
+                <div class="cb-resumo-metric cb-resumo-tone-{{.Tone}} is-secondary">
+                    <span class="cb-resumo-metric-icon" aria-hidden="true"><i data-lucide="{{.Icon}}"></i></span>
+                    <span class="cb-resumo-metric-copy">
+                        <span class="cb-resumo-metric-label">{{.Label}}</span>
+                        <span class="cb-resumo-metric-value" data-len="{{.AmountLen}}" data-sensitive>{{.Amount}}</span>
+                        <span class="cb-resumo-metric-count">{{.CountLabel}}</span>
+                    </span>
+                </div>
+                {{end}}{{end}}
+            </div>
         </div>
     </div>
 </section>

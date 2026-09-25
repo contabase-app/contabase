@@ -30,6 +30,7 @@ import (
 	"github.com/contabase-app/contabase/internal/categorycontract"
 	"github.com/contabase-app/contabase/internal/civildate"
 	"github.com/contabase-app/contabase/internal/database"
+	"github.com/contabase-app/contabase/internal/features"
 	"github.com/contabase-app/contabase/internal/handlers"
 	"github.com/contabase-app/contabase/internal/httpcookies"
 	"github.com/contabase-app/contabase/internal/models"
@@ -131,15 +132,13 @@ func main() {
 	workspaceUserRouteRateLimitKey := func(scope string, ctx authContext, route string) string {
 		return scope + ":workspace:" + ctx.ActiveWorkspaceID + ":user:" + ctx.UserID + ":route:" + route
 	}
-	baseURL := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
-	if baseURL == "" {
-		baseURL = "http://localhost:8080"
-	}
+	baseURL := appBaseURL()
 	txBase := handlers.TransactionHandler{Templates: tpl}
 	bindTransactionHandlerRuntimeDBs(&txBase, runtimeDBs)
 	contatosBase := handlers.ContatosHandler{DB: db, Templates: tpl}
 	contasBase := handlers.ContasHandler{DB: db, Templates: tpl}
 	metasBase := handlers.MetasHandler{DB: db, Templates: tpl}
+	investimentosBase := handlers.InvestimentosHandler{DB: db, WriterDB: runtimeDBs.Immediate, Templates: tpl}
 	relBase := handlers.RelatoriosHandler{DB: db, Templates: tpl}
 	faturasBase := handlers.FaturasHandler{DB: db, WriterDB: runtimeDBs.Immediate, Templates: tpl}
 	notificacoesBase := handlers.NotificacoesHandler{DB: db, Templates: tpl}
@@ -162,6 +161,8 @@ func main() {
 		contatosBase.DB = newRuntimeDBs.DB
 		contasBase.DB = newRuntimeDBs.DB
 		metasBase.DB = newRuntimeDBs.DB
+		investimentosBase.DB = newRuntimeDBs.DB
+		investimentosBase.WriterDB = newRuntimeDBs.Immediate
 		relBase.DB = newRuntimeDBs.DB
 		faturasBase.DB = newRuntimeDBs.DB
 		faturasBase.WriterDB = newRuntimeDBs.Immediate
@@ -1364,6 +1365,8 @@ func main() {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}))
+
+	registerInvestimentosRoutes(mux, authService, csrfSigner, &investimentosBase)
 
 	mux.HandleFunc("/metas", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		h := metasBase
@@ -3739,6 +3742,15 @@ func validateSQLiteIntegrity(db *sql.DB) error {
 	return nil
 }
 
+// appBaseURL devolve a origem pública configurada para o ContaBase.
+func appBaseURL() string {
+	baseURL := strings.TrimSpace(os.Getenv("APP_BASE_URL"))
+	if baseURL == "" {
+		baseURL = "http://localhost:8080"
+	}
+	return baseURL
+}
+
 func buildFuncMap() template.FuncMap {
 	fieldValue := func(data any, name string) (reflect.Value, bool) {
 		v := reflect.ValueOf(data)
@@ -3768,6 +3780,11 @@ func buildFuncMap() template.FuncMap {
 		"assetPath": func(path string) string {
 			fullPath := filepath.Join("assets", strings.TrimPrefix(path, "/assets/"))
 			return "/" + assets.VersionedPath(fullPath)
+		},
+		// Metadados sociais exigem URL absoluta. A origem vem de APP_BASE_URL,
+		// a mesma configuração já usada para montar links externos e cookies.
+		"publicURL": func(path string) string {
+			return strings.TrimRight(appBaseURL(), "/") + path
 		},
 		"intRange": func(start, end int) []int {
 			var result []int
@@ -3908,6 +3925,12 @@ func buildFuncMap() template.FuncMap {
 		"SetupTokenStillConfigured": func(data any) bool {
 			return shouldShowSetupTokenNotice(os.Getenv(bootstrapSetupTokenEnv), data)
 		},
+	}
+
+	// O catálogo de ícones é exposto aos templates por um helper compartilhado
+	// com os testes, garantindo que o seletor de ícones use uma única definição.
+	for name, fn := range handlers.IconTemplateFuncs() {
+		funcMap[name] = fn
 	}
 
 	return funcMap
@@ -4478,4 +4501,75 @@ func seedTestTransactions(db *sql.DB, workspaceID, userID string, accountIDs, ca
 func parseSeedDate(s string) int64 {
 	t, _ := time.Parse("2006-01-02", s)
 	return t.Unix()
+}
+
+// registerInvestimentosRoutes shares the production guards with HTTP tests.
+// Keep the base by reference so restore's refreshDeps also rebinds these routes.
+func registerInvestimentosRoutes(mux *http.ServeMux, authService *auth.Service, signer *csrfSigner, base *handlers.InvestimentosHandler) {
+	if !features.FromEnv().Investments {
+		// The root route is a catch-all withAuth handler. Explicit tombstones
+		// guarantee a 404 even for unauthenticated direct URLs and POSTs.
+		mux.HandleFunc("/investimentos", http.NotFound)
+		mux.HandleFunc("/investimentos/", http.NotFound)
+		return
+	}
+	bind := func(ctx authContext) handlers.InvestimentosHandler {
+		h := *base
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.CSRFToken = ctx.CSRFToken
+		return h
+	}
+	mux.HandleFunc("/investimentos", withAuth(authService, signer, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		permission := models.PermissionInvestmentsRead
+		switch r.Method {
+		case http.MethodGet:
+		case http.MethodPost:
+			permission = models.PermissionInvestmentsWrite
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !models.HasPermission(&ctx.Member, permission) {
+			respondForbidden(w, r)
+			return
+		}
+		h := bind(ctx)
+		if r.Method == http.MethodGet {
+			h.HandleInvestimentos(w, r)
+		} else {
+			h.HandleCriarInvestimento(w, r)
+		}
+	}))
+	mux.HandleFunc("/investimentos/", withAuth(authService, signer, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/investimentos/"), "/")
+		if parts[0] == "" || (len(parts) != 1 && !(len(parts) == 2 && (parts[1] == "editar" || parts[1] == "valuations" || parts[1] == "resgatar" || parts[1] == "arquivar"))) {
+			http.NotFound(w, r)
+			return
+		}
+		method, permission := http.MethodGet, models.PermissionInvestmentsRead
+		if len(parts) == 2 {
+			method, permission = http.MethodPost, models.PermissionInvestmentsWrite
+		}
+		if r.Method != method {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !models.HasPermission(&ctx.Member, permission) {
+			respondForbidden(w, r)
+			return
+		}
+		h := bind(ctx)
+		if method == http.MethodGet {
+			h.HandleDetalheInvestimento(w, r, parts[0])
+		} else if parts[1] == "valuations" {
+			h.HandleValuation(w, r, parts[0])
+		} else if parts[1] == "resgatar" {
+			h.HandleRedeemInvestment(w, r, parts[0])
+		} else if parts[1] == "arquivar" {
+			h.HandleArchiveInvestment(w, r, parts[0])
+		} else {
+			h.HandleEditarInvestimento(w, r, parts[0])
+		}
+	}))
 }

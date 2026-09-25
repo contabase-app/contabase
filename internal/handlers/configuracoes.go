@@ -23,7 +23,9 @@ import (
 	"github.com/contabase-app/contabase/internal/auth"
 	"github.com/contabase-app/contabase/internal/categorycontract"
 	"github.com/contabase-app/contabase/internal/database"
+	"github.com/contabase-app/contabase/internal/features"
 	"github.com/contabase-app/contabase/internal/httpcookies"
+	"github.com/contabase-app/contabase/internal/icons"
 	"github.com/contabase-app/contabase/internal/models"
 	"github.com/contabase-app/contabase/internal/paths"
 	"github.com/contabase-app/contabase/internal/repository"
@@ -64,6 +66,7 @@ func triggerWorkspaceColorsChanged(w http.ResponseWriter) {
 }
 
 type ConfiguracoesData struct {
+	Features            features.Flags
 	Title               string
 	UserName            string
 	UserFirstName       string
@@ -132,6 +135,7 @@ type ConfigCategoryRow struct {
 	ID                  string
 	Name                string
 	Type                string
+	Icon                string
 	MacroGroup          string
 	EffectiveMacroGroup string
 	ParentID            string
@@ -142,6 +146,18 @@ type ConfigCategoryRow struct {
 	ParentOptions       []CategoryParentOption
 	Children            []*ConfigCategoryRow
 }
+
+// IconOrDefault devolve a chave de ícone pronta para renderização, com o
+// fallback oficial já aplicado, mantendo o template livre de resolução.
+func (r ConfigCategoryRow) IconOrDefault() string { return icons.Resolve(r.Icon) }
+
+// IconLabel devolve o nome amigável do ícone efetivo.
+func (r ConfigCategoryRow) IconLabel() string { return icons.Label(r.Icon) }
+
+// DerivedIconKey é o ícone que o servidor gravaria caso o usuário deixasse a
+// seleção em "Automático": derivado do próprio nome da categoria. É usado
+// apenas como pré-visualização no seletor.
+func (r ConfigCategoryRow) DerivedIconKey() string { return icons.CategoryIconOrDefault(r.Name) }
 
 type CategoryParentOption struct {
 	ID         string
@@ -602,10 +618,11 @@ func (h *ConfiguracoesHandler) HandleCategoriasCreate(w http.ResponseWriter, r *
 		return
 	}
 	now := time.Now().Unix()
+	icon := resolveCategoryIconInput(r.FormValue("icon"), name)
 	if _, err := h.DB.Exec(`
 		INSERT INTO categories (id, workspace_id, name, icon, color, type, macro_group, parent_id, created_at)
-		VALUES (?, ?, ?, 'tag', '#6b7280', ?, ?, NULLIF(?, ''), ?)
-	`, uuid.NewString(), h.WorkspaceID, name, typ, macroGroup, parentID, now); err != nil {
+		VALUES (?, ?, ?, ?, '#6b7280', ?, ?, NULLIF(?, ''), ?)
+	`, uuid.NewString(), h.WorkspaceID, name, icon, typ, macroGroup, parentID, now); err != nil {
 		log.Printf("create category error: %v", err)
 		h.renderConfigSectionWithFlash(w, "categorias", "Não foi possível criar a categoria.", "")
 		return
@@ -640,9 +657,9 @@ func (h *ConfiguracoesHandler) HandleCategoriasEdit(w http.ResponseWriter, r *ht
 	}
 	if err := execOne(h.DB, `
 		UPDATE categories
-		SET name = ?, type = ?, macro_group = ?, parent_id = NULLIF(?, '')
+		SET name = ?, type = ?, icon = ?, macro_group = ?, parent_id = NULLIF(?, '')
 		WHERE id = ? AND workspace_id = ?
-	`, name, typ, macroGroup, parentID, id, h.WorkspaceID); err != nil {
+	`, name, typ, resolveCategoryIconInput(r.FormValue("icon"), name), macroGroup, parentID, id, h.WorkspaceID); err != nil {
 		log.Printf("edit category error: %v", err)
 		h.renderConfigSectionWithFlash(w, "categorias", "Categoria não encontrada ou não autorizada.", "")
 		return
@@ -729,9 +746,9 @@ func (h *ConfiguracoesHandler) HandleCategoriasInlineSave(w http.ResponseWriter,
 	}
 	if err := execOne(h.DB, `
 		UPDATE categories
-		SET name = ?, parent_id = NULLIF(?, ''), macro_group = NULLIF(?, '')
+		SET name = ?, parent_id = NULLIF(?, ''), macro_group = NULLIF(?, ''), icon = ?
 		WHERE id = ? AND workspace_id = ?
-	`, name, parentID, macroGroup, categoryID, h.WorkspaceID); err != nil {
+	`, name, parentID, macroGroup, resolveCategoryIconInput(r.FormValue("icon"), name), categoryID, h.WorkspaceID); err != nil {
 		http.Error(w, "categoria não encontrada", http.StatusNotFound)
 		return
 	}
@@ -1409,7 +1426,7 @@ func (h *ConfiguracoesHandler) renderCategoryRow(w http.ResponseWriter, category
 
 func (h *ConfiguracoesHandler) queryCategoryChildren(parentID string, isBusiness bool) []*ConfigCategoryRow {
 	rows, err := h.DB.Query(`
-		SELECT c.id, c.name, c.type, COALESCE(c.macro_group, ''), COALESCE(c.parent_id, ''), COALESCE(p.name, '')
+		SELECT c.id, c.name, c.type, COALESCE(c.icon, ''), COALESCE(c.macro_group, ''), COALESCE(c.parent_id, ''), COALESCE(p.name, '')
 		FROM categories c
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
 		WHERE c.workspace_id = ? AND c.parent_id = ?
@@ -1423,7 +1440,7 @@ func (h *ConfiguracoesHandler) queryCategoryChildren(parentID string, isBusiness
 	for rows.Next() {
 		var child ConfigCategoryRow
 		var parentName string
-		if err := rows.Scan(&child.ID, &child.Name, &child.Type, &child.MacroGroup, &child.ParentID, &parentName); err != nil {
+		if err := rows.Scan(&child.ID, &child.Name, &child.Type, &child.Icon, &child.MacroGroup, &child.ParentID, &parentName); err != nil {
 			return nil
 		}
 		child.ParentName = parentName
@@ -1444,6 +1461,7 @@ func (h *ConfiguracoesHandler) queryCategoryRowByID(categoryID string) (ConfigCa
 			c.id,
 			c.name,
 			c.type,
+			COALESCE(c.icon, ''),
 			COALESCE(c.macro_group, ''),
 			COALESCE(
 				CASE WHEN c.parent_id IS NULL OR c.parent_id = '' THEN c.macro_group ELSE p.macro_group END,
@@ -1458,6 +1476,7 @@ func (h *ConfiguracoesHandler) queryCategoryRowByID(categoryID string) (ConfigCa
 		&row.ID,
 		&row.Name,
 		&row.Type,
+		&row.Icon,
 		&row.MacroGroup,
 		&row.EffectiveMacroGroup,
 		&row.ParentID,
@@ -2515,6 +2534,7 @@ func (h *ConfiguracoesHandler) renderConfigSectionWithFlashStatus(w http.Respons
 func (h *ConfiguracoesHandler) newConfigData(section, errMsg, okMsg string) ConfiguracoesData {
 	isBusiness := workspaceType(h.DB, h.WorkspaceID) == models.WorkspaceTypeBusiness
 	return ConfiguracoesData{
+		Features:              features.FromEnv(),
 		Title:                 "Configurações",
 		IsBusiness:            isBusiness,
 		Section:               normalizeConfigSection(section, h.ActorRole),
@@ -2711,6 +2731,7 @@ func formatBackupFileSize(size int64) string {
 func (h *ConfiguracoesHandler) buildConfigData(section, errMsg, okMsg string) (ConfiguracoesData, error) {
 	repo := repository.NewConfigRepository(h.DB)
 	data := ConfiguracoesData{
+		Features:                  features.FromEnv(),
 		Title:                     "Configurações",
 		IsBusiness:                workspaceType(h.DB, h.WorkspaceID) == "business",
 		ActiveWorkspaceName:       queryWorkspaceName(h.DB, h.WorkspaceID),
@@ -3089,6 +3110,7 @@ func (h *ConfiguracoesHandler) queryCategoriasWithWorkspaceType(repo *repository
 			ID:                  item.ID,
 			Name:                item.Name,
 			Type:                item.Type,
+			Icon:                item.Icon,
 			MacroGroup:          item.MacroGroup,
 			EffectiveMacroGroup: item.EffectiveMac,
 			ParentID:            item.ParentID,
@@ -3619,6 +3641,18 @@ func normalizeCategoryType(v string) string {
 	default:
 		return ""
 	}
+}
+
+// resolveCategoryIconInput decide a chave de ícone de uma categoria.
+// A escolha explícita do formulário sempre vence. Na ausência dela, o próprio
+// nome sugere o ícone (ex.: "Alimentação" -> utensils) e, por último, aplica-se
+// o fallback neutro oficial. O valor gravado é sempre uma chave do catálogo:
+// nunca entra SVG, HTML ou texto livre no banco.
+func resolveCategoryIconInput(submitted, name string) string {
+	if key := icons.CanonicalKey(submitted); key != "" {
+		return key
+	}
+	return icons.CategoryIconOrDefault(name)
 }
 
 func normalizeMacroGroup(v string) string {

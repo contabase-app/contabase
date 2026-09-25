@@ -23,7 +23,7 @@
 
     function initCarousel(root) {
         var rail = root.querySelector('[data-v2-carousel]');
-        var dots = root.querySelectorAll('[data-v2-carousel-dots] span');
+        var dotsRoot = root.querySelector('[data-v2-carousel-dots]');
         var previous = root.querySelector('[data-v2-carousel-prev]');
         var next = root.querySelector('[data-v2-carousel-next]');
         if (!rail || rail.dataset.v2CarouselReady === 'true') return;
@@ -37,20 +37,18 @@
         };
 
         var updateDots = function () {
-            var cards = rail.children;
-            if (!cards.length || !dots.length) return;
-            var center = rail.scrollLeft + rail.clientWidth / 2;
-            var activeIndex = 0;
-            var closestDistance = Infinity;
-            for (var index = 0; index < cards.length; index += 1) {
-                var cardCenter = cards[index].offsetLeft + cards[index].offsetWidth / 2;
-                var distance = Math.abs(center - cardCenter);
-                if (distance < closestDistance) {
-                    closestDistance = distance;
-                    activeIndex = index;
-                }
+            if (!dotsRoot) return;
+            var slides = Array.from(rail.children).filter(function (slide) {
+                return slide.getClientRects().length > 0;
+            });
+            if (dotsRoot.children.length !== slides.length) {
+                dotsRoot.replaceChildren();
+                slides.forEach(function () {
+                    dotsRoot.appendChild(document.createElement('span'));
+                });
             }
-            dots.forEach(function (dot, index) {
+            var activeIndex = Math.min(slides.length - 1, Math.round(rail.scrollLeft / cardStep()));
+            Array.from(dotsRoot.children).forEach(function (dot, index) {
                 dot.classList.toggle('is-active', index === activeIndex);
             });
         };
@@ -91,54 +89,11 @@
         });
     }
 
-    function initMobileCardDisclosure(root) {
-        var group = root.querySelector('[data-v2-card-group]');
-        if (!group || group.dataset.v2CardDisclosureReady === 'true') return;
-        group.dataset.v2CardDisclosureReady = 'true';
-
-        var initial = parseInt(group.getAttribute('data-v2-show-more-initial'), 10) || 6;
-        var cards = group.querySelectorAll('[data-v2-card-item]');
-        var toggle = group.querySelector('[data-v2-mobile-cards-toggle]');
-        var label = group.querySelector('[data-v2-show-more-label]');
-        var media = window.matchMedia('(max-width: 767px)');
-        var expanded = false;
-
-        var update = function () {
-            var shouldCollapse = media.matches && !expanded;
-            cards.forEach(function (card, index) {
-                card.hidden = shouldCollapse && index >= initial;
-            });
-
-            if (toggle) {
-                toggle.hidden = !media.matches || cards.length <= initial;
-                toggle.setAttribute('aria-expanded', String(media.matches && expanded));
-            }
-            if (label) {
-                label.textContent = expanded ? 'Mostrar menos' : 'Mostrar mais (mais ' + Math.max(0, cards.length - initial) + ')';
-            }
-        };
-
-        if (toggle) {
-            toggle.addEventListener('click', function () {
-                expanded = !expanded;
-                update();
-            });
-        }
-
-        if (typeof media.addEventListener === 'function') {
-            media.addEventListener('change', update);
-        } else {
-            media.addListener(update);
-        }
-        update();
-    }
-
     function initialize() {
         var root = document.querySelector('[data-dashboard]');
         if (!root) return;
         initActionTabs(root);
         initCarousel(root);
-        initMobileCardDisclosure(root);
         if (window.lucide && typeof window.lucide.createIcons === 'function') {
             window.lucide.createIcons();
         }

@@ -63,7 +63,8 @@ Não use `latest`.
 
 ## Notas de versão
 
-- [v1.0.0-beta.4 — preparação local](releases/v1.0.0-beta.4.md)
+- [v1.0.0-beta.5 — preparação local](releases/v1.0.0-beta.5.md)
+- [v1.0.0-beta.4 — Beta pública publicada](releases/v1.0.0-beta.4.md)
 - [v1.0.0-beta.3 — Beta pública publicada](releases/v1.0.0-beta.3.md)
 - [v1.0.0-beta.2 — Beta pública publicada](releases/v1.0.0-beta.2.md)
 - [v1.0.0-beta.1 — publicação beta em andamento](releases/v1.0.0-beta.1.md)

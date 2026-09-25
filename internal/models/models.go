@@ -59,6 +59,9 @@ const (
 	PermissionWorkspaceAdmin = "workspace.admin"
 	PermissionWorkspaceEdit  = "workspace.edit"
 	PermissionReportsView    = "reports.view"
+
+	PermissionInvestmentsRead  = "investments:read"
+	PermissionInvestmentsWrite = "investments:write"
 )
 
 var defaultManagerPermissions = map[string]struct{}{

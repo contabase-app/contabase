@@ -20,6 +20,7 @@ type ConfigCategory struct {
 	ID           string
 	Name         string
 	Type         string
+	Icon         string
 	MacroGroup   string
 	ParentID     string
 	ParentName   string
@@ -74,7 +75,7 @@ func (r *ConfigRepository) UserNameByID(userID string) (string, error) {
 
 func (r *ConfigRepository) CategoriesByWorkspace(workspaceID string) ([]ConfigCategory, error) {
 	rows, err := r.db.Query(`
-		SELECT c.id, c.name, c.type, COALESCE(c.macro_group, ''), COALESCE(c.parent_id, ''), COALESCE(p.name, ''), COALESCE(c.macro_group, p.macro_group, 'Estilo de Vida')
+		SELECT c.id, c.name, c.type, COALESCE(c.icon, ''), COALESCE(c.macro_group, ''), COALESCE(c.parent_id, ''), COALESCE(p.name, ''), COALESCE(c.macro_group, p.macro_group, 'Estilo de Vida')
 		FROM categories c
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
 		WHERE c.workspace_id = ?
@@ -88,7 +89,7 @@ func (r *ConfigRepository) CategoriesByWorkspace(workspaceID string) ([]ConfigCa
 	var out []ConfigCategory
 	for rows.Next() {
 		var item ConfigCategory
-		if err := rows.Scan(&item.ID, &item.Name, &item.Type, &item.MacroGroup, &item.ParentID, &item.ParentName, &item.EffectiveMac); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Type, &item.Icon, &item.MacroGroup, &item.ParentID, &item.ParentName, &item.EffectiveMac); err != nil {
 			return nil, err
 		}
 		item.MacroGroup = canonicalConfigMacroGroup(item.MacroGroup)

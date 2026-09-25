@@ -108,6 +108,22 @@
     });
   });
 
+  // Posiciona o chip de percentual sobre a barra: o CSP impede style= no
+  // template e mutação de .style no JS, então o percentual chega em
+  // data-metas-p e entra como variável CSS via WAAPI (cbRuntimeMotion).
+  function initProgressChips() {
+    var motion = window.cbRuntimeMotion;
+    document.querySelectorAll('.metas-progress-wrap[data-metas-p]:not([data-p-ready])').forEach(function(wrap) {
+      wrap.dataset.pReady = 'true';
+      var p = parseInt(wrap.dataset.metasP, 10);
+      if (isNaN(p)) p = 0;
+      p = Math.max(0, Math.min(100, p));
+      if (motion && typeof motion.hold === 'function') {
+        motion.hold(wrap, { '--metas-p': String(p) });
+      }
+    });
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
@@ -116,5 +132,8 @@
 
   document.body.addEventListener('htmx:afterSettle', function() {
     init();
+    initProgressChips();
   });
+
+  initProgressChips();
 })();

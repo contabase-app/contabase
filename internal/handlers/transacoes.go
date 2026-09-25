@@ -24,6 +24,7 @@ import (
 
 	"github.com/contabase-app/contabase/internal/categorycontract"
 	"github.com/contabase-app/contabase/internal/civildate"
+	"github.com/contabase-app/contabase/internal/icons"
 	"github.com/contabase-app/contabase/internal/models"
 	"github.com/contabase-app/contabase/internal/paths"
 	"github.com/contabase-app/contabase/internal/services"
@@ -3239,11 +3240,35 @@ type LancamentosStatusSummary struct {
 	Label       string
 	Icon        string
 	Amount      string
-	Count       int
-	CountLabel  string
-	ToneClasses string
-	DotClasses  string
+	AmountCents int64
+	// AmountLen é a faixa de comprimento do valor formatado ("s", "m", "l",
+	// "xl"). O CSS usa `data-len` para reduzir a fonte antes de qualquer risco de
+	// estouro: valor monetário nunca recebe ellipsis nem vaza do tile.
+	AmountLen  string
+	Count      int
+	CountLabel string
+	// Tone é o tom semântico canônico (ver internal/handlers/ui_tones.go). O
+	// template usa `cb-resumo-tone-<tone>` e o CSS traduz para `--v2-tone-*`.
+	Tone string
+	// Primary destaca as duas métricas direcionais (Entradas/Saídas confirmadas),
+	// que são as de maior peso na hierarquia visual — em especial no mobile.
+	Primary bool
+	// LabelShort é a forma curta do rótulo usada em telas estreitas, onde o
+	// rótulo completo quebraria em duas linhas e inflaria o resumo. Fica vazio
+	// quando o rótulo completo já cabe confortavelmente.
+	LabelShort string
 }
+
+// Chaves canônicas do resumo de /lancamentos. "pago" deixou de existir como
+// agregado: ele agrupava lançamentos confirmados de qualquer direção, o que
+// misturava entrada e saída no mesmo número.
+const (
+	lancamentosResumoEntradasConfirmadas = "entradas_confirmadas"
+	lancamentosResumoSaidasConfirmadas   = "saidas_confirmadas"
+	lancamentosResumoPendente            = "pendente"
+	lancamentosResumoVencido             = "vencido"
+	lancamentosResumoAgendado            = "agendado"
+)
 
 func sortUnifiedItems(items []UnifiedItem) {
 	sort.SliceStable(items, func(i, j int) bool {
@@ -3256,62 +3281,188 @@ type lancamentosStatusBucket struct {
 	count  int
 }
 
-func buildLancamentosStatusSummary(transactions []TransactionRow, invoices []InvoiceRow) []LancamentosStatusSummary {
+// buildLancamentosStatusSummary monta o resumo do conjunto FILTRADO exibido na
+// lista. Ele recebe exatamente as linhas que a página mostra (data.Transactions
+// e data.Invoices), portanto respeita conta, categoria, tipo, situação e busca
+// sem precisar de uma segunda query.
+//
+// Regras:
+//   - itens confirmados (status pago) são separados por direção: INCOME alimenta
+//     "Entradas confirmadas" e EXPENSE alimenta "Saídas confirmadas";
+//   - Pendente/Vencido/Agendado mantêm a semântica anterior, que sempre foi de
+//     despesa (fatura de cartão entra como pendente/vencido pelo saldo em aberto);
+//   - TRANSFER fica fora dos dois agregados direcionais: uma transferência move
+//     saldo entre contas do mesmo workspace sem criar receita nem despesa, e na
+//     visão global do workspace a mesma linha seria saída da origem e entrada no
+//     destino ao mesmo tempo — não há direção inequívoca. É a mesma leitura de
+//     queryDashboardMonthlySummary, o read-model canônico de Entradas/Saídas
+//     (type IN ('INCOME','EXPENSE')).
+func buildLancamentosStatusSummary(transactions []TransactionRow, invoices []InvoiceRow) ([]LancamentosStatusSummary, error) {
 	buckets := map[string]*lancamentosStatusBucket{
-		"pago":     {},
-		"pendente": {},
-		"vencido":  {},
-		"agendado": {},
+		lancamentosResumoEntradasConfirmadas: {},
+		lancamentosResumoSaidasConfirmadas:   {},
+		lancamentosResumoPendente:            {},
+		lancamentosResumoVencido:             {},
+		lancamentosResumoAgendado:            {},
 	}
-	add := func(key string, amount int64) {
+	add := func(key string, amount int64) error {
 		if key == "" {
-			return
+			return nil
 		}
 		b := buckets[key]
 		if b == nil {
-			return
+			return nil
 		}
-		b.amount += amount
+		sum, err := addReportInt64Checked(b.amount, amount)
+		if err != nil {
+			return fmt.Errorf("lancamentos summary %s: %w", key, err)
+		}
+		b.amount = sum
 		b.count++
+		return nil
 	}
 	for _, row := range transactions {
-		if row.Type != models.TransactionTypeExpense {
-			continue
+		statusKey := lancamentosTransactionStatusKey(row)
+		var err error
+		switch row.Type {
+		case models.TransactionTypeIncome:
+			err = add(lancamentosResumoIncomeBucket(statusKey), row.Amount)
+		case models.TransactionTypeExpense:
+			err = add(lancamentosResumoLifecycleBucket(statusKey), row.Amount)
 		}
-		add(lancamentosTransactionStatusKey(row), row.Amount)
+		if err != nil {
+			return nil, err
+		}
 	}
 	for _, inv := range invoices {
-		add(lancamentosInvoiceStatusKey(inv), inv.Pending)
+		if err := add(lancamentosResumoLifecycleBucket(lancamentosInvoiceStatusKey(inv)), inv.Pending); err != nil {
+			return nil, err
+		}
 	}
 
 	return []LancamentosStatusSummary{
-		lancamentosStatusSummaryItem("pago", "Pago", "check-circle-2", "text-emerald-700 bg-emerald-500/10 border-emerald-500/20 dark:text-emerald-200 dark:bg-emerald-500/15 dark:border-emerald-400/20", "bg-emerald-500", buckets["pago"]),
-		lancamentosStatusSummaryItem("pendente", "Pendente", "clock", "text-amber-700 bg-amber-500/10 border-amber-500/20 dark:text-amber-200 dark:bg-amber-500/15 dark:border-amber-400/20", "bg-amber-500", buckets["pendente"]),
-		lancamentosStatusSummaryItem("vencido", "Vencido", "triangle-alert", "text-red-700 bg-red-500/10 border-red-500/20 dark:text-red-200 dark:bg-red-500/15 dark:border-red-400/20", "bg-red-500", buckets["vencido"]),
-		lancamentosStatusSummaryItem("agendado", "Agendado", "timer", "text-violet-700 bg-violet-500/10 border-violet-500/20 dark:text-violet-200 dark:bg-violet-500/15 dark:border-violet-400/20", "bg-violet-500", buckets["agendado"]),
+		lancamentosStatusSummaryItem(lancamentosResumoEntradasConfirmadas, "Entradas confirmadas", "arrow-up", ToneOK, true, "Entradas", buckets[lancamentosResumoEntradasConfirmadas]),
+		lancamentosStatusSummaryItem(lancamentosResumoSaidasConfirmadas, "Saídas confirmadas", "arrow-down", ToneDanger, true, "Saídas", buckets[lancamentosResumoSaidasConfirmadas]),
+		lancamentosStatusSummaryItem(lancamentosResumoPendente, "Pendente", "clock", ToneAttention, false, "", buckets[lancamentosResumoPendente]),
+		lancamentosStatusSummaryItem(lancamentosResumoVencido, "Vencido", "triangle-alert", ToneDanger, false, "", buckets[lancamentosResumoVencido]),
+		lancamentosStatusSummaryItem(lancamentosResumoAgendado, "Agendado", "timer", ToneProgress, false, "", buckets[lancamentosResumoAgendado]),
+	}, nil
+}
+
+// lancamentosResumoIncomeBucket mapeia o estado de uma receita para o resumo.
+// Somente receita confirmada entra no agregado; receita pendente/vencida/
+// agendada continua fora dos buckets, como sempre foi.
+func lancamentosResumoIncomeBucket(statusKey string) string {
+	if statusKey == "pago" {
+		return lancamentosResumoEntradasConfirmadas
+	}
+	return ""
+}
+
+// lancamentosResumoLifecycleBucket mapeia o estado de uma despesa (ou de uma
+// fatura) para a métrica correspondente do resumo. A despesa confirmada deixa de
+// ser o agregado genérico "Pago" e passa a ser "Saídas confirmadas"; os demais
+// estados seguem idênticos.
+func lancamentosResumoLifecycleBucket(statusKey string) string {
+	switch statusKey {
+	case "pago":
+		return lancamentosResumoSaidasConfirmadas
+	case "pendente":
+		return lancamentosResumoPendente
+	case "vencido":
+		return lancamentosResumoVencido
+	case "agendado":
+		return lancamentosResumoAgendado
+	default:
+		return ""
 	}
 }
 
-func lancamentosStatusSummaryItem(key, label, icon, toneClasses, dotClasses string, b *lancamentosStatusBucket) LancamentosStatusSummary {
+func lancamentosStatusSummaryItem(key, label, icon, tone string, primary bool, shortLabel string, b *lancamentosStatusBucket) LancamentosStatusSummary {
 	count := 0
 	var amount int64
 	if b != nil {
 		count = b.count
 		amount = b.amount
 	}
-	countLabel := fmt.Sprintf("%d itens", count)
-	if count == 1 {
-		countLabel = "1 item"
-	}
 	return LancamentosStatusSummary{
 		Key:         key,
 		Label:       label,
 		Icon:        icon,
 		Amount:      formatCurrencyLabel(amount),
+		AmountCents: amount,
+		AmountLen:   lancamentosMoneyLenBucket(formatCurrencyLabel(amount)),
 		Count:       count,
-		CountLabel:  countLabel,
-		ToneClasses: toneClasses,
-		DotClasses:  dotClasses,
+		CountLabel:  lancamentosPluralLabel(count, "item", "itens"),
+		Tone:        tone,
+		Primary:     primary,
+		LabelShort:  shortLabel,
+	}
+}
+
+// lancamentosMoneyLenBucket classifica o comprimento de um valor monetário já
+// formatado. O resumo aplica a faixa via `data-len` para escolher uma escala de
+// fonte: quanto maior o valor, menor o teto da fonte, de modo que nenhum valor
+// precise de ellipsis ou ultrapasse o card.
+func lancamentosMoneyLenBucket(amount string) string {
+	switch n := len([]rune(amount)); {
+	case n <= 12:
+		return "s"
+	case n <= 15:
+		return "m"
+	case n <= 19:
+		return "l"
+	default:
+		return "xl"
+	}
+}
+
+// lancamentosPluralLabel monta "0 itens", "1 item", "2 itens".
+func lancamentosPluralLabel(count int, singular, plural string) string {
+	if count == 1 {
+		return fmt.Sprintf("1 %s", singular)
+	}
+	return fmt.Sprintf("%d %s", count, plural)
+}
+
+// lancamentosSummaryByKey busca uma métrica do resumo pela chave canônica.
+func lancamentosSummaryByKey(data LancamentosData, key string) (LancamentosStatusSummary, bool) {
+	for _, item := range data.ResumoStatus {
+		if item.Key == key {
+			return item, true
+		}
+	}
+	return LancamentosStatusSummary{}, false
+}
+
+// applyLancamentosResumoDerivados completa o resumo com os valores que derivam
+// dos dois agregados direcionais, sem introduzir regra financeira nova.
+func applyLancamentosResumoDerivados(data *LancamentosData) {
+	entradas, okEntradas := lancamentosSummaryByKey(*data, lancamentosResumoEntradasConfirmadas)
+	saidas, okSaidas := lancamentosSummaryByKey(*data, lancamentosResumoSaidasConfirmadas)
+	if okEntradas && okSaidas {
+		liquido := entradas.AmountCents - saidas.AmountCents
+		data.ResumoLiquido = lancamentosResumoLiquidoLabel(liquido)
+		data.ResumoLiquidoLen = lancamentosMoneyLenBucket(data.ResumoLiquido)
+		data.ResumoLiquidoNegativo = liquido < 0
+		data.ResumoLiquidoTemDados = true
+	}
+
+	totalItens := len(data.Transactions) + len(data.Invoices)
+	data.ResumoTotalItens = totalItens
+	data.ResumoTotalItensLabel = lancamentosPluralLabel(totalItens, "item", "itens")
+}
+
+// lancamentosResumoLiquidoLabel formata o resultado líquido do filtro:
+// positivo -> "+ R$ X", negativo -> "- R$ X", zero -> "R$ 0,00".
+func lancamentosResumoLiquidoLabel(cents int64) string {
+	switch {
+	case cents > 0:
+		return "+ R$ " + formatCurrencyCentsBase(cents)
+	case cents < 0:
+		return "- R$ " + formatCurrencyCentsBase(cents)
+	default:
+		return formatCurrencyLabel(0)
 	}
 }
 
@@ -3399,6 +3550,36 @@ type BalanceData struct {
 	TrendDirection string
 	IsNegative     bool
 	FreeIsNegative bool
+	// Percentuais da barra Disponível x Reservado. Somam 100 quando há saldo
+	// analisável; valem 0/0 quando não há composição a exibir.
+	ReservedPercent int
+	FreePercent     int
+	// HasSplit indica se existe composição (disponível + reservado) a exibir.
+	HasSplit bool
+}
+
+// applyBalanceSplit deriva a proporção visual entre reservado e disponível.
+// Valores negativos são tratados como zero para a barra, e o sinal real
+// continua visível nos valores textuais.
+func (b *BalanceData) applyBalanceSplit(reserved, free int64) {
+	reservedPart := reserved
+	if reservedPart < 0 {
+		reservedPart = 0
+	}
+	freePart := free
+	if freePart < 0 {
+		freePart = 0
+	}
+	total := reservedPart + freePart
+	if total <= 0 {
+		b.ReservedPercent = 0
+		b.FreePercent = 0
+		b.HasSplit = false
+		return
+	}
+	b.ReservedPercent = int((reservedPart*100 + total/2) / total)
+	b.FreePercent = 100 - b.ReservedPercent
+	b.HasSplit = true
 }
 
 type DashboardHealthData struct {
@@ -3501,16 +3682,41 @@ func dashboardCardPaymentPriority(card CreditCardCard, today time.Time) int {
 
 type DashboardLimitCard struct {
 	CategoryName string
+	CategoryIcon string
+	IconKey      string
 	Spent        MoneyDisplay
 	Limit        MoneyDisplay
 	Percent      int
+	// PercentExact preserva o consumo real (pode passar de 100) para que a
+	// interface consiga distinguir "no limite" de "excedido".
+	PercentExact int
+	Remaining    MoneyDisplay
 }
+
+// IconOrDefault aplica a herança do Limite: escolha própria -> ícone da
+// categoria -> fallback neutro do catálogo.
+func (c DashboardLimitCard) IconOrDefault() string { return icons.Resolve(c.IconKey, c.CategoryIcon) }
+
+// IconLabel devolve o nome amigável do ícone efetivo.
+func (c DashboardLimitCard) IconLabel() string { return icons.Label(c.IconOrDefault()) }
+
+// Tone devolve a faixa semântica de consumo do limite.
+func (c DashboardLimitCard) Tone() string { return limitToneForPercent(c.PercentExact) }
+
+// ToneLabel devolve o rótulo acessível da faixa.
+func (c DashboardLimitCard) ToneLabel() string { return limitToneLabel(c.Tone()) }
+
+// IsExceeded indica consumo acima do limite definido.
+func (c DashboardLimitCard) IsExceeded() bool { return c.PercentExact >= limitExceededPercent }
 
 type DashboardPayableItem struct {
 	Description  string
 	DueDateLabel string
 	Amount       MoneyDisplay
 	IsOverdue    bool
+	DueDateShort string
+	StatusLabel  string
+	StatusTone   string
 }
 
 func BuildDashboardData(db *sql.DB, userID, workspaceID string) DashboardData {
@@ -3568,6 +3774,7 @@ func BuildDashboardData(db *sql.DB, userID, workspaceID string) DashboardData {
 		data.Balance.Free = MoneyMinor(reserveBalance.FreeBalance)
 		data.Balance.FreeIsNegative = reserveBalance.FreeBalance < 0
 	}
+	data.Balance.applyBalanceSplit(reserveBalance.ReservedBalance, reserveBalance.FreeBalance)
 	data.Balance.Money = MoneyMajor(totalBalance)
 	data.Balance.TrendPercent, data.Balance.TrendDirection = queryBalanceTrend(db, workspaceID, totalBalance, now)
 	data.Balance.IsNegative = totalBalance < 0
@@ -3681,6 +3888,8 @@ func BuildDashboardData(db *sql.DB, userID, workspaceID string) DashboardData {
 		}
 	}
 
+	// A Home exibe todas as contas do workspace: nenhum recorte de apresentação
+	// é aplicado aqui, e nenhum dado é alterado.
 	cardRows, err := db.Query(`
 		SELECT
 			a.id,
@@ -3812,6 +4021,8 @@ func queryDashboardLimits(db *sql.DB, workspaceID string, now time.Time) []Dashb
 	rows, err := db.Query(`
 		SELECT
 			COALESCE(c.name, 'Sem categoria'),
+			COALESCE(c.icon, ''),
+			COALESCE(cl.icon_key, ''),
 			cl.max_amount_monthly,
 			COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) AS spent
 		FROM cost_limits cl
@@ -3839,17 +4050,24 @@ func queryDashboardLimits(db *sql.DB, workspaceID string, now time.Time) []Dashb
 	for rows.Next() {
 		var card DashboardLimitCard
 		var maxAmount, spent int64
-		if err := rows.Scan(&card.CategoryName, &maxAmount, &spent); err != nil {
+		if err := rows.Scan(&card.CategoryName, &card.CategoryIcon, &card.IconKey, &maxAmount, &spent); err != nil {
 			continue
 		}
 		card.Spent = MoneyMinor(spent)
 		card.Limit = MoneyMinor(maxAmount)
 		if maxAmount > 0 {
-			card.Percent = int((spent * 100) / maxAmount)
+			card.PercentExact = int((spent * 100) / maxAmount)
 		}
-		if card.Percent < 0 {
-			card.Percent = 0
+		if card.PercentExact < 0 {
+			card.PercentExact = 0
 		}
+		remaining := maxAmount - spent
+		if remaining < 0 {
+			remaining = 0
+		}
+		card.Remaining = MoneyMinor(remaining)
+		// A barra satura em 100; o excesso é comunicado pelo tom e pelo rótulo.
+		card.Percent = card.PercentExact
 		if card.Percent > 100 {
 			card.Percent = 100
 		}
@@ -3864,8 +4082,8 @@ func queryDashboardLimits(db *sql.DB, workspaceID string, now time.Time) []Dashb
 			return limits[i].Percent > limits[j].Percent
 		})
 	}
-	if len(limits) > 5 {
-		limits = limits[:5]
+	if len(limits) > 6 {
+		limits = limits[:6]
 	}
 
 	return limits
@@ -3950,14 +4168,15 @@ func dashboardCashSummaryMonthLabel(now time.Time) string {
 func queryDashboardBoxes(db *sql.DB, workspaceID string) []CaixinhaCard {
 	rows, err := db.Query(`
 		SELECT b.id, b.category_id, b.name, b.target_amount, b.monthly_recharge,
-			COALESCE(c.icon, 'piggy-bank'),
+			COALESCE(c.icon, ?),
 			COALESCE(c.color, '#6b7280'),
-			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS total_balance
+			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS total_balance,
+			COALESCE(b.icon_key, '')
 		FROM boxes b
 		LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
 		WHERE b.workspace_id = ?
 		ORDER BY b.name
-	`, workspaceID)
+	`, icons.FallbackGoal, workspaceID)
 	if err != nil {
 		return nil
 	}
@@ -3968,7 +4187,7 @@ func queryDashboardBoxes(db *sql.DB, workspaceID string) []CaixinhaCard {
 		var card CaixinhaCard
 		var categoryID sql.NullString
 		var target, monthly, balance int64
-		if err := rows.Scan(&card.ID, &categoryID, &card.Name, &target, &monthly, &card.Icon, &card.Color, &balance); err != nil {
+		if err := rows.Scan(&card.ID, &categoryID, &card.Name, &target, &monthly, &card.Icon, &card.Color, &balance, &card.IconKey); err != nil {
 			continue
 		}
 		if categoryID.Valid {
@@ -4000,11 +4219,23 @@ func queryDashboardBoxes(db *sql.DB, workspaceID string) []CaixinhaCard {
 			return boxes[i].Percent > boxes[j].Percent
 		})
 	}
-	if len(boxes) > 5 {
-		boxes = boxes[:5]
+	if len(boxes) > 6 {
+		boxes = boxes[:6]
 	}
 
 	return boxes
+}
+
+// pendingItemStatus devolve o rótulo e o tom da coluna de status das próximas
+// ações. Só o atraso real usa o tom de perigo.
+func pendingItemStatus(transactionType string, overdue bool) (string, string) {
+	if overdue {
+		return "Atrasado", "danger"
+	}
+	if transactionType == models.TransactionTypeIncome {
+		return "A receber", "info"
+	}
+	return "A pagar", "neutral"
 }
 
 func queryDashboardPendingItems7d(db *sql.DB, workspaceID, transactionType string, now time.Time) []DashboardPayableItem {
@@ -4077,6 +4308,7 @@ func queryDashboardPendingItems7d(db *sql.DB, workspaceID, transactionType strin
 		dueDate := time.Unix(dueUnix, 0).UTC()
 		dueOnly := time.Date(dueDate.Year(), dueDate.Month(), dueDate.Day(), 0, 0, 0, 0, time.UTC)
 		item.IsOverdue = dueOnly.Before(today)
+		item.DueDateShort = dueDate.Format("02/01")
 		switch {
 		case item.IsOverdue:
 			item.DueDateLabel = "Atrasado · venceu em " + dueDate.Format("02/01")
@@ -4085,6 +4317,8 @@ func queryDashboardPendingItems7d(db *sql.DB, workspaceID, transactionType strin
 		default:
 			item.DueDateLabel = "Vence em " + dueDate.Format("02/01")
 		}
+		// Vermelho é reservado a atraso real; o restante usa tom neutro/info.
+		item.StatusLabel, item.StatusTone = pendingItemStatus(transactionType, item.IsOverdue)
 
 		items = append(items, item)
 	}
@@ -4899,6 +5133,12 @@ type LancamentosData struct {
 	ResumoAcumulado           string
 	AcumuladoNegativo         bool
 	ResumoStatus              []LancamentosStatusSummary
+	ResumoLiquido             string
+	ResumoLiquidoLen          string
+	ResumoLiquidoNegativo     bool
+	ResumoLiquidoTemDados     bool
+	ResumoTotalItens          int
+	ResumoTotalItensLabel     string
 	UnifiedItems              []UnifiedItem
 	SortOrder                 string
 	StatusPendenteOn          bool
@@ -11930,7 +12170,11 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 
 		}
 	}
-	data.ResumoStatus = buildLancamentosStatusSummary(data.Transactions, data.Invoices)
+	data.ResumoStatus, err = buildLancamentosStatusSummary(data.Transactions, data.Invoices)
+	if err != nil {
+		return LancamentosData{}, fmt.Errorf("build lancamentos summary: %w", err)
+	}
+	applyLancamentosResumoDerivados(&data)
 
 	// CONTRACT: docs/contracts/INVOICE_RENDER_CONTRACT.md
 	// Build UnifiedItems: merge transactions and invoices sorted by date desc
@@ -13298,17 +13542,18 @@ func (h *TransactionHandler) HandleCategoryCreateAPI(w http.ResponseWriter, r *h
 	}
 	now := time.Now().Unix()
 	newID := uuid.NewString()
+	icon := resolveCategoryIconInput(r.FormValue("icon"), name)
 	if _, err := h.DB.Exec(`
 		INSERT INTO categories (id, workspace_id, name, icon, color, type, macro_group, parent_id, created_at)
-		VALUES (?, ?, ?, 'tag', '#6b7280', ?, ?, NULLIF(?, ''), ?)
-	`, newID, h.WorkspaceID, name, typ, macroGroup, parentID, now); err != nil {
+		VALUES (?, ?, ?, ?, '#6b7280', ?, ?, NULLIF(?, ''), ?)
+	`, newID, h.WorkspaceID, name, icon, typ, macroGroup, parentID, now); err != nil {
 		log.Printf("api create category error: %v", err)
 		h.renderCategoryCreateError(w, r, "Não foi possível criar a categoria.")
 		return
 	}
 	triggerData := fmt.Sprintf(
-		`{"categoryCreated": {"id":"%s","name":"%s","icon":"tag","color":"#6b7280","type":"%s"}}`,
-		newID, template.JSEscapeString(name), typ,
+		`{"categoryCreated": {"id":"%s","name":"%s","icon":"%s","color":"#6b7280","type":"%s"}}`,
+		newID, template.JSEscapeString(name), icon, typ,
 	)
 	w.Header().Set("HX-Trigger", triggerData)
 	w.WriteHeader(http.StatusOK)

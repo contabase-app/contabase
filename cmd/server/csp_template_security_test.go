@@ -318,11 +318,14 @@ func TestProgressTemplatesUseNativeElementsWithoutInlineWidths(t *testing.T) {
 			`<progress class="cb-v2-progress" value="{{.LimitPercent}}" max="100"`,
 		},
 		"templates/pages/dashboard.html": {
-			`<progress class="cb-v2-progress {{if ge .Percent 90}}is-danger{{else if ge .Percent 70}}is-warning{{end}}" value="{{.Percent}}" max="100"`,
-			`<progress class="cb-v2-progress {{if .IsNegative}}is-danger{{end}}" value="{{.Percent}}" max="100"`,
+			// Medidores de Limites e de Metas usam o mesmo elemento nativo.
+			`<progress class="cb-v2-meter-track" value="{{.Percent}}" max="100"`,
 		},
 		"templates/pages/metas.html": {
-			`<progress class="metas-progress metas-progress-{{$variant}}" value="{{.Percent}}" max="100"`,
+			// Reservas: barra de progresso nativa, sem largura inline.
+			`<progress class="metas-progress" value="{{.Percent}}" max="100"`,
+			// Limites: a mesma barra nativa comunica o disponível.
+			`<progress class="metas-progress" {{if ge .Percent 100}}value="0"`,
 		},
 		"templates/pages/faturas.html": {
 			`<progress class="cb-invoice-limit-progress {{if le .LimitPercent 30}}is-danger{{else if le .LimitPercent 70}}is-warning{{else}}is-success{{end}}" value="{{.LimitPercent}}" max="100"`,

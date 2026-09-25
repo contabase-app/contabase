@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/contabase-app/contabase/internal/icons"
 	"github.com/contabase-app/contabase/internal/models"
 	"github.com/contabase-app/contabase/internal/paths"
 	"github.com/contabase-app/contabase/internal/services"
@@ -86,17 +87,25 @@ type MetaFormData struct {
 	CategoryName          string
 	CategoryIcon          string
 	CategoryColor         string
+	LimitIconKey          string
+	BoxIconKey            string
 	MaxAmountInput        string
 	BalanceLabel          string
 	Categories            []FormCategory
 	IsBusiness            bool
 }
 
+// BoxIconFallback devolve a chave exibida pelo seletor quando a reserva ainda
+// não tem escolha própria: a categoria vinculada ou a marca de reserva. O
+// seletor da reserva não cai no ícone neutro de categoria.
+func (f MetaFormData) BoxIconFallback() string { return icons.ResolveGoal(f.CategoryIcon) }
+
 type LimiteCard struct {
 	ID            string
 	CategoryID    string
 	CategoryName  string
 	CategoryIcon  string
+	IconKey       string
 	CategoryColor string
 	MaxAmount     MoneyDisplay
 	Spent         MoneyDisplay
@@ -105,12 +114,27 @@ type LimiteCard struct {
 	PercentColor  string
 }
 
+// IconOrDefault aplica a herança do Limite: escolha própria -> ícone da
+// categoria vinculada -> fallback neutro do catálogo.
+func (c LimiteCard) IconOrDefault() string { return icons.Resolve(c.IconKey, c.CategoryIcon) }
+
+// IconLabel devolve o nome amigável do ícone efetivo.
+func (c LimiteCard) IconLabel() string { return icons.Label(c.IconOrDefault()) }
+
+// HasOwnIcon informa se o Limite tem ícone próprio ou se está herdando.
+func (c LimiteCard) HasOwnIcon() bool { return icons.CanonicalKey(c.IconKey) != "" }
+
+// Tone devolve a faixa semântica de consumo do limite (mesma regra do
+// dashboard e dos relatórios); a barra do card exibe o disponível.
+func (c LimiteCard) Tone() string { return limitToneForPercent(c.Percent) }
+
 type CaixinhaCard struct {
 	ID                 string
 	CategoryID         string
 	CategoryName       string
 	Name               string
 	Icon               string
+	IconKey            string
 	Color              string
 	Target             MoneyDisplay
 	Balance            MoneyDisplay
@@ -128,6 +152,22 @@ type CaixinhaCard struct {
 	YieldForecastLabel string
 	YieldMonthsLeft    int
 }
+
+// IconOrDefault resolve escolha própria -> categoria válida -> reserva.
+// Vazio e legado inválido avançam ao próximo candidato, sem alterar o banco.
+func (c CaixinhaCard) IconOrDefault() string {
+	return icons.ResolveGoal(c.IconKey, c.Icon)
+}
+
+// IconLabel devolve o nome amigável do ícone efetivo.
+func (c CaixinhaCard) IconLabel() string { return icons.Label(c.IconOrDefault()) }
+
+// ProgressTone devolve a faixa visual da Meta. Diferente de um Limite, aqui o
+// percentual representa avanço em direção a um objetivo, não consumo.
+func (c CaixinhaCard) ProgressTone() string { return progressToneFor(c.Percent, c.IsNegative) }
+
+// ProgressToneLabel devolve o rótulo acessível do progresso da Meta.
+func (c CaixinhaCard) ProgressToneLabel() string { return progressToneLabel(c.ProgressTone()) }
 
 const (
 	requiredStateNone       = ""
@@ -373,6 +413,7 @@ func (h *MetasHandler) HandleCriarCaixinha(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	categoryValue := nullableStringValue(categoryID)
+	iconKey := icons.CanonicalKey(r.FormValue("icon_key"))
 
 	tMut := time.Now()
 	now := time.Now().Unix()
@@ -384,15 +425,15 @@ func (h *MetasHandler) HandleCriarCaixinha(w http.ResponseWriter, r *http.Reques
 		}
 		if boxID == "" {
 			return execOneTx(tx, `
-				INSERT INTO boxes (id, workspace_id, category_id, name, target_amount, monthly_recharge, monthly_yield_rate, target_date, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`, uuid.NewString(), h.WorkspaceID, categoryValue, name, targetAmount, monthlyRecharge, monthlyYieldRate, targetDateValue, now, now)
+				INSERT INTO boxes (id, workspace_id, category_id, name, target_amount, monthly_recharge, monthly_yield_rate, target_date, icon_key, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			`, uuid.NewString(), h.WorkspaceID, categoryValue, name, targetAmount, monthlyRecharge, monthlyYieldRate, targetDateValue, iconKey, now, now)
 		}
 		return execOneTx(tx, `
 			UPDATE boxes
-			SET category_id = ?, name = ?, target_amount = ?, monthly_recharge = ?, monthly_yield_rate = ?, target_date = ?, updated_at = ?
+			SET category_id = ?, name = ?, target_amount = ?, monthly_recharge = ?, monthly_yield_rate = ?, target_date = ?, icon_key = ?, updated_at = ?
 			WHERE id = ? AND workspace_id = ?
-		`, categoryValue, name, targetAmount, monthlyRecharge, monthlyYieldRate, targetDateValue, now, boxID, h.WorkspaceID)
+		`, categoryValue, name, targetAmount, monthlyRecharge, monthlyYieldRate, targetDateValue, iconKey, now, boxID, h.WorkspaceID)
 	}); err != nil {
 		log.Printf("upsert caixinha error: %v", err)
 		respondMetaFormError(w, "caixinha", "erro ao salvar reserva")
@@ -423,6 +464,7 @@ func (h *MetasHandler) HandleCriarLimite(w http.ResponseWriter, r *http.Request)
 		respondMetaFormError(w, "limite", "dados inválidos")
 		return
 	}
+	iconKey := icons.CanonicalKey(r.FormValue("icon_key"))
 
 	tMut := time.Now()
 	now := time.Now().Unix()
@@ -446,14 +488,14 @@ func (h *MetasHandler) HandleCriarLimite(w http.ResponseWriter, r *http.Request)
 		if limitID != "" {
 			return execOneTx(tx, `
 				UPDATE cost_limits
-				SET category_id = ?, max_amount_monthly = ?, updated_at = ?
+				SET category_id = ?, max_amount_monthly = ?, icon_key = ?, updated_at = ?
 				WHERE id = ? AND workspace_id = ?
-			`, categoryID, maxAmount, now, limitID, h.WorkspaceID)
+			`, categoryID, maxAmount, iconKey, now, limitID, h.WorkspaceID)
 		}
 		return execOneTx(tx, `
-			INSERT INTO cost_limits (id, workspace_id, category_id, max_amount_monthly, alert_threshold, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, uuid.NewString(), h.WorkspaceID, categoryID, maxAmount, 80, now, now)
+			INSERT INTO cost_limits (id, workspace_id, category_id, max_amount_monthly, alert_threshold, icon_key, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, uuid.NewString(), h.WorkspaceID, categoryID, maxAmount, 80, iconKey, now, now)
 	}); err != nil {
 		if errors.Is(err, errDuplicateLimit) || strings.Contains(err.Error(), "UNIQUE constraint") {
 			respondMetaFormError(w, "limite", "Já existe um limite para esta categoria. Edite o limite existente.")
@@ -680,15 +722,15 @@ func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var catID, catName, catIcon, catColor string
+	var catID, catName, catIcon, catColor, limitIconKey string
 	var maxAmount int64
 	if err := h.DB.QueryRow(`
 		SELECT cl.max_amount_monthly, COALESCE(c.name, ''), c.id,
-			COALESCE(c.icon, 'tag'), COALESCE(c.color, '#6b7280')
+			COALESCE(c.icon, ''), COALESCE(c.color, '#6b7280'), COALESCE(cl.icon_key, '')
 		FROM cost_limits cl
 		JOIN categories c ON c.id = cl.category_id AND c.workspace_id = cl.workspace_id
 		WHERE cl.id = ? AND cl.workspace_id = ?
-	`, limitID, h.WorkspaceID).Scan(&maxAmount, &catName, &catID, &catIcon, &catColor); err != nil {
+	`, limitID, h.WorkspaceID).Scan(&maxAmount, &catName, &catID, &catIcon, &catColor, &limitIconKey); err != nil {
 		http.Error(w, "limite não encontrado", http.StatusNotFound)
 		return
 	}
@@ -804,7 +846,7 @@ func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Requ
 		LimitName:       catName,
 		CategoryID:      catID,
 		CategoryName:    catName,
-		CategoryIcon:    catIcon,
+		CategoryIcon:    icons.Resolve(limitIconKey, catIcon),
 		CategoryColor:   catColor,
 		MaxAmount:       MoneyMinor(maxAmount),
 		Spent:           MoneyMinor(totalSpent),
@@ -1015,8 +1057,9 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 	limitRows, err := h.DB.Query(`
 		SELECT cl.id, cl.category_id, cl.max_amount_monthly,
 			COALESCE(c.name, 'Sem categoria'),
-			COALESCE(c.icon, 'tag'),
+			COALESCE(c.icon, ''),
 			COALESCE(c.color, '#6b7280'),
+			COALESCE(cl.icon_key, ''),
 			COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) AS spent
 		FROM cost_limits cl
 		JOIN categories c ON c.id = cl.category_id
@@ -1037,7 +1080,7 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 	for limitRows.Next() {
 		var card LimiteCard
 		var maxAmount, spent int64
-		if err := limitRows.Scan(&card.ID, &card.CategoryID, &maxAmount, &card.CategoryName, &card.CategoryIcon, &card.CategoryColor, &spent); err != nil {
+		if err := limitRows.Scan(&card.ID, &card.CategoryID, &maxAmount, &card.CategoryName, &card.CategoryIcon, &card.CategoryColor, &card.IconKey, &spent); err != nil {
 			continue
 		}
 		remaining := maxAmount - spent
@@ -1076,7 +1119,7 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 		var yieldRate float64
 		var categoryID sql.NullString
 		var categoryName string
-		if err := boxRows.Scan(&card.ID, &categoryID, &card.Name, &target, &monthly, &targetDate, &card.Icon, &card.Color, &categoryName, &yieldRate, &balance); err != nil {
+		if err := boxRows.Scan(&card.ID, &categoryID, &card.Name, &target, &monthly, &targetDate, &card.Icon, &card.Color, &categoryName, &yieldRate, &balance, &card.IconKey); err != nil {
 			continue
 		}
 		if categoryID.Valid {
@@ -1242,11 +1285,11 @@ func (h *MetasHandler) loadLimitFormData(form *MetaFormData, id string) error {
 	var catID sql.NullString
 	var icon, color string
 	err := h.DB.QueryRow(`
-		SELECT cl.id, cl.category_id, cl.max_amount_monthly, COALESCE(c.name, ''), COALESCE(c.icon, 'tag'), COALESCE(c.color, '#6b7280')
+		SELECT cl.id, cl.category_id, cl.max_amount_monthly, COALESCE(c.name, ''), COALESCE(c.icon, ''), COALESCE(c.color, '#6b7280'), COALESCE(cl.icon_key, '')
 		FROM cost_limits cl
 		JOIN categories c ON c.id = cl.category_id
 		WHERE cl.id = ? AND cl.workspace_id = ?
-	`, id, h.WorkspaceID).Scan(&form.LimitID, &catID, &maxAmount, &form.CategoryName, &icon, &color)
+	`, id, h.WorkspaceID).Scan(&form.LimitID, &catID, &maxAmount, &form.CategoryName, &icon, &color, &form.LimitIconKey)
 	if err != nil {
 		return err
 	}
@@ -1269,27 +1312,29 @@ func (h *MetasHandler) loadBoxFormData(form *MetaFormData, id string) error {
 	err := h.DB.QueryRow(`
 		SELECT b.id, b.category_id, b.name, b.target_amount, b.monthly_recharge, b.target_date,
 			COALESCE(c.name, ''),
-			COALESCE(c.icon, 'tag'),
+			COALESCE(c.icon, ''),
 			COALESCE(c.color, '#6b7280'),
 			b.monthly_yield_rate,
-			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS balance
+			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS balance,
+			COALESCE(b.icon_key, '')
 		FROM boxes b
 		LEFT JOIN categories c ON c.id = b.category_id
 		WHERE b.id = ? AND b.workspace_id = ?
-	`, id, h.WorkspaceID).Scan(&form.BoxID, &catID, &form.Name, &targetAmount, &monthlyRecharge, &targetDate, &form.CategoryName, &icon, &color, &monthlyYieldRate, &balance)
+	`, id, h.WorkspaceID).Scan(&form.BoxID, &catID, &form.Name, &targetAmount, &monthlyRecharge, &targetDate, &form.CategoryName, &icon, &color, &monthlyYieldRate, &balance, &form.BoxIconKey)
 	if err != nil && isMissingColumnError(err, "target_date") {
 		targetDate = sql.NullInt64{}
 		monthlyYieldRate = 0
 		err = h.DB.QueryRow(`
 			SELECT b.id, b.category_id, b.name, b.target_amount, b.monthly_recharge,
 				COALESCE(c.name, ''),
-				COALESCE(c.icon, 'tag'),
+				COALESCE(c.icon, ''),
 				COALESCE(c.color, '#6b7280'),
-				COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS balance
+				COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS balance,
+				''
 			FROM boxes b
 			LEFT JOIN categories c ON c.id = b.category_id
 			WHERE b.id = ? AND b.workspace_id = ?
-		`, id, h.WorkspaceID).Scan(&form.BoxID, &catID, &form.Name, &targetAmount, &monthlyRecharge, &form.CategoryName, &icon, &color, &balance)
+		`, id, h.WorkspaceID).Scan(&form.BoxID, &catID, &form.Name, &targetAmount, &monthlyRecharge, &form.CategoryName, &icon, &color, &balance, &form.BoxIconKey)
 	}
 	if err != nil {
 		return err
@@ -1395,11 +1440,12 @@ func formatMonthLabelFromUnix(targetDateUnix int64) string {
 func (h *MetasHandler) queryBoxesForMetas() (*sql.Rows, error) {
 	queryWithTargetDate := `
 		SELECT b.id, b.category_id, b.name, b.target_amount, b.monthly_recharge, b.target_date,
-			COALESCE(c.icon, 'piggy-bank'),
+			COALESCE(c.icon, ''),
 			COALESCE(c.color, '#6b7280'),
 			COALESCE(c.name, ''),
 			b.monthly_yield_rate,
-			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS total_balance
+			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS total_balance,
+			COALESCE(b.icon_key, '')
 		FROM boxes b
 		LEFT JOIN categories c ON c.id = b.category_id
 		WHERE b.workspace_id = ?
@@ -1412,11 +1458,12 @@ func (h *MetasHandler) queryBoxesForMetas() (*sql.Rows, error) {
 
 	queryLegacy := `
 		SELECT b.id, b.category_id, b.name, b.target_amount, b.monthly_recharge, NULL AS target_date,
-			COALESCE(c.icon, 'piggy-bank'),
+			COALESCE(c.icon, ''),
 			COALESCE(c.color, '#6b7280'),
 			COALESCE(c.name, ''),
 			0.0 AS monthly_yield_rate,
-			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS total_balance
+			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS total_balance,
+			''
 		FROM boxes b
 		LEFT JOIN categories c ON c.id = b.category_id
 		WHERE b.workspace_id = ?
@@ -1499,7 +1546,8 @@ type BoxSheetData struct {
 	BoxID               string
 	BoxName             string
 	CategoryName        string
-	Icon                string
+	IconKey             string
+	CategoryIcon        string
 	Color               string
 	Balance             MoneyDisplay
 	Target              MoneyDisplay
@@ -1507,22 +1555,33 @@ type BoxSheetData struct {
 	ErrorMessage        string
 }
 
+// IconOrDefault resolve escolha própria -> categoria válida -> reserva, a mesma
+// herança da listagem. Categoria vazia, chave legada inválida e reserva sem
+// categoria caem na marca de poupança, sem gravar nada no banco.
+func (d BoxSheetData) IconOrDefault() string {
+	return icons.ResolveGoal(d.IconKey, d.CategoryIcon)
+}
+
+// IconLabel devolve o nome amigável do ícone efetivo.
+func (d BoxSheetData) IconLabel() string { return icons.Label(d.IconOrDefault()) }
+
 func (h *MetasHandler) buildBoxSheetData(boxID string) (BoxSheetData, error) {
 	var d BoxSheetData
 	var targetAmount int64
 	var balanceCents int64
-	var categoryID, categoryName, icon, color sql.NullString
+	var categoryID, categoryName, color sql.NullString
 
 	err := h.DB.QueryRow(`
 		SELECT b.name, b.category_id, b.target_amount,
 			COALESCE(c.name, ''),
-			COALESCE(c.icon, 'piggy-bank'),
+			COALESCE(c.icon, ''),
 			COALESCE(c.color, '#6b7280'),
+			COALESCE(b.icon_key, ''),
 			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0)
 		FROM boxes b
 		LEFT JOIN categories c ON c.id = b.category_id
 		WHERE b.id = ? AND b.workspace_id = ?
-	`, boxID, h.WorkspaceID).Scan(&d.BoxName, &categoryID, &targetAmount, &categoryName, &icon, &color, &balanceCents)
+	`, boxID, h.WorkspaceID).Scan(&d.BoxName, &categoryID, &targetAmount, &categoryName, &d.CategoryIcon, &color, &d.IconKey, &balanceCents)
 
 	if err != nil {
 		return d, fmt.Errorf("box not found: %w", err)
@@ -1532,7 +1591,6 @@ func (h *MetasHandler) buildBoxSheetData(boxID string) (BoxSheetData, error) {
 	if categoryID.Valid && categoryID.String != "" {
 		d.CategoryName = categoryName.String
 	}
-	d.Icon = icon.String
 	d.Color = color.String
 	d.Balance = MoneyMinor(balanceCents)
 	if targetAmount > 0 {

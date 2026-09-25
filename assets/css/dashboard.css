@@ -17,10 +17,10 @@
 .cb-v2-heading-row h1 {
     margin: 0;
     color: var(--v2-text);
-    font-size: 28px;
-    font-weight: 720;
-    letter-spacing: -0.035em;
-    line-height: 1.15;
+    font-size: 23px;
+    font-weight: 640;
+    letter-spacing: -0.028em;
+    line-height: 1.2;
     text-wrap: balance;
 }
 
@@ -32,25 +32,41 @@
     line-height: 1.5;
 }
 
-.cb-v2-context-actions {
+.cb-v2-quick-actions {
     display: grid;
-    grid-template-columns: repeat(4, minmax(96px, 1fr));
-    gap: 7px;
-    min-width: min(100%, 444px);
+    gap: 6px;
+    justify-items: end;
+}
+
+.cb-v2-quick-label {
+    margin: 0;
+    color: var(--v2-subtle);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.cb-v2-context-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
 }
 
 .cb-v2-context-actions a {
-    display: flex;
-    min-height: 40px;
+    display: inline-flex;
+    min-height: 34px;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    border: 1px solid var(--v2-border);
-    border-radius: 10px;
-    background: var(--v2-surface);
+    gap: 7px;
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: var(--v2-detail-surface);
     color: var(--v2-text);
     font-size: 12px;
-    font-weight: 610;
+    font-weight: 600;
     transition: border-color 180ms ease, background-color 180ms ease;
 }
 
@@ -304,6 +320,13 @@
     font-variant-numeric: tabular-nums;
 }
 
+.cb-v2-account-amount strong {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+}
+
 .cb-v2-card-section {
     min-width: 0;
     overflow: hidden;
@@ -313,24 +336,27 @@
     margin: 2px 0 10px;
 }
 
-.cb-v2-carousel-controls {
+.cb-v2-section-tools {
     display: flex;
     align-items: center;
+    gap: 10px;
 }
 
 .cb-v2-carousel-controls {
-    gap: 5px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
 }
 
 .cb-v2-carousel-control {
     display: grid;
-    width: 34px;
-    height: 34px;
+    width: 28px;
+    height: 28px;
     place-items: center;
-    border: 1px solid var(--v2-border);
-    border-radius: 9px;
-    background: var(--v2-surface);
-    color: var(--v2-text);
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--v2-muted);
     cursor: pointer;
     transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
 }
@@ -338,6 +364,7 @@
 .cb-v2-carousel-control:hover:not(:disabled) {
     border-color: var(--v2-border-strong);
     background: var(--v2-surface-hover);
+    color: var(--v2-text);
 }
 
 .cb-v2-carousel-control:disabled {
@@ -353,11 +380,23 @@
 
 .cb-v2-card-carousel {
     min-width: 0;
+    /*
+     * Quantidade de cartões inteiramente visíveis por vez. O trilho nunca
+     * mostra cartão cortado ao meio: o corte passa a ser intencional.
+     * Cada cartão completo precisa de ~300px para que fatura, vencimento e
+     * limite disponível continuem legíveis.
+     */
+    --cb-cards-visible: 1;
+    --cb-cards-gap: 12px;
+    /* Sliver do PRÓXIMO cartão efetivamente visível no trilho da Home (o vão
+       antes do cartão espiado já é descontado na largura do cartão). Fica no
+       meio da faixa aceitável (24–40px): menor vira clipping acidental. */
+    --cb-cards-peek: 28px;
 }
 
 .cb-v2-card-rail {
     display: flex;
-    gap: 12px;
+    gap: var(--cb-cards-gap, 12px);
     overflow-x: auto;
     padding: 1px 1px 8px;
     scroll-padding-inline: 1px;
@@ -422,7 +461,7 @@
     min-width: min(326px, 92%);
     max-width: 326px;
     flex: 0 0 min(326px, 92%);
-    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
     gap: 8px;
     border-color: var(--cb-card-edge);
     border-radius: 15px;
@@ -567,9 +606,27 @@ html[data-theme="light"] .cb-v2-credit-card--tonal > .cb-v2-progress {
 .cb-v2-credit-card--physical .cb-v2-credit-card-status {
     display: grid;
     grid-area: number;
-    gap: 2px;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    justify-items: end;
+    gap: 1px 5px;
     min-width: 0;
     text-align: right;
+}
+
+/* Marcador de status: cor sempre acompanha o rótulo, nunca sozinha. */
+.cb-v2-credit-card-dot {
+    grid-row: 1;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-status > strong { grid-row: 1; }
+.cb-v2-credit-card--physical .cb-v2-credit-card-status > small {
+    grid-row: 2;
+    grid-column: 2;
 }
 
 .cb-v2-credit-card--physical .cb-v2-credit-card-status > strong,
@@ -577,6 +634,25 @@ html[data-theme="light"] .cb-v2-credit-card--tonal > .cb-v2-progress {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-open .cb-v2-credit-card-dot { background: #38bdf8; }
+.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-closed .cb-v2-credit-card-dot { background: #fbbf24; }
+.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-paid .cb-v2-credit-card-dot { background: #34d399; }
+.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-overdue .cb-v2-credit-card-dot { background: #fb7185; }
+
+/* Percentual disponível: reforça a leitura da barra sem alterar o cálculo. */
+.cb-v2-credit-card--physical .cb-v2-card-usage {
+    margin: 0;
+    color: rgba(255, 255, 255, 0.68);
+    font-size: 9px;
+    font-weight: 620;
+    letter-spacing: 0.02em;
+    text-align: right;
+}
+
+html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-card-usage {
+    color: #607087;
 }
 
 .cb-v2-credit-card--physical .cb-v2-credit-card-status > strong {
@@ -618,10 +694,13 @@ html[data-theme="light"] .cb-v2-credit-card--tonal > .cb-v2-progress {
 }
 
 .cb-v2-credit-card--physical .cb-v2-credit-card-data strong {
+    overflow: visible;
     color: #fff;
     font-size: 19px;
     font-weight: 710;
     letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
 }
 
 .cb-v2-credit-card--physical .cb-v2-credit-card-data > span:last-child strong {
@@ -634,8 +713,11 @@ html[data-theme="light"] .cb-v2-credit-card--tonal > .cb-v2-progress {
 }
 
 .cb-v2-credit-card--physical .cb-v2-credit-card-limit strong {
+    overflow: visible;
     color: #fff;
     font-size: 12px;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
 }
 
 .cb-v2-credit-card--physical > .cb-v2-progress {
@@ -871,20 +953,96 @@ html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .
     background: var(--v2-accent);
 }
 
-.cb-v2-mobile-cards-toggle {
+/* Acesso a "Ver todos os Cartões" é exclusivo do mobile: no desktop o trilho
+   horizontal já expõe todos os cartões. */
+.cb-v2-all-invoices-slide {
     display: none;
 }
 
-.cb-v2-credit-card[hidden] {
-    display: none;
+/* Na Home o cartão ocupa uma fração do trilho e deixa um sliver do próximo
+   visível (`--cb-cards-peek`, ver `.cb-v2-card-carousel`): duas ou mais
+   colunas quando há largura, com o corte do próximo sinalizando que o trilho
+   continua. A página de faturas mantém o dimensionamento anterior.
+   O vão antes do cartão espiado entra na conta (`visible * gap`): sem ele o
+   sliver real fica `peek - gap` e o corte parece defeito em vez de continuação. */
+[data-dashboard] .cb-v2-card-section .cb-v2-card-rail > .cb-v2-credit-card--physical {
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    flex: 0 0 calc((100% - var(--cb-cards-visible, 2) * var(--cb-cards-gap, 12px) - var(--cb-cards-peek, 32px)) / var(--cb-cards-visible, 2));
+    /* Prioridade é legibilidade: no recorte da Home o cartão cresce conforme o
+       conteúdo em vez de ser espremido na proporção de um cartão físico. */
+    aspect-ratio: auto;
+    min-height: 190px;
+}
+
+/* A quantidade depende da largura REAL da coluna, inclusive com a sidebar
+   aberta: cada cartão completo precisa de ~300px, mais os vãos e o sliver. */
+[data-dashboard] .cb-v2-card-section {
+    container-type: inline-size;
+    container-name: cb-home-cards;
+}
+
+[data-dashboard] .cb-v2-credit-card--physical .cb-v2-credit-card-top > strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+@media (min-width: 768px) {
+    /* 2 cartões: 2x~296px + 2 vãos + sliver + padding do trilho ≈ 636px.
+       O corte é pela largura REAL do trilho, não pelo viewport: com a sidebar
+       aberta isso dispara a partir de ~1334px de viewport, o que cobre 1366
+       (trilho 645px) e 1440 (trilho 694px). */
+    @container cb-home-cards (min-width: 636px) {
+        [data-dashboard] .cb-v2-card-carousel { --cb-cards-visible: 2; }
+    }
+    /* 3 cartões exigiriam ~893px de trilho; como a seção satura em ~910px só
+       haveria 3 colunas de ~283px, abaixo do piso de legibilidade. */
+    @container cb-home-cards (min-width: 1076px) {
+        [data-dashboard] .cb-v2-card-carousel { --cb-cards-visible: 3; }
+    }
+    /* Cartão único: não estica até ocupar o trilho inteiro — mantém a largura
+       canônica que ele teria ao lado de outros cartões. */
+    [data-dashboard] .cb-v2-card-section .cb-v2-card-rail > .cb-v2-credit-card--physical:only-child {
+        flex-basis: min(100%, 430px);
+        max-width: min(100%, 430px);
+    }
+    /* Sem segundo cartão não há o que navegar: setas (no cabeçalho da seção) e
+       dots (dentro do carrossel) ficam inúteis. */
+    [data-dashboard] .cb-v2-card-section:has(.cb-v2-card-rail > .cb-v2-credit-card:only-child) .cb-v2-carousel-controls,
+    [data-dashboard] .cb-v2-card-section:has(.cb-v2-card-rail > .cb-v2-credit-card:only-child) .cb-v2-carousel-dots {
+        display: none;
+    }
+
+    /* Respiro vertical do cartão na Home. O componente é o mesmo do hub de
+       faturas, então o ajuste fica escopado no Dashboard: incremento pequeno
+       (+2px) no vão e no padding, sem tocar em tipografia nem na barra.
+       O vão entre a linha de topo e o divisor é o próprio `gap` da grade. */
+    [data-dashboard] .cb-v2-card-section .cb-v2-credit-card--physical {
+        gap: 10px;
+        padding: 18px 17px 17px;
+    }
+
+    /* Do divisor até o rótulo "Fatura atual". */
+    [data-dashboard] .cb-v2-card-section .cb-v2-credit-card--physical .cb-v2-credit-card-data {
+        padding-top: 14px;
+    }
 }
 
 .cb-v2-metrics-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
+    order: 2;
 }
 
+.cb-v2-actions-panel { order: 1; }
+
+/*
+ * Medidor compartilhado por Limites e Metas.
+ * A diferença entre os dois é semântica, não de forma: Limite mede consumo
+ * (tons de atenção crescente) e Meta mede avanço (tom de progresso/identidade).
+ */
 .cb-v2-progress-list {
     display: grid;
     gap: 14px;
@@ -894,15 +1052,40 @@ html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .
 .cb-v2-progress-item {
     display: grid;
     gap: 7px;
+    min-width: 0;
+    --meter-tone: var(--v2-tone-neutral);
 }
 
-.cb-v2-progress-item > div {
+.cb-v2-meter--ok { --meter-tone: var(--v2-tone-ok); }
+.cb-v2-meter--attention { --meter-tone: var(--v2-tone-attention); }
+.cb-v2-meter--near { --meter-tone: var(--v2-tone-near); }
+.cb-v2-meter--exceeded { --meter-tone: var(--v2-tone-exceeded); }
+.cb-v2-meter--progress { --meter-tone: var(--v2-tone-progress); }
+.cb-v2-meter--complete { --meter-tone: var(--v2-tone-complete); }
+.cb-v2-meter--initial { --meter-tone: var(--v2-tone-initial); }
+.cb-v2-meter--info { --meter-tone: var(--v2-tone-info); }
+
+/* Cabeçalho do medidor: mesma leitura de linha do Dashboard anterior (nome à
+   esquerda, valores à direita), agora precedida pelo ícone da categoria. */
+.cb-v2-progress-item-head {
     display: flex;
-    justify-content: space-between;
-    gap: 12px;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
 }
 
-.cb-v2-progress-item strong {
+/* Ícone discreto: acompanha a cor do medidor e não cria um tile próprio. */
+.cb-v2-progress-icon {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    color: var(--meter-tone);
+}
+
+.cb-v2-progress-icon svg { width: 13px; height: 13px; }
+
+.cb-v2-progress-item-head > strong {
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     color: var(--v2-text);
@@ -912,15 +1095,70 @@ html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .
     white-space: nowrap;
 }
 
-.cb-v2-progress-item div > span {
+.cb-v2-progress-item-head > span:last-child {
+    flex: 0 1 auto;
     min-width: 0;
-    overflow: hidden;
     color: var(--v2-muted);
     font-size: 11px;
     font-variant-numeric: tabular-nums;
+    line-height: 1.25;
     text-align: right;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+}
+
+/* Linha da barra: o percentual divide a mesma linha do trilho, logo depois
+   dele, sem virar uma coluna própria. */
+.cb-v2-progress-bar {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+}
+
+.cb-v2-progress-item .cb-v2-meter-track {
+    flex: 1 1 0;
+    width: 100%;
+    min-width: 0;
+    height: 4px;
+    margin: 0;
+    overflow: hidden;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 0;
+    border-radius: 3px;
+    background: var(--cb-v2-progress-track);
+    --cb-v2-progress-track: var(--v2-tone-track);
+    --cb-v2-progress-value: var(--meter-tone);
+}
+
+.cb-v2-progress-item .cb-v2-meter-track::-webkit-progress-bar {
+    background: var(--cb-v2-progress-track);
+    border-radius: inherit;
+}
+
+.cb-v2-progress-item .cb-v2-meter-track::-webkit-progress-value {
+    background: var(--meter-tone);
+    border-radius: inherit;
+}
+
+.cb-v2-progress-item .cb-v2-meter-track::-moz-progress-bar {
+    background: var(--meter-tone);
+    border-radius: inherit;
+}
+
+/* Percentual integrado à barra: pequeno, na cor do medidor e na mesma linha do
+   trilho. Largura mínima evita que o fim do trilho "ande" entre os itens; a
+   altura de linha é a do próprio trilho para que o rótulo não acrescente
+   altura ao item (o texto transborda a caixa de linha, sem clipping). */
+.cb-v2-progress-label {
+    flex: 0 0 auto;
+    min-width: 26px;
+    color: var(--meter-tone);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    line-height: 4px;
+    text-align: right;
 }
 
 .cb-v2-tabs {
@@ -1095,13 +1333,13 @@ html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .
 
 @media (max-width: 1279px) {
     .cb-v2-grid { grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.35fr); }
-    .cb-v2-context-actions { min-width: 400px; }
     .cb-v2-metrics-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 1023px) {
     .cb-v2-heading-row { display: grid; align-items: flex-start; }
-    .cb-v2-context-actions { width: 100%; min-width: 0; }
+    .cb-v2-quick-actions { justify-items: stretch; }
+    .cb-v2-context-actions { justify-content: flex-start; }
     .cb-v2-grid { grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.15fr); }
 }
 
@@ -1109,32 +1347,64 @@ html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .
     .cb-v2-content { padding-top: 20px; }
     .cb-v2-heading-row { display: grid; gap: 17px; margin-bottom: 18px; }
     .cb-v2-heading-row h1 { font-size: 24px; }
-    .cb-v2-context-actions { display: none; }
+    /* Primeira dobra enxuta no mobile: subtítulo introdutório e atalhos de
+       ação ficam fora do fluxo (display:none remove da árvore de foco).
+       Desktop/tablet (>=768px) continuam exibindo os dois blocos. */
+    .cb-v2-heading-row > div > p:last-child { display: none; }
+    .cb-v2-heading-row .cb-v2-quick-actions { display: none; }
     .cb-v2-grid { grid-template-columns: 1fr; gap: 15px; }
     .cb-v2-left-column,
     .cb-v2-right-column { gap: 15px; }
     .cb-v2-left-column { display: contents; }
     .cb-v2-financial-panel { order: 0; }
-    .cb-v2-accounts-panel { order: 1; }
-    .cb-v2-card-section { order: 2; overflow: visible; }
-    .cb-v2-metrics-grid { order: 3; grid-template-columns: 1fr; gap: 15px; }
-    .cb-v2-actions-panel { order: 4; }
+    .cb-v2-card-section { order: 1; overflow: hidden; }
+    .cb-v2-accounts-panel { order: 2; }
+    .cb-v2-metrics-grid { display: contents; }
+    .cb-v2-actions-panel { order: 3; }
+    .cb-v2-metrics-grid > :first-child { order: 4; }
+    .cb-v2-metrics-grid > :last-child { order: 5; }
     .cb-v2-right-column { display: contents; }
-    .cb-v2-card-rail { display: grid; gap: 12px; overflow: visible; padding: 0; scroll-snap-type: none; }
+    .cb-v2-card-carousel { --cb-cards-gap: 12px; --cb-cards-peek: 0px; }
+    .cb-v2-card-rail { display: flex; gap: 12px; overflow-x: auto; padding: 0 0 8px; scroll-snap-type: x mandatory; }
     .cb-v2-credit-card { min-width: 0; width: 100%; flex-basis: auto; }
     .cb-v2-credit-card--physical { width: 100%; min-height: 184px; max-width: none; flex: 0 0 auto; aspect-ratio: 1.586 / 1; gap: 6px; padding: 14px 15px 13px; }
-    /* O trilho empilhado do painel não precisa preservar a proporção de um cartão físico. */
     .cb-v2-card-section .cb-v2-credit-card--physical {
         min-height: 176px;
         aspect-ratio: 1.86 / 1;
         padding: 13px 15px 12px;
     }
     .cb-v2-credit-card--physical .cb-v2-credit-card-data { padding-top: 5px; }
-    .cb-v2-carousel-dots,
-    .cb-v2-carousel-controls { display: none; }
-    .cb-v2-mobile-cards-toggle { display: flex; justify-content: center; padding-top: 3px; }
-    .cb-v2-mobile-cards-toggle button { min-height: 42px; padding: 0 12px; border-radius: 9px; background: transparent; color: var(--v2-accent); cursor: pointer; font-size: 12px; font-weight: 650; }
-    .cb-v2-mobile-cards-toggle button:hover { background: var(--v2-accent-soft); color: var(--v2-accent-strong); }
+    /* Home mobile: mesmo respiro, em incremento menor (+1px) para o cartão
+       continuar compacto em 320–440. */
+    [data-dashboard] .cb-v2-card-section .cb-v2-credit-card--physical {
+        gap: 7px;
+        padding: 14px 15px 13px;
+    }
+    [data-dashboard] .cb-v2-card-section .cb-v2-credit-card--physical .cb-v2-credit-card-data { padding-top: 6px; }
+    [data-dashboard] .cb-v2-card-section .cb-v2-card-rail > .cb-v2-credit-card--physical { flex: 0 0 100%; width: 100%; }
+    [data-dashboard] .cb-v2-card-rail > [data-v2-card-item]:nth-child(n+7) { display: none; }
+    .cb-v2-all-invoices-slide {
+        display: grid;
+        flex: 0 0 100%;
+        min-width: 0;
+        min-height: 176px;
+        align-content: center;
+        justify-items: start;
+        gap: 9px;
+        padding: 22px;
+        border: 1px solid var(--v2-border-strong);
+        border-radius: 13px;
+        background: var(--v2-detail-surface);
+        color: var(--v2-text);
+        scroll-snap-align: start;
+    }
+    .cb-v2-all-invoices-slide > svg { width: 22px; height: 22px; color: var(--v2-accent); }
+    .cb-v2-all-invoices-slide > strong { font-size: 16px; }
+    .cb-v2-all-invoices-slide > span:not(.cb-v2-all-invoices-arrow) { color: var(--v2-muted); font-size: 12px; }
+    .cb-v2-all-invoices-arrow { color: var(--v2-accent); font-size: 20px; }
+    .cb-v2-carousel-dots { min-height: 13px; margin-top: 3px; }
+    [data-dashboard] .cb-v2-card-section:has(.cb-v2-card-rail > .cb-v2-credit-card:only-child) .cb-v2-carousel-controls,
+    [data-dashboard] .cb-v2-card-section:has(.cb-v2-card-rail > .cb-v2-credit-card:only-child) .cb-v2-carousel-dots { display: none; }
     .cb-v2-panel { padding: 16px; }
     .cb-v2-balance-breakdown { gap: 7px; }
     .cb-v2-balance { font-size: 34px; }

@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"bytes"
+	"fmt"
 	"html/template"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDashboardRendersCanonicalData(t *testing.T) {
@@ -136,7 +138,8 @@ func TestDashboardRendersCanonicalData(t *testing.T) {
 		`cb-v2-appbar-brand`,
 		`data-v2-workspace-trigger`,
 		`data-lucide="settings-2"`,
-		`aria-label="Lançamentos"`,
+		`aria-label="Início"`,
+		`aria-label="Transações"`,
 		`aria-label="Metas"`,
 		`aria-label="Contas"`,
 		`/assets/css/app-shell.css`,
@@ -181,5 +184,167 @@ func TestDashboardRendersCanonicalData(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `id="dashboard-content"`) || !strings.Contains(out.String(), `hx-swap-oob="outerHTML"`) {
 		t.Fatal("dashboard OOB refresh must replace the canonical dashboard content")
+	}
+}
+
+func TestDashboardCreditCardAvailablePercentPresentation(t *testing.T) {
+	tpl := template.Must(template.New("card").Funcs(template.FuncMap{"assetPath": func(p string) string { return p }}).Parse(readTemplateFile(t, "templates/components/credit_card.html")))
+	for _, tc := range []struct {
+		name            string
+		used, available int64
+		percent         int
+	}{
+		{"unused", 0, 100000, 100}, {"half", 50000, 50000, 50}, {"full", 100000, 0, 0}, {"over-limit", 125000, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestDB(t)
+			defer db.Close()
+			now := time.Now().UTC()
+			seedCreditCardWithLimit(t, db, "ws-percent", "card-percent", "cc-percent", 100000)
+			seedInvoiceForCard(t, db, "ws-percent", "card-percent", "inv-percent", now.Format("2006-01"), "OPEN", now.Year(), int(now.Month()), 20)
+			if tc.used > 0 {
+				seedExpenseOnInvoice(t, db, "ws-percent", "card-percent", "inv-percent", tc.used, 1, 1, "expense-percent")
+			}
+			dashboard := BuildDashboardData(db, "user-ws-percent", "ws-percent")
+			index, err := queryFaturasIndexCards(db, "ws-percent", now.Year(), now.Month())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for source, cards := range map[string][]CreditCardCard{"dashboard": dashboard.Cards, "invoice-hub": index} {
+				if len(cards) != 1 {
+					t.Fatalf("%s count=%d", source, len(cards))
+				}
+				card := cards[0]
+				if card.LimitPercent != tc.percent || card.LimitMoney != MoneyMinor(tc.available) || card.Money != MoneyMinor(tc.used) {
+					t.Fatalf("%s financial values changed: %+v", source, card)
+				}
+				var out bytes.Buffer
+				if err := tpl.ExecuteTemplate(&out, "credit-card-tile", card); err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(out.String(), fmt.Sprintf("%d%% disponível", tc.percent)) || strings.Contains(out.String(), "% utilizado") {
+					t.Fatalf("%s incorrect percent label", source)
+				}
+			}
+			var count int
+			var amount, balance int64
+			if err := db.QueryRow(`SELECT COUNT(*),COALESCE(SUM(amount),0) FROM transactions WHERE workspace_id='ws-percent'`).Scan(&count, &amount); err != nil {
+				t.Fatal(err)
+			}
+			wantCount := 0
+			if tc.used > 0 {
+				wantCount = 1
+			}
+			if count != wantCount || amount != tc.used {
+				t.Fatalf("transactions changed: %d/%d", count, amount)
+			}
+			if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id='card-percent' AND workspace_id='ws-percent'`).Scan(&balance); err != nil {
+				t.Fatal(err)
+			}
+			if balance != 0 {
+				t.Fatalf("account balance changed: %d", balance)
+			}
+		})
+	}
+}
+
+// O dataset completo permanece no rail desktop. No mobile o CSS mostra até
+// seis cartões reais e o CTA /faturas só existe quando há um sétimo cartão.
+func TestDashboardCardRailMobileSixPlusCTA(t *testing.T) {
+	parse := func() *template.Template {
+		t.Helper()
+		tpl, err := template.New("dashboard").Funcs(withAppShellTestFuncs(template.FuncMap{
+			"assetPath": func(path string) string { return path + "?v=test" },
+		})).Parse(
+			readTemplateFile(t, "templates/pages/dashboard.html") +
+				readTemplateFile(t, "templates/components/app_shell.html") +
+				readTemplateFile(t, "templates/components/credit_card.html"),
+		)
+		if err != nil {
+			t.Fatalf("parse dashboard V2 template: %v", err)
+		}
+		return tpl
+	}
+
+	render := func(cards int) string {
+		t.Helper()
+		data := DashboardData{Title: "Dashboard"}
+		for i := 0; i < cards; i++ {
+			data.Cards = append(data.Cards, CreditCardCard{
+				ID:           fmt.Sprintf("card-%d", i+1),
+				Name:         fmt.Sprintf("Cartão %d", i+1),
+				LimitPercent: 100,
+			})
+		}
+		var out bytes.Buffer
+		if err := parse().ExecuteTemplate(&out, "dashboard-page", data); err != nil {
+			t.Fatalf("render dashboard: %v", err)
+		}
+		return out.String()
+	}
+
+	for _, tc := range []struct{ count, cta int }{{1, 0}, {6, 0}, {7, 1}, {10, 1}} {
+		html := render(tc.count)
+		if got := strings.Count(html, "data-v2-card-item"); got != tc.count {
+			t.Errorf("%d cartões: rail desktop tem %d cartões reais", tc.count, got)
+		}
+		if got := strings.Count(html, "data-v2-all-invoices-slide"); got != tc.cta {
+			t.Errorf("%d cartões: renderizou %d CTAs, esperado %d", tc.count, got, tc.cta)
+		}
+		if tc.cta == 1 && !strings.Contains(html, `href="/faturas" class="cb-v2-all-invoices-slide"`) {
+			t.Errorf("%d cartões: CTA deve apontar para /faturas", tc.count)
+		}
+	}
+}
+
+// A Home apresenta todas as contas do workspace: nenhum recorte, nenhuma
+// contagem de "ocultas" e nenhum caminho alternativo de paginação.
+func TestDashboardRendersEveryAccount(t *testing.T) {
+	parse := func() *template.Template {
+		t.Helper()
+		tpl, err := template.New("dashboard").Funcs(withAppShellTestFuncs(template.FuncMap{
+			"assetPath": func(path string) string { return path + "?v=test" },
+		})).Parse(
+			readTemplateFile(t, "templates/pages/dashboard.html") +
+				readTemplateFile(t, "templates/components/app_shell.html") +
+				readTemplateFile(t, "templates/components/credit_card.html"),
+		)
+		if err != nil {
+			t.Fatalf("parse dashboard V2 template: %v", err)
+		}
+		return tpl
+	}
+
+	render := func(accounts int) string {
+		t.Helper()
+		data := DashboardData{Title: "Dashboard", UserFirstName: "Vitor"}
+		for i := 0; i < accounts; i++ {
+			data.Accounts = append(data.Accounts, AccountCard{
+				ID:        fmt.Sprintf("account-%d", i+1),
+				Name:      fmt.Sprintf("Conta %d", i+1),
+				Money:     MoneyMinor(int64(100000 + i)),
+				TypeLabel: "Conta Corrente",
+			})
+		}
+		var out bytes.Buffer
+		if err := parse().ExecuteTemplate(&out, "dashboard-page", data); err != nil {
+			t.Fatalf("render dashboard: %v", err)
+		}
+		return out.String()
+	}
+
+	for _, count := range []int{1, 4, 10, 100} {
+		html := render(count)
+		if got := strings.Count(html, `class="cb-v2-account-row"`); got != count {
+			t.Errorf("%d contas: renderizou %d linhas de conta, esperado %d", count, got, count)
+		}
+		if got := strings.Count(html, `href="/lancamentos?conta=`); got != count {
+			t.Errorf("%d contas: renderizou %d links de conta, esperado %d", count, got, count)
+		}
+		for _, forbidden := range []string{"oculta", "ocultas", "Mostrar mais contas", "Ver mais contas"} {
+			if strings.Contains(html, forbidden) {
+				t.Errorf("%d contas: Home não pode indicar contas escondidas (%q)", count, forbidden)
+			}
+		}
 	}
 }

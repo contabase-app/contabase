@@ -1,0 +1,80 @@
+{{/*
+  Seletor de ícones reutilizável (Categorias, Limites e Metas).
+
+  Recebe um icons.PickerData via o template func `iconPickerData`:
+      {{template "icon-picker" iconPickerData "catIcon" "icon" .Icon .DerivedIconKey}}
+      {{template "icon-picker" iconPickerData "limiteIcon" "icon_key" .LimitIconKey .CategoryIcon}}
+
+  Contrato:
+  - o formulário envia apenas a chave estável (`Field`);
+  - valor vazio significa "Automático": o servidor decide pelo contexto
+    (nome da categoria, categoria vinculada ou fallback neutro);
+  - nada de SVG, HTML ou texto livre é persistido;
+  - a busca é apenas visual: o catálogo é fechado.
+*/}}
+{{define "icon-picker"}}
+{{$picker := .}}
+<fieldset class="cb-icon-picker" data-icon-picker>
+    <legend class="cb-label">Ícone</legend>
+    <input type="hidden" name="{{$picker.Field}}" value="{{$picker.Value}}" data-icon-picker-value>
+    <button type="button" class="cb-icon-trigger" data-icon-open aria-haspopup="dialog" aria-expanded="false">
+        <span class="cb-icon-trigger-mark" data-icon-trigger-mark data-icon-key="{{$picker.Preview}}">
+            <i data-lucide="{{$picker.Preview}}" aria-hidden="true"></i>
+        </span>
+        <span class="cb-icon-trigger-copy">
+            <strong data-icon-trigger-name>{{if $picker.HasExplicitChoice}}{{$picker.PreviewLabel}}{{else}}Automático{{end}}</strong>
+            <small data-icon-trigger-hint>{{if $picker.HasExplicitChoice}}Toque para trocar o ícone{{else}}Escolhido automaticamente{{end}}</small>
+        </span>
+        <i data-lucide="chevron-down" class="cb-icon-trigger-chevron" aria-hidden="true"></i>
+    </button>
+
+    <dialog class="cb-icon-dialog" data-icon-dialog aria-labelledby="{{$picker.ID}}-title">
+        <div class="cb-icon-dialog-panel">
+            <header class="cb-icon-dialog-header">
+                <div>
+                    <h2 id="{{$picker.ID}}-title">Escolha o ícone</h2>
+                    <p>O ícone é só identificação visual: não altera valores nem cálculos.</p>
+                </div>
+                <button type="button" class="cb-icon-dialog-close" data-icon-close aria-label="Fechar seletor de ícones">
+                    <i data-lucide="x" aria-hidden="true"></i>
+                </button>
+            </header>
+
+            <div class="cb-icon-preview" aria-live="polite">
+                <span class="cb-icon-preview-mark" data-icon-preview-mark>
+                    <i data-lucide="{{$picker.Preview}}" aria-hidden="true"></i>
+                </span>
+                <span class="cb-icon-preview-copy">
+                    <strong data-icon-preview-name>{{$picker.PreviewLabel}}</strong>
+                    <small data-icon-preview-hint>{{if $picker.HasExplicitChoice}}Selecionado{{else}}Automático (derivado do contexto){{end}}</small>
+                </span>
+            </div>
+
+            <label class="cb-icon-search">
+                <i data-lucide="search" aria-hidden="true"></i>
+                <span class="sr-only">Buscar ícone</span>
+                <input type="search" placeholder="Buscar ícone" autocomplete="off" data-icon-search>
+            </label>
+
+            <div class="cb-icon-grid" data-icon-grid role="group" aria-label="Ícones disponíveis">
+                <button type="button" class="cb-icon-choice cb-icon-choice-auto" data-icon-choice data-icon-clear data-icon-key="" data-icon-label="Automático" data-icon-search-text="automatico derivado padrao herdar herdado" aria-pressed="{{if $picker.HasExplicitChoice}}false{{else}}true{{end}}">
+                    <span class="cb-icon-choice-mark"><i data-lucide="wand-sparkles" aria-hidden="true"></i></span>
+                    <span class="cb-icon-choice-copy"><strong>Automático</strong><small>Deixar o ContaBase escolher</small></span>
+                    <span class="cb-icon-choice-check" aria-hidden="true"><i data-lucide="check"></i></span>
+                </button>
+                {{range $picker.Groups}}
+                <p class="cb-icon-group-title" data-icon-group>{{.Name}}</p>
+                {{range .Options}}
+                <button type="button" class="cb-icon-choice" data-icon-choice data-icon-key="{{.Key}}" data-icon-label="{{.Label}}" data-icon-search-text="{{.Label}} {{.Key}}" aria-pressed="{{if eq $picker.Value .Key}}true{{else}}false{{end}}" title="{{.Label}}">
+                    <span class="cb-icon-choice-mark"><i data-lucide="{{.Key}}" aria-hidden="true"></i></span>
+                    <span class="cb-icon-choice-copy"><strong>{{.Label}}</strong></span>
+                    <span class="cb-icon-choice-check" aria-hidden="true"><i data-lucide="check"></i></span>
+                </button>
+                {{end}}
+                {{end}}
+            </div>
+            <p class="cb-icon-empty hidden" data-icon-empty>Nenhum ícone encontrado.</p>
+        </div>
+    </dialog>
+</fieldset>
+{{end}}

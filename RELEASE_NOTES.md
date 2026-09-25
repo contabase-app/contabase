@@ -5,7 +5,21 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Candidata atual
 
-- **v1.0.0-beta.4 — preparação local — 13 de setembro de 2026** — *Remediação pré-produção e correções financeiras*
+- **v1.0.0-beta.5 — preparação local — 24 de setembro de 2026** — *Home renovada e identidade visual*
+
+  A Home/Dashboard ganhou apresentação renovada dos resumos financeiros, Limites e Metas. Os cartões compactos usam ícones e barras de progresso para facilitar a leitura.
+
+  Metas e Limites receberam cartões e formulários reorganizados. O novo sistema de ícones permite escolher símbolos para categorias, limites e reservas; a migration 66 acrescenta as chaves necessárias e normaliza categorias antigas sem escolha explícita. O resumo de Lançamentos apresenta as situações e o resultado líquido com layout responsivo.
+
+  A identidade visual foi atualizada no shell, nas telas de acesso e nos assets do PWA. A edição dos metadados de uma conta mantém o saldo apenas para leitura no formulário.
+
+  **Upgrade pretendido:** `v1.0.0-beta.4` → `v1.0.0-beta.5`. O caminho só será declarado validado depois dos smokes previstos no fluxo de release.
+
+  **Distribuição:** esta preparação local não cria tag, GitHub Release, imagem GHCR nem altera o canal Beta. A beta.4 permanece no canal até os gates públicos serem aprovados.
+
+## Marco anterior
+
+- **v1.0.0-beta.4 — publicada em 13 de setembro de 2026** — *Remediação pré-produção e correções financeiras*
 
   Esta candidata inicia a correção faseada da auditoria de segurança. Anexos de lançamentos recebem extensão canônica a partir do conteúdo reconhecido, sem confiar no nome enviado. Todos os downloads de anexos, inclusive os já gravados, passam a ser binários forçados com `attachment` e `nosniff`, bloqueando a interpretação de HTML no origin da aplicação.
 
@@ -51,9 +65,9 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
   **Escopo restante:** domínio, certificado, firewall, proxy/edge compartilhado, instalação e atualização precisam ser homologados na infraestrutura real antes da publicação. O rate limit global em múltiplas réplicas continua dependente do proxy ou edge compartilhado. A homologação visual desktop/mobile das telas financeiras alteradas, o smoke autenticado das conciliações e os smokes de atualização continuam pendentes.
 
-  **Distribuição:** nenhuma publicação é feita nesta preparação. A tag imutável, o prerelease, os artifacts e o canal Beta permanecem bloqueados até a conclusão das fases, validação e autorização explícita.
+  **Distribuição:** a beta.4 foi publicada como prerelease e permanece como versão do canal Beta durante a preparação da beta.5.
 
-## Marco anterior
+## Marco anterior à beta.4
 
 - **v1.0.0-beta.3 — preparação local — 2 de setembro de 2026** — *Shell V2 definitivo e identidade visual das instituições*
 

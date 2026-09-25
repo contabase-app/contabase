@@ -40,19 +40,19 @@ Acesse o canal público de instalação em https://get-contabase.pages.dev/ e si
 - [Segurança](SECURITY.md)
 - [Privacidade](PRIVACY.md)
 - [Termos de uso](TERMS.md)
-- [Candidata v1.0.0-beta.4 — preparação local](docs/releases/v1.0.0-beta.4.md)
+- [Candidata v1.0.0-beta.5 — preparação local](docs/releases/v1.0.0-beta.5.md)
+- [Última beta publicada](docs/releases/v1.0.0-beta.4.md)
+- [Beta publicada anterior](docs/releases/v1.0.0-beta.3.md)
 - [Notas da Beta.9 publicada](docs/releases/v0.1.0-beta.9.md)
-- [Última beta publicada](docs/releases/v1.0.0-beta.3.md)
-- [Beta publicada anterior](docs/releases/v1.0.0-beta.2.md)
+- [Histórico da beta.2](docs/releases/v1.0.0-beta.2.md)
 - [Histórico da primeira beta](docs/releases/v0.1.0-beta.1.md)
 
-## Destaques da candidata v1.0.0-beta.4
+## Destaques da candidata v1.0.0-beta.5
 
-- A remediação pré-produção de segurança está incorporada: anexos validados por conteúdo, MFA e sessões revogáveis, RBAC e isolamento de workspace, reautenticação administrativa e política de scripts sem código inline.
-- Editar os metadados de uma conta não altera mais o saldo, e a conciliação passa a ser uma operação própria, com histórico imutável e controle de versão.
-- Lançamentos recorrentes deixam de ser excluídos por ações em lote, preservando a série e o histórico.
-- O rateio de faturas considera reembolsos ativos, e os somatórios de relatórios e de saldo falham de forma explícita em vez de exibir totais incorretos.
-- O backup SQLite online usa o snapshot coordenado do próprio banco, com publicação atômica e comportamento fail-closed.
+- Home/Dashboard renovado, com resumos financeiros, Limites e Metas mais claros.
+- Novo sistema de ícones para categorias, limites e reservas.
+- Resumo de Lançamentos e layout responsivo aprimorados.
+- Identidade visual atualizada no shell, nas telas de acesso e no PWA.
 
 ## Avisos da Beta
 
