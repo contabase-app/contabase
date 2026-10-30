@@ -532,7 +532,7 @@ func historicalMonthlyCosts(ctx context.Context, db monthlyPlanningQuerier, work
 				WHEN COALESCE(NULLIF(c.macro_group, ''), NULLIF(p.macro_group, ''), '') = ? THEN t.amount
 				ELSE 0
 			END), 0)
-		FROM transactions t
+		FROM financial_transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
 		WHERE t.workspace_id = ?

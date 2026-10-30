@@ -11,7 +11,10 @@ import (
 
 var ErrBalanceOutOfRange = errors.New("saldo resultante fora do intervalo int64")
 
-func ApplyBalanceEffect(tx *sql.Tx, workspaceID, trType, accType, paymentStatus string, amount int64, accountID, destAccountID string, now int64) error {
+func ApplyBalanceEffect(tx *sql.Tx, workspaceID, trType, accType, paymentStatus string, amount int64, accountID, destAccountID string, now int64, effectMode ...string) error {
+	if cash, err := transactionHasFinancialEffect(effectMode); err != nil || !cash {
+		return err
+	}
 	if paymentStatus != models.PaymentStatusPaid {
 		return nil
 	}
@@ -38,7 +41,10 @@ func ApplyBalanceEffect(tx *sql.Tx, workspaceID, trType, accType, paymentStatus 
 	return nil
 }
 
-func ReverseBalanceEffect(tx *sql.Tx, workspaceID, trType, accType string, amount int64, accountID, destAccountID string, now int64) error {
+func ReverseBalanceEffect(tx *sql.Tx, workspaceID, trType, accType string, amount int64, accountID, destAccountID string, now int64, effectMode ...string) error {
+	if cash, err := transactionHasFinancialEffect(effectMode); err != nil || !cash {
+		return err
+	}
 	switch trType {
 	case models.TransactionTypeExpense:
 		if accType == models.AccountTypeCreditCard {
@@ -59,6 +65,18 @@ func ReverseBalanceEffect(tx *sql.Tx, workspaceID, trType, accType string, amoun
 		}
 	}
 	return nil
+}
+
+// Omitted mode preserves existing STANDARD callers. Readers of persisted
+// transactions must pass their mode or reject classification mutations first.
+func transactionHasFinancialEffect(mode []string) (bool, error) {
+	if len(mode) == 0 || len(mode) == 1 && mode[0] == models.TransactionEffectStandard {
+		return true, nil
+	}
+	if len(mode) == 1 && mode[0] == models.TransactionEffectClassificationOnly {
+		return false, nil
+	}
+	return false, ErrInvestmentValidation
 }
 
 // The caller owns the transaction and must roll it back on any error, including

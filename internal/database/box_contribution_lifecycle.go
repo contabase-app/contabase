@@ -41,12 +41,17 @@ type boxContributionLifecycleStore interface {
 func TransitionBoxAutomaticContributionState(
 	ctx context.Context,
 	db *sql.DB,
+	workspaceID string,
 	boxID string,
 	targetState BoxAutomaticContributionState,
 	occurredAt time.Time,
 ) (changed bool, err error) {
 	if db == nil {
 		return false, fmt.Errorf("box contribution lifecycle: nil database")
+	}
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return false, fmt.Errorf("box contribution lifecycle: workspace id is required")
 	}
 	boxID = strings.TrimSpace(boxID)
 	if boxID == "" {
@@ -78,6 +83,7 @@ func TransitionBoxAutomaticContributionState(
 	changed, err = transitionBoxAutomaticContributionState(
 		ctx,
 		conn,
+		workspaceID,
 		boxID,
 		targetState,
 		occurredAt.Unix(),
@@ -96,6 +102,7 @@ func TransitionBoxAutomaticContributionState(
 func transitionBoxAutomaticContributionState(
 	ctx context.Context,
 	store boxContributionLifecycleStore,
+	workspaceID string,
 	boxID string,
 	targetState BoxAutomaticContributionState,
 	occurredAt int64,
@@ -104,8 +111,8 @@ func transitionBoxAutomaticContributionState(
 	if err := store.QueryRowContext(ctx, `
 		SELECT automatic_contribution_state
 		FROM boxes
-		WHERE id = ?
-	`, boxID).Scan(&currentRaw); err != nil {
+		WHERE id = ? AND workspace_id = ?
+	`, boxID, workspaceID).Scan(&currentRaw); err != nil {
 		return false, fmt.Errorf("box contribution lifecycle read box %q: %w", boxID, err)
 	}
 	currentState := BoxAutomaticContributionState(currentRaw)
@@ -129,8 +136,8 @@ func transitionBoxAutomaticContributionState(
 	result, err := store.ExecContext(ctx, `
 		UPDATE boxes
 		SET automatic_contribution_state = ?, updated_at = ?
-		WHERE id = ? AND automatic_contribution_state = ?
-	`, string(targetState), occurredAt, boxID, string(currentState))
+		WHERE id = ? AND workspace_id = ? AND automatic_contribution_state = ?
+	`, string(targetState), occurredAt, boxID, workspaceID, string(currentState))
 	if err != nil {
 		return false, fmt.Errorf("box contribution lifecycle update box %q: %w", boxID, err)
 	}
@@ -142,12 +149,19 @@ func transitionBoxAutomaticContributionState(
 		return false, fmt.Errorf("box contribution lifecycle update box %q affected %d rows", boxID, rowsAffected)
 	}
 
-	if _, err := store.ExecContext(ctx, `
+	eventResult, err := store.ExecContext(ctx, `
 		INSERT INTO box_contribution_lifecycle_events (
 			id, box_id, event_type, previous_state, new_state, occurred_at
-		) VALUES (?, ?, ?, ?, ?, ?)
-	`, uuid.NewString(), boxID, string(eventType), string(currentState), string(targetState), occurredAt); err != nil {
+		)
+		SELECT ?, b.id, ?, ?, ?, ?
+		FROM boxes b
+		WHERE b.id = ? AND b.workspace_id = ?
+	`, uuid.NewString(), string(eventType), string(currentState), string(targetState), occurredAt, boxID, workspaceID)
+	if err != nil {
 		return false, fmt.Errorf("box contribution lifecycle insert event for box %q: %w", boxID, err)
+	}
+	if affected, err := eventResult.RowsAffected(); err != nil || affected != 1 {
+		return false, fmt.Errorf("box contribution lifecycle insert event for box %q affected %d rows: %v", boxID, affected, err)
 	}
 	return true, nil
 }
@@ -155,15 +169,23 @@ func transitionBoxAutomaticContributionState(
 func recordBoxContributionGoalReached(
 	ctx context.Context,
 	store boxContributionLifecycleStore,
+	workspaceID string,
 	boxID string,
 	occurredAt int64,
 ) error {
-	if _, err := store.ExecContext(ctx, `
+	result, err := store.ExecContext(ctx, `
 		INSERT INTO box_contribution_lifecycle_events (
 			id, box_id, event_type, previous_state, new_state, occurred_at
-		) VALUES (?, ?, ?, NULL, NULL, ?)
-	`, uuid.NewString(), boxID, string(BoxContributionLifecycleEventGoalReached), occurredAt); err != nil {
+		)
+		SELECT ?, b.id, ?, NULL, NULL, ?
+		FROM boxes b
+		WHERE b.id = ? AND b.workspace_id = ?
+	`, uuid.NewString(), string(BoxContributionLifecycleEventGoalReached), occurredAt, boxID, workspaceID)
+	if err != nil {
 		return fmt.Errorf("box contribution lifecycle insert goal reached event for box %q: %w", boxID, err)
+	}
+	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+		return fmt.Errorf("box contribution lifecycle insert goal reached event for box %q affected %d rows: %v", boxID, affected, err)
 	}
 	return nil
 }

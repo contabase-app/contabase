@@ -186,7 +186,7 @@ func TestR03ClosingExactIntegerLimits(t *testing.T) {
 			if err := db.QueryRow(`SELECT current_balance,typeof(current_balance) FROM accounts WHERE id='r03-account'`).Scan(&got, &storage); err != nil || got != tc.target || storage != "integer" {
 				t.Fatalf("reconstruction changed persisted balance: %d/%s/%v", got, storage, err)
 			}
-			h := RelatoriosHandler{DB: db, WorkspaceID: "r03-ws", UserID: "r03-user"}
+			h := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "r03-ws", UserID: "r03-user"}
 			if _, err := h.buildRelatoriosDataWithModo("", "contabil", "movimentos", "realizado", 8, 2026); !errors.Is(err, services.ErrBalanceOutOfRange) {
 				t.Fatalf("report did not propagate reconstruction failure: %v", err)
 			}
@@ -215,7 +215,7 @@ func TestR03ClosingReportCSVAndPDFShareBalance(t *testing.T) {
 	cut := NewReportPeriodFromMonth(2026, 8).End
 	r03Adjust(t, db, "r03-ws", "r03-account", 150000, cut+5*86400)
 	r03WantBalances(t, db, "r03-ws", cut, map[string]int64{"r03-account": 100000})
-	h := RelatoriosHandler{DB: db, WorkspaceID: "r03-ws", UserID: "r03-user"}
+	h := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "r03-ws", UserID: "r03-user"}
 	data, err := h.buildRelatoriosDataWithModo("", "contabil", "movimentos", "realizado", 8, 2026)
 	if err != nil {
 		t.Fatal(err)

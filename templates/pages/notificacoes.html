@@ -1,5 +1,6 @@
 {{define "notificacoes-page"}}
 {{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/notificacoes.css"}}">
 {{template "app-v2-document-head-end" .}}
 <main id="main-content" class="cb-v2-main cb-v2-notificacoes-main" data-page-section="notifications" data-page-title="{{.Title}}">
@@ -14,21 +15,24 @@
 {{define "notificacoes-content"}}
 <div class="cb-v2-content cb-v2-notificacoes-content">
     <header class="cb-v2-notificacoes-header">
-        <div>
+        <div class="min-w-0">
             <p class="cb-v2-eyebrow">Central</p>
             <h1>Notificações</h1>
             <p>Acompanhe os avisos que exigem sua atenção neste workspace.</p>
         </div>
-        {{if .Items}}
-        <button type="button"
-            hx-delete="/notificacoes/limpar"
-            hx-target="#main-content"
-            hx-swap="outerHTML"
-            hx-select="#main-content"
-            class="cb-v2-notificacoes-clear">
-            Limpar tudo
-        </button>
-        {{end}}
+        <div class="cb-v2-notificacoes-actions">
+            <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-privacy-toggle aria-pressed="false" aria-label="Ocultar valores financeiros" data-tooltip-hover data-tooltip-text="Ocultar valores financeiros"><i data-lucide="eye" data-privacy-icon aria-hidden="true"></i></button>
+            {{if .Items}}
+            <button type="button"
+                hx-delete="/notificacoes/limpar"
+                hx-target="#main-content"
+                hx-swap="outerHTML"
+                hx-select="#main-content"
+                class="cb-v2-notificacoes-clear">
+                Limpar tudo
+            </button>
+            {{end}}
+        </div>
     </header>
 
     {{if .Items}}

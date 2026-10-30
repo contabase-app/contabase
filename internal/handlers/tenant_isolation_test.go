@@ -47,7 +47,7 @@ func TestTenantIsolationReadModelsDoNotMixWorkspaces(t *testing.T) {
 	}
 	assertIDs(t, "contacts", contatoRowIDs(contatos), []string{"a-contact"})
 
-	metasHandler := MetasHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+	metasHandler := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
 	metas, err := metasHandler.buildMetasData("", "")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -55,7 +55,7 @@ func TestTenantIsolationReadModelsDoNotMixWorkspaces(t *testing.T) {
 	assertIDs(t, "metas limites", limiteCardIDs(metas.Limites), []string{"a-limit"})
 	assertIDs(t, "metas boxes", caixinhaCardIDs(metas.Caixinhas), []string{"a-box"})
 
-	relHandler := RelatoriosHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+	relHandler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
 	relatorios, err := relHandler.buildRelatoriosData("", "caixa", "movimentos", int(now.Month()), now.Year())
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -183,7 +183,7 @@ func TestTenantIsolationForeignIDsCannotMutateOtherWorkspace(t *testing.T) {
 	}
 	assertAccountName(t, db, "b-card", "B Card")
 
-	metasHandler := MetasHandler{DB: db, Templates: testTenantMetasTemplates(t), WorkspaceID: "ws-a", UserID: "user-a"}
+	metasHandler := MetasHandler{ActorRole: testMetasAdminRole, DB: db, Templates: testTenantMetasTemplates(t), WorkspaceID: "ws-a", UserID: "user-a"}
 	aporteForm := url.Values{"box_id": {"b-box"}, "amount": {"10,00"}}
 	aporteReq := httptest.NewRequest(http.MethodPost, "/metas/caixinha/aporte", strings.NewReader(aporteForm.Encode()))
 	aporteReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")

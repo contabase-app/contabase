@@ -40,8 +40,15 @@
     color: var(--v2-muted);
 }
 
+.cb-v2-notificacoes-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
 .cb-v2-notificacoes-clear {
-    min-height: 36px;
+    min-height: 44px;
     border: 0;
     padding: 0 4px;
     border-radius: 8px;
@@ -84,7 +91,7 @@
 .cb-v2-notificacao-copy { min-width: 0; align-items: flex-start; gap: 12px; }
 .cb-v2-notificacao-copy > div { min-width: 0; flex: 1; }
 .cb-v2-notificacao-title-row { align-items: baseline; justify-content: space-between; gap: 8px; }
-.cb-v2-notificacao-title-row h2 { overflow: hidden; margin: 0; color: var(--v2-text); font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.cb-v2-notificacao-title-row h2 { display: -webkit-box; flex: 1 1 auto; min-width: 0; overflow: hidden; margin: 0; color: var(--v2-text); font-size: 14px; font-weight: 700; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 .cb-v2-notificacao-title-row span { flex: 0 0 auto; color: var(--v2-text); font-size: 13px; font-weight: 750; font-variant-numeric: tabular-nums; }
 .cb-v2-notificacao-copy p { margin: 6px 0 0; color: var(--v2-muted); font-size: 12px; line-height: 1.45; }
 
@@ -105,6 +112,7 @@
 .cb-v2-notificacao-icon.is-violet { color: var(--v2-accent); }
 
 .cb-v2-notificacao-delete {
+    position: relative;
     display: grid;
     flex: 0 0 32px;
     width: 32px;
@@ -116,6 +124,12 @@
     color: var(--v2-subtle);
     cursor: pointer;
     transition: color 160ms ease, background-color 160ms ease;
+}
+/* Área acionável de 44px sem aumentar o ícone nem a densidade do card. */
+.cb-v2-notificacao-delete::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
 }
 .cb-v2-notificacao-delete:hover,
 .cb-v2-notificacao-delete:focus-visible { background: color-mix(in srgb, var(--v2-danger) 12%, transparent); color: var(--v2-danger); }
@@ -138,13 +152,53 @@
 .cb-v2-notificacoes-empty p { max-width: 430px; margin: 7px 0 0; font-size: 13px; line-height: 1.5; }
 
 @media (max-width: 1000px) { .cb-v2-notificacoes-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1023px) {
+    .cb-v2-notificacoes-actions [data-privacy-toggle] {
+        width: 44px;
+        height: 44px;
+        min-height: 44px;
+        padding: 0;
+    }
+}
 @media (max-width: 680px) {
     .cb-v2-notificacoes-content { padding-top: 24px; padding-bottom: 112px; }
     .cb-v2-notificacoes-header { align-items: flex-start; margin-bottom: 18px; }
     .cb-v2-notificacoes-header h1 { font-size: 25px; }
-    .cb-v2-notificacoes-clear { min-height: 40px; padding: 0 2px; white-space: nowrap; }
+    .cb-v2-notificacoes-clear { min-height: 44px; padding: 0 2px; white-space: nowrap; }
     .cb-v2-notificacoes-grid { grid-template-columns: 1fr; gap: 10px; }
     .cb-v2-notificacao-card { padding: 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) { .cb-v2-notificacao-card { transition: none; } .cb-v2-notificacao-card:hover { transform: none; } }
+
+/* === Privacidade ===
+   Reusa o estado global (sessionStorage contabasePrivacy + body
+   .privacy-enabled gerido por privacy.js), no mesmo padrão de Faturas,
+   Lançamentos e Metas. O valor mantém a caixa, então o layout não pula.
+   Inputs editáveis não são mascarados. */
+.privacy-enabled .cb-v2-notificacoes-main [data-sensitive]:not(input):not(textarea):not(select) {
+    visibility: hidden;
+    user-select: none;
+}
+
+.privacy-enabled .cb-v2-notificacoes-main :is(strong, span, p, small, div, dd, b)[data-sensitive] {
+    position: relative;
+}
+
+.privacy-enabled .cb-v2-notificacoes-main :is(strong, span, p, small, div, dd, b)[data-sensitive]::after {
+    content: "••••";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    visibility: visible;
+    color: var(--v2-muted);
+    font-variant-numeric: normal;
+    letter-spacing: .12em;
+}
+
+/* O valor fecha a linha do título à direita; a máscara acompanha. */
+.privacy-enabled .cb-v2-notificacoes-main .cb-v2-notificacao-title-row span[data-sensitive]::after {
+    justify-content: flex-end;
+}

@@ -1,169 +1,138 @@
 {{define "configuracoes-admin_backups-page"}}
-{{template "configuracoes-v2-section-start" .}}
+{{template "configuracoes-admin-section-start" .}}
 {{template "configuracoes-admin_backups-content" .}}
-{{template "configuracoes-v2-section-end" .}}
+{{template "configuracoes-admin-section-end" .}}
 {{end}}
 
 {{define "configuracoes-admin_backups-content"}}
 <div id="settings-dynamic-payload" class="w-full">
-    <!-- Header Mobile Only -->
-    <header class="sticky top-14 z-20 bg-[var(--cb-surface-overlay)] backdrop-blur-xl border-b border-[var(--cb-border-subtle)] transition-colors md:hidden w-full">
-        <div class="mx-auto flex max-w-7xl items-center gap-4 px-4 pt-4 pb-3">
-            <button type="button" hx-get="/configuracoes" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] btn-tactile">
-                <i data-lucide="arrow-left" class="h-4 w-4"></i>
-            </button>
-            <div class="min-w-0 flex-1">
-                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
-                <h1 class="mt-0.5 text-lg font-bold text-[var(--cb-text-main)] md:text-xl capitalize">backups</h1>
-            </div>
-        </div>
-    </header>
+    <div class="admin-page">
+        {{if .FlashError}}<div class="admin-flash cb-flash-danger" role="alert"><i data-lucide="circle-alert" aria-hidden="true"></i><span>{{.FlashError}}</span></div>{{end}}
+        {{if .FlashSuccess}}<div class="admin-flash cb-flash-success" role="status"><i data-lucide="circle-check" aria-hidden="true"></i><span>{{.FlashSuccess}}</span></div>{{end}}
 
-    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
-        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-danger">{{.FlashError}}</div>{{end}}
-        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-success">{{.FlashSuccess}}</div>{{end}}
-
-        <!-- Section header -->
-        <div class="mb-6 flex items-start justify-between gap-4">
-            <div>
-                <div class="flex items-center gap-2">
-                    <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Backups</h1>
-                    <a href="/ajuda#seguranca-backups" hx-get="/ajuda" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]" title="Ajuda sobre Segurança e Backups">
-                        <i data-lucide="help-circle" class="w-4 h-4"></i>
-                    </a>
-                </div>
-                <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Exportação, importação e política da rotina automática.</p>
-            </div>
-        </div>
-
-        <div class="cb-card-dense p-4 md:p-6 space-y-4">
-            <!-- Exportar Backup -->
-            <div class="cb-row-dense">
-                <div class="flex items-start gap-4">
-                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in srgb,var(--cb-success) 12%,transparent)] text-[color-mix(in srgb,var(--cb-success) 75%,var(--cb-text-main))]">
-                        <i data-lucide="download" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0 flex-1">
-                        <p class="text-sm font-bold text-[var(--cb-text-main)]">Exportar backup</p>
-                        <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Baixe uma cópia de segurança atual do banco de dados. Este arquivo não inclui uploads, anexos, fotos, logos nem .env.</p>
-                    </div>
-                </div>
-                <div class="mt-4 flex justify-start">
-                    <a href="/admin/backups/exportar" class="cb-button cb-button-primary h-9 px-4 text-xs">
-                        <i data-lucide="download" class="h-4 w-4"></i>
-                        <span>Baixar backup</span>
-                    </a>
+        <header class="ui-page-header admin-page-header">
+            <div class="admin-page-header__copy">
+                <p class="ui-eyebrow">Administração da instância</p>
+                <h1 class="ui-page-title">Backups</h1>
+                <p class="ui-page-description">Baixe cópias do banco, acompanhe a rotina automática e restaure um estado anterior com segurança.</p>
+                <div class="admin-page-header__meta">
+                    <span class="ui-badge ui-badge--accent"><i data-lucide="shield-check" aria-hidden="true"></i>Acesso global</span>
+                    <span class="ui-badge ui-badge--neutral">Escopo: instância inteira</span>
                 </div>
             </div>
+            <a href="/ajuda#seguranca-backups" hx-get="/ajuda" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="ui-btn ui-btn--ghost ui-btn--sm" title="Ajuda sobre Segurança e Backups">
+                <i data-lucide="circle-help" aria-hidden="true"></i>
+                <span>Ajuda</span>
+            </a>
+        </header>
 
-            <!-- Rotina Automática -->
-            <article class="cb-row-dense">
-                <div class="flex items-start gap-4">
-                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in srgb,var(--cb-info) 12%,transparent)] text-[color-mix(in srgb,var(--cb-info) 75%,var(--cb-text-main))]">
-                        <i data-lucide="calendar" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0 flex-1">
-                        <p class="text-sm font-bold text-[var(--cb-text-main)]">Rotina automática</p>
-                        <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Backup {{.BackupTicker}} · retenção: últimos {{.BackupRetention}} dias para backups com procedência comprovada</p>
-                        <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Local: <code class="font-mono text-[11px] text-[var(--cb-text-main)]">DATA_DIR/backups/</code>, no armazenamento persistente da instalação.</p>
-                        <p class="mt-1 text-xs text-[var(--cb-text-subtle)]">A rotina verifica a cada hora. Arquivos sem procedência comprovada são preservados e podem impedir a criação do backup do dia.</p>
-                        {{if .BackupListUnavailable}}
-                        <p class="mt-3 text-xs text-[var(--cb-warning)]">Não foi possível listar os arquivos agora. Verifique as permissões de leitura do diretório de dados.</p>
-                        {{else if .AutomaticBackups}}
-                        <div class="mt-3 border-t border-[var(--cb-border-subtle)] pt-2">
-                            <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--cb-text-subtle)]">Arquivos diários encontrados</p>
-                            <ul class="mt-1 divide-y divide-[var(--cb-border-subtle)]" aria-label="Arquivos de backup diário encontrados">
-                                {{range .AutomaticBackups}}
-                                <li class="flex min-w-0 items-center gap-2 py-2 text-xs">
-                                    <i data-lucide="file" class="h-4 w-4 shrink-0 text-[var(--cb-text-muted)]" aria-hidden="true"></i>
-                                    <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--cb-text-main)]" title="{{.Name}}">{{.Name}}</span>
-                                    <span class="shrink-0 tabular-nums text-[var(--cb-text-muted)]">{{.CreatedAt}} · {{.Size}}</span>
-                                </li>
-                                {{end}}
-                            </ul>
-                            <p class="mt-2 text-[11px] text-[var(--cb-text-subtle)]">Esta lista mostra arquivos encontrados, incluindo antigos ou não verificados; não confirma procedência, integridade nem conclusão da rotina. Valide a restauração periodicamente. Arquivos antigos não são adotados ou excluídos automaticamente.</p>
+        <div class="admin-backup-stack">
+            <section class="ui-panel admin-backup-panel" aria-labelledby="backupExportTitle">
+                <header class="admin-backup-panel__head">
+                    <div class="admin-backup-row">
+                        <span class="admin-backup-icon admin-backup-icon--success" aria-hidden="true"><i data-lucide="download"></i></span>
+                        <div class="admin-backup-copy">
+                            <h2 id="backupExportTitle" class="admin-backup-title">Exportar backup</h2>
+                            <p class="admin-backup-desc">Baixe uma cópia de segurança atual do banco de dados. O arquivo não inclui uploads, anexos, fotos, logos nem <code class="font-mono text-[11px]">.env</code>.</p>
                         </div>
-                        {{else}}
-                        <p class="mt-3 text-xs text-[var(--cb-text-subtle)]">Nenhum backup diário foi encontrado ainda. O primeiro é criado quando a rotina inicia.</p>
+                    </div>
+                </header>
+                <div class="admin-backup-panel__body">
+                    <div class="admin-backup-actions">
+                        <a href="/admin/backups/exportar" class="ui-btn ui-btn--secondary">
+                            <i data-lucide="download" aria-hidden="true"></i>
+                            <span>Baixar backup</span>
+                        </a>
+                    </div>
+                    <p class="admin-backup-note">A exportação exige reautenticação recente e é registrada em auditoria.</p>
+                </div>
+            </section>
+
+            <section class="ui-panel admin-backup-panel" aria-labelledby="backupRoutineTitle">
+                <header class="admin-backup-panel__head">
+                    <div class="admin-backup-row">
+                        <span class="admin-backup-icon admin-backup-icon--info" aria-hidden="true"><i data-lucide="calendar"></i></span>
+                        <div class="admin-backup-copy">
+                            <h2 id="backupRoutineTitle" class="admin-backup-title">Rotina automática</h2>
+                            <p class="admin-backup-desc">Backup {{.BackupTicker}} · retenção: últimos {{.BackupRetention}} dias para backups com procedência comprovada.</p>
+                            <p class="admin-backup-desc">Local: <code class="font-mono text-[11px] text-[var(--ui-text)]">DATA_DIR/backups/</code>, no armazenamento persistente da instalação.</p>
+                        </div>
+                    </div>
+                </header>
+                <div class="admin-backup-panel__body">
+                    <p class="admin-backup-note">A rotina verifica a cada hora. Arquivos sem procedência comprovada são preservados e podem impedir a criação do backup do dia.</p>
+
+                    {{if .BackupListUnavailable}}
+                    <div class="admin-flash cb-flash-danger" role="status"><i data-lucide="circle-alert" aria-hidden="true"></i><span>Não foi possível listar os arquivos agora. Verifique as permissões de leitura do diretório de dados.</span></div>
+                    {{else if .AutomaticBackups}}
+                    <p class="admin-meta-label admin-meta-label--spaced">Arquivos diários encontrados</p>
+                    <ul class="admin-backup-list" aria-label="Arquivos de backup diário encontrados">
+                        {{range .AutomaticBackups}}
+                        <li>
+                            <i data-lucide="file" class="h-4 w-4 shrink-0 text-[var(--ui-text-muted)]" aria-hidden="true"></i>
+                            <span class="admin-backup-file" title="{{.Name}}">{{.Name}}</span>
+                            <span class="admin-backup-meta">{{.CreatedAt}} · {{.Size}}</span>
+                        </li>
                         {{end}}
-                    </div>
+                    </ul>
+                    <p class="admin-backup-note">Esta lista mostra arquivos encontrados, incluindo antigos ou não verificados; não confirma procedência, integridade nem conclusão da rotina. Valide a restauração periodicamente. Arquivos antigos não são adotados ou excluídos automaticamente.</p>
+                    {{else}}
+                    <p class="admin-backup-note">Nenhum backup diário foi encontrado ainda. O primeiro é criado quando a rotina inicia.</p>
+                    {{end}}
                 </div>
-            </article>
+            </section>
 
-            <!-- Importar Backup -->
-            <form class="cb-card-muted p-4 md:p-5 space-y-4"
-                  data-backup-dropzone
-                  hx-post="/admin/backups/importar"
-                  hx-encoding="multipart/form-data"
-                  hx-target="#settings-dynamic-payload"
-                  hx-swap="outerHTML"
-                  hx-sync="this:drop"
-                  hx-disabled-elt="find button[type='submit']"
-                  hx-indicator="#htmx-indicator">
-
-                <div class="flex items-start gap-4">
-                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]">
-                        <i data-lucide="upload" class="h-5 w-5"></i>
-                    </span>
-                    <div class="min-w-0 flex-1">
-                        <p class="text-sm font-bold text-[var(--cb-text-main)]">Importar backup</p>
-                        <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Restaure um estado anterior a partir de um arquivo SQLite .db; arquivos em data/uploads precisam ser restaurados separadamente.</p>
+            <section class="ui-panel admin-backup-panel admin-backup-panel--danger" aria-labelledby="backupRestoreTitle">
+                <header class="admin-backup-panel__head">
+                    <div class="admin-backup-row">
+                        <span class="admin-backup-icon admin-backup-icon--danger" aria-hidden="true"><i data-lucide="upload"></i></span>
+                        <div class="admin-backup-copy">
+                            <h2 id="backupRestoreTitle" class="admin-backup-title">Restaurar backup</h2>
+                            <p class="admin-backup-desc">Substitui o banco atual pelo arquivo SQLite selecionado. Use somente um backup exportado pelo ContaBase.</p>
+                        </div>
+                        <span class="ui-badge ui-badge--danger"><i data-lucide="triangle-alert" aria-hidden="true"></i>Ação destrutiva</span>
                     </div>
+                </header>
+                <div class="admin-backup-panel__body">
+                    <div class="admin-restore-warning" role="note">
+                        <i data-lucide="triangle-alert" aria-hidden="true"></i>
+                        <div>
+                            <strong>Esta ação substitui o banco atual pelo backup selecionado.</strong>
+                            <p>Um backup de segurança pré-restore será criado automaticamente antes da troca. O restore pelo painel troca somente o banco SQLite; preserve <code class="font-mono text-[11px]">data/uploads</code> e as chaves do <code class="font-mono text-[11px]">.env.docker</code> para manter anexos, imagens e 2FA funcionando.</p>
+                        </div>
+                    </div>
+
+                    <form class="admin-backup-form"
+                          data-backup-dropzone
+                          hx-post="/admin/backups/importar"
+                          hx-encoding="multipart/form-data"
+                          hx-target="#settings-dynamic-payload"
+                          hx-swap="outerHTML"
+                          hx-sync="this:drop"
+                          hx-disabled-elt="find button[type='submit']"
+                          hx-indicator="#htmx-indicator">
+
+                        <label data-backup-dropzone-label class="admin-dropzone">
+                            <input type="file" id="backup_file_input" name="backup_file" accept=".db" required class="sr-only" aria-describedby="backupFileHelp">
+                            <span class="admin-dropzone__icon" aria-hidden="true"><i data-lucide="upload-cloud"></i></span>
+                            <span class="admin-dropzone__title" data-backup-drag-text>Arraste um arquivo .db aqui ou clique para selecionar</span>
+                            <span class="admin-dropzone__hint" id="backupFileHelp" data-backup-drag-text>Apenas backups SQLite .db exportados pelo ContaBase.</span>
+                            <span class="admin-file-selected hidden flex" data-backup-file-wrap>
+                                <i data-lucide="file-check" aria-hidden="true"></i>
+                                <span>Arquivo selecionado: <strong data-backup-filename></strong></span>
+                            </span>
+                        </label>
+
+                        <div class="admin-backup-form__actions">
+                            <button type="submit" class="ui-btn admin-danger-btn disabled:cursor-wait disabled:opacity-60">
+                                <i data-lucide="upload" aria-hidden="true"></i>
+                                <span>Importar e substituir banco</span>
+                                <span class="htmx-indicator ml-2">Importando...</span>
+                            </button>
+                        </div>
+                    </form>
                 </div>
-
-                <!-- Upload dropzone label -->
-                <label
-                    data-backup-dropzone-label
-                    class="relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-8 px-4 text-center cursor-pointer transition-all duration-200 border-[var(--cb-border-strong)] bg-[color-mix(in srgb,var(--cb-surface-2) 50%,transparent)] hover:border-[var(--cb-border-strong)] hover:bg-[var(--cb-surface-3)]"
-                >
-                    <input
-                        type="file"
-                        id="backup_file_input"
-                        name="backup_file"
-                        accept=".db"
-                        required
-                        class="sr-only"
-                    >
-
-                    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)] mb-3">
-                        <i data-lucide="upload-cloud" class="w-6 h-6"></i>
-                    </div>
-
-                    <p class="text-sm font-semibold text-[var(--cb-text-main)]" data-backup-drag-text>
-                        Arraste um arquivo .db aqui ou clique para selecionar
-                    </p>
-                    <p class="text-xs text-[var(--cb-text-muted)] mt-1" data-backup-drag-text>
-                        Apenas backups SQLite .db exportados pelo ContaBase.
-                    </p>
-
-                    <!-- Feedback area -->
-                    <div class="flex items-center gap-2 text-sm font-medium rounded-xl border border-[var(--cb-success)]/20 bg-[color-mix(in srgb,var(--cb-success) 10%,var(--cb-surface-2))] px-3 py-2 text-[color-mix(in srgb,var(--cb-success) 75%,var(--cb-text-main))] hidden" data-backup-file-wrap>
-                        <i data-lucide="file-check" class="w-4 h-4 shrink-0"></i>
-                        <span>Arquivo selecionado: <strong class="font-bold font-mono text-xs text-[var(--cb-text-main)]" data-backup-filename></strong></span>
-                    </div>
-                </label>
-
-                <!-- Microcopy Warning -->
-                <div class="flex gap-3 rounded-xl border border-[var(--cb-danger)]/20 bg-[color-mix(in srgb,var(--cb-danger) 8%,var(--cb-surface-2))] p-4 text-[var(--cb-danger)]">
-                    <i data-lucide="alert-triangle" class="w-5 h-5 shrink-0"></i>
-                    <div class="text-xs leading-relaxed">
-                        <p class="font-semibold">Esta ação substitui o banco atual pelo backup selecionado. Um backup de segurança pré-restore será criado automaticamente antes da troca.</p>
-                        <p class="mt-1">O restore pelo painel troca somente o banco SQLite. Preserve data/uploads e as chaves do .env.docker para manter anexos, imagens e 2FA funcionando.</p>
-                    </div>
-                </div>
-
-                <!-- Submit actions -->
-                <div class="flex justify-end pt-2">
-                    <button
-                        type="submit"
-                        class="cb-button cb-button-primary btn-tactile h-10 px-4 text-xs disabled:cursor-wait disabled:opacity-60"
-                    >
-                        <i data-lucide="upload" class="h-4 w-4"></i>
-                        <span>Importar e Sobrescrever Banco</span>
-                        <span class="htmx-indicator ml-2">Importando...</span>
-                    </button>
-                </div>
-            </form>
+            </section>
         </div>
     </div>
 </div>

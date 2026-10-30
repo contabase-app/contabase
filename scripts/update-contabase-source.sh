@@ -16,9 +16,11 @@ else
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$REPO_ROOT/scripts/lib/contabase-recovery.sh"
 APP_DIR="${CONTABASE_INSTALL_DIR:-/opt/contabase}"
 DATA_DIR="${DATA_DIR:-/var/lib/contabase}"
 STATE_FILE="${CONTABASE_STATE_FILE:-/etc/contabase/install-state.env}"
+SERVICE_FILE=/etc/systemd/system/contabase.service
 UPLOADS_DIR="${UPLOADS_DIR:-${DATA_DIR}/uploads}"
 PROFILE_UPLOADS_DIR="${UPLOADS_DIR}/profile"
 WORKSPACE_UPLOADS_DIR="${UPLOADS_DIR}/workspaces"
@@ -814,7 +816,8 @@ build_release_binary() {
 }
 
 preserve_previous_bundle() {
-  rm -rf "${APP_DIR}/contabase.previous" "${APP_DIR}/templates.previous" "${APP_DIR}/assets.previous" "${APP_DIR}/VERSION.previous"
+  rm -rf "${APP_DIR}/contabase.previous" "${APP_DIR}/templates.previous" "${APP_DIR}/assets.previous" "${APP_DIR}/VERSION.previous" "${APP_DIR}/admin.previous"
+  if [ -f "$APP_DIR/admin" ]; then cp "$APP_DIR/admin" "$APP_DIR/admin.previous"; fi
 
   if [ -f "${APP_DIR}/contabase" ]; then
     cp "${APP_DIR}/contabase" "${APP_DIR}/contabase.previous"
@@ -851,7 +854,16 @@ install_new_bundle() {
 }
 
 start_service() {
-  systemctl start contabase
+  [ "${RECOVERY_COMPLETED:-false}" != true ] || return 0
+  local identity version
+  if [ "$NEW_RUNTIME_STARTED" = true ]; then recovery_blocked; return 1; fi
+  identity="$(recovery_bundle_identity "$APP_DIR" "" "$SERVICE_FILE")" || { recovery_blocked; return 1; }
+  version="$(cat "$APP_DIR/VERSION")" || return 1
+  recovery_verify "$(dirname "$STATE_FILE")/recovery" bundle "$version" "$identity" || { recovery_blocked; return 1; }
+  NEW_RUNTIME_STARTED=true
+  if systemctl start contabase && run_healthcheck; then RECOVERY_COMPLETED=true; return 0; fi
+  systemctl stop contabase || true
+  return 1
 }
 
 start_new_runtime() {
@@ -891,34 +903,51 @@ run_healthcheck() {
 }
 
 rollback_bundle() {
-  ROLLED_BACK=true
+  [ "${RECOVERY_COMPLETED:-false}" != true ] || return 0
+  local identity version
+  systemctl stop contabase || { recovery_blocked; return 1; }
+  if [ "$NEW_RUNTIME_STARTED" = true ]; then recovery_blocked; return 1; fi
+  identity="$(recovery_bundle_identity "$APP_DIR" .previous "$SERVICE_FILE")" || { recovery_blocked; return 1; }
+  version="$(cat "$APP_DIR/VERSION.previous")" || return 1
+  recovery_verify "$(dirname "$STATE_FILE")/recovery" bundle "$version" "$identity" || { recovery_blocked; return 1; }
 
-  systemctl stop contabase || true
+  # Every copy must succeed before any start; callers may invoke this in an if.
+  if [ -f "$APP_DIR/admin.previous" ]; then cp "$APP_DIR/admin.previous" "$APP_DIR/admin" || return 1; fi
 
   if [ -f "${APP_DIR}/contabase.previous" ]; then
-    cp "${APP_DIR}/contabase.previous" "${APP_DIR}/contabase"
-    chmod 0755 "${APP_DIR}/contabase"
+    cp "${APP_DIR}/contabase.previous" "${APP_DIR}/contabase" || return 1
+    chmod 0755 "${APP_DIR}/contabase" || return 1
   fi
 
   if [ -d "${APP_DIR}/templates.previous" ]; then
-    rm -rf "${APP_DIR}/templates"
-    cp -R "${APP_DIR}/templates.previous" "${APP_DIR}/templates"
+    rm -rf "${APP_DIR}/templates" || return 1
+    cp -R "${APP_DIR}/templates.previous" "${APP_DIR}/templates" || return 1
   fi
 
   if [ -d "${APP_DIR}/assets.previous" ]; then
-    rm -rf "${APP_DIR}/assets"
-    cp -R "${APP_DIR}/assets.previous" "${APP_DIR}/assets"
+    rm -rf "${APP_DIR}/assets" || return 1
+    cp -R "${APP_DIR}/assets.previous" "${APP_DIR}/assets" || return 1
   fi
 
   if [ -f "${APP_DIR}/VERSION.previous" ]; then
-    cp "${APP_DIR}/VERSION.previous" "${APP_DIR}/VERSION"
-    chmod 0644 "${APP_DIR}/VERSION"
+    cp "${APP_DIR}/VERSION.previous" "${APP_DIR}/VERSION" || return 1
+    chmod 0644 "${APP_DIR}/VERSION" || return 1
   else
     rm -f "${APP_DIR}/VERSION"
   fi
 
-  chown -R root:root "${APP_DIR}"
-  start_service || true
+  chown -R root:root "${APP_DIR}" || return 1
+  start_service || return 1
+  ROLLED_BACK=true
+}
+
+record_source_recovery() {
+  local identity
+  recovery_source_known "$CANONICAL_BUILD_DIR" \
+    && cmp -s "$TMP_BINARY" "$APP_DIR/contabase" \
+    && identity="$(recovery_bundle_identity "$APP_DIR" "" "$SERVICE_FILE")" \
+    && recovery_record "$(dirname "$STATE_FILE")/recovery" bundle "$TARGET_VERSION" "$identity" \
+    || log_warn "Prova de recuperacao nao emitida; retorno automatico a este bundle ficara bloqueado."
 }
 
 print_failure_diagnostics() {
@@ -1228,6 +1257,7 @@ main() {
   start_new_runtime
   if run_healthcheck; then
     RUNTIME_CONFIRMED=true
+    record_source_recovery
     log_ok "Healthcheck retornou healthy."
     log_step "[9/9] Finalizando checkout e estado instalado"
     finalize_confirmed_update

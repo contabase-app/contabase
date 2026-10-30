@@ -222,8 +222,8 @@ func reverseInvoicePaymentWithHooks(db *sql.DB, command invoicePaymentReversalCo
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id
 		JOIN credit_cards cc ON cc.account_id = a.id
-		WHERE i.id = ?
-	`, result.InvoiceID).Scan(&cardAccountID, &closingUnix, &closingCivil, &cardWorkspace, &cardType, &creditCardID); err != nil {
+		WHERE i.id = ? AND a.workspace_id = ?
+	`, result.InvoiceID, command.WorkspaceID).Scan(&cardAccountID, &closingUnix, &closingCivil, &cardWorkspace, &cardType, &creditCardID); err != nil {
 		if err == sql.ErrNoRows {
 			return result, fmt.Errorf("%w: invoice/card not found", errInvoicePaymentReversalStructural)
 		}
@@ -237,8 +237,8 @@ func reverseInvoicePaymentWithHooks(db *sql.DB, command invoicePaymentReversalCo
 	if err := tx.QueryRow(`
 		SELECT workspace_id, type
 		FROM accounts
-		WHERE id = ?
-	`, result.AccountID).Scan(&paymentAccountWorkspace, &paymentAccountType); err != nil {
+		WHERE id = ? AND workspace_id = ?
+	`, result.AccountID, command.WorkspaceID).Scan(&paymentAccountWorkspace, &paymentAccountType); err != nil {
 		if err == sql.ErrNoRows {
 			return result, fmt.Errorf("%w: payment account not found", errInvoicePaymentReversalStructural)
 		}
@@ -259,8 +259,8 @@ func reverseInvoicePaymentWithHooks(db *sql.DB, command invoicePaymentReversalCo
 	if err := tx.QueryRow(`
 		SELECT workspace_id, account_id, type, amount, status, destination_account_id
 		FROM transactions
-		WHERE id = ?
-	`, result.OriginalTransactionID).Scan(
+		WHERE id = ? AND workspace_id = ?
+	`, result.OriginalTransactionID, command.WorkspaceID).Scan(
 		&originalWorkspace,
 		&originalAccountID,
 		&originalType,

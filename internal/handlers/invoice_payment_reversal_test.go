@@ -640,10 +640,10 @@ func TestReverseInvoicePaymentActiveSumOverflowRollsBack(t *testing.T) {
 	tBig1 := reversalUnix("2026-08-02", 10)
 	tBig2 := reversalUnix("2026-08-03", 10)
 	seedInvoicePaymentReversalFixture(t, db, reversalFixtureOptions{
-		InvoiceTotal:  100000,
-		Payments:      nil,
-		ClosingCivil:  "2026-08-20",
-		InvoiceStatus: "OPEN",
+		InvoiceTotal:   100000,
+		Payments:       nil,
+		ClosingCivil:   "2026-08-20",
+		InvoiceStatus:  "OPEN",
 		InitialBalance: 200000,
 	})
 	// Extreme active payments are staged directly: the fixture accumulator
@@ -679,10 +679,10 @@ func TestReverseInvoicePaymentActiveSumUnderflowRollsBack(t *testing.T) {
 	tNeg2 := reversalUnix("2026-08-02", 10)
 	tSmall := reversalUnix("2026-08-03", 10)
 	seedInvoicePaymentReversalFixture(t, db, reversalFixtureOptions{
-		InvoiceTotal:  100000,
-		Payments:      nil,
-		ClosingCivil:  "2026-08-20",
-		InvoiceStatus: "OPEN",
+		InvoiceTotal:   100000,
+		Payments:       nil,
+		ClosingCivil:   "2026-08-20",
+		InvoiceStatus:  "OPEN",
 		InitialBalance: 200000,
 	})
 	insertReversalPaymentTransaction(t, db, "payment-a", 100, tSmall, tSmall)
@@ -772,14 +772,15 @@ func TestSumInvoiceTotalTxPropagatesQueryError(t *testing.T) {
 		LegacyPaid: 100000, InitialBalance: 200000,
 	})
 
+	if _, err := fixtureHandlerExec(t, db, `DROP TABLE transaction_refunds`); err != nil {
+		t.Fatalf("drop table: %v", err)
+	}
 	tx, err := db.Begin()
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`DROP TABLE transaction_refunds`); err != nil {
-		t.Fatalf("drop table: %v", err)
-	}
+
 	total, err := sumInvoiceTotalTx(tx, reversalWorkspaceID, reversalInvoiceID)
 	if err == nil {
 		t.Fatalf("query error must propagate, got total=%d err=nil", total)

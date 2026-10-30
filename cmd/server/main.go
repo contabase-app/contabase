@@ -44,8 +44,6 @@ import (
 
 const (
 	seedWorkspaceID               = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-	seedUserID                    = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-	seedDefaultPassword           = "12345678"
 	sessionCookieName             = httpcookies.Session
 	adminBackupImportMaxBodyBytes = 50 << 20
 	bootstrapRestoreMaxBodyBytes  = 32 << 20
@@ -200,11 +198,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Servir arquivos estáticos da pasta assets
-	assetsFS := http.FileServer(http.Dir("assets"))
-	mux.Handle("/assets/", http.StripPrefix("/assets/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "public, max-age=3600, must-revalidate")
-		assetsFS.ServeHTTP(w, r)
-	})))
+	mux.Handle("/assets/", http.StripPrefix("/assets/", newAssetHandler("assets")))
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join("assets", "favicon.ico"))
 	})
@@ -700,6 +694,18 @@ func main() {
 		slog.Info("admin_action", "action", "backup_export", "actor_user_id", ctx.UserID, "client_ip", clientIP(r))
 	}))
 
+	mux.HandleFunc("/dashboard/balance-series", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if !hasPermission(ctx.Role, permDashboardRead) {
+			respondForbidden(w, r)
+			return
+		}
+		h := &handlers.DashboardBalanceSeriesHandler{
+			DB:          db,
+			WorkspaceID: ctx.ActiveWorkspaceID,
+		}
+		h.ServeHTTP(w, r)
+	}))
+
 	mux.HandleFunc("/", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -824,6 +830,7 @@ func main() {
 		h := contatosBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.Role = ctx.Role
 		switch r.Method {
 		case http.MethodGet:
 			if !hasPermission(ctx.Role, permTransactionsRead) {
@@ -840,6 +847,22 @@ func main() {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
+	}))
+
+	mux.HandleFunc("/contatos/novo", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !hasPermission(ctx.Role, permTransactionsCreate) {
+			respondForbidden(w, r)
+			return
+		}
+		h := contatosBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.Role = ctx.Role
+		h.HandleNovoContatoSheet(w, r)
 	}))
 
 	mux.HandleFunc("/contatos/options", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -889,6 +912,7 @@ func main() {
 		h := contatosBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.Role = ctx.Role
 		rest := strings.TrimPrefix(r.URL.Path, "/contatos/")
 		if rest == "" {
 			http.NotFound(w, r)
@@ -919,7 +943,7 @@ func main() {
 		}
 		switch r.Method {
 		case http.MethodGet:
-			if !hasPermission(ctx.Role, permTransactionsRead) {
+			if !hasPermission(ctx.Role, permTransactionsUpdate) {
 				respondForbidden(w, r)
 				return
 			}
@@ -1190,181 +1214,7 @@ func main() {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}))
 
-	mux.HandleFunc("/transacoes/", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		h := txBase
-		h.WorkspaceID = ctx.ActiveWorkspaceID
-		h.UserID = ctx.UserID
-		rest := strings.TrimPrefix(r.URL.Path, "/transacoes/")
-		if rest == "" {
-			http.NotFound(w, r)
-			return
-		}
-		parts := strings.Split(rest, "/")
-		id := parts[0]
-
-		if len(parts) == 2 && parts[1] == "status-pagamento" {
-			if r.Method == http.MethodPost {
-				if !hasPermission(ctx.Role, permInvoicesStatusUpdate) {
-					respondForbidden(w, r)
-					return
-				}
-				h.HandleTogglePagamento(w, r, id)
-				return
-			}
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if len(parts) == 2 && parts[1] == "mover-fatura" {
-			if r.Method == http.MethodPost {
-				if !hasPermission(ctx.Role, permInvoicesStatusUpdate) {
-					respondForbidden(w, r)
-					return
-				}
-				h.HandleMoverFatura(w, r, id)
-				return
-			}
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if len(parts) == 2 && parts[1] == "reembolso" {
-			switch r.Method {
-			case http.MethodGet:
-				if !hasPermission(ctx.Role, permTransactionsRead) {
-					respondForbidden(w, r)
-					return
-				}
-				h.HandleFormReembolso(w, r, id)
-			case http.MethodPost:
-				if !hasPermission(ctx.Role, permTransactionsUpdate) {
-					respondForbidden(w, r)
-					return
-				}
-				h.HandleRegistrarReembolso(w, r, id)
-			default:
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			}
-			return
-		}
-		if len(parts) == 2 && parts[1] == "reembolsos" {
-			if r.Method != http.MethodGet {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-			if !hasPermission(ctx.Role, permTransactionsRead) {
-				respondForbidden(w, r)
-				return
-			}
-			h.HandleGerenciarReembolsos(w, r, id)
-			return
-		}
-		if len(parts) == 4 && parts[1] == "reembolsos" && parts[2] != "" {
-			refundID, action := parts[2], parts[3]
-			switch action {
-			case "editar":
-				if r.Method == http.MethodGet {
-					if !hasPermission(ctx.Role, permTransactionsRead) {
-						respondForbidden(w, r)
-						return
-					}
-					h.HandleFormEditarReembolso(w, r, id, refundID)
-					return
-				}
-				if r.Method == http.MethodPost {
-					if !hasPermission(ctx.Role, permTransactionsUpdate) {
-						respondForbidden(w, r)
-						return
-					}
-					h.HandleAtualizarReembolso(w, r, id, refundID)
-					return
-				}
-			case "remover":
-				if r.Method == http.MethodPost {
-					if !hasPermission(ctx.Role, permTransactionsUpdate) {
-						respondForbidden(w, r)
-						return
-					}
-					h.HandleRemoverReembolso(w, r, id, refundID)
-					return
-				}
-			}
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if len(parts) == 2 && parts[1] == "editar" {
-			if r.Method == http.MethodGet {
-				h.CanCreateContact = hasPermission(ctx.Role, permTransactionsCreate)
-				h.HandleDetalheTransacao(w, r, id)
-				return
-			}
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if len(parts) == 2 && parts[1] == "salvar" {
-			if r.Method == http.MethodPost || r.Method == http.MethodPut {
-				if !hasPermission(ctx.Role, permTransactionsUpdate) {
-					respondForbidden(w, r)
-					return
-				}
-				h.HandleAtualizarTransacao(w, r, id)
-				return
-			}
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if len(parts) == 2 && parts[1] == "recibo" {
-			if r.Method == http.MethodGet {
-				if !hasPermission(ctx.Role, permTransactionsRead) {
-					respondForbidden(w, r)
-					return
-				}
-				h.HandleGerarRecibo(w, r, id)
-				return
-			}
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if len(parts) == 2 && parts[1] == "anexo" {
-			if !hasPermission(ctx.Role, permAttachmentRead) {
-				respondForbidden(w, r)
-				return
-			}
-			if ctx.Role == models.RoleUser && !userOwnsTransaction(db, id, ctx.UserID, ctx.ActiveWorkspaceID) {
-				respondForbidden(w, r)
-				return
-			}
-			h.HandleDownloadAnexo(w, r, id)
-			return
-		}
-
-		if len(parts) != 1 {
-			http.NotFound(w, r)
-			return
-		}
-
-		switch r.Method {
-		case http.MethodDelete:
-			if !hasPermission(ctx.Role, permTransactionsDelete) {
-				respondForbidden(w, r)
-				return
-			}
-			h.HandleDeletarTransacao(w, r, id)
-		case http.MethodGet:
-			if !hasPermission(ctx.Role, permTransactionsRead) {
-				respondForbidden(w, r)
-				return
-			}
-			h.CanCreateContact = hasPermission(ctx.Role, permTransactionsCreate)
-			h.HandleDetalheTransacao(w, r, id)
-		case http.MethodPut:
-			if !hasPermission(ctx.Role, permTransactionsUpdate) {
-				respondForbidden(w, r)
-				return
-			}
-			h.HandleAtualizarTransacao(w, r, id)
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-	}))
+	registerTransacoesRoutes(mux, db, authService, csrfSigner, &txBase)
 
 	registerInvestimentosRoutes(mux, authService, csrfSigner, &investimentosBase)
 
@@ -1372,6 +1222,7 @@ func main() {
 		h := metasBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		switch r.Method {
 		case http.MethodGet:
 			if !hasPermission(ctx.Role, permDashboardRead) {
@@ -1396,6 +1247,7 @@ func main() {
 		h := metasBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleNovaMeta(w, r)
 	}))
 	mux.HandleFunc("/metas/caixinha", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1410,6 +1262,7 @@ func main() {
 		h := metasBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleCriarCaixinha(w, r)
 	}))
 	mux.HandleFunc("/metas/limite", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1424,6 +1277,7 @@ func main() {
 		h := metasBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleCriarLimite(w, r)
 	}))
 	mux.HandleFunc("/metas/caixinha/", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1452,6 +1306,7 @@ func main() {
 		h := metasBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleHistoricoLimite(w, r)
 	}))
 	mux.HandleFunc("/metas/limite/", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1480,6 +1335,7 @@ func main() {
 		h := metasBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleAporteCaixinha(w, r)
 	}))
 	mux.HandleFunc("/metas/caixinha/resgate", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1494,6 +1350,7 @@ func main() {
 		h := metasBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleResgateCaixinha(w, r)
 	}))
 	mux.HandleFunc("/metas/caixinha/aporte/sheet", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1508,6 +1365,7 @@ func main() {
 		h := metasBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleAporteCaixinhaSheet(w, r)
 	}))
 	mux.HandleFunc("/metas/caixinha/resgate/sheet", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1522,6 +1380,7 @@ func main() {
 		h := metasBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleResgateCaixinhaSheet(w, r)
 	}))
 	mux.HandleFunc("/metas/caixinha/historico", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1536,6 +1395,7 @@ func main() {
 		h := metasBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleHistoricoCaixinha(w, r)
 	}))
 
@@ -1543,6 +1403,7 @@ func main() {
 		h := relBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		switch r.Method {
 		case http.MethodGet:
 			if !models.HasPermission(&ctx.Member, models.PermissionReportsView) {
@@ -1566,6 +1427,7 @@ func main() {
 		h := relBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleExportarCSV(w, r)
 	}))
 	mux.HandleFunc("/relatorios/dre.pdf", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1580,6 +1442,7 @@ func main() {
 		h := relBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleExportarDREPDF(w, r)
 	}))
 	mux.HandleFunc("/relatorios/caixa.pdf", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1594,6 +1457,7 @@ func main() {
 		h := relBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleExportarCaixaPDF(w, r)
 	}))
 	mux.HandleFunc("/relatorios/contabil.pdf", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1608,6 +1472,7 @@ func main() {
 		h := relBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleExportarContabilPDF(w, r)
 	}))
 	mux.HandleFunc("/relatorios/contabil-resumo.csv", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1622,6 +1487,7 @@ func main() {
 		h := relBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleExportarContabilResumoCSV(w, r)
 	}))
 	mux.HandleFunc("/relatorios/contabil-macros.csv", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1636,6 +1502,7 @@ func main() {
 		h := relBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleExportarContabilMacrosCSV(w, r)
 	}))
 	mux.HandleFunc("/relatorios/contabil-saldos.csv", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1650,6 +1517,7 @@ func main() {
 		h := relBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleExportarContabilSaldosCSV(w, r)
 	}))
 	mux.HandleFunc("/relatorios/contabil.zip", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1664,6 +1532,7 @@ func main() {
 		h := relBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleExportarContabilZIP(w, r)
 	}))
 	mux.HandleFunc("/relatorios/export.pdf", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1678,6 +1547,7 @@ func main() {
 		h := relBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
+		h.ActorRole = ctx.Role
 		h.HandleExportarExtratoPDF(w, r)
 	}))
 
@@ -2576,7 +2446,11 @@ func main() {
 		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/auditoria") {
 			return
 		}
+		if !allowRateLimit(w, r, userIPRateLimitKey("admin:identity:auditoria-save", ctx, r), adminIdentityMutationRateLimitPolicy) {
+			return
+		}
 		h := newConfigHandler(ctx)
+		slog.Info("admin_action", "action", "admin_auditoria_save", "actor_user_id", ctx.UserID, "client_ip", clientIP(r))
 		h.HandleAdminAuditoriaSave(w, r)
 	}))
 	mux.HandleFunc("/admin/caixinhas/ledger/reconciliar", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -4012,7 +3886,6 @@ func setupNoticeRoleIsAdmin(role string) bool {
 }
 
 func seedIfEmpty(db *sql.DB) {
-	repairLegacySeedCredentials(db)
 	var userCount int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&userCount); err != nil {
 		slog.Error("seed skipped: failed to count users", "error", err)
@@ -4056,14 +3929,23 @@ func seedDemoB2B(db *sql.DB, workspaceID, userID string) error {
 		}
 		accountID = seedStableID(workspaceID, "demo-b2b-account-main")
 		now := time.Now().Unix()
-		if _, err := tx.Exec(`
+		result, err := tx.Exec(`
 			INSERT INTO accounts (id, workspace_id, name, type, color, provider_slug, initial_balance, current_balance, created_at, updated_at)
 			VALUES (?, ?, ?, 'CHECKING', '#EC7000', 'itau', 0, 0, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				name = excluded.name,
 				updated_at = excluded.updated_at
-		`, accountID, workspaceID, "Conta Operacional B2B", now, now); err != nil {
+			WHERE accounts.workspace_id = excluded.workspace_id
+		`, accountID, workspaceID, "Conta Operacional B2B", now, now)
+		if err != nil {
 			return err
+		}
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rows != 1 {
+			return fmt.Errorf("seed demo B2B: cardinalidade inválida em accounts")
 		}
 	}
 
@@ -4086,15 +3968,24 @@ func seedDemoB2B(db *sql.DB, workspaceID, userID string) error {
 	for _, item := range categories {
 		id := seedStableID(workspaceID, item.Key)
 		categoryIDs[item.Key] = id
-		if _, err := tx.Exec(`
+		result, err := tx.Exec(`
 			INSERT INTO categories (id, workspace_id, name, icon, color, type, macro_group, parent_id, created_at)
 			VALUES (?, ?, ?, 'tag', '#6b7280', ?, ?, NULL, ?)
 			ON CONFLICT(id) DO UPDATE SET
 				name = excluded.name,
 				type = excluded.type,
 				macro_group = excluded.macro_group
-		`, id, workspaceID, item.Name, item.Type, item.Macro, now); err != nil {
+			WHERE categories.workspace_id = excluded.workspace_id
+		`, id, workspaceID, item.Name, item.Type, item.Macro, now)
+		if err != nil {
 			return err
+		}
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rows != 1 {
+			return fmt.Errorf("seed demo B2B: cardinalidade inválida em categories")
 		}
 	}
 
@@ -4118,7 +4009,7 @@ func seedDemoB2B(db *sql.DB, workspaceID, userID string) error {
 	for _, item := range contacts {
 		id := seedStableID(workspaceID, item.Key)
 		contactIDs[item.Key] = id
-		if _, err := tx.Exec(`
+		result, err := tx.Exec(`
 			INSERT INTO contacts (id, workspace_id, name, document, type, email, phone, created_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET
@@ -4127,8 +4018,17 @@ func seedDemoB2B(db *sql.DB, workspaceID, userID string) error {
 				type = excluded.type,
 				email = excluded.email,
 				phone = excluded.phone
-		`, id, workspaceID, item.Name, item.Document, item.Type, item.Email, item.Phone, now); err != nil {
+			WHERE contacts.workspace_id = excluded.workspace_id
+		`, id, workspaceID, item.Name, item.Document, item.Type, item.Email, item.Phone, now)
+		if err != nil {
 			return err
+		}
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rows != 1 {
+			return fmt.Errorf("seed demo B2B: cardinalidade inválida em contacts")
 		}
 	}
 
@@ -4175,7 +4075,7 @@ func seedDemoB2B(db *sql.DB, workspaceID, userID string) error {
 			dueDate = dueUnix
 			dueDateCivil = dueCiv
 		}
-		if _, err := tx.Exec(`
+		result, err := tx.Exec(`
 			INSERT INTO transactions (
 				id, workspace_id, user_id, account_id, destination_account_id, category_id, invoice_id, invoice_override_id,
 				type, amount, date, date_civil, description, notes, attachment_path, installment_number, total_installments, parent_id,
@@ -4195,8 +4095,17 @@ func seedDemoB2B(db *sql.DB, workspaceID, userID string) error {
 				due_date_civil = excluded.due_date_civil,
 				contact_id = excluded.contact_id,
 				updated_at = excluded.updated_at
-		`, txID, workspaceID, userID, accountID, categoryIDs[item.CategoryKey], item.Type, item.Amount, dateUnix, dateCivil, item.Description, item.Payment, item.Status, dueDate, dueDateCivil, contactIDs[item.ContactKey], now, now); err != nil {
+			WHERE transactions.workspace_id = excluded.workspace_id
+		`, txID, workspaceID, userID, accountID, categoryIDs[item.CategoryKey], item.Type, item.Amount, dateUnix, dateCivil, item.Description, item.Payment, item.Status, dueDate, dueDateCivil, contactIDs[item.ContactKey], now, now)
+		if err != nil {
 			return err
+		}
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rows != 1 {
+			return fmt.Errorf("seed demo B2B: cardinalidade inválida em transactions")
 		}
 	}
 
@@ -4309,29 +4218,6 @@ func seedWorkspaceDefaultCategoryTree(db *sql.DB, workspaceID, workspaceType str
 		}
 	}
 	return nil
-}
-
-func repairLegacySeedCredentials(db *sql.DB) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(seedDefaultPassword), bcrypt.DefaultCost)
-	if err != nil {
-		log.Printf("legacy seed repair skipped: %v", err)
-		return
-	}
-	now := time.Now().Unix()
-	_, err = db.Exec(`
-		UPDATE users
-		SET password_hash = ?, status = 'active', activation_token_hash = NULL, activation_expires_at = NULL, updated_at = ?
-		WHERE id = ?
-		  AND (
-			trim(password_hash) = ''
-			OR lower(password_hash) = 'pending'
-			OR lower(password_hash) = '$2a$10$placeholder'
-			OR status = 'pending'
-		  )
-	`, string(hash), now, seedUserID)
-	if err != nil {
-		log.Printf("legacy seed repair failed: %v", err)
-	}
 }
 
 func seedCostLimits(db *sql.DB, workspaceID string, catIDs map[string]string, now int64) {
@@ -4503,6 +4389,194 @@ func parseSeedDate(s string) int64 {
 	return t.Unix()
 }
 
+// registerTransacoesRoutes registers the /transacoes/ subtree with the
+// production guards. Extracted from main so RBAC behavior can be exercised
+// against the real route table. The base is passed by reference so restore's
+// refreshDeps rebinds stay consistent with the investimentos pattern.
+func registerTransacoesRoutes(mux *http.ServeMux, db *sql.DB, authService *auth.Service, signer *csrfSigner, base *handlers.TransactionHandler) {
+	mux.HandleFunc("/transacoes/", withAuth(authService, signer, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		h := *base
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		rest := strings.TrimPrefix(r.URL.Path, "/transacoes/")
+		if rest == "" {
+			http.NotFound(w, r)
+			return
+		}
+		parts := strings.Split(rest, "/")
+		id := parts[0]
+
+		if len(parts) == 2 && parts[1] == "status-pagamento" {
+			if r.Method == http.MethodPost {
+				if !hasPermission(ctx.Role, permInvoicesStatusUpdate) {
+					respondForbidden(w, r)
+					return
+				}
+				h.HandleTogglePagamento(w, r, id)
+				return
+			}
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "mover-fatura" {
+			if r.Method == http.MethodPost {
+				if !hasPermission(ctx.Role, permInvoicesStatusUpdate) {
+					respondForbidden(w, r)
+					return
+				}
+				h.HandleMoverFatura(w, r, id)
+				return
+			}
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "reembolso" {
+			switch r.Method {
+			case http.MethodGet:
+				if !hasPermission(ctx.Role, permTransactionsRead) {
+					respondForbidden(w, r)
+					return
+				}
+				h.HandleFormReembolso(w, r, id)
+			case http.MethodPost:
+				if !hasPermission(ctx.Role, permTransactionsUpdate) {
+					respondForbidden(w, r)
+					return
+				}
+				h.HandleRegistrarReembolso(w, r, id)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		if len(parts) == 2 && parts[1] == "reembolsos" {
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			if !hasPermission(ctx.Role, permTransactionsRead) {
+				respondForbidden(w, r)
+				return
+			}
+			h.HandleGerenciarReembolsos(w, r, id)
+			return
+		}
+		if len(parts) == 4 && parts[1] == "reembolsos" && parts[2] != "" {
+			refundID, action := parts[2], parts[3]
+			switch action {
+			case "editar":
+				if r.Method == http.MethodGet {
+					if !hasPermission(ctx.Role, permTransactionsRead) {
+						respondForbidden(w, r)
+						return
+					}
+					h.HandleFormEditarReembolso(w, r, id, refundID)
+					return
+				}
+				if r.Method == http.MethodPost {
+					if !hasPermission(ctx.Role, permTransactionsUpdate) {
+						respondForbidden(w, r)
+						return
+					}
+					h.HandleAtualizarReembolso(w, r, id, refundID)
+					return
+				}
+			case "remover":
+				if r.Method == http.MethodPost {
+					if !hasPermission(ctx.Role, permTransactionsUpdate) {
+						respondForbidden(w, r)
+						return
+					}
+					h.HandleRemoverReembolso(w, r, id, refundID)
+					return
+				}
+			}
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "editar" {
+			if r.Method == http.MethodGet {
+				// Alias of GET /transacoes/{id}: mirror the canonical route's
+				// explicit read permission (defense in depth for the edit form).
+				if !hasPermission(ctx.Role, permTransactionsRead) {
+					respondForbidden(w, r)
+					return
+				}
+				h.CanCreateContact = hasPermission(ctx.Role, permTransactionsCreate)
+				h.HandleDetalheTransacao(w, r, id)
+				return
+			}
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "salvar" {
+			if r.Method == http.MethodPost || r.Method == http.MethodPut {
+				if !hasPermission(ctx.Role, permTransactionsUpdate) {
+					respondForbidden(w, r)
+					return
+				}
+				h.HandleAtualizarTransacao(w, r, id)
+				return
+			}
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "recibo" {
+			if r.Method == http.MethodGet {
+				if !hasPermission(ctx.Role, permTransactionsRead) {
+					respondForbidden(w, r)
+					return
+				}
+				h.HandleGerarRecibo(w, r, id)
+				return
+			}
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if len(parts) == 2 && parts[1] == "anexo" {
+			if !hasPermission(ctx.Role, permAttachmentRead) {
+				respondForbidden(w, r)
+				return
+			}
+			if ctx.Role == models.RoleUser && !userOwnsTransaction(db, id, ctx.UserID, ctx.ActiveWorkspaceID) {
+				respondForbidden(w, r)
+				return
+			}
+			h.HandleDownloadAnexo(w, r, id)
+			return
+		}
+
+		if len(parts) != 1 {
+			http.NotFound(w, r)
+			return
+		}
+
+		switch r.Method {
+		case http.MethodDelete:
+			if !hasPermission(ctx.Role, permTransactionsDelete) {
+				respondForbidden(w, r)
+				return
+			}
+			h.HandleDeletarTransacao(w, r, id)
+		case http.MethodGet:
+			if !hasPermission(ctx.Role, permTransactionsRead) {
+				respondForbidden(w, r)
+				return
+			}
+			h.CanCreateContact = hasPermission(ctx.Role, permTransactionsCreate)
+			h.HandleDetalheTransacao(w, r, id)
+		case http.MethodPut:
+			if !hasPermission(ctx.Role, permTransactionsUpdate) {
+				respondForbidden(w, r)
+				return
+			}
+			h.HandleAtualizarTransacao(w, r, id)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
+}
+
 // registerInvestimentosRoutes shares the production guards with HTTP tests.
 // Keep the base by reference so restore's refreshDeps also rebinds these routes.
 func registerInvestimentosRoutes(mux *http.ServeMux, authService *auth.Service, signer *csrfSigner, base *handlers.InvestimentosHandler) {
@@ -4520,6 +4594,7 @@ func registerInvestimentosRoutes(mux *http.ServeMux, authService *auth.Service, 
 		h.CSRFToken = ctx.CSRFToken
 		return h
 	}
+	registerInvestmentSettlementRoutes(mux, authService, signer, base)
 	mux.HandleFunc("/investimentos", withAuth(authService, signer, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		permission := models.PermissionInvestmentsRead
 		switch r.Method {
@@ -4543,7 +4618,33 @@ func registerInvestimentosRoutes(mux *http.ServeMux, authService *auth.Service, 
 	}))
 	mux.HandleFunc("/investimentos/", withAuth(authService, signer, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/investimentos/"), "/")
-		if parts[0] == "" || (len(parts) != 1 && !(len(parts) == 2 && (parts[1] == "editar" || parts[1] == "valuations" || parts[1] == "resgatar" || parts[1] == "arquivar"))) {
+		if len(parts) == 3 && parts[0] != "" && parts[1] == "financeiro" {
+			if !features.FromEnv().InvestmentOperations {
+				http.NotFound(w, r)
+				return
+			}
+			method, permission := http.MethodPost, models.PermissionInvestmentsWrite
+			switch parts[2] {
+			case "estado":
+				method, permission = http.MethodGet, models.PermissionInvestmentsRead
+			case "referencia", "posicao":
+			default:
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != method {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			if !models.HasPermission(&ctx.Member, permission) {
+				respondForbidden(w, r)
+				return
+			}
+			h := bind(ctx)
+			h.HandleInvestmentOperation(w, r, parts[0], parts[2])
+			return
+		}
+		if parts[0] == "" || (len(parts) != 1 && !(len(parts) == 2 && (parts[1] == "editar" || parts[1] == "valuations" || parts[1] == "resgatar" || parts[1] == "arquivar" || parts[1] == "compras" || parts[1] == "retiradas"))) {
 			http.NotFound(w, r)
 			return
 		}
@@ -4564,6 +4665,10 @@ func registerInvestimentosRoutes(mux *http.ServeMux, authService *auth.Service, 
 			h.HandleDetalheInvestimento(w, r, parts[0])
 		} else if parts[1] == "valuations" {
 			h.HandleValuation(w, r, parts[0])
+		} else if parts[1] == "retiradas" {
+			h.HandleRetiradaInvestimento(w, r, parts[0])
+		} else if parts[1] == "compras" {
+			h.HandleCompraInvestimento(w, r, parts[0])
 		} else if parts[1] == "resgatar" {
 			h.HandleRedeemInvestment(w, r, parts[0])
 		} else if parts[1] == "arquivar" {

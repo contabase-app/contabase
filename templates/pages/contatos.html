@@ -1,54 +1,36 @@
 {{define "contatos-page"}}
 {{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/contatos.css"}}">
 {{template "app-v2-document-head-end" .}}
-<main id="main-content" class="cb-v2-main cb-v2-contatos-main" data-page-section="contacts" data-page-title="{{.Title}}">
+<main id="main-content" class="cb-v2-main cb-v2-contatos-main" data-page-section="contacts" data-page-title="{{.Title}}" data-ui="premium">
     {{template "app-v2-appbar" .}}
     <div class="cb-v2-content cb-v2-contatos-content">
-        <header class="cb-v2-contatos-header">
-            <div>
-                <p class="cb-v2-eyebrow">Relacionamentos</p>
-                <h1>Contatos</h1>
-                <p>Organize clientes e fornecedores usados nos seus lançamentos.</p>
+        <header class="cb-v2-contatos-header ui-page-header">
+            <div class="min-w-0">
+                <p class="ui-eyebrow">Relacionamentos</p>
+                <h1 class="ui-page-title">Contatos</h1>
+                <p class="ui-page-description">Organize clientes e fornecedores usados nos seus lançamentos.</p>
             </div>
-            <button type="button" class="cb-button cb-button-primary cb-v2-contatos-create" data-contact-create data-onclick-ev="openContatosModal">
-                <i data-lucide="user-plus" aria-hidden="true"></i>
-                <span>Novo contato</span>
-            </button>
+            <div class="flex items-center gap-2 shrink-0">
+                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm cb-v2-contatos-privacy" data-privacy-toggle aria-pressed="false" aria-label="Ocultar valores financeiros" data-tooltip-hover data-tooltip-text="Ocultar valores financeiros"><i data-lucide="eye" data-privacy-icon aria-hidden="true"></i></button>
+                <button type="button" class="cb-v2-contatos-create ui-btn ui-btn--primary"
+                    hx-get="/contatos/novo{{if .Tipo}}?tipo={{.Tipo}}{{end}}"
+                    hx-target="#bottom-sheet-container"
+                    hx-swap="innerHTML"
+                    hx-push-url="false"
+                    data-contact-create>
+                    <i data-lucide="user-plus" aria-hidden="true"></i>
+                    <span>Novo contato</span>
+                </button>
+            </div>
         </header>
         {{template "contatos-content" .}}
-    </div>
-
-    <div id="contatos-modal" role="dialog" aria-modal="true" aria-labelledby="contatos-modal-title"
-        data-contabase-overlay data-overlay-priority="120" data-overlay-close="closeContatosModal"
-        class="cb-v2-contatos-modal hidden" data-onclick-self="closeContatosModal">
-        <section class="cb-v2-contatos-modal-position">
-            <div class="cb-v2-contatos-modal-panel">
-                <div class="cb-v2-contatos-modal-header">
-                    <div>
-                        <p class="cb-v2-eyebrow">Cadastro</p>
-                        <h2 id="contatos-modal-title">Novo contato</h2>
-                        <p>Cliente ou fornecedor</p>
-                    </div>
-                    <button type="button" data-onclick="closeContatosModal" class="cb-v2-contatos-modal-close" aria-label="Fechar cadastro de contato">
-                        <i data-lucide="x" aria-hidden="true"></i>
-                    </button>
-                </div>
-                <div id="contato-form-error" class="cb-contact-form-error hidden" role="alert" tabindex="-1"></div>
-                <form hx-post="/contatos" hx-target="#contatos-list" hx-swap="outerHTML"
-                    data-hx-after="closeContatosModal" class="cb-v2-contatos-form">
-                    {{template "contato-form-fields" .}}
-                    <div class="cb-v2-contatos-form-actions">
-                        <button type="button" data-onclick="closeContatosModal" class="cb-button cb-button-secondary">Cancelar</button>
-                        <button class="cb-button cb-button-primary">Salvar contato</button>
-                    </div>
-                </form>
-            </div>
-        </section>
     </div>
 </main>
 {{template "app-v2-shell-after-main" .}}
 <script src="{{assetPath "/assets/js/contatos-modal.js"}}"></script>
+<script src="{{assetPath "/assets/js/contatos-tabs.js"}}"></script>
 {{template "app-v2-document-end" .}}
 {{end}}
 
@@ -59,106 +41,72 @@
 {{end}}
 
 {{define "contatos-list"}}
+{{$tabID := "contatos-tab-todos"}}{{if eq .Tipo "client"}}{{$tabID = "contatos-tab-client"}}{{else if eq .Tipo "vendor"}}{{$tabID = "contatos-tab-vendor"}}{{end}}
 <div id="contatos-list">
     <div class="cb-v2-contatos-toolbar">
-        <nav class="cb-v2-contatos-tabs" aria-label="Filtrar contatos por tipo">
-            <button type="button"
+        <div id="contatos-tabs" class="cb-tabs cb-v2-contatos-tabs" role="tablist" aria-label="Filtrar contatos por tipo" aria-orientation="horizontal">
+            <button type="button" id="contatos-tab-todos"
+                role="tab"
+                aria-selected="{{if or (eq .Tipo "") (eq .Tipo "todos")}}true{{else}}false{{end}}"
+                aria-controls="contatos-grid"
+                tabindex="{{if or (eq .Tipo "") (eq .Tipo "todos")}}0{{else}}-1{{end}}"
                 hx-get="/contatos?tipo=todos&partial=lista"
                 hx-target="#contatos-list" hx-swap="outerHTML"
-                hx-push-url="/contatos?tipo=todos"
-                class="cb-v2-contatos-tab {{if or (eq .Tipo "") (eq .Tipo "todos")}}is-active{{end}}">
+                hx-include="[name='q']"
+                hx-push-url="true"
+                class="cb-tab {{if or (eq .Tipo "") (eq .Tipo "todos")}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
                 <i data-lucide="users-round" aria-hidden="true"></i><span>Todos</span>
             </button>
-            <button type="button"
+            <button type="button" id="contatos-tab-client"
+                role="tab"
+                aria-selected="{{if eq .Tipo "client"}}true{{else}}false{{end}}"
+                aria-controls="contatos-grid"
+                tabindex="{{if eq .Tipo "client"}}0{{else}}-1{{end}}"
                 hx-get="/contatos?tipo=client&partial=lista"
                 hx-target="#contatos-list" hx-swap="outerHTML"
-                hx-push-url="/contatos?tipo=client"
-                class="cb-v2-contatos-tab {{if eq .Tipo "client"}}is-active{{end}}">
+                hx-include="[name='q']"
+                hx-push-url="true"
+                class="cb-tab {{if eq .Tipo "client"}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
                 <i data-lucide="user-check" aria-hidden="true"></i><span>Clientes</span>
             </button>
-            <button type="button"
+            <button type="button" id="contatos-tab-vendor"
+                role="tab"
+                aria-selected="{{if eq .Tipo "vendor"}}true{{else}}false{{end}}"
+                aria-controls="contatos-grid"
+                tabindex="{{if eq .Tipo "vendor"}}0{{else}}-1{{end}}"
                 hx-get="/contatos?tipo=vendor&partial=lista"
                 hx-target="#contatos-list" hx-swap="outerHTML"
-                hx-push-url="/contatos?tipo=vendor"
-                class="cb-v2-contatos-tab {{if eq .Tipo "vendor"}}is-active{{end}}">
+                hx-include="[name='q']"
+                hx-push-url="true"
+                class="cb-tab {{if eq .Tipo "vendor"}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
                 <i data-lucide="truck" aria-hidden="true"></i><span>Fornecedores</span>
             </button>
-        </nav>
+        </div>
 
-        <label class="cb-v2-contatos-search">
-            <span class="sr-only">Buscar contatos</span>
-            <i data-lucide="search" aria-hidden="true"></i>
+        <div class="ui-search">
+            <i data-lucide="search" class="ui-search__icon" aria-hidden="true"></i>
             <input type="search" name="q" value="{{.Query}}" placeholder="Buscar por nome, documento ou telefone..."
+                aria-label="Buscar contatos"
                 hx-get="/contatos?tipo={{if .Tipo}}{{.Tipo}}{{else}}todos{{end}}&partial=lista"
                 hx-target="#contatos-grid"
                 hx-select="#contatos-grid"
                 hx-swap="outerHTML"
-                hx-trigger="keyup delay:300ms changed, search">
-        </label>
+                hx-replace-url="true"
+                hx-trigger="keyup delay:300ms changed, search"
+                class="ui-input ui-input--search">
+        </div>
     </div>
 
-    <div id="contatos-grid">
+    <div id="contatos-grid" role="tabpanel" aria-labelledby="{{$tabID}}">
     {{if .Contatos}}
     <div class="cb-v2-contatos-grid">
-        {{range .Contatos}}
-        <article id="contato-{{.ID}}" class="cb-contact-card">
-            <div class="cb-contact-card-header">
-                {{template "contato-row-summary" .}}
-                <div class="cb-contact-actions" data-stop-propagation>
-                    <button type="button"
-                        hx-get="/contatos/{{.ID}}"
-                        hx-target="#contato-{{.ID}}"
-                        hx-swap="outerHTML"
-                        class="cb-contact-action" aria-label="Editar {{.Name}}" title="Editar contato">
-                        <i data-lucide="pencil" aria-hidden="true"></i>
-                    </button>
-                    <button type="button"
-                        hx-delete="/contatos/{{.ID}}"
-                        hx-target="#contato-{{.ID}}"
-                        hx-swap="delete"
-                        hx-confirm="Remover {{.Name}}?"
-                        class="cb-contact-action cb-contact-action-danger" aria-label="Excluir {{.Name}}" title="Excluir contato">
-                        <i data-lucide="trash-2" aria-hidden="true"></i>
-                    </button>
-                </div>
-            </div>
-
-            <dl class="cb-contact-details">
-                {{if .CustomClientID}}
-                <div>
-                    <dt>ID</dt>
-                    <dd>{{.CustomClientID}}</dd>
-                </div>
-                {{end}}
-                {{if .Document}}
-                <div>
-                    <dt>{{if eq .Type "client"}}CPF/CNPJ{{else}}CNPJ{{end}}</dt>
-                    <dd data-sensitive>{{.Document}}</dd>
-                </div>
-                {{end}}
-                {{if .Email}}
-                <div>
-                    <dt>E-mail</dt>
-                    <dd data-sensitive title="{{.Email}}">{{.Email}}</dd>
-                </div>
-                {{end}}
-                {{if .Phone}}
-                <div>
-                    <dt>Telefone</dt>
-                    <dd data-sensitive>{{.Phone}}</dd>
-                </div>
-                {{end}}
-            </dl>
-
-            <footer class="cb-contact-card-footer">Criado em {{.CreatedAt}}</footer>
-        </article>
-        {{end}}
+        {{range .Contatos}}{{template "contato-card" .}}{{end}}
     </div>
     {{else}}
-    <div class="cb-contact-empty">
-        <span><i data-lucide="users-round" aria-hidden="true"></i></span>
-        <strong>Nenhum contato encontrado</strong>
-        <p>{{if .Query}}Tente ajustar sua busca.{{else}}Use “Novo contato” para começar.{{end}}</p>
+    <div class="ui-empty" role="status">
+        <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="users-round"></i></span>
+        <p class="ui-empty__title">Nenhum contato encontrado</p>
+        <p class="ui-empty__text">{{if .Query}}Tente ajustar sua busca.{{else}}Use “Novo contato” para começar.{{end}}</p>
     </div>
     {{end}}
     </div>

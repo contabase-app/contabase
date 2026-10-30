@@ -1,153 +1,236 @@
 {{define "metas-form"}}
-<div class="fixed inset-0 z-[100]">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation"></div>
-    <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto">
-        <article class="sheet-in cb-modal relative flex h-[85vh] max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl shadow-2xl shadow-black/80 md:mx-auto md:my-12 md:h-auto md:max-h-[calc(100vh-6rem)] md:max-w-md md:rounded-2xl md:shadow-2xl" data-meta-form-root data-open-tab="{{if eq .OpenTab "caixinha"}}caixinha{{else}}limite{{end}}">
-        <div class="absolute right-4 top-4 z-[110]">
-            <button type="button" class="cb-button cb-button-secondary h-8 w-8 flex items-center justify-center rounded-full p-0" data-onclick="closeBottomSheet" aria-label="Fechar formulário">
-                <i data-lucide="x" class="h-4 w-4"></i>
-            </button>
-        </div>
-        <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-zinc-700/60 md:hidden"></div>
-        <div class="pt-2 md:pt-4 mb-3 flex items-center justify-between px-6">
-            <div class="pr-8">
-                <h2 class="text-sm font-semibold cb-text-main">{{if eq .Mode "edit"}}Editar Meta{{else}}Nova Meta{{end}}</h2>
-                <p class="mt-0.5 text-xs cb-text-subtle">Configure limites de gasto ou reservas</p>
-            </div>
-        </div>
-
-        {{if eq .Mode "create"}}
-        <div class="mb-5 mx-6 cb-segmented grid grid-cols-2">
-            <button type="button" id="tab-limite" class="cb-segmented-option" data-meta-tab="limite">Limites</button>
-            <button type="button" id="tab-caixinha" class="cb-segmented-option" data-meta-tab="caixinha">Reservas</button>
-        </div>
-        {{end}}
-        <div class="flex-1 overflow-y-auto px-6 pt-4 pb-4">
-        {{$isLimite := eq .OpenTab "limite"}}
-        <form id="meta-limite-form" class="{{if not $isLimite}}hidden {{end}}space-y-3" hx-post="/metas/limite" hx-swap="none" hx-indicator="#htmx-indicator">
-            <input type="hidden" name="limit_id" value="{{.LimitID}}">
-            <input type="hidden" name="tipo" value="EXPENSE">
-            <div id="categoriaPicker_limite" class="space-y-1.5 relative">
-                <div class="flex items-center justify-between">
-                    <span class="cb-label mb-0">Categoria vinculada</span>
-                    <span id="categoria-error-limite" class="field-error text-[0.65rem] font-medium text-[var(--cb-danger)] hidden"></span>
+{{$isLimite := eq .OpenTab "limite"}}
+<div class="fixed inset-0 z-[100] metas-sheet" data-metas-sheet>
+    <div class="metas-sheet__backdrop" role="presentation"></div>
+    <div class="metas-sheet__layer">
+        <article class="sheet-in metas-sheet__dialog metas-form__dialog"
+            data-meta-form-root
+            data-metas-form-panel
+            data-open-tab="{{if $isLimite}}limite{{else}}caixinha{{end}}"
+            data-label-limite="Criar limite"
+            data-label-caixinha="Criar reserva"
+            data-title-limite="Novo limite"
+            data-title-caixinha="Nova reserva"
+            data-description-limite="Defina o teto mensal de uma categoria."
+            data-description-caixinha="Planeje um valor sem mover o dinheiro das contas."
+            data-eyebrow-limite="Limites"
+            data-eyebrow-caixinha="Reservas"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="meta-sheet-title"
+            aria-describedby="meta-sheet-description"
+            tabindex="-1">
+            <div class="metas-sheet__handle md:hidden" aria-hidden="true"></div>
+            <header class="metas-sheet__head">
+                <span class="metas-sheet__tile metas-sheet__tile--accent" aria-hidden="true">
+                    <i data-lucide="{{if $isLimite}}gauge{{else}}piggy-bank{{end}}" data-meta-sheet-icon></i>
+                </span>
+                <div class="metas-sheet__copy">
+                    <p class="metas-sheet__eyebrow" data-meta-sheet-eyebrow>{{if $isLimite}}Limites{{else}}Reservas{{end}}</p>
+                    <h2 id="meta-sheet-title" class="metas-sheet__title">{{if eq .Mode "edit"}}{{if $isLimite}}Editar limite{{else}}Editar reserva{{end}}{{else}}{{if $isLimite}}Novo limite{{else}}Nova reserva{{end}}{{end}}</h2>
+                    <p id="meta-sheet-description" class="metas-sheet__subtitle">{{if eq .Mode "edit"}}Revise os dados e confirme.{{else if $isLimite}}Defina o teto mensal de uma categoria.{{else}}Planeje um valor sem mover o dinheiro das contas.{{end}}</p>
                 </div>
-                <div id="limite-form-error" class="hidden"></div>
-                <button type="button"
-                    hx-get="/api/categorias/seletor?tipo=despesa"
-                    hx-target="#picker-modal-container"
-                    hx-swap="beforeend"
-                    hx-push-url="false"
-                    class="cb-input flex h-12 w-full items-center justify-between gap-3 text-left transition-all hover:border-[var(--cb-border-focus)] active:scale-[0.99]">
-                    <span class="flex min-w-0 items-center gap-3">
-                        <span id="categoriaIconWrap_limite" class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border icon-wrap-colored" data-cb-color="{{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}">
-                            <i id="categoriaIcon_limite" data-lucide="{{if .CategoryIcon}}{{.CategoryIcon}}{{else}}tag{{end}}" class="h-3.5 w-3.5 icon-colored" data-cb-color="{{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}"></i>
-                        </span>
-                        <span class="min-w-0">
-                            <span id="categoriaNome_limite" class="block truncate text-sm font-semibold cb-text-main">{{if .CategoryName}}{{.CategoryName}}{{else}}Buscar categoria...{{end}}</span>
-                        </span>
-                    </span>
-                    <i data-lucide="chevron-down" class="h-4 w-4 flex-shrink-0 cb-text-muted"></i>
+                <button type="button" class="ui-btn ui-btn--ghost metas-sheet__close" data-onclick="closeBottomSheet" aria-label="Fechar formulário de {{if $isLimite}}limite{{else}}reserva{{end}}">
+                    <i data-lucide="x" aria-hidden="true"></i>
                 </button>
-                <input id="categoriaId_limite" type="hidden" name="category_id" value="{{.CategoryID}}">
-            </div>
-            <label class="block">
-                <span class="cb-label">Valor máximo mensal</span>
-                <input name="max_amount_monthly" inputmode="decimal" value="{{.MaxAmountInput}}" placeholder="R$ 0,00" data-money-mask class="cb-input font-semibold h-12">
-            </label>
-            {{template "icon-picker" iconPickerData "limiteIcon" "icon_key" .LimitIconKey .CategoryIcon}}
-        </form>
+            </header>
 
-        <form id="meta-caixinha-form" class="{{if $isLimite}}hidden {{end}}space-y-3" hx-post="/metas/caixinha" hx-swap="none" hx-indicator="#htmx-indicator">
-            <input type="hidden" name="box_id" value="{{.BoxID}}">
-            <input type="hidden" name="tipo" value="EXPENSE">
-            <label class="block">
-                <span class="cb-label">Nome da reserva</span>
-                <input name="name" maxlength="80" value="{{.Name}}" class="cb-input font-semibold h-12">
-            </label>
-            <div id="categoriaPicker_caixinha" class="space-y-1.5 relative">
-                <div class="flex items-center justify-between">
-                    <span class="cb-label mb-0">Categoria vinculada (Opcional)</span>
-                    <span id="categoria-error-caixinha" class="field-error text-[0.65rem] font-medium text-[var(--cb-danger)] hidden"></span>
+            <div class="metas-sheet__body" data-metas-form-body>
+                {{if eq .Mode "create"}}
+                <div class="ui-tabs metas-form__tabs" role="group" aria-label="Tipo de planejamento">
+                    <button type="button" id="tab-limite" class="ui-tab metas-form__tab{{if $isLimite}} is-active{{end}}" data-meta-tab="limite" aria-pressed="{{if $isLimite}}true{{else}}false{{end}}" aria-controls="meta-limite-form">Limites</button>
+                    <button type="button" id="tab-caixinha" class="ui-tab metas-form__tab{{if not $isLimite}} is-active{{end}}" data-meta-tab="caixinha" aria-pressed="{{if $isLimite}}false{{else}}true{{end}}" aria-controls="meta-caixinha-form">Reservas</button>
                 </div>
-                <button type="button"
-                    hx-get="/api/categorias/seletor?tipo=despesa"
-                    hx-target="#picker-modal-container"
-                    hx-swap="beforeend"
-                    hx-push-url="false"
-                    class="cb-input flex h-12 w-full items-center justify-between gap-3 text-left transition-all hover:border-[var(--cb-border-focus)] active:scale-[0.99]">
-                    <span class="flex min-w-0 items-center gap-3">
-                        <span id="categoriaIconWrap_caixinha" class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border icon-wrap-colored" data-cb-color="{{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}">
-                            <i id="categoriaIcon_caixinha" data-lucide="{{if .CategoryIcon}}{{.CategoryIcon}}{{else}}tag{{end}}" class="h-3.5 w-3.5 icon-colored" data-cb-color="{{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}"></i>
-                        </span>
-                        <span class="min-w-0">
-                            <span id="categoriaNome_caixinha" class="block truncate text-sm font-semibold cb-text-main">{{if .CategoryName}}{{.CategoryName}}{{else}}Sem categoria{{end}}</span>
-                        </span>
-                    </span>
-                    <i data-lucide="chevron-down" class="h-4 w-4 flex-shrink-0 cb-text-muted"></i>
-                </button>
-                <input id="categoriaId_caixinha" type="hidden" name="category_id" value="{{.CategoryID}}">
-                <button type="button" data-clear-meta-category="_caixinha" class="mt-1 text-[0.7rem] font-medium cb-text-subtle hover:text-[var(--cb-danger)]">
-                    Remover categoria
-                </button>
-            </div>
-            {{template "icon-picker" iconPickerData "caixinhaIcon" "icon_key" .BoxIconKey .BoxIconFallback}}
-            <label class="block">
-                <span class="cb-label">Valor alvo (Opcional)</span>
-                <input name="target_amount" inputmode="decimal" value="{{.TargetAmountInput}}" placeholder="R$ 0,00" data-money-mask class="cb-input font-semibold h-12">
-            </label>
-            <label class="block">
-                <span class="cb-label">Recarga mensal (Opcional)</span>
-                <input name="monthly_recharge" inputmode="decimal" value="{{.MonthlyRechargeInput}}" placeholder="R$ 0,00" data-money-mask class="cb-input font-semibold h-12">
-            </label>
-            <label class="block cursor-pointer">
-                <span class="cb-label">Data alvo (Opcional)</span>
-                <div class="relative">
-                    <input id="targetMonthInput" name="target_month" type="month" value="{{.TargetMonthInput}}" class="cb-input h-12 pr-10 [color-scheme:dark]">
-                    <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 cb-text-muted">
-                        <i data-lucide="calendar" class="h-4 w-4"></i>
-                    </span>
-                </div>
-            </label>
-            {{if .BalanceLabel}}
-            <p class="cb-card-muted px-3 py-2.5 text-xs cb-text-subtle">Saldo atual: <span class="font-semibold cb-text-main">{{.BalanceLabel}}</span></p>
-            {{end}}
-            <label class="block">
-                <span class="cb-label">Rentabilidade est. mensal (Opcional)</span>
-                <div class="relative">
-                    <input name="monthly_yield_rate" inputmode="decimal" value="{{.MonthlyYieldRateInput}}" placeholder="Ex: 0,8" data-percent-mask class="cb-input h-12 font-semibold pr-12">
-                    <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium cb-text-subtle">% a.m.</span>
-                </div>
-                <p class="mt-1 text-[0.65rem] cb-text-subtle">Ex: 0,8 para 0,8% ao mes (~10% ao ano). Estimativa para projecao.</p>
-            </label>
-        </form>
+                {{end}}
 
-        <div class="{{if eq .Mode "edit"}}flex items-center justify-between{{else}}flex justify-center{{end}} pt-6 pb-4">
-            {{if eq .Mode "edit"}}
-            {{if $isLimite}}
-            <button type="button"
-                hx-delete="/metas/limite/{{.LimitID}}" hx-target="closest .sheet-in" hx-swap="delete" hx-confirm="Tem certeza que deseja excluir este limite?"
-                class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-[var(--cb-danger)] transition-colors hover:bg-[rgba(239,68,68,0.1)] active:scale-[0.97] min-h-[44px]">
-                <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Excluir limite
-            </button>
-            <button type="submit" form="meta-limite-form"
-                class="cb-fab transition-all duration-150 cursor-pointer inline-flex" aria-label="Confirmar limite"><i data-lucide="check" class="h-6 w-6"></i></button>
-            {{else}}
-            <button type="button"
-                hx-delete="/metas/caixinha/{{.BoxID}}" hx-target="closest .sheet-in" hx-swap="delete" hx-confirm="Tem certeza que deseja excluir esta reserva?"
-                class="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-[var(--cb-danger)] transition-colors hover:bg-[rgba(239,68,68,0.1)] active:scale-[0.97] min-h-[44px]">
-                <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Excluir reserva
-            </button>
-            <button type="submit" form="meta-caixinha-form"
-                class="cb-fab transition-all duration-150 cursor-pointer inline-flex" aria-label="Confirmar reserva"><i data-lucide="check" class="h-6 w-6"></i></button>
-            {{end}}
-            {{else}}
-            <button type="submit" data-meta-create-submit
-                form="{{if $isLimite}}meta-limite-form{{else}}meta-caixinha-form{{end}}"
-                class="cb-fab transition-all duration-150 cursor-pointer inline-flex" aria-label="Confirmar"><i data-lucide="check" class="h-6 w-6"></i></button>
-            {{end}}
-        </div>
-        </div>
+                <form id="meta-limite-form" class="metas-form{{if not $isLimite}} hidden{{end}}" hx-post="/metas/limite" hx-swap="none" hx-sync="this:drop" hx-indicator="#htmx-indicator" novalidate>
+                    <input type="hidden" name="limit_id" value="{{.LimitID}}">
+                    <input type="hidden" name="tipo" value="EXPENSE">
+
+                    <div class="metas-form__error-region" aria-live="assertive" aria-atomic="true">
+                        <div id="limite-form-error" class="hidden"></div>
+                    </div>
+
+                    <div id="categoriaPicker_limite" class="metas-form__field">
+                        <span id="categoria-label-limite" class="ui-label">Categoria vinculada</span>
+                        <button type="button"
+                            hx-get="/api/categorias/seletor?tipo=despesa"
+                            hx-target="#picker-modal-container"
+                            hx-swap="beforeend"
+                            hx-push-url="false"
+                            class="ui-input metas-form__picker"
+                            aria-labelledby="categoria-label-limite"
+                            aria-describedby="categoria-help-limite categoria-error-limite"
+                            aria-invalid="false"
+                            data-meta-category-picker
+                            {{if and (eq .Mode "create") $isLimite}}data-metas-form-initial{{end}}>
+                            <span class="metas-form__picker-main">
+                                <span id="categoriaIconWrap_limite" class="metas-form__picker-icon icon-wrap-colored" data-cb-color="{{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}">
+                                    <i id="categoriaIcon_limite" data-lucide="{{if .CategoryIcon}}{{.CategoryIcon}}{{else}}tag{{end}}" class="icon-colored" data-cb-color="{{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}"></i>
+                                </span>
+                                <span id="categoriaNome_limite" class="metas-form__picker-name">{{if .CategoryName}}{{.CategoryName}}{{else}}Buscar categoria...{{end}}</span>
+                            </span>
+                            <i data-lucide="chevron-down" class="metas-form__picker-chevron" aria-hidden="true"></i>
+                        </button>
+                        <span id="categoria-error-limite" class="metas-form__field-error hidden" role="alert"></span>
+                        <p id="categoria-help-limite" class="metas-form__hint">O limite acompanha os gastos desta categoria.</p>
+                        <input id="categoriaId_limite" type="hidden" name="category_id" value="{{.CategoryID}}">
+                    </div>
+
+                    <div class="metas-form__field">
+                        <label class="ui-label" for="limiteMaxAmount">Valor máximo mensal</label>
+                        <input id="limiteMaxAmount" name="max_amount_monthly" inputmode="decimal" value="{{if .MaxAmountInput}}R$ {{.MaxAmountInput}}{{end}}" placeholder="R$ 0,00" data-money-mask autocomplete="off"
+                            class="ui-input metas-form__control metas-form__money"
+                            aria-describedby="limite-max-help limite-amount-error limite-form-error"
+                            aria-required="{{if $isLimite}}true{{else}}false{{end}}"
+                            {{if $isLimite}}required{{end}}
+                            {{if and (eq .Mode "edit") $isLimite}}data-metas-form-initial{{end}}>
+                        <span id="limite-amount-error" class="metas-form__field-error hidden" role="alert"></span>
+                        <p id="limite-max-help" class="metas-form__hint">Teto de gasto do mês; não é saldo em conta.</p>
+                    </div>
+
+                    {{template "icon-picker" iconPickerData "limiteIcon" "icon_key" .LimitIconKey .CategoryIcon}}
+                </form>
+
+                <form id="meta-caixinha-form" class="metas-form{{if $isLimite}} hidden{{end}}" hx-post="/metas/caixinha" hx-swap="none" hx-sync="this:drop" hx-indicator="#htmx-indicator" novalidate>
+                    <input type="hidden" name="box_id" value="{{.BoxID}}">
+                    <input type="hidden" name="tipo" value="EXPENSE">
+
+                    <div class="metas-form__error-region" aria-live="assertive" aria-atomic="true">
+                        <div id="caixinha-form-error" class="hidden"></div>
+                    </div>
+
+                    <div class="metas-form__field">
+                        <label class="ui-label" for="caixinhaName">Nome da reserva</label>
+                        <input id="caixinhaName" name="name" maxlength="80" value="{{.Name}}" autocomplete="off"
+                            class="ui-input metas-form__control"
+                            aria-describedby="caixinha-name-error"
+                            aria-required="{{if $isLimite}}false{{else}}true{{end}}"
+                            {{if not $isLimite}}required{{end}}
+                            {{if not $isLimite}}data-metas-form-initial{{end}}>
+                        <span id="caixinha-name-error" class="metas-form__field-error hidden" role="alert"></span>
+                    </div>
+
+                    <div id="categoriaPicker_caixinha" class="metas-form__field">
+                        <span id="categoria-label-caixinha" class="ui-label">Categoria vinculada (opcional)</span>
+                        <button type="button"
+                            hx-get="/api/categorias/seletor?tipo=despesa"
+                            hx-target="#picker-modal-container"
+                            hx-swap="beforeend"
+                            hx-push-url="false"
+                            class="ui-input metas-form__picker"
+                            aria-labelledby="categoria-label-caixinha"
+                            aria-describedby="categoria-help-caixinha categoria-error-caixinha"
+                            aria-invalid="false"
+                            data-meta-category-picker>
+                            <span class="metas-form__picker-main">
+                                <span id="categoriaIconWrap_caixinha" class="metas-form__picker-icon icon-wrap-colored" data-cb-color="{{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}">
+                                    <i id="categoriaIcon_caixinha" data-lucide="{{if .CategoryIcon}}{{.CategoryIcon}}{{else}}tag{{end}}" class="icon-colored" data-cb-color="{{if .CategoryColor}}{{.CategoryColor}}{{else}}#6b7280{{end}}"></i>
+                                </span>
+                                <span id="categoriaNome_caixinha" class="metas-form__picker-name">{{if .CategoryName}}{{.CategoryName}}{{else}}Sem categoria{{end}}</span>
+                            </span>
+                            <i data-lucide="chevron-down" class="metas-form__picker-chevron" aria-hidden="true"></i>
+                        </button>
+                        <span id="categoria-error-caixinha" class="metas-form__field-error hidden" role="alert"></span>
+                        <p id="categoria-help-caixinha" class="metas-form__hint">Opcional. A reserva pode existir sem categoria.</p>
+                        <input id="categoriaId_caixinha" type="hidden" name="category_id" value="{{.CategoryID}}">
+                        <button type="button" data-clear-meta-category="_caixinha" class="metas-form__link-action">
+                            <i data-lucide="x" aria-hidden="true"></i>Remover categoria
+                        </button>
+                    </div>
+
+                    {{template "icon-picker" iconPickerData "caixinhaIcon" "icon_key" .BoxIconKey .BoxIconFallback}}
+
+                    <div class="metas-form__field">
+                        <label class="ui-label" for="caixinhaTargetAmount">Valor alvo (opcional)</label>
+                        <input id="caixinhaTargetAmount" name="target_amount" inputmode="decimal" value="{{if .TargetAmountInput}}R$ {{.TargetAmountInput}}{{end}}" placeholder="R$ 0,00" data-money-mask autocomplete="off"
+                            class="ui-input metas-form__control metas-form__money"
+                            aria-describedby="caixinha-target-help">
+                        <p id="caixinha-target-help" class="metas-form__hint">Sem alvo, a reserva não exibe barra de progresso.</p>
+                    </div>
+
+                    <div class="metas-form__field">
+                        <label class="ui-label" for="caixinhaMonthlyRecharge">Recarga mensal (opcional)</label>
+                        <input id="caixinhaMonthlyRecharge" name="monthly_recharge" inputmode="decimal" value="{{if .MonthlyRechargeInput}}R$ {{.MonthlyRechargeInput}}{{end}}" placeholder="R$ 0,00" data-money-mask autocomplete="off"
+                            class="ui-input metas-form__control metas-form__money"
+                            aria-describedby="caixinha-recharge-help">
+                        <p id="caixinha-recharge-help" class="metas-form__hint">Aporte mensal programado; não movimenta contas agora.</p>
+                    </div>
+
+                    <div class="metas-form__field">
+                        <label class="ui-label" for="targetMonthInput">Data alvo (opcional)</label>
+                        <div class="metas-form__suffix metas-form__suffix--date">
+                            <input id="targetMonthInput" name="target_month" type="month" value="{{.TargetMonthInput}}"
+                                class="ui-input metas-form__control metas-form__suffix-input"
+                                aria-describedby="caixinha-month-help">
+                        </div>
+                        <p id="caixinha-month-help" class="metas-form__hint">Opcional; sem data, a reserva fica sem prazo.</p>
+                    </div>
+
+                    {{if .BalanceLabel}}
+                    <div class="metas-form__summary" role="group" aria-label="Saldo da reserva">
+                        <div class="metas-form__summary-row">
+                            <span class="metas-form__summary-label">Saldo atual</span>
+                            <span class="metas-form__summary-value" data-sensitive>{{.BalanceLabel}}</span>
+                        </div>
+                        <p class="metas-form__hint">Valor reservado hoje; não é saldo bancário.</p>
+                    </div>
+                    {{end}}
+
+                    <div class="metas-form__field">
+                        <label class="ui-label" for="caixinhaYield">Rentabilidade est. mensal (opcional)</label>
+                        <div class="metas-form__suffix">
+                            <input id="caixinhaYield" name="monthly_yield_rate" inputmode="decimal" value="{{.MonthlyYieldRateInput}}" placeholder="Ex.: 0,8" data-percent-mask autocomplete="off"
+                                class="ui-input metas-form__control metas-form__suffix-input"
+                                aria-describedby="caixinha-yield-help">
+                            <span class="metas-form__suffix-text">% a.m.</span>
+                        </div>
+                        <p id="caixinha-yield-help" class="metas-form__hint">Ex.: 0,8 para 0,8% ao mês (~10% ao ano). Apenas estimativa.</p>
+                    </div>
+                </form>
+
+                {{if eq .Mode "edit"}}
+                <div class="metas-form__danger-zone">
+                    <div class="metas-form__danger-copy">
+                        <p class="metas-form__danger-title">Excluir {{if $isLimite}}limite{{else}}reserva{{end}}</p>
+                        <p class="metas-form__danger-help">A exclusão pede confirmação.</p>
+                    </div>
+                    {{if $isLimite}}
+                    <button type="button"
+                        hx-delete="/metas/limite/{{.LimitID}}" hx-target="closest .sheet-in" hx-swap="delete" hx-confirm="Tem certeza que deseja excluir este limite?"
+                        class="ui-btn metas-form__danger-action" aria-label="Excluir limite">
+                        <i data-lucide="trash-2" aria-hidden="true"></i><span>Excluir</span>
+                    </button>
+                    {{else}}
+                    <button type="button"
+                        hx-delete="/metas/caixinha/{{.BoxID}}" hx-target="closest .sheet-in" hx-swap="delete" hx-confirm="Tem certeza que deseja excluir esta reserva?"
+                        class="ui-btn metas-form__danger-action" aria-label="Excluir reserva">
+                        <i data-lucide="trash-2" aria-hidden="true"></i><span>Excluir</span>
+                    </button>
+                    {{end}}
+                </div>
+                {{end}}
+            </div>
+
+            <footer class="metas-sheet__footer">
+                <button type="button" class="ui-btn ui-btn--ghost metas-sheet__btn metas-sheet__btn--cancel" data-onclick="closeBottomSheet">
+                    Cancelar
+                </button>
+                {{if eq .Mode "create"}}
+                <button type="submit" data-meta-create-submit
+                    form="{{if $isLimite}}meta-limite-form{{else}}meta-caixinha-form{{end}}"
+                    class="ui-btn ui-btn--primary metas-sheet__btn metas-sheet__btn--primary">
+                    <i data-lucide="check" aria-hidden="true"></i><span data-meta-submit-label>{{if $isLimite}}Criar limite{{else}}Criar reserva{{end}}</span>
+                </button>
+                {{else}}
+                <button type="submit"
+                    form="{{if $isLimite}}meta-limite-form{{else}}meta-caixinha-form{{end}}"
+                    class="ui-btn ui-btn--primary metas-sheet__btn metas-sheet__btn--primary"
+                    aria-label="{{if $isLimite}}Salvar limite{{else}}Salvar reserva{{end}}">
+                    <i data-lucide="check" aria-hidden="true"></i><span>Salvar</span>
+                </button>
+                {{end}}
+            </footer>
         </article>
     </div>
 </div>

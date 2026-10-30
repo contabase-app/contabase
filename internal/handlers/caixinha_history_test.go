@@ -35,7 +35,7 @@ func TestHandleHistoricoCaixinhaListsEventsWithFriendlyLabels(t *testing.T) {
 			('h-rev1', 'a-box', 2500, 'REVERSAL', 'Ajuste compensatorio', 'tx-1', ?, ?)
 	`, now, now, now, now, now, now, now, now)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testHistoryTemplates(t),
 		WorkspaceID: "ws-a",
@@ -83,7 +83,7 @@ func TestHandleHistoricoLimiteShowsAccountContext(t *testing.T) {
 		VALUES ('tx-card', 'ws-a', 'user-a', 'a-card', 'a-cat', 'EXPENSE', 12500, ?, 'Compra no cartão', 'paid', ?, ?)
 	`, transactionDate, now, now)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testHistoryTemplates(t),
 		WorkspaceID: "ws-a",
@@ -134,7 +134,7 @@ func TestLimitHistoryTotalIsIndependentOfDisplayedRows(t *testing.T) {
 				insert("previous-month", "ws-a", "user-a", "limit-account-a", "a-cat", "EXPENSE", "paid", date.AddDate(0, -1, 0).Unix())
 				insert("next-month", "ws-a", "user-a", "limit-account-a", "a-cat", "EXPENSE", "paid", date.AddDate(0, 1, 0).Unix())
 				tpl := template.Must(template.New("limit-test").Parse(`{{define "limit-history"}}spent={{.Spent.Reais}}{{.Spent.Cents}};remaining={{.Remaining.Reais}}{{.Remaining.Cents}};percent={{.Percent}};count={{len .Transactions}};business={{.IsBusiness}};{{range .Transactions}}{{.Description}};{{end}}{{end}}`))
-				h := MetasHandler{DB: db, Templates: tpl, WorkspaceID: "ws-a", UserID: "user-a"}
+				h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, Templates: tpl, WorkspaceID: "ws-a", UserID: "user-a"}
 				rr := httptest.NewRecorder()
 				h.HandleHistoricoLimite(rr, httptest.NewRequest(http.MethodGet, "/metas/limite/historico?limit_id=limit-a", nil))
 				if rr.Code != http.StatusOK {
@@ -167,7 +167,7 @@ func TestHandleHistoricoCaixinhaEmptyBoxShowsEmptyState(t *testing.T) {
 	defer db.Close()
 	seedHistoryScenario(t, db)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testHistoryTemplates(t),
 		WorkspaceID: "ws-a",
@@ -192,7 +192,7 @@ func TestHandleHistoricoCaixinhaRejectsForeignWorkspaceBox(t *testing.T) {
 	defer db.Close()
 	seedHistoryScenario(t, db)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testHistoryTemplates(t),
 		WorkspaceID: "ws-a",
@@ -213,7 +213,7 @@ func TestHandleHistoricoCaixinhaRejectsMissingBoxID(t *testing.T) {
 	defer db.Close()
 	seedHistoryScenario(t, db)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testHistoryTemplates(t),
 		WorkspaceID: "ws-a",
@@ -240,7 +240,7 @@ func TestMetasPageRendersActionsInMenu(t *testing.T) {
 		VALUES ('acc-a', 'ws-a', 'Conta A', 'CHECKING', 0, 0, ?, ?)
 	`, now, now)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasPageTemplates(t),
 		WorkspaceID: "ws-a",
@@ -288,7 +288,7 @@ func TestMetasPageVerLancamentosLinkConditional(t *testing.T) {
 		VALUES ('acc-a', 'ws-a', 'Conta A', 'CHECKING', 0, 0, ?, ?)
 	`, now, now)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasPageTemplates(t),
 		WorkspaceID: "ws-a",
@@ -329,7 +329,7 @@ func TestMetasPageCardOpensHistoryNotEditForm(t *testing.T) {
 		VALUES ('acc-a', 'ws-a', 'Conta A', 'CHECKING', 0, 0, ?, ?)
 	`, now, now)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasPageTemplates(t),
 		WorkspaceID: "ws-a",
@@ -364,7 +364,7 @@ func TestHandleHistoricoCaixinhaShowsOnlyWorkspaceEvents(t *testing.T) {
 		VALUES ('h-b-rch', 'b-box', 99999, 'RECHARGE', 'Aporte workspace B', ?, ?)
 	`, now, now)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testHistoryTemplates(t),
 		WorkspaceID: "ws-a",

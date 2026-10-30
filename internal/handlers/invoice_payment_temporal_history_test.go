@@ -198,7 +198,7 @@ func TestInvoicePaymentPastCaixaAllocationSurvivesLaterReversal(t *testing.T) {
 				}
 			}
 
-			h := RelatoriosHandler{DB: db, WorkspaceID: reversalWorkspaceID}
+			h := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: reversalWorkspaceID}
 			start, end := paidAt-1, paidAt+1
 			targets, err := h.queryInvoiceAllocationTargets(context.Background(), start, end, "paid")
 			if err != nil {
@@ -223,7 +223,7 @@ func TestInvoicePaymentPastCaixaAllocationSurvivesLaterReversal(t *testing.T) {
 			if err != nil {
 				t.Fatalf("build caixa forecast: %v", err)
 			}
-			if got := SumCaixaByMacroGroup(caixaRows, "Fatura de cartão"); got != -want {
+			if got, err := SumCaixaByMacroGroup(caixaRows, "Fatura de cartão"); err != nil || got != -want {
 				t.Fatalf("historical invoice-payment macro = %d, want %d", got, -want)
 			}
 		})
@@ -247,7 +247,7 @@ func TestInvoicePaymentReversalExcludedFromCompetenceConsumers(t *testing.T) {
 		t.Fatalf("reverse invoice payment: %v", err)
 	}
 
-	h := RelatoriosHandler{DB: db, WorkspaceID: reversalWorkspaceID}
+	h := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: reversalWorkspaceID}
 	start := reversalUnix("2026-08-01", 0)
 	end := reversalUnix("2026-08-31", 23)
 	revenues, err := h.queryRevenueByCategory(context.Background(), start, end)
@@ -295,7 +295,7 @@ func TestInvoicePaymentTemporalHistoryWorkspaceIsolation(t *testing.T) {
 	if len(events) != 2 || eventNet != 0 {
 		t.Fatalf("workspace cash events rows/net = %d/%d, want 2/0", len(events), eventNet)
 	}
-	h := RelatoriosHandler{DB: db, WorkspaceID: reversalWorkspaceID}
+	h := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: reversalWorkspaceID}
 	targets, err := h.queryInvoiceAllocationTargets(context.Background(), paidAt-1, paidAt+1, "paid")
 	if err != nil {
 		t.Fatalf("query allocation targets: %v", err)

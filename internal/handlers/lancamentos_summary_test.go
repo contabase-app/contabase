@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -472,6 +473,9 @@ func TestLancamentosResumoRenderContract(t *testing.T) {
 
 	for _, want := range []string{
 		`id="lancamentosResumo"`,
+		`class="ui-panel lancamentos-summary"`,
+		`class="ui-section-title lancamentos-summary__identity"`,
+		`class="ui-section-icon"`,
 		"Entradas confirmadas",
 		"Saídas confirmadas",
 		"Pendente",
@@ -480,10 +484,19 @@ func TestLancamentosResumoRenderContract(t *testing.T) {
 		"Resultado líquido",
 		"+ R$ 210,52",
 		"4 itens",
+		`class="lancamentos-summary__metric is-ok is-primary"`,
+		`class="lancamentos-summary__metric is-danger is-primary"`,
+		`class="lancamentos-summary__metric is-attention"`,
+		`class="lancamentos-summary__metric is-danger"`,
+		`class="lancamentos-summary__metric is-progress is-empty"`,
+		`data-metric="entradas_confirmadas"`,
+		`data-metric="saidas_confirmadas"`,
+		`data-metric="pendente"`,
+		`data-metric="vencido"`,
+		`data-metric="agendado"`,
+		`lancamentos-summary__net-value`,
 		`data-len="s"`,
 		`data-sensitive`,
-		`cb-resumo-tone-ok`,
-		`cb-resumo-tone-danger`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("resumo renderizado não contém %q\nhtml:\n%s", want, html)
@@ -491,6 +504,12 @@ func TestLancamentosResumoRenderContract(t *testing.T) {
 	}
 	if strings.Contains(html, ">Pago<") {
 		t.Fatalf("resumo ainda mostra o agregado genérico Pago:\n%s", html)
+	}
+	if strings.Contains(html, "cb-resumo") {
+		t.Fatalf("resumo ainda usa a família legada cb-resumo:\n%s", html)
+	}
+	if got := strings.Count(html, `data-sensitive`); got != 6 {
+		t.Fatalf("valores data-sensitive = %d, want 6 (5 indicadores + resultado líquido)", got)
 	}
 
 	// Sem OOB na renderização da página; com OOB no swap parcial.
@@ -505,6 +524,144 @@ func TestLancamentosResumoRenderContract(t *testing.T) {
 	if !strings.Contains(buf.String(), `hx-swap-oob="outerHTML"`) {
 		t.Fatalf("resumo parcial precisa do swap OOB:\n%s", buf.String())
 	}
+}
+
+func TestLancamentosResumoPremiumPreservesStructuredValuesAndOrder(t *testing.T) {
+	transactions := []TransactionRow{
+		{Type: models.TransactionTypeIncome, Amount: 63850, PaymentStatus: models.PaymentStatusPaid},
+		{Type: models.TransactionTypeExpense, Amount: 42798, PaymentStatus: models.PaymentStatusPaid},
+		{Type: models.TransactionTypeExpense, Amount: 12000, IsPending: true},
+		{Type: models.TransactionTypeExpense, Amount: 5990, IsPending: true, IsOverdue: true},
+		{Type: models.TransactionTypeExpense, Amount: 3000, IsPending: true, IsScheduled: true},
+	}
+	data := LancamentosData{
+		MonthLabel:   "Outubro 2026",
+		Transactions: transactions,
+		ResumoStatus: mustBuildLancamentosStatusSummary(t, transactions, nil),
+	}
+	applyLancamentosResumoDerivados(&data)
+	html := renderLancamentosResumoHTML(t, data)
+
+	keys := []string{
+		"entradas_confirmadas",
+		"saidas_confirmadas",
+		"pendente",
+		"vencido",
+		"agendado",
+	}
+	lastIndex := -1
+	for _, key := range keys {
+		marker := `data-metric="` + key + `"`
+		index := strings.Index(html, marker)
+		if index < 0 {
+			t.Fatalf("métrica %q não renderizada:\n%s", key, html)
+		}
+		if index <= lastIndex {
+			t.Fatalf("métrica %q fora da ordem canônica", key)
+		}
+		lastIndex = index
+	}
+
+	for _, want := range []string{
+		"R$ 638,50",
+		"R$ 427,98",
+		"R$ 120,00",
+		"R$ 59,90",
+		"R$ 30,00",
+		"+ R$ 210,52",
+		"5 itens",
+		"1 item",
+		`data-len="s"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("valores estruturados não renderizados: falta %q\nhtml:\n%s", want, html)
+		}
+	}
+
+	// Estado negativo e estado vazio preservam a mesma estrutura de seis valores.
+	negative := LancamentosData{
+		MonthLabel: "Outubro 2026",
+		Transactions: []TransactionRow{
+			{Type: models.TransactionTypeIncome, Amount: 10000, PaymentStatus: models.PaymentStatusPaid},
+			{Type: models.TransactionTypeExpense, Amount: 42798, PaymentStatus: models.PaymentStatusPaid},
+		},
+	}
+	negative.ResumoStatus = mustBuildLancamentosStatusSummary(t, negative.Transactions, nil)
+	applyLancamentosResumoDerivados(&negative)
+	negativeHTML := renderLancamentosResumoHTML(t, negative)
+	for _, want := range []string{"is-negative", "- R$ 327,98", "2 itens"} {
+		if !strings.Contains(negativeHTML, want) {
+			t.Fatalf("estado negativo não contém %q\nhtml:\n%s", want, negativeHTML)
+		}
+	}
+
+	empty := LancamentosData{MonthLabel: "Outubro 2026"}
+	empty.ResumoStatus = mustBuildLancamentosStatusSummary(t, nil, nil)
+	applyLancamentosResumoDerivados(&empty)
+	emptyHTML := renderLancamentosResumoHTML(t, empty)
+	for _, want := range []string{
+		"R$ 0,00",
+		"0 itens",
+		"is-empty",
+	} {
+		if !strings.Contains(emptyHTML, want) {
+			t.Fatalf("estado vazio não contém %q\nhtml:\n%s", want, emptyHTML)
+		}
+	}
+	if got := strings.Count(emptyHTML, "is-empty"); got != 5 {
+		t.Fatalf("métricas vazias com is-empty = %d, want 5", got)
+	}
+	if strings.Contains(emptyHTML, "is-negative") {
+		t.Fatalf("estado vazio não pode ser negativo:\n%s", emptyHTML)
+	}
+}
+
+func TestLancamentosResumoPremiumCSSContract(t *testing.T) {
+	raw, err := os.ReadFile(resolveTemplatePath(t, "assets/css/lancamentos.css"))
+	if err != nil {
+		t.Fatalf("read lancamentos.css: %v", err)
+	}
+	css := string(raw)
+	for _, want := range []string{
+		`.lancamentos-summary {`,
+		`container: lancamentos-summary / inline-size`,
+		`var(--ui-border)`,
+		`var(--ui-success)`,
+		`var(--ui-danger)`,
+		`var(--ui-warning)`,
+		`var(--ui-accent-strong)`,
+		`font-variant-numeric: tabular-nums`,
+		`@container lancamentos-summary (min-width: 560px)`,
+		`@container lancamentos-summary (min-width: 940px)`,
+		`grid-template-columns: repeat(5, minmax(0, 1fr))`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("CSS do resumo não contém %q", want)
+		}
+	}
+	if strings.Contains(css, ".cb-resumo") {
+		t.Fatal("CSS do resumo ainda contém a família legada .cb-resumo")
+	}
+}
+
+func renderLancamentosResumoHTML(t *testing.T, data LancamentosData) string {
+	t.Helper()
+	tpl := template.Must(template.New("lancamentos-resumo-premium").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath": func(path string) string { return path },
+		"hasString": func(items []string, target string) bool {
+			for _, item := range items {
+				if item == target {
+					return true
+				}
+			}
+			return false
+		},
+	})).ParseFiles(resolveTemplatePath(t, "templates/pages/lancamentos.html")))
+	var buf bytes.Buffer
+	if err := tpl.ExecuteTemplate(&buf, "lancamentos-resumo", data); err != nil {
+		t.Fatalf("execute lancamentos-resumo premium: %v", err)
+	}
+	return strings.ReplaceAll(buf.String(), "&#43;", "+")
 }
 
 func mustBuildLancamentosStatusSummary(t *testing.T, transactions []TransactionRow, invoices []InvoiceRow) []LancamentosStatusSummary {

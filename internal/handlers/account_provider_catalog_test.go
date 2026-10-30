@@ -54,6 +54,7 @@ func TestAccountProviderLogoPath(t *testing.T) {
 		"pagbank":     "institutions/pagbank.png",
 		"picpay":      "institutions/picpay.png",
 		"santander":   "institutions/santander.png",
+		"stripe":      "institutions/stripe.png",
 		"xp":          "institutions/xp.png",
 	} {
 		if got := accountProviderLogoPath(slug); got != want {
@@ -95,6 +96,8 @@ func TestIdentifyAlias(t *testing.T) {
 		{"Nubank Principal", "nubank"},
 		{"XP Investimentos", "xp"},
 		{"PagBank do José", "pagbank"},
+		{"Stripe", "stripe"},
+		{"Stripe Brasil", "stripe"},
 		{"Cooperativa de Crédito", ""},
 		{"Cresol", ""},
 	}

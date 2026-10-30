@@ -131,9 +131,9 @@ func TestAppShellKeepsConfirmationAndSwipeRuntimeAcrossHTMXNavigation(t *testing
 		`id="global-confirm-modal"`,
 		`id="global-delete-scope-modal"`,
 		`{{template "app-v2-shared-overlays" .}}`,
-		`<script src="/assets/js/modals-global.js"></script>`,
+		`<script src="{{assetPath "/assets/js/modals-global.js"}}"></script>`,
 		`assetPath "/assets/js/faturas.js"`,
-		`<script src="/assets/js/swipe.js"></script>`,
+		`<script src="{{assetPath "/assets/js/swipe.js"}}"></script>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("app shell missing shared interaction runtime %q", want)
@@ -148,9 +148,9 @@ func TestAppShellKeepsConfirmationAndSwipeRuntimeAcrossHTMXNavigation(t *testing
 		pageBody := string(pageRaw)
 		for _, redundant := range []string{
 			`{{template "lancamentos-global-overlays" .}}`,
-			`<script src="/assets/js/modals-global.js"></script>`,
+			`<script src="{{assetPath "/assets/js/modals-global.js"}}"></script>`,
 			`<script src="{{assetPath "/assets/js/faturas.js"}}"></script>`,
-			`<script src="/assets/js/swipe.js"></script>`,
+			`<script src="{{assetPath "/assets/js/swipe.js"}}"></script>`,
 		} {
 			if strings.Contains(pageBody, redundant) {
 				t.Fatalf("%s must rely on the app-shell runtime, not duplicate %q", page, redundant)
@@ -240,7 +240,7 @@ func TestSidebarNavigationUsesThreeCompactBlocks(t *testing.T) {
 	for _, want := range []string{
 		".cb-v2-sidebar-body {\n    display: flex;",
 		".cb-v2-nav-list { display: grid; gap: 3px; margin-top: 30px; }",
-		".cb-v2-quick-actions { display: grid; gap: 3px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--v2-border); }",
+		".cb-v2-quick-actions { display: grid; gap: 3px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--ui-border); }",
 		".cb-v2-settings-nav { display: grid; gap: 6px; margin-top: 16px; }",
 		".cb-v2-sidebar-footer { display: grid; flex: 0 0 auto; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--v2-border); }",
 		".cb-v2-drawer-footer { display: grid; gap: 8px; margin-top: auto; padding-top: 14px; border-top: 1px solid var(--v2-border); }",
@@ -320,10 +320,19 @@ func TestDashboardMobileSectionSpacing(t *testing.T) {
 	if !strings.Contains(mobile, ".cb-v2-left-column { display: contents; }") {
 		t.Fatal("mobile dashboard should flatten the layout columns")
 	}
-	if !strings.Contains(mobile, ".cb-v2-card-rail { display: flex;") || !strings.Contains(mobile, "scroll-snap-type: x mandatory") {
-		t.Fatal("mobile dashboard should show credit cards in a horizontal snap rail")
+	// The shared rail now belongs to the Faturas hub stylesheet.
+	indexRaw, err := os.ReadFile(resolveTemplatePath(t, "assets/css/faturas-index.css"))
+	if err != nil {
+		t.Fatalf("read faturas-index.css: %v", err)
 	}
-	if !strings.Contains(mobile, ".cb-v2-card-rail > [data-v2-card-item]:nth-child(n+7) { display: none; }") {
-		t.Fatal("mobile dashboard should hide real cards after the sixth")
+	indexCSS := string(indexRaw)
+	if !strings.Contains(indexCSS, ".cb-v2-card-rail { display: flex;") || !strings.Contains(indexCSS, "scroll-snap-type: x mandatory") {
+		t.Fatal("hub should show credit cards in a horizontal snap rail")
+	}
+	// The legacy six-card cap belonged to the previous dashboard rail. The
+	// Premium dashboard uses .wallet-card-rail, so the shared .cb-v2-card-rail
+	// (now consumed by the Faturas hub) must never hide existing cards.
+	if strings.Contains(indexCSS, ".cb-v2-card-rail > [data-v2-card-item]:nth-child(n+7)") {
+		t.Fatal("shared card rail must not hide cards after the sixth")
 	}
 }

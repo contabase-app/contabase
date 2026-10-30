@@ -31,6 +31,15 @@ func AdjustAccountBalance(ctx context.Context, db *sql.DB, input AccountBalanceA
 		return err
 	}
 	defer tx.Rollback()
+	if err := adjustAccountBalanceTx(ctx, tx, input); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// adjustAccountBalanceTx shares the audited writer with investment integration.
+// The caller owns the transaction and must roll it back on every error.
+func adjustAccountBalanceTx(ctx context.Context, tx *sql.Tx, input AccountBalanceAdjustment) error {
 	res, err := tx.ExecContext(ctx, `UPDATE accounts SET balance_version = balance_version
 		WHERE id = ? AND workspace_id = ? AND type != 'CREDIT_CARD' AND archived_at IS NULL`, input.AccountID, input.WorkspaceID)
 	if err != nil {
@@ -52,7 +61,7 @@ func AdjustAccountBalance(ctx context.Context, db *sql.DB, input AccountBalanceA
 		if accountID != input.AccountID || userID != input.UserID || reason != input.Reason || target != input.TargetBalance || expected != input.ExpectedVersion {
 			return ErrBalanceAdjustmentConflict
 		}
-		return tx.Commit()
+		return nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
@@ -88,5 +97,5 @@ func AdjustAccountBalance(ctx context.Context, db *sql.DB, input AccountBalanceA
 	if n != 1 {
 		return ErrBalanceAdjustmentConflict
 	}
-	return tx.Commit()
+	return nil
 }

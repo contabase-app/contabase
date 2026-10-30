@@ -16,6 +16,7 @@ package investments
 import (
 	"fmt"
 	"math"
+	"math/big"
 	"time"
 
 	"github.com/contabase-app/contabase/internal/civildate"
@@ -83,6 +84,120 @@ func CurrentValueCents(inv models.Investment, valuations []models.InvestmentValu
 // negative (loss); only overflow fails.
 func YieldCents(currentCents, principalCents int64) (int64, error) {
 	return subInt64Checked(currentCents, principalCents)
+}
+
+// AccumulatedReturnBasisPoints is the nominal yield relative to the original
+// principal. A non-positive principal has no meaningful percentage. The
+// intermediate product uses arbitrary precision so large valid positions do
+// not wrap int64; a result outside int64 fails closed.
+func AccumulatedReturnBasisPoints(yieldCents, principalCents int64) (int64, bool, error) {
+	if principalCents <= 0 {
+		return 0, false, nil
+	}
+	scaled := new(big.Int).Mul(big.NewInt(yieldCents), big.NewInt(10000))
+	scaled.Quo(scaled, big.NewInt(principalCents))
+	if !scaled.IsInt64() {
+		return 0, false, fmt.Errorf("overflow da rentabilidade acumulada")
+	}
+	return scaled.Int64(), true, nil
+}
+
+// AdjustedVariation is a nominal comparison of two recorded positions, never
+// realized profit or percentage return. Numeric fields are valid only if Available.
+type AdjustedVariation struct {
+	Available                 bool
+	Reason                    string
+	PreviousDate, CurrentDate string
+	DeltaCents                int64
+}
+
+const (
+	AdjustedVariationNeedsPositions = "Registre duas posições para comparar"
+	AdjustedVariationAmbiguousDates = "Existem operações na mesma data de uma posição"
+	AdjustedVariationMissingHistory = "Histórico insuficiente para comparação"
+	AdjustedVariationUnsafe         = "Não foi possível calcular com segurança"
+)
+
+// AdjustedPositionVariation compares the two latest recorded positions without
+// changing the supplied history. The caller supplies complete purchases and
+// withdrawals from one scoped snapshot. Only flows strictly inside the period
+// count; endpoint flows have unknown intraday order. Later flows do not change
+// this historical comparison. Neither receipts' allocations nor INCOME enter it.
+func AdjustedPositionVariation(inv models.Investment, valuations []models.InvestmentValuation, purchases []models.InvestmentPurchase, withdrawals []models.InvestmentWithdrawal) AdjustedVariation {
+	unavailable := AdjustedVariation{Reason: AdjustedVariationMissingHistory}
+	if inv.WorkspaceID == "" || inv.ID == "" {
+		return unavailable
+	}
+	var previous, current *models.InvestmentValuation
+	dates := make(map[string]bool)
+	for i := range valuations {
+		v := &valuations[i]
+		if _, err := civildate.ParseCivilDateInput(v.ValuationDate); err != nil || v.WorkspaceID != inv.WorkspaceID || v.InvestmentID != inv.ID || v.AmountCents < 0 || dates[v.ValuationDate] {
+			return unavailable
+		}
+		dates[v.ValuationDate] = true
+		if current == nil || v.ValuationDate > current.ValuationDate {
+			previous, current = current, v
+		} else if previous == nil || v.ValuationDate > previous.ValuationDate {
+			previous = v
+		}
+	}
+	if previous == nil {
+		return AdjustedVariation{Reason: AdjustedVariationNeedsPositions}
+	}
+	var purchasesCents, receivedCents int64
+	initials := 0
+	seen := make(map[string]bool)
+	for _, p := range purchases {
+		if _, err := civildate.ParseCivilDateInput(p.PurchaseDate); err != nil || p.WorkspaceID != inv.WorkspaceID || p.InvestmentID != inv.ID || p.ID == "" || seen[p.ID] || p.PrincipalCents <= 0 {
+			return unavailable
+		}
+		seen[p.ID] = true
+		if p.IsInitial {
+			initials++
+		}
+		if p.PurchaseDate == previous.ValuationDate || p.PurchaseDate == current.ValuationDate {
+			return AdjustedVariation{Reason: AdjustedVariationAmbiguousDates}
+		}
+		if p.PurchaseDate > previous.ValuationDate && p.PurchaseDate < current.ValuationDate {
+			var err error
+			purchasesCents, err = addInt64Checked(purchasesCents, p.PrincipalCents)
+			if err != nil {
+				return AdjustedVariation{Reason: AdjustedVariationUnsafe}
+			}
+		}
+	}
+	if initials != 1 {
+		return unavailable
+	}
+	seen = make(map[string]bool)
+	for _, w := range withdrawals {
+		if _, err := civildate.ParseCivilDateInput(w.WithdrawalDate); err != nil || w.WorkspaceID != inv.WorkspaceID || w.InvestmentID != inv.ID || w.ID == "" || seen[w.ID] || w.ReceivedCents < 0 {
+			return unavailable
+		}
+		seen[w.ID] = true
+		if w.WithdrawalDate == previous.ValuationDate || w.WithdrawalDate == current.ValuationDate {
+			return AdjustedVariation{Reason: AdjustedVariationAmbiguousDates}
+		}
+		if w.WithdrawalDate > previous.ValuationDate && w.WithdrawalDate < current.ValuationDate {
+			var err error
+			receivedCents, err = addInt64Checked(receivedCents, w.ReceivedCents)
+			if err != nil {
+				return AdjustedVariation{Reason: AdjustedVariationUnsafe}
+			}
+		}
+	}
+	delta, err := subInt64Checked(current.AmountCents, previous.AmountCents)
+	if err == nil {
+		delta, err = subInt64Checked(delta, purchasesCents)
+	}
+	if err == nil {
+		delta, err = addInt64Checked(delta, receivedCents)
+	}
+	if err != nil {
+		return AdjustedVariation{Reason: AdjustedVariationUnsafe}
+	}
+	return AdjustedVariation{Available: true, PreviousDate: previous.ValuationDate, CurrentDate: current.ValuationDate, DeltaCents: delta}
 }
 
 // IR rate bands (basis points) frozen for beta.5, by holding days.

@@ -64,15 +64,6 @@
             close: function() { if (typeof window.closePickerModal === 'function') window.closePickerModal(); }
         },
         {
-            id: 'contatos-modal',
-            priority: 130,
-            detect: function() {
-                var el = document.getElementById('contatos-modal');
-                return el && !el.classList.contains('hidden');
-            },
-            close: function() { if (typeof window.closeContatosModal === 'function') window.closeContatosModal(); }
-        },
-        {
             id: 'lancamentosFilterPanel',
             priority: 40,
             detect: function() {
@@ -188,6 +179,18 @@
         _registeredOpenOverlayIds = next;
     }
 
+    // Keeps the page behind an overlay from scrolling. Scroll position is
+    // preserved by the browser while `overflow: hidden` is applied.
+    function _syncOverlayScrollLock() {
+        var anyOpen = false;
+        try {
+            anyOpen = getAllOpenOverlays().length > 0;
+        } catch (e) {
+            anyOpen = false;
+        }
+        document.documentElement.classList.toggle('cb-overlay-open', anyOpen);
+    }
+
     function _getAttrOverlays() {
         var els = document.querySelectorAll('[data-contabase-overlay]');
         var result = [];
@@ -237,6 +240,7 @@
         var topEl = topInfo ? document.getElementById(topInfo.id) : null;
         var wasRegistered = !!(topInfo && _registeredOpenOverlayIds[topInfo.id]);
         _replaceRegisteredOpenOverlays(allOpen);
+        _syncOverlayScrollLock();
 
         // Fase lancamentos-overlay-sentinel-filtro-fantasma:
         // Instrumentação temporária sob flag contabase_debug_nav para
@@ -317,6 +321,7 @@
 
     window.overlayDidClose = function() {
         _replaceRegisteredOpenOverlays(getAllOpenOverlays());
+        _syncOverlayScrollLock();
 
         if (_closingViaBack) {
             _lastAction = 'overlayDidClose-skipped-closingViaBack';
@@ -337,6 +342,7 @@
         top.close();
 
         _replaceRegisteredOpenOverlays(getAllOpenOverlays());
+        _syncOverlayScrollLock();
 
         if (!getTopOverlay() && _sentinelPushed) {
             _lastAction = 'closeTopOverlay-consume-sentinel';
@@ -569,4 +575,5 @@
         }
     });
 
+    _syncOverlayScrollLock();
 })();

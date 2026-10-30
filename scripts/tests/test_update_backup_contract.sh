@@ -426,7 +426,8 @@ SHIM
 make_git_fixture() {
   local root="$1" updater="$2"
   local seed="$root/seed" origin="$root/origin.git" install_repo="$root/repo"
-  mkdir -p "$seed/scripts/ops" "$seed/templates" "$seed/assets"
+  mkdir -p "$seed/scripts/ops" "$seed/scripts/lib" "$seed/templates" "$seed/assets"
+  "$REAL_CP" "$REPO_DIR/scripts/lib/contabase-recovery.sh" "$seed/scripts/lib/contabase-recovery.sh"
   "$REAL_GIT" -C "$seed" init -q -b main
   "$REAL_GIT" -C "$seed" config user.name Fixture
   "$REAL_GIT" -C "$seed" config user.email fixture@example.invalid
@@ -597,10 +598,11 @@ assert_no_event "Docker backup falho sem runtime antigo" "$TMP_ROOT/docker-backu
 
 docker_pre_rc="$(run_docker pre_start)"
 [ "$docker_pre_rc" -ne 0 ] && ok "Docker falha pre-start retorna erro" || not_ok "Docker falha pre-start retorna erro"
-assert_event_order "Docker rollback pre-start real" "$TMP_ROOT/docker-pre_start/events.log" backup_success first_mutation failure start_old_runtime
+assert_event_order "Docker falha pre-start real" "$TMP_ROOT/docker-pre_start/events.log" backup_success first_mutation failure
+assert_no_event "Docker anterior desconhecido nao reinicia" "$TMP_ROOT/docker-pre_start/events.log" start_old_runtime
 assert_no_event "Docker pre-start nao inicia runtime novo" "$TMP_ROOT/docker-pre_start/events.log" start_new_runtime
 assert_backup_preserved "Docker pre-start preserva pacote" "$TMP_ROOT/docker-pre_start/events.log"
-assert_contains "Docker pre-start nao afirma restore" "$TMP_ROOT/docker-pre_start/output.log" 'dados nao foram restaurados'
+assert_contains "Docker pre-start bloqueia sem prova" "$TMP_ROOT/docker-pre_start/output.log" 'RECOVERY_BLOCKED'
 
 docker_post_rc="$(run_docker post_start)"
 [ "$docker_post_rc" -ne 0 ] && ok "Docker falha pos-start retorna erro" || not_ok "Docker falha pos-start retorna erro"
@@ -639,7 +641,9 @@ assert_no_event "Source backup falho sem runtime antigo" "$TMP_ROOT/source-backu
 
 source_pre_rc="$(run_source pre_start)"
 [ "$source_pre_rc" -ne 0 ] && ok "Source falha pre-start retorna erro" || not_ok "Source falha pre-start retorna erro"
-assert_event_order "Source rollback pre-start real" "$TMP_ROOT/source-pre_start/events.log" backup_success first_mutation failure start_old_runtime
+assert_event_order "Source falha pre-start real" "$TMP_ROOT/source-pre_start/events.log" backup_success first_mutation failure
+assert_no_event "Source anterior desconhecido nao reinicia" "$TMP_ROOT/source-pre_start/events.log" start_old_runtime
+assert_contains "Source pre-start bloqueia sem prova" "$TMP_ROOT/source-pre_start/output.log" 'RECOVERY_BLOCKED'
 assert_no_event "Source pre-start nao inicia runtime novo" "$TMP_ROOT/source-pre_start/events.log" start_new_runtime
 assert_backup_preserved "Source pre-start preserva pacote" "$TMP_ROOT/source-pre_start/events.log"
 assert_not_contains "Source pre-start nao afirma restore" "$TMP_ROOT/source-pre_start/output.log" 'dados foram restaurados'
@@ -680,7 +684,9 @@ assert_no_event "Release backup falho com servico inativo sem runtime antigo" "$
 
 release_pre_rc="$(run_release pre_start)"
 [ "$release_pre_rc" -ne 0 ] && ok "Release falha pre-start retorna erro" || not_ok "Release falha pre-start retorna erro"
-assert_event_order "Release rollback pre-start real" "$TMP_ROOT/release-pre_start/events.log" backup_success first_mutation failure start_old_runtime
+assert_event_order "Release falha pre-start real" "$TMP_ROOT/release-pre_start/events.log" backup_success first_mutation failure
+assert_no_event "Release anterior desconhecido nao reinicia" "$TMP_ROOT/release-pre_start/events.log" start_old_runtime
+assert_contains "Release pre-start bloqueia sem prova" "$TMP_ROOT/release-pre_start/output.log" 'RECOVERY_BLOCKED'
 assert_no_event "Release pre-start nao inicia runtime novo" "$TMP_ROOT/release-pre_start/events.log" start_new_runtime
 assert_backup_preserved "Release pre-start preserva pacote" "$TMP_ROOT/release-pre_start/events.log"
 assert_contains "Release pre-start nao afirma restore" "$TMP_ROOT/release-pre_start/output.log" 'Dados e configuracao NAO serao restaurados.'

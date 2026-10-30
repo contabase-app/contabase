@@ -1,6 +1,9 @@
 (function() {
   'use strict';
 
+  if (window.__contabaseAdminUserWorkspaceRoles) return;
+  window.__contabaseAdminUserWorkspaceRoles = true;
+
   function syncRow(row) {
     var toggle = row.querySelector('[data-admin-user-workspace-toggle]');
     var roleSelect = row.querySelector('[data-admin-user-workspace-role]');

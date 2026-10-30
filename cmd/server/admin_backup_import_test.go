@@ -444,7 +444,9 @@ func TestAdminBackupImportFormPreventsDuplicateSubmits(t *testing.T) {
 		"data-backup-dropzone",
 		`data-lucide="download"`,
 		`data-lucide="upload"`,
-		`cb-button cb-button-primary`,
+		`ui-btn admin-danger-btn`,
+		`Ação destrutiva`,
+		`admin-restore-warning`,
 		`DATA_DIR/backups/`,
 	} {
 		if !strings.Contains(markup, want) {
@@ -471,7 +473,7 @@ func createRestoreTestDB(t *testing.T, dbPath, marker string) *sql.DB {
 		t.Fatalf("enable wal: %v", err)
 	}
 	stmts := []string{
-		`CREATE TABLE users (id TEXT PRIMARY KEY)`,
+		`CREATE TABLE users (id TEXT PRIMARY KEY, password_hash TEXT NOT NULL DEFAULT '')`,
 		`CREATE TABLE workspaces (id TEXT PRIMARY KEY)`,
 		`CREATE TABLE workspace_members (workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL)`,
 		`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL)`,

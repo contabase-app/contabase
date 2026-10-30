@@ -162,7 +162,7 @@
                 toggle.setAttribute('title', 'Alternar para tema ' + nextTheme);
             });
             var themeColor = document.querySelector('meta[name="theme-color"]');
-            if (themeColor) themeColor.setAttribute('content', isDark ? '#0d121a' : '#f3f5f8');
+            if (themeColor) themeColor.setAttribute('content', isDark ? '#161a20' : '#f3f4f6');
         };
 
         toggles.forEach(function (toggle) {

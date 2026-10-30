@@ -1896,6 +1896,31 @@ END`,
 		name:    "icon_keys_for_categories_limits_and_boxes",
 		up:      migrateIconKeys,
 	},
+	{
+		version: 67,
+		name:    "transaction_refund_invariants",
+		up:      migrateTransactionRefundInvariants,
+	},
+	{
+		version: 68,
+		name:    "transaction_refund_parent_hardening",
+		up:      migrateTransactionRefundParentHardening,
+	},
+	// 69 is reserved for the suspended R7 provenance phase.
+	{
+		version: 70,
+		name:    "investment_purchases",
+		up:      migrateInvestmentPurchases,
+	},
+	{version: 71, name: "investment_withdrawals", up: migrateInvestmentWithdrawals},
+	{version: 72, name: "investment_reference_revisions", up: migrateInvestmentReferences},
+	{version: 73, name: "investment_financial_integration", up: migrateInvestmentFinancialIntegration},
+	{version: 74, name: "investment_settlements", up: migrateInvestmentSettlements},
+	{version: 75, name: "investment_settlement_financial", up: migrateInvestmentSettlementFinancial},
+	{version: 76, name: "investment_result_classification", up: migrateInvestmentClassification},
+	{version: 77, name: "investment_adoption_confirmation", up: migrateInvestmentAdoption},
+	// Experimental migration 78 is not homologated. Apply it explicitly in
+	// candidate tests only; normal startup must remain at schema 77.
 }
 
 func migrateTransactionRefunds(tx *sql.Tx) error {

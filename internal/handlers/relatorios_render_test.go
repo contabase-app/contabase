@@ -73,7 +73,7 @@ func TestRelatoriosRenderBranches(t *testing.T) {
 	seedInvoicePaymentScenario(t, db)
 	execTestSQL(t, db, `UPDATE workspaces SET type = 'business' WHERE id = 'ws-test'`)
 
-	handler := RelatoriosHandler{
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testRelatoriosBranchTemplates(t),
 		WorkspaceID: "ws-test",
@@ -139,7 +139,7 @@ func TestRelatoriosPartialHXReplaceUrl(t *testing.T) {
 	defer db.Close()
 	seedInvoicePaymentScenario(t, db)
 
-	handler := RelatoriosHandler{
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testRelatoriosBranchTemplates(t),
 		WorkspaceID: "ws-test",
@@ -175,7 +175,7 @@ func TestRelatoriosFullRenderNoHXReplaceUrl(t *testing.T) {
 	defer db.Close()
 	seedInvoicePaymentScenario(t, db)
 
-	handler := RelatoriosHandler{
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testRelatoriosBranchTemplates(t),
 		WorkspaceID: "ws-test",
@@ -194,17 +194,29 @@ func TestRelatoriosFullRenderNoHXReplaceUrl(t *testing.T) {
 	}
 }
 
-func TestRelatoriosActiveTabsUseAccentState(t *testing.T) {
+func TestRelatoriosActiveTabsUsePremiumSelection(t *testing.T) {
 	raw, err := os.ReadFile("../../templates/pages/relatorios.html")
 	if err != nil {
 		t.Fatalf("ReadFile relatorios.html: %v", err)
 	}
 	body := string(raw)
-	if !strings.Contains(body, `bg-[var(--cb-accent)] border-[var(--cb-accent)] text-white`) {
-		t.Fatalf("main active tab should use accent state")
+	for _, expected := range []string{
+		`reports-main-tab--active`,
+		`reports-main-tab--inactive`,
+		`cb-tab {{if eq .ExtratoView "movimentos"}}cb-tab-active`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("relatorios tabs missing premium selection %q", expected)
+		}
 	}
-	if !strings.Contains(body, `bg-[var(--cb-accent)] border border-[var(--cb-accent)] text-white`) {
-		t.Fatalf("active subtab should use accent state")
+	for _, forbidden := range []string{
+		`bg-[var(--cb-accent)]`,
+		`text-white`,
+		`shadow-sm`,
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("relatorios tabs must not use primary-action styling %q", forbidden)
+		}
 	}
 }
 
@@ -213,7 +225,7 @@ func TestRelatoriosMonthSelectorPartialContract(t *testing.T) {
 	defer db.Close()
 	seedInvoicePaymentScenario(t, db)
 
-	handler := RelatoriosHandler{
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
@@ -290,7 +302,7 @@ func TestRelatoriosMonthSelectorPreservesTabAndView(t *testing.T) {
 	seedInvoicePaymentScenario(t, db)
 	execTestSQL(t, db, `UPDATE workspaces SET type = 'business' WHERE id = 'ws-test'`)
 
-	handler := RelatoriosHandler{
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
@@ -382,7 +394,7 @@ func TestRelatoriosMonthSelectorPreservesCaixaPrevisao(t *testing.T) {
 	defer db.Close()
 	seedInvoicePaymentScenario(t, db)
 
-	handler := RelatoriosHandler{
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		WorkspaceID: "ws-test",
 		UserID:      "user-test",
@@ -411,14 +423,14 @@ func TestRelatoriosExtratoTemplateParsesAndRenders(t *testing.T) {
 		t.Fatalf("ReadFile relatorios.html: %v", err)
 	}
 
-	funcs := template.FuncMap{
+	funcs := withAppShellTestFuncs(template.FuncMap{
 		"sub":             func(a, b int) int { return a - b },
 		"colorStyle":      func(_, _ string) template.CSS { return "" },
 		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
 		"dreMacroValue":   dreMacroValue,
 		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
 		"caixaMacroValue": caixaMacroValue,
-	}
+	})
 
 	tpl := template.Must(template.New("relatorios-smoke").Funcs(funcs).Parse(string(raw)))
 	addAppShellTestStubs(tpl)
@@ -471,7 +483,6 @@ func TestRelatoriosExtratoTemplateParsesAndRenders(t *testing.T) {
 		"Movimentos confirmados do período",
 		"1 confirmados",
 		"Somente movimentos liquidados no período selecionado.",
-		"Consolidação do período",
 		"Movimentos",
 		"Resumo diário",
 		"Cliente Alpha",
@@ -484,6 +495,9 @@ func TestRelatoriosExtratoTemplateParsesAndRenders(t *testing.T) {
 			t.Fatalf("rendered body missing %q", want)
 		}
 	}
+	if strings.Contains(body, "Consolidação do período") {
+		t.Fatal("Extrato must not repeat the consolidation title above the table")
+	}
 	// Ensure Extrato section does not render pending/status-previsto chips.
 	extratoStart := strings.Index(body, "Extrato —")
 	if extratoStart < 0 {
@@ -495,15 +509,15 @@ func TestRelatoriosExtratoTemplateParsesAndRenders(t *testing.T) {
 	}
 
 	// Ensure Movimentos table uses full width and no fixed 60rem min-width.
-	movimentosStart := strings.Index(body, "Lançamentos")
+	movimentosStart := strings.Index(body, `class="reports-table reports-table--extrato`)
 	if movimentosStart < 0 {
-		t.Fatal("missing Lançamentos section")
+		t.Fatal("missing Movimentos table")
 	}
 	movimentosBody := body[movimentosStart:]
 	if strings.Contains(movimentosBody, "min-w-[60rem]") {
 		t.Fatal("Movimentos table should not force min-w-[60rem]")
 	}
-	if !strings.Contains(movimentosBody, "reports-table-compact w-full") {
+	if !strings.Contains(movimentosBody, "reports-table reports-table--extrato w-full") {
 		t.Fatal("Movimentos table should use w-full")
 	}
 }
@@ -514,14 +528,14 @@ func TestRelatoriosCaixaTemplateNaoRenderizaPrevistoNemProximosVencimentos(t *te
 		t.Fatalf("ReadFile relatorios.html: %v", err)
 	}
 
-	funcs := template.FuncMap{
+	funcs := withAppShellTestFuncs(template.FuncMap{
 		"sub":             func(a, b int) int { return a - b },
 		"colorStyle":      func(_, _ string) template.CSS { return "" },
 		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
 		"dreMacroValue":   dreMacroValue,
 		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
 		"caixaMacroValue": caixaMacroValue,
-	}
+	})
 
 	tpl := template.Must(template.New("relatorios-caixa-smoke").Funcs(funcs).Parse(string(raw)))
 	addAppShellTestStubs(tpl)
@@ -586,14 +600,14 @@ func TestRelatoriosCaixaTemplatePrevisaoRenderizaSubmodo(t *testing.T) {
 		t.Fatalf("ReadFile relatorios.html: %v", err)
 	}
 
-	funcs := template.FuncMap{
+	funcs := withAppShellTestFuncs(template.FuncMap{
 		"sub":             func(a, b int) int { return a - b },
 		"colorStyle":      func(_, _ string) template.CSS { return "" },
 		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
 		"dreMacroValue":   dreMacroValue,
 		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
 		"caixaMacroValue": caixaMacroValue,
-	}
+	})
 
 	tpl := template.Must(template.New("relatorios-caixa-previsao-smoke").Funcs(funcs).Parse(string(raw)))
 	addAppShellTestStubs(tpl)
@@ -661,7 +675,7 @@ func TestRelatoriosCaixaTemplatePrevisaoRenderizaSubmodo(t *testing.T) {
 		"Entradas previstas",
 		"Saídas previstas",
 		"Resultado previsto",
-		"SALDO PROJETADO",
+		"Saldo projetado",
 		"Saldo estimado no fim do mês",
 		"R$ 2.450,00",
 		"Demonstrativo de Caixa Previsto",
@@ -697,14 +711,14 @@ func TestRelatoriosCaixaTemplateRealizadoMantemMovimentosConfirmados(t *testing.
 		t.Fatalf("ReadFile relatorios.html: %v", err)
 	}
 
-	funcs := template.FuncMap{
+	funcs := withAppShellTestFuncs(template.FuncMap{
 		"sub":             func(a, b int) int { return a - b },
 		"colorStyle":      func(_, _ string) template.CSS { return "" },
 		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
 		"dreMacroValue":   dreMacroValue,
 		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
 		"caixaMacroValue": caixaMacroValue,
-	}
+	})
 
 	tpl := template.Must(template.New("relatorios-caixa-realizado-smoke").Funcs(funcs).Parse(string(raw)))
 	addAppShellTestStubs(tpl)
@@ -754,14 +768,14 @@ func TestRelatoriosPersonalNaoRenderizaCompetenciaOuPorLancamento(t *testing.T) 
 		t.Fatalf("ReadFile relatorios.html: %v", err)
 	}
 
-	funcs := template.FuncMap{
+	funcs := withAppShellTestFuncs(template.FuncMap{
 		"sub":             func(a, b int) int { return a - b },
 		"colorStyle":      func(_, _ string) template.CSS { return "" },
 		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
 		"dreMacroValue":   dreMacroValue,
 		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
 		"caixaMacroValue": caixaMacroValue,
-	}
+	})
 
 	tpl := template.Must(template.New("relatorios-personal-tabs").Funcs(funcs).Parse(string(raw)))
 	addAppShellTestStubs(tpl)
@@ -798,14 +812,14 @@ func TestRelatoriosBusinessRenderizaCompetencia(t *testing.T) {
 		t.Fatalf("ReadFile relatorios.html: %v", err)
 	}
 
-	funcs := template.FuncMap{
+	funcs := withAppShellTestFuncs(template.FuncMap{
 		"sub":             func(a, b int) int { return a - b },
 		"colorStyle":      func(_, _ string) template.CSS { return "" },
 		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
 		"dreMacroValue":   dreMacroValue,
 		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
 		"caixaMacroValue": caixaMacroValue,
-	}
+	})
 
 	tpl := template.Must(template.New("relatorios-business-tabs").Funcs(funcs).Parse(string(raw)))
 	addAppShellTestStubs(tpl)
@@ -840,14 +854,14 @@ func TestRelatoriosBusinessRenderizaContabil(t *testing.T) {
 		t.Fatalf("ReadFile relatorios.html: %v", err)
 	}
 
-	funcs := template.FuncMap{
+	funcs := withAppShellTestFuncs(template.FuncMap{
 		"sub":             func(a, b int) int { return a - b },
 		"colorStyle":      func(_, _ string) template.CSS { return "" },
 		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
 		"dreMacroValue":   dreMacroValue,
 		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
 		"caixaMacroValue": caixaMacroValue,
-	}
+	})
 
 	tpl := template.Must(template.New("relatorios-contabil-business").Funcs(funcs).Parse(string(raw)))
 	addAppShellTestStubs(tpl)
@@ -925,14 +939,14 @@ func TestRelatoriosContabilSaldoTotalCores(t *testing.T) {
 		t.Fatalf("ReadFile relatorios.html: %v", err)
 	}
 
-	funcs := template.FuncMap{
+	funcs := withAppShellTestFuncs(template.FuncMap{
 		"sub":             func(a, b int) int { return a - b },
 		"colorStyle":      func(_, _ string) template.CSS { return "" },
 		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
 		"dreMacroValue":   dreMacroValue,
 		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
 		"caixaMacroValue": caixaMacroValue,
-	}
+	})
 
 	render := func(t *testing.T, total int64, negative bool) string {
 		t.Helper()
@@ -1002,14 +1016,14 @@ func TestRelatoriosPersonalNaoRenderizaContabil(t *testing.T) {
 		t.Fatalf("ReadFile relatorios.html: %v", err)
 	}
 
-	funcs := template.FuncMap{
+	funcs := withAppShellTestFuncs(template.FuncMap{
 		"sub":             func(a, b int) int { return a - b },
 		"colorStyle":      func(_, _ string) template.CSS { return "" },
 		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
 		"dreMacroValue":   dreMacroValue,
 		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
 		"caixaMacroValue": caixaMacroValue,
-	}
+	})
 
 	tpl := template.Must(template.New("relatorios-contabil-personal").Funcs(funcs).Parse(string(raw)))
 	addAppShellTestStubs(tpl)
@@ -1050,7 +1064,7 @@ func TestRelatoriosPersonalContabilFallbackParaCaixa(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-cont-fb', 'u-cont-fb', 'ADMIN', ?)`, now)
 	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-cont-fb', 'ws-cont-fb', 'Carteira', 'WALLET', 0, 0, ?, ?)`, now, now)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-cont-fb", UserID: "u-cont-fb"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-cont-fb", UserID: "u-cont-fb"}
 	tab := "contabil"
 	if tab != "caixa" && tab != "competencia" && tab != "extrato" && tab != "contabil" {
 		t.Fatal("tab=contabil deveria ser valido")
@@ -1081,7 +1095,7 @@ func TestRelatoriosContabilPreservaMesAno(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-cont-ma', 'u-cont-ma', 'ADMIN', ?)`, now)
 	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-cont-ma', 'ws-cont-ma', 'Conta Biz', 'CHECKING', 500000, 500000, ?, ?)`, now, now)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-cont-ma", UserID: "u-cont-ma"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-cont-ma", UserID: "u-cont-ma"}
 	data, err := handler.buildRelatoriosData("", "contabil", "movimentos", 3, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -1157,7 +1171,7 @@ func TestContabilQueriesNaoIgnoramErroDeScan(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-scn', 'u-scn', 'ADMIN', ?)`, now)
 	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-scn', 'ws-scn', 'Conta Teste', 'CHECKING', 0, 0, ?, ?)`, now, now)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-scn", UserID: "u-scn"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-scn", UserID: "u-scn"}
 	ctx := context.Background()
 	ms := testUnixDate("2026-03-01")
 	me := testUnixDate("2026-03-31")

@@ -54,7 +54,7 @@ func TestHandleExportarCSV_ExtratoMovimentos(t *testing.T) {
 			('csv-pending', 'ws-rpt', 'u-rpt', 'chk-rpt', 'cat-food', 'EXPENSE', 20000, ?, 'Pendente', 'pending', NULL, 1, 1, ?, ?)
 	`, augDate, augDate, time.Now().Unix(), time.Now().Unix(), augDate, augDate, time.Now().Unix(), time.Now().Unix(), augDate, time.Now().Unix(), time.Now().Unix())
 
-	h := &RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt"}
+	h := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt"}
 	req := httptest.NewRequest("GET", "/relatorios/export.csv?tipo=extrato-movimentos&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 	h.HandleExportarCSV(rr, req)
@@ -101,7 +101,7 @@ func TestHandleExportarCSV_ExtratoDiario(t *testing.T) {
 			('csv-ds-exp', 'ws-rpt', 'u-rpt', 'chk-rpt', 'cat-food', 'EXPENSE', 35000, ?, 'Supermercado', 'paid', ?, 1, 1, ?, ?)
 	`, augDate, augDate, time.Now().Unix(), time.Now().Unix(), augDate, augDate, time.Now().Unix(), time.Now().Unix())
 
-	h := &RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt"}
+	h := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt"}
 	req := httptest.NewRequest("GET", "/relatorios/export.csv?tipo=extrato-diario&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 	h.HandleExportarCSV(rr, req)
@@ -137,7 +137,7 @@ func TestHandleExportarCSV_ExtratoMovimentosTransferenciaNeutra(t *testing.T) {
 		VALUES ('csv-transfer', 'ws-rpt', 'u-rpt', 'chk-rpt', 'sav-rpt', 'TRANSFER', 50000, ?, 'Transferencia poupanca', 'paid', ?, 1, 1, ?, ?)
 	`, augDate, augDate, time.Now().Unix(), time.Now().Unix())
 
-	h := &RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt"}
+	h := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt"}
 	req := httptest.NewRequest("GET", "/relatorios/export.csv?tipo=extrato-movimentos&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 	h.HandleExportarCSV(rr, req)
@@ -176,7 +176,7 @@ func TestHandleExportarCSV_ExtratoOutroWorkspaceIsolado(t *testing.T) {
 			('csv-ws2', 'ws-rpt2', 'u-rpt2', 'chk-rpt2', 'cat-other', 'EXPENSE', 99999, ?, 'Despesa WS2', 'paid', ?, 1, 1, ?, ?)
 	`, augDate, augDate, time.Now().Unix(), time.Now().Unix(), augDate, augDate, time.Now().Unix(), time.Now().Unix())
 
-	h := &RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt"}
+	h := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt"}
 	req := httptest.NewRequest("GET", "/relatorios/export.csv?tipo=extrato-movimentos&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 	h.HandleExportarCSV(rr, req)
@@ -194,7 +194,7 @@ func TestHandleExportarCSV_ExtratoPeriodoInvalido(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	h := &RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt"}
+	h := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt"}
 	req := httptest.NewRequest("GET", "/relatorios/export.csv?tipo=extrato-movimentos&mes=99&ano=2026", nil)
 	rr := httptest.NewRecorder()
 	h.HandleExportarCSV(rr, req)
@@ -211,7 +211,7 @@ func TestHandleExportarCSV_SanitizaInjecao(t *testing.T) {
 	defer db.Close()
 
 	// Insere transação maliciosa
-	_, err := db.Exec(`
+	_, err := fixtureHandlerExec(t, db, `
 		INSERT INTO workspaces (id, name) VALUES ('ws1', 'Workspace 1');
 		INSERT INTO users (id, name, email, password_hash) VALUES ('u1', 'User 1', 'u1@example.com', 'hash');
 		INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ('ws1', 'u1', 'ADMIN');
@@ -224,7 +224,7 @@ func TestHandleExportarCSV_SanitizaInjecao(t *testing.T) {
 		t.Fatalf("failed to insert mock data: %v", err)
 	}
 
-	h := &RelatoriosHandler{
+	h := &RelatoriosHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		WorkspaceID: "ws1",
 	}
@@ -300,7 +300,7 @@ func TestHandleExportarCSV_CaixaApenasRealizado(t *testing.T) {
 			('tx-csv-other', 'ws-csv-other', 'u-csv-caixa', 'chk-csv-other', 'cat-csv-other', 'INCOME', 99999, ?, NULL, 'Receita outro WS', 'paid', ?, 1, 1, ?, ?)
 	`, agostoDate, agostoPaid, now, now, agostoDate, now, now, agostoDate, setembroPaid, now, now)
 
-	h := &RelatoriosHandler{DB: db, WorkspaceID: "ws-csv-caixa"}
+	h := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-csv-caixa"}
 	req := httptest.NewRequest("GET", "/relatorios/export.csv?tipo=caixa&ano=2026", nil)
 	rr := httptest.NewRecorder()
 	h.HandleExportarCSV(rr, req)
@@ -344,7 +344,7 @@ func TestHandleExportarCSV_CaixaPrevisaoIncluiPendentePorVencimento(t *testing.T
 			('tx-csv-prev', 'ws-csv-caixa', 'u-csv-caixa', 'chk-csv-caixa', 'cat-csv-food', 'EXPENSE', 25000, ?, ?, 'Despesa prevista agosto', 'pending', NULL, 1, 1, ?, ?)
 	`, julhoDate, agostoDue, now, now)
 
-	h := &RelatoriosHandler{DB: db, WorkspaceID: "ws-csv-caixa"}
+	h := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-csv-caixa"}
 	req := httptest.NewRequest("GET", "/relatorios/export.csv?tipo=caixa&modo=previsao&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 	h.HandleExportarCSV(rr, req)

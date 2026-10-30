@@ -308,6 +308,7 @@ const (
 )
 
 type Transaction struct {
+	EffectMode           string  `json:"effect_mode"`
 	ID                   string  `json:"id"`
 	WorkspaceID          string  `json:"workspace_id"`
 	UserID               string  `json:"user_id"`
@@ -337,6 +338,9 @@ type Transaction struct {
 }
 
 const (
+	TransactionEffectStandard           = "STANDARD"
+	TransactionEffectClassificationOnly = "CLASSIFICATION_ONLY"
+
 	TransactionTypeExpense  = "EXPENSE"
 	TransactionTypeIncome   = "INCOME"
 	TransactionTypeTransfer = "TRANSFER"

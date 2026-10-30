@@ -18,6 +18,8 @@ Os detalhes completos ficam nos guias específicos:
 - [Configuração](configuracao.md)
 - [Atualização](atualizacao.md)
 
+O comportamento de Investimentos na candidata Beta 6 está no [guia do módulo](investimentos.md): a ausência de configuração habilita o módulo por padrão. A candidata local ainda depende dos gates de publicação; instale sempre uma tag já distribuída.
+
 ## Qual opção devo escolher?
 
 | Se você quer... | Escolha no menu |
@@ -144,6 +146,8 @@ Guarde esse token.
 Você vai usar esse token para criar o primeiro usuário administrador.
 
 Depois de criar o primeiro administrador, remova ou comente o token no arquivo de configuração.
+
+O instalador também gera `SECURITY_MASTER_KEY`, usada para cifrar a senha SMTP. Guarde essa chave junto com os demais segredos: ela não tem fallback público e deve ser preservada em atualizações e restaurações. Sem a chave correspondente, uma senha SMTP já cifrada não pode ser lida, embora o restante da aplicação continue disponível.
 
 ## 7. Acesse no navegador
 

@@ -13,7 +13,12 @@
         if (!viewport || !active) return;
 
         window.requestAnimationFrame(function () {
-            var target = Math.max(0, active.offsetLeft - ((viewport.clientWidth - active.offsetWidth) / 2));
+            // offsetLeft is relative to the offsetParent (usually BODY), not to
+            // the scroll viewport. Measure both rects so the active month is
+            // centered on every page that shares this rail.
+            var viewportRect = viewport.getBoundingClientRect();
+            var activeRect = active.getBoundingClientRect();
+            var target = Math.max(0, viewport.scrollLeft + (activeRect.left - viewportRect.left) - ((viewport.clientWidth - activeRect.width) / 2));
             viewport.scrollTo({
                 left: target,
                 behavior: prefersReducedMotion() ? 'auto' : 'smooth'

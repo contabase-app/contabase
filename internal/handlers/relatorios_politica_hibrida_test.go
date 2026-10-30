@@ -43,7 +43,7 @@ func TestRelatoriosPoliticaHibridaKPIsCaixaExcluiPending(t *testing.T) {
 
 	seedPoliticaHibridaScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -60,7 +60,7 @@ func TestRelatoriosPoliticaHibridaCategoriesIncludesPending(t *testing.T) {
 
 	seedPoliticaHibridaScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -89,7 +89,7 @@ func TestRelatoriosPoliticaHibridaDonutCaixaExcluiPending(t *testing.T) {
 
 	seedPoliticaHibridaScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -112,7 +112,7 @@ func TestRelatoriosPoliticaHibridaDREIncludesPending(t *testing.T) {
 
 	seedPoliticaHibridaScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
 
 	raw, err := handler.queryDRERaw(2026)
 	if err != nil {
@@ -163,7 +163,7 @@ func TestRelatoriosPoliticaHibridaRevenueExcludesPending(t *testing.T) {
 
 	seedPoliticaHibridaScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
 
 	monthStart := testUnixDate("2026-08-01")
 	monthEnd := lastSecondOfMonth(2026, 8)
@@ -190,7 +190,7 @@ func TestRelatoriosPoliticaHibridaCashflowExcludesPending(t *testing.T) {
 
 	seedPoliticaHibridaScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
 
 	monthStart := testUnixDate("2026-08-01")
 	monthEnd := lastSecondOfMonth(2026, 8)
@@ -215,7 +215,7 @@ func TestRelatoriosPoliticaHibridaTransfersExcludedFromKPIs(t *testing.T) {
 
 	seedPoliticaHibridaScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-hib", UserID: "u-hib"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -249,7 +249,7 @@ func TestRelatoriosPoliticaHibridaInvoicePaymentExcludedFromCompetence(t *testin
 	execTestSQL(t, db, `INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, invoice_id, type, amount, date, description, status, created_at, updated_at) VALUES ('pay-card', 'ws-card', 'u-card', 'chk-card', NULL, NULL, 'EXPENSE', 30000, ?, ?, 'paid', ?, ?)`, paymentDate, invoicePaymentDescription("Cartao"), now, now)
 	execTestSQL(t, db, `INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, transaction_id, amount_cents, paid_at, source, created_by, created_at) VALUES ('pay-card-row', 'ws-card', 'inv-card', 'chk-card', 'pay-card', 30000, ?, 'manual', 'u-card', ?)`, paymentDate, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-card", UserID: "u-card"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-card", UserID: "u-card"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)

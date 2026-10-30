@@ -11,7 +11,7 @@ func TestMetasCaixinhaSimpleProjectionLabels(t *testing.T) {
 	defer db.Close()
 	seedCaixinhaProjectionScenario(t, db)
 
-	handler := MetasHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+	handler := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
 	data, err := handler.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)

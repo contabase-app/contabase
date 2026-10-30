@@ -1,57 +1,65 @@
-/* Regras exclusivas do conteúdo do Dashboard. O shell compartilhado está em app-shell.css. */
+/*
+ * Dashboard — Minimal Financial SaaS
+ *
+ * The page is intentionally built from a small set of surfaces: one summary
+ * surface, two data surfaces (accounts and cards) and three action surfaces.
+ * Inner boxes were removed; grouping is carried by spacing, alignment and
+ * hairlines. All values and links come from the existing viewmodel.
+ */
 
 .cb-v2-content {
-    width: min(1400px, 100%);
+    width: min(1360px, 100%);
     margin: 0 auto;
-    padding-top: 28px;
+    padding-top: 18px;
 }
+
+/* --- Page heading ------------------------------------------------------- */
 
 .cb-v2-heading-row {
     display: flex;
-    align-items: flex-start;
+    align-items: flex-end;
     justify-content: space-between;
-    gap: 24px;
-    margin-bottom: 24px;
+    gap: 28px;
+    margin-bottom: 14px;
+}
+
+.cb-v2-heading-copy {
+    min-width: 0;
+}
+
+.cb-v2-heading-meta {
+    margin: 0 0 5px;
+    color: var(--v2-subtle);
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
 }
 
 .cb-v2-heading-row h1 {
     margin: 0;
     color: var(--v2-text);
     font-size: 23px;
-    font-weight: 640;
-    letter-spacing: -0.028em;
-    line-height: 1.2;
+    font-weight: 680;
+    letter-spacing: -0.032em;
+    line-height: 1.15;
     text-wrap: balance;
 }
 
-.cb-v2-heading-row > div > p:last-child {
-    max-width: 55ch;
-    margin: 7px 0 0;
+.cb-v2-heading-row > .cb-v2-heading-copy > p:last-child {
+    max-width: 62ch;
+    margin: 6px 0 0;
     color: var(--v2-muted);
     font-size: 13px;
     line-height: 1.5;
-}
-
-.cb-v2-quick-actions {
-    display: grid;
-    gap: 6px;
-    justify-items: end;
-}
-
-.cb-v2-quick-label {
-    margin: 0;
-    color: var(--v2-subtle);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
 }
 
 .cb-v2-context-actions {
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
-    gap: 6px;
+    gap: 2px;
 }
 
 .cb-v2-context-actions a {
@@ -60,55 +68,73 @@
     align-items: center;
     justify-content: center;
     gap: 7px;
-    padding: 0 12px;
+    padding: 0 10px;
     border: 1px solid transparent;
-    border-radius: 9px;
-    background: var(--v2-detail-surface);
-    color: var(--v2-text);
+    border-radius: 8px;
+    color: var(--v2-muted);
     font-size: 12px;
     font-weight: 600;
-    transition: border-color 180ms ease, background-color 180ms ease;
+    transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
 .cb-v2-context-actions a:hover {
-    border-color: var(--v2-border-strong);
-    background: var(--v2-surface-hover);
+    border-color: var(--v2-border);
+    background: var(--v2-surface);
+    color: var(--v2-text);
 }
 
 .cb-v2-context-actions svg {
     width: 15px;
     height: 15px;
+    color: var(--v2-subtle);
+    transition: color 160ms ease;
+}
+
+.cb-v2-context-actions a:hover svg {
     color: var(--v2-accent);
 }
 
-.cb-v2-context-actions a:nth-child(2) svg { color: var(--v2-positive); }
-.cb-v2-context-actions a:nth-child(3) svg { color: var(--v2-info); }
-.cb-v2-context-actions a:nth-child(4) svg { color: var(--v2-warning); }
+/* --- Layout ------------------------------------------------------------- */
 
 .cb-v2-grid {
     display: grid;
-    grid-template-columns: minmax(276px, 0.82fr) minmax(0, 1.58fr);
-    gap: 18px;
-    align-items: start;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: 16px;
+    align-items: stretch;
 }
 
 .cb-v2-left-column,
 .cb-v2-right-column {
     display: grid;
-    gap: 18px;
+    gap: 16px;
     min-width: 0;
+    align-content: start;
 }
 
+.cb-v2-bottom-grid {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.82fr) minmax(0, 1.35fr);
+    gap: 16px;
+    align-items: start;
+}
+
+/* --- Shared surface ----------------------------------------------------- */
+
 .cb-v2-panel,
-.cb-v2-credit-card,
-.cb-v2-empty-card {
+.cb-v2-card-section {
+    min-width: 0;
     border: 1px solid var(--v2-border);
-    border-radius: 13px;
+    border-radius: 14px;
     background: var(--v2-surface);
 }
 
 .cb-v2-panel {
-    padding: 18px;
+    padding: 16px;
+}
+
+.cb-v2-card-section {
+    padding: 16px;
 }
 
 .cb-v2-panel-header,
@@ -124,17 +150,17 @@
 .cb-v2-section-heading h2 {
     margin: 0;
     color: var(--v2-text);
-    font-size: 16px;
-    font-weight: 680;
-    letter-spacing: -0.018em;
+    font-size: 14.5px;
+    font-weight: 660;
+    letter-spacing: -0.014em;
 }
 
 .cb-v2-panel-header > a:not(.cb-v2-text-link) {
     display: grid;
-    width: 30px;
-    height: 30px;
+    width: 28px;
+    height: 28px;
     place-items: center;
-    border-radius: 8px;
+    border-radius: 7px;
     color: var(--v2-muted);
 }
 
@@ -144,15 +170,28 @@
 }
 
 .cb-v2-panel-header > a:not(.cb-v2-text-link) svg {
-    width: 16px;
-    height: 16px;
+    width: 15px;
+    height: 15px;
 }
 
 .cb-v2-text-link,
 .cb-v2-section-heading > a {
-    color: var(--v2-accent);
-    font-size: 12px;
-    font-weight: 620;
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+    gap: 4px;
+    margin-block: -7px;
+    padding-block: 7px;
+    color: var(--v2-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: color 160ms ease;
+}
+
+.cb-v2-text-link svg {
+    width: 12px;
+    height: 12px;
 }
 
 .cb-v2-text-link:hover,
@@ -160,20 +199,53 @@
     color: var(--v2-accent-strong);
 }
 
+.cb-v2-count {
+    display: inline-grid;
+    min-width: 19px;
+    height: 19px;
+    margin-left: 4px;
+    padding: 0 6px;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--v2-surface-2);
+    color: var(--v2-subtle);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 650;
+    vertical-align: 1px;
+}
+
+/* --- Financial summary -------------------------------------------------- */
+
+.cb-v2-financial-panel {
+    grid-column: 1 / -1;
+    padding: 16px 18px;
+}
+
+.cb-v2-financial-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.9fr);
+    gap: 34px;
+    align-items: center;
+    margin-top: 9px;
+}
+
 .cb-v2-label {
-    margin: 26px 0 5px;
+    margin: 0 0 3px;
     color: var(--v2-muted);
-    font-size: 13px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.015em;
 }
 
 .cb-v2-balance {
     margin: 0;
-    color: var(--v2-positive);
-    font-size: 42px;
+    color: var(--v2-text);
+    font-size: 38px;
     font-variant-numeric: tabular-nums;
-    font-weight: 740;
-    letter-spacing: -0.05em;
-    line-height: 1;
+    font-weight: 730;
+    letter-spacing: -0.055em;
+    line-height: 1.05;
     overflow-wrap: anywhere;
 }
 
@@ -186,21 +258,54 @@
     color: var(--v2-positive);
 }
 
+.cb-v2-trend {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 9px;
+    color: var(--v2-subtle);
+    font-size: 11.5px;
+}
+
+.cb-v2-trend strong {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: var(--v2-surface-2);
+    color: var(--v2-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 650;
+}
+
+.cb-v2-trend.is-positive strong {
+    background: color-mix(in srgb, var(--v2-positive) 11%, transparent);
+    color: var(--v2-positive);
+}
+
+.cb-v2-trend.is-negative strong {
+    background: color-mix(in srgb, var(--v2-danger) 11%, transparent);
+    color: var(--v2-danger);
+}
+
 .cb-v2-balance-breakdown {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-    margin-top: 20px;
+    gap: 0;
+    border-left: 1px solid var(--v2-border);
 }
 
 .cb-v2-balance-breakdown > div {
     display: grid;
-    gap: 5px;
+    gap: 3px;
     min-width: 0;
-    padding: 11px;
-    border: 1px solid var(--v2-border);
-    border-radius: 9px;
-    background: var(--v2-detail-surface);
+    padding: 2px 0 2px 24px;
+}
+
+.cb-v2-balance-breakdown > div + div {
+    border-left: 1px solid var(--v2-border);
+    padding-left: 24px;
 }
 
 .cb-v2-balance-breakdown span {
@@ -210,52 +315,58 @@
     gap: 6px;
     color: var(--v2-muted);
     font-size: 11px;
+    font-weight: 600;
 }
 
 .cb-v2-balance-breakdown svg {
     width: 13px;
     height: 13px;
+    color: var(--v2-subtle);
 }
 
 .cb-v2-balance-breakdown strong {
     overflow-wrap: anywhere;
     color: var(--v2-text);
-    font-size: 14px;
+    font-size: 18px;
     font-variant-numeric: tabular-nums;
-    font-weight: 650;
+    font-weight: 690;
+    letter-spacing: -0.025em;
 }
 
-.cb-v2-trend {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 17px;
-    color: var(--v2-muted);
-    font-size: 12px;
+.cb-v2-balance-breakdown small {
+    overflow: hidden;
+    color: var(--v2-subtle);
+    font-size: 10.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.cb-v2-trend strong {
-    color: var(--v2-text);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-}
-
-.cb-v2-trend.is-positive strong { color: var(--v2-positive); }
-.cb-v2-trend.is-negative strong { color: var(--v2-danger); }
+/* --- Accounts ----------------------------------------------------------- */
 
 .cb-v2-account-list {
     display: grid;
-    margin-top: 10px;
+    margin-top: 7px;
 }
 
 .cb-v2-account-row {
     display: grid;
-    grid-template-columns: 38px minmax(0, 1fr) minmax(108px, auto);
-    gap: 12px;
+    grid-template-columns: 32px minmax(0, 1fr) minmax(86px, auto);
+    gap: 10px;
     align-items: center;
-    padding: 11px 0;
-    border-top: 1px solid var(--v2-border);
+    min-width: 0;
+    padding: 8px;
+    margin-inline: -8px;
+    border-bottom: 1px solid var(--v2-border);
+    border-radius: 7px;
+    transition: background-color 160ms ease;
+}
+
+.cb-v2-account-row:last-child {
+    border-bottom: 0;
+}
+
+.cb-v2-account-row:hover {
+    background: var(--v2-surface-hover);
 }
 
 .cb-v2-account-row:hover .cb-v2-account-copy strong,
@@ -265,15 +376,15 @@
 
 .cb-v2-provider-mark {
     display: grid;
-    width: 36px;
-    height: 36px;
+    width: 30px;
+    height: 30px;
     place-items: center;
     overflow: hidden;
     border-radius: 8px;
     background: var(--v2-provider, var(--v2-accent));
     color: #fff;
-    padding: 3px;
-    font-size: 9px;
+    padding: 2px;
+    font-size: 8px;
     font-weight: 760;
     line-height: 1;
     letter-spacing: -0.04em;
@@ -288,25 +399,25 @@
 .cb-v2-account-amount {
     display: grid;
     min-width: 0;
-    gap: 2px;
+    gap: 1px;
 }
 
 .cb-v2-account-copy strong,
 .cb-v2-account-amount strong {
     overflow: hidden;
     color: var(--v2-text);
-    font-size: 14px;
-    font-weight: 630;
+    font-size: 12.5px;
+    font-weight: 620;
     text-overflow: ellipsis;
     white-space: nowrap;
-    transition: color 180ms ease;
+    transition: color 160ms ease;
 }
 
 .cb-v2-account-copy small,
 .cb-v2-account-amount small {
     overflow: hidden;
     color: var(--v2-subtle);
-    font-size: 11px;
+    font-size: 10px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -327,731 +438,208 @@
     white-space: normal;
 }
 
-.cb-v2-card-section {
-    min-width: 0;
-    overflow: hidden;
-}
-
-.cb-v2-section-heading {
-    margin: 2px 0 10px;
-}
+/* --- Cards and invoices -------------------------------------------------
+   The Faturas hub composition (section chrome, rail, carousel and card tile)
+   lives in faturas-index.css. Shared card foundations live in credit-cards.css. */
 
 .cb-v2-section-tools {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
 }
 
-.cb-v2-carousel-controls {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-}
-
-.cb-v2-carousel-control {
-    display: grid;
-    width: 28px;
-    height: 28px;
-    place-items: center;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--v2-muted);
-    cursor: pointer;
-    transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
-}
-
-.cb-v2-carousel-control:hover:not(:disabled) {
-    border-color: var(--v2-border-strong);
-    background: var(--v2-surface-hover);
-    color: var(--v2-text);
-}
-
-.cb-v2-carousel-control:disabled {
-    color: var(--v2-subtle);
-    cursor: default;
-    opacity: 0.5;
-}
-
-.cb-v2-carousel-control svg {
-    width: 17px;
-    height: 17px;
-}
-
-.cb-v2-card-carousel {
-    min-width: 0;
-    /*
-     * Quantidade de cartões inteiramente visíveis por vez. O trilho nunca
-     * mostra cartão cortado ao meio: o corte passa a ser intencional.
-     * Cada cartão completo precisa de ~300px para que fatura, vencimento e
-     * limite disponível continuem legíveis.
-     */
-    --cb-cards-visible: 1;
-    --cb-cards-gap: 12px;
-    /* Sliver do PRÓXIMO cartão efetivamente visível no trilho da Home (o vão
-       antes do cartão espiado já é descontado na largura do cartão). Fica no
-       meio da faixa aceitável (24–40px): menor vira clipping acidental. */
-    --cb-cards-peek: 28px;
-}
-
-.cb-v2-card-rail {
-    display: flex;
-    gap: var(--cb-cards-gap, 12px);
-    overflow-x: auto;
-    padding: 1px 1px 8px;
-    scroll-padding-inline: 1px;
-    scroll-snap-type: inline mandatory;
-    scrollbar-width: none;
-}
-
-.cb-v2-card-rail::-webkit-scrollbar { display: none; }
-
-.cb-v2-credit-card {
-    position: relative;
-    display: grid;
-    min-width: min(306px, 90%);
-    flex: 1 0 min(306px, 90%);
-    gap: 16px;
-    isolation: isolate;
-    overflow: hidden;
-    border-color: color-mix(in srgb, var(--v2-provider) 28%, var(--v2-border));
-    padding: 17px;
-    scroll-snap-align: start;
-    transition: border-color 180ms ease, background-color 180ms ease;
-}
-
-.cb-v2-credit-card::before {
-    position: absolute;
-    top: -44px;
-    right: -54px;
-    z-index: 0;
-    width: 172px;
-    height: 126px;
-    border-radius: 50%;
-    background: var(--v2-provider);
-    content: "";
-    filter: blur(32px);
-    opacity: 0.22;
-    pointer-events: none;
-}
-
-.cb-v2-credit-card > span {
-    position: relative;
-    z-index: 1;
-}
-
-.cb-v2-credit-card:hover {
-    border-color: color-mix(in srgb, var(--v2-provider) 48%, var(--v2-border));
-    background: var(--v2-surface-hover);
-}
-
-/*
- * Visual físico experimental. Todo o redesenho está isolado neste modificador;
- * remover `cb-v2-credit-card--physical` do template restaura o card anterior.
- */
-.cb-v2-credit-card-status {
-    display: none;
-}
-
-.cb-v2-credit-card--physical {
-    --cb-card-surface: color-mix(in srgb, var(--v2-provider) 56%, #0b1018);
-    --cb-card-edge: color-mix(in srgb, var(--v2-provider) 58%, rgba(255, 255, 255, 0.28));
-    aspect-ratio: 1.586 / 1;
-    width: min(326px, 92%);
-    min-width: min(326px, 92%);
-    max-width: 326px;
-    flex: 0 0 min(326px, 92%);
-    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
-    gap: 8px;
-    border-color: var(--cb-card-edge);
-    border-radius: 15px;
-    background: var(--cb-card-surface);
-    box-shadow: 0 5px 8px rgba(0, 0, 0, 0.2);
-    color: #fff;
-    padding: 16px 17px 15px;
-    transform: translateY(0);
-    transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* Superfície tonal: cada cartão herda uma nuance controlada da sua cor. */
-.cb-v2-credit-card--tonal {
-    --cb-card-surface: color-mix(in srgb, var(--v2-provider) 68%, #0b1018);
-    --cb-card-edge: color-mix(in srgb, var(--v2-provider) 82%, #dbeafe);
-    border-color: var(--cb-card-edge);
-    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.28);
-    color: #fff;
-    transition: none;
-}
-
-.cb-v2-credit-card--physical.cb-v2-credit-card--tonal::before,
-.cb-v2-credit-card--physical.cb-v2-credit-card--tonal::after {
-    content: none;
-}
-
-.cb-v2-credit-card--physical.cb-v2-credit-card--tonal:hover {
-    border-color: var(--cb-card-edge);
-    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.18);
-    transform: none;
-}
-
-html[data-theme="light"] .cb-v2-credit-card--tonal {
-    --cb-card-surface: color-mix(in srgb, var(--v2-provider) 76%, #111827);
-    --cb-card-edge: color-mix(in srgb, var(--v2-provider) 86%, #ffffff);
-    color: #fff;
-    box-shadow: 0 3px 6px rgba(23, 32, 51, 0.2);
-}
-
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal:hover {
-    border-color: var(--cb-card-edge);
-    box-shadow: 0 3px 6px rgba(23, 32, 51, 0.08);
-}
-
-html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-provider-mark {
-    border-color: rgba(255, 255, 255, 0.34);
-    background: rgba(255, 255, 255, 0.14);
-    color: #fff;
-}
-
-html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-top > strong,
-html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-data strong,
-html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-limit strong {
-    color: #fff;
-}
-
-html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-status > small,
-html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-data small,
-html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-limit small {
-    color: rgba(255, 255, 255, 0.72);
-}
-
-html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-open > strong { color: #7dd3fc; }
-html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-closed > strong { color: #fcd34d; }
-html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-paid > strong { color: #6ee7b7; }
-html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-overdue > strong { color: #fda4af; }
-
-html[data-theme="light"] .cb-v2-credit-card--tonal .cb-v2-credit-card-data {
-    border-top-color: color-mix(in srgb, var(--v2-text) 14%, transparent);
-}
-
-html[data-theme="light"] .cb-v2-credit-card--tonal > .cb-v2-progress {
-    --cb-v2-progress-track: color-mix(in srgb, var(--v2-text) 14%, transparent);
-}
-
-html[data-theme="light"] .cb-v2-credit-card--tonal > .cb-v2-progress {
-    --cb-v2-progress-value: var(--v2-provider);
-}
-
-.cb-v2-credit-card--physical::before {
-    top: auto;
-    right: -40px;
-    bottom: -52px;
-    width: 210px;
-    height: 150px;
-    background: var(--v2-provider);
-    filter: blur(36px);
-    opacity: 0.34;
-}
-
-.cb-v2-credit-card--physical::after {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    border-radius: inherit;
-    background:
-        radial-gradient(circle at 14% 8%, rgba(255, 255, 255, 0.16), transparent 34%),
-        linear-gradient(118deg, rgba(255, 255, 255, 0.08), transparent 32%, rgba(255, 255, 255, 0.035) 55%, transparent 72%);
-    content: "";
-    pointer-events: none;
-}
-
-.cb-v2-credit-card--physical:hover {
-    border-color: color-mix(in srgb, var(--v2-provider) 74%, rgba(255, 255, 255, 0.38));
-    background: var(--cb-card-surface);
-    box-shadow: 0 7px 8px rgba(0, 0, 0, 0.25);
-    transform: translateY(-2px);
-}
-
-.cb-v2-credit-card--physical:focus-visible {
-    outline: 3px solid color-mix(in srgb, var(--v2-provider) 55%, #fff);
-    outline-offset: 3px;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-top {
-    display: grid;
-    grid-template-areas: "mark name number";
-    grid-template-columns: 32px minmax(0, 1fr) minmax(74px, 104px);
-    align-items: center;
-    gap: 10px;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-top > strong {
-    grid-area: name;
-    color: #fff;
-    font-size: 14px;
-    font-weight: 680;
-    letter-spacing: 0.015em;
-}
-
-.cb-v2-credit-card--physical .cb-v2-provider-mark {
-    grid-area: mark;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: rgba(255, 255, 255, 0.14);
-    color: #fff;
-}
-
-.cb-v2-credit-card--physical .cb-v2-provider-mark--image {
-    padding: 0;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-status {
-    display: grid;
-    grid-area: number;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    justify-items: end;
-    gap: 1px 5px;
-    min-width: 0;
-    text-align: right;
-}
-
-/* Marcador de status: cor sempre acompanha o rótulo, nunca sozinha. */
-.cb-v2-credit-card-dot {
-    grid-row: 1;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-status > strong { grid-row: 1; }
-.cb-v2-credit-card--physical .cb-v2-credit-card-status > small {
-    grid-row: 2;
-    grid-column: 2;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-status > strong,
-.cb-v2-credit-card--physical .cb-v2-credit-card-status > small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-open .cb-v2-credit-card-dot { background: #38bdf8; }
-.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-closed .cb-v2-credit-card-dot { background: #fbbf24; }
-.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-paid .cb-v2-credit-card-dot { background: #34d399; }
-.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-overdue .cb-v2-credit-card-dot { background: #fb7185; }
-
-/* Percentual disponível: reforça a leitura da barra sem alterar o cálculo. */
-.cb-v2-credit-card--physical .cb-v2-card-usage {
-    margin: 0;
-    color: rgba(255, 255, 255, 0.68);
-    font-size: 9px;
-    font-weight: 620;
-    letter-spacing: 0.02em;
-    text-align: right;
-}
-
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-card-usage {
-    color: #607087;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-status > strong {
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 14px;
-    font-weight: 720;
-    letter-spacing: 0.01em;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-status > small {
-    color: rgba(255, 255, 255, 0.63);
-    font-size: 10px;
-    font-weight: 560;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-open > strong { color: #38bdf8; }
-.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-closed > strong { color: #fbbf24; }
-.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-paid > strong { color: #34d399; }
-.cb-v2-credit-card--physical .cb-v2-credit-card-status.is-overdue > strong { color: #fb7185; }
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-data {
-    align-self: stretch;
-    align-items: center;
-    padding-top: 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-data > span:last-child {
-    text-align: right;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-data small,
-.cb-v2-credit-card--physical .cb-v2-credit-card-limit small {
-    color: rgba(255, 255, 255, 0.68);
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-data strong {
-    overflow: visible;
-    color: #fff;
-    font-size: 19px;
-    font-weight: 710;
-    letter-spacing: -0.02em;
-    overflow-wrap: anywhere;
-    text-overflow: clip;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-data > span:last-child strong {
-    font-size: 13px;
-    letter-spacing: 0;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-limit {
-    gap: 10px;
-}
-
-.cb-v2-credit-card--physical .cb-v2-credit-card-limit strong {
-    overflow: visible;
-    color: #fff;
-    font-size: 12px;
-    overflow-wrap: anywhere;
-    text-overflow: clip;
-}
-
-.cb-v2-credit-card--physical > .cb-v2-progress {
-    height: 4px;
-    --cb-v2-progress-track: color-mix(in srgb, #fff 28%, var(--cb-card-surface));
-}
-
-.cb-v2-credit-card--physical > .cb-v2-progress {
-    --cb-v2-progress-value: color-mix(in srgb, var(--v2-provider) 68%, #fff);
-}
-
-html[data-theme="light"] .cb-v2-credit-card--physical > .cb-v2-progress {
-    --cb-v2-progress-track: rgba(255, 255, 255, 0.24);
-    --cb-v2-progress-value: color-mix(in srgb, var(--v2-provider) 68%, #fff);
-}
-
-html[data-theme="light"] .cb-v2-credit-card--physical .cb-v2-credit-card-data {
-    border-top-color: rgba(255, 255, 255, 0.24);
-}
-
-/*
- * Cartões: superfície náutica comum, com a identidade do emissor restrita à
- * bandeira e ao brilho ambiente. Isso evita que a cor do banco concorra com
- * os dados financeiros, mas mantém cada cartão reconhecível no carrossel.
- */
-.cb-v2-credit-card--physical.cb-v2-credit-card--tonal {
-    --cb-card-surface: #171f2c;
-    --cb-card-edge: #344156;
-    border-color: var(--cb-card-edge);
-    background: var(--cb-card-surface);
-    box-shadow: 0 3px 6px rgba(2, 6, 23, 0.34);
-}
-
-.cb-v2-credit-card--physical.cb-v2-credit-card--tonal::before {
-    top: -42px;
-    right: -54px;
-    bottom: auto;
-    width: 172px;
-    height: 126px;
-    background: var(--v2-provider);
-    content: "";
-    filter: blur(34px);
-    opacity: 0.16;
-}
-
-.cb-v2-credit-card--physical.cb-v2-credit-card--tonal::after {
-    content: none;
-}
-
-.cb-v2-credit-card--physical.cb-v2-credit-card--tonal:hover {
-    border-color: var(--cb-card-edge);
-    background: var(--cb-card-surface);
-    box-shadow: 0 3px 6px rgba(2, 6, 23, 0.34);
-    transform: none;
-}
-
-.cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-provider-mark {
-    border-color: color-mix(in srgb, var(--v2-provider) 74%, rgba(255, 255, 255, 0.52));
-    background: var(--v2-provider);
-    color: #fff;
-}
-
-.cb-v2-credit-card--physical.cb-v2-credit-card--tonal > .cb-v2-progress {
-    --cb-v2-progress-track: rgba(255, 255, 255, 0.18);
-    --cb-v2-progress-value: var(--v2-accent);
-}
-
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal {
-    --cb-card-surface: #f8fafc;
-    --cb-card-edge: #cbd6e3;
-    color: #172033;
-    box-shadow: 0 2px 6px rgba(23, 32, 51, 0.1);
-}
-
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal:hover {
-    border-color: var(--cb-card-edge);
-    box-shadow: 0 2px 6px rgba(23, 32, 51, 0.1);
-}
-
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal::before {
-    opacity: 0.1;
-}
-
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-top > strong,
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-data strong,
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-limit strong {
-    color: #172033;
-}
-
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-status > small,
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-data small,
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-limit small {
-    color: #607087;
-}
-
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-open > strong { color: #0f7490; }
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-closed > strong { color: #a16207; }
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-paid > strong { color: #047857; }
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-status.is-overdue > strong { color: #be123c; }
-
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-credit-card-data {
-    border-top-color: #dbe3ed;
-}
-
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal > .cb-v2-progress {
-    --cb-v2-progress-track: #e2e8f0;
-}
-
-.cb-v2-credit-card-top,
-.cb-v2-credit-card-data,
-.cb-v2-credit-card-limit {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 16px;
-}
-
-.cb-v2-credit-card-top > strong {
-    overflow: hidden;
-    color: var(--v2-text);
-    font-size: 16px;
-    font-weight: 680;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.cb-v2-credit-card-top .cb-v2-provider-mark {
-    width: 32px;
-    height: 32px;
-    padding: 2px;
-    font-size: 8px;
-    flex: 0 0 auto;
-}
-
-.cb-v2-credit-card-data > span,
-.cb-v2-credit-card-limit {
-    display: grid;
-    min-width: 0;
-    gap: 4px;
-}
-
-.cb-v2-credit-card-data small,
-.cb-v2-credit-card-limit small {
-    color: var(--v2-muted);
-    font-size: 11px;
-}
-
-.cb-v2-credit-card-data strong {
-    color: var(--v2-text);
-    font-size: 17px;
-    font-variant-numeric: tabular-nums;
-    font-weight: 670;
-}
-
-.cb-v2-credit-card-limit {
-    grid-template-columns: 1fr auto;
-    align-items: center;
-}
-
-.cb-v2-credit-card-limit strong {
-    color: var(--v2-text);
-    font-size: 13px;
-    font-variant-numeric: tabular-nums;
-    font-weight: 630;
-}
-
-.cb-v2-progress {
-    display: block;
-    width: 100%;
-    height: 4px;
-    margin: 0;
-    overflow: hidden;
-    appearance: none;
-    -webkit-appearance: none;
-    border: 0;
-    border-radius: 3px;
-    background: var(--cb-v2-progress-track, var(--v2-progress-track));
-    --cb-v2-progress-track: var(--v2-progress-track);
-    --cb-v2-progress-value: var(--v2-accent);
-}
-
-.cb-v2-progress::-webkit-progress-bar {
-    background: var(--cb-v2-progress-track);
-    border-radius: inherit;
-}
-
-.cb-v2-progress::-webkit-progress-value {
-    background: var(--cb-v2-progress-value);
-    border-radius: inherit;
-}
-
-.cb-v2-progress::-moz-progress-bar {
-    background: var(--cb-v2-progress-value);
-    border-radius: inherit;
-}
-
-.cb-v2-credit-card .cb-v2-progress {
-    --cb-v2-progress-value: var(--v2-provider);
-}
-
-/* Mantém a barra e a bandeira independentes da cor de fundo do emissor. */
-.cb-v2-credit-card--physical.cb-v2-credit-card--tonal > .cb-v2-progress,
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal > .cb-v2-progress {
-    --cb-v2-progress-value: var(--v2-accent);
-}
-
-html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .cb-v2-provider-mark {
-    border-color: color-mix(in srgb, var(--v2-provider) 74%, rgba(255, 255, 255, 0.52));
-    background: var(--v2-provider);
-    color: #fff;
-}
-
-.cb-v2-progress.is-danger { --cb-v2-progress-value: var(--v2-danger); }
-.cb-v2-progress.is-warning { --cb-v2-progress-value: var(--v2-warning); }
-
-.cb-v2-carousel-dots {
-    display: flex;
-    justify-content: center;
-    gap: 5px;
-}
-
-.cb-v2-carousel-dots span {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--v2-border-strong);
-    transition: width 180ms ease, background-color 180ms ease;
-}
-
-.cb-v2-carousel-dots span.is-active {
-    width: 13px;
-    border-radius: 4px;
-    background: var(--v2-accent);
-}
-
-/* Acesso a "Ver todos os Cartões" é exclusivo do mobile: no desktop o trilho
-   horizontal já expõe todos os cartões. */
 .cb-v2-all-invoices-slide {
     display: none;
 }
 
-/* Na Home o cartão ocupa uma fração do trilho e deixa um sliver do próximo
-   visível (`--cb-cards-peek`, ver `.cb-v2-card-carousel`): duas ou mais
-   colunas quando há largura, com o corte do próximo sinalizando que o trilho
-   continua. A página de faturas mantém o dimensionamento anterior.
-   O vão antes do cartão espiado entra na conta (`visible * gap`): sem ele o
-   sliver real fica `peek - gap` e o corte parece defeito em vez de continuação. */
-[data-dashboard] .cb-v2-card-section .cb-v2-card-rail > .cb-v2-credit-card--physical {
-    width: auto;
-    min-width: 0;
-    max-width: none;
-    flex: 0 0 calc((100% - var(--cb-cards-visible, 2) * var(--cb-cards-gap, 12px) - var(--cb-cards-peek, 32px)) / var(--cb-cards-visible, 2));
-    /* Prioridade é legibilidade: no recorte da Home o cartão cresce conforme o
-       conteúdo em vez de ser espremido na proporção de um cartão físico. */
-    aspect-ratio: auto;
-    min-height: 190px;
+/* --- Next actions ------------------------------------------------------- */
+
+.cb-v2-tabs {
+    display: inline-flex;
+    gap: 4px;
+    margin: 10px 0 4px;
+    padding: 4px;
+    border: var(--ui-border-width) solid var(--ui-border);
+    border-radius: var(--ui-radius-tab);
+    background: var(--ui-tab-bg);
 }
 
-/* A quantidade depende da largura REAL da coluna, inclusive com a sidebar
-   aberta: cada cartão completo precisa de ~300px, mais os vãos e o sliver. */
-[data-dashboard] .cb-v2-card-section {
-    container-type: inline-size;
-    container-name: cb-home-cards;
+.cb-v2-tabs button {
+    display: inline-flex;
+    min-height: 34px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius-tab-item);
+    background: transparent;
+    color: var(--ui-text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 620;
+    transition: background-color var(--ui-transition), border-color var(--ui-transition), color var(--ui-transition);
 }
 
-[data-dashboard] .cb-v2-credit-card--physical .cb-v2-credit-card-top > strong {
-    white-space: normal;
-    overflow-wrap: anywhere;
+.cb-v2-tabs button:hover {
+    background: var(--ui-surface-hover);
+    color: var(--ui-text);
 }
 
-@media (min-width: 768px) {
-    /* 2 cartões: 2x~296px + 2 vãos + sliver + padding do trilho ≈ 636px.
-       O corte é pela largura REAL do trilho, não pelo viewport: com a sidebar
-       aberta isso dispara a partir de ~1334px de viewport, o que cobre 1366
-       (trilho 645px) e 1440 (trilho 694px). */
-    @container cb-home-cards (min-width: 636px) {
-        [data-dashboard] .cb-v2-card-carousel { --cb-cards-visible: 2; }
-    }
-    /* 3 cartões exigiriam ~893px de trilho; como a seção satura em ~910px só
-       haveria 3 colunas de ~283px, abaixo do piso de legibilidade. */
-    @container cb-home-cards (min-width: 1076px) {
-        [data-dashboard] .cb-v2-card-carousel { --cb-cards-visible: 3; }
-    }
-    /* Cartão único: não estica até ocupar o trilho inteiro — mantém a largura
-       canônica que ele teria ao lado de outros cartões. */
-    [data-dashboard] .cb-v2-card-section .cb-v2-card-rail > .cb-v2-credit-card--physical:only-child {
-        flex-basis: min(100%, 430px);
-        max-width: min(100%, 430px);
-    }
-    /* Sem segundo cartão não há o que navegar: setas (no cabeçalho da seção) e
-       dots (dentro do carrossel) ficam inúteis. */
-    [data-dashboard] .cb-v2-card-section:has(.cb-v2-card-rail > .cb-v2-credit-card:only-child) .cb-v2-carousel-controls,
-    [data-dashboard] .cb-v2-card-section:has(.cb-v2-card-rail > .cb-v2-credit-card:only-child) .cb-v2-carousel-dots {
-        display: none;
-    }
-
-    /* Respiro vertical do cartão na Home. O componente é o mesmo do hub de
-       faturas, então o ajuste fica escopado no Dashboard: incremento pequeno
-       (+2px) no vão e no padding, sem tocar em tipografia nem na barra.
-       O vão entre a linha de topo e o divisor é o próprio `gap` da grade. */
-    [data-dashboard] .cb-v2-card-section .cb-v2-credit-card--physical {
-        gap: 10px;
-        padding: 18px 17px 17px;
-    }
-
-    /* Do divisor até o rótulo "Fatura atual". */
-    [data-dashboard] .cb-v2-card-section .cb-v2-credit-card--physical .cb-v2-credit-card-data {
-        padding-top: 14px;
-    }
+.cb-v2-tabs button:focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
 }
 
-.cb-v2-metrics-grid {
+.cb-v2-tabs button[aria-selected="true"] {
+    border-color: var(--ui-tab-active-border);
+    background: var(--ui-tab-active-bg);
+    color: var(--ui-tab-active-fg);
+    box-shadow: inset 0 1px 0 #ffffff14;
+}
+
+.cb-v2-tabs button > span {
+    display: inline-grid;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    place-items: center;
+    border-radius: var(--ui-radius-badge);
+    background: var(--ui-surface);
+    color: var(--ui-text-subtle);
+    font-size: 9.5px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 650;
+}
+
+.cb-v2-tabs button[aria-selected="true"] > span {
+    background: color-mix(in srgb, var(--ui-accent) 14%, var(--ui-surface));
+    color: var(--ui-tab-active-fg);
+}
+
+.cb-v2-action-total {
+    margin: 10px 0 2px;
+    color: var(--v2-subtle);
+    font-size: 10.5px;
+    font-weight: 500;
+}
+
+.cb-v2-action-total strong {
+    color: var(--v2-text);
+    font-variant-numeric: tabular-nums;
+    font-weight: 650;
+}
+
+.cb-v2-action-total strong.is-positive {
+    color: var(--v2-positive);
+}
+
+.cb-v2-action-list {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px;
-    order: 2;
 }
 
-.cb-v2-actions-panel { order: 1; }
+.cb-v2-action-row {
+    display: grid;
+    grid-template-columns: 5px minmax(0, 1fr) auto;
+    gap: 9px;
+    align-items: center;
+    min-width: 0;
+    padding: 8px 7px;
+    margin-inline: -7px;
+    border-bottom: 1px solid var(--v2-border);
+    border-radius: 7px;
+    transition: background-color 160ms ease;
+}
 
-/*
- * Medidor compartilhado por Limites e Metas.
- * A diferença entre os dois é semântica, não de forma: Limite mede consumo
- * (tons de atenção crescente) e Meta mede avanço (tom de progresso/identidade).
- */
+.cb-v2-action-row:last-child {
+    border-bottom: 0;
+}
+
+.cb-v2-action-row:hover {
+    background: var(--v2-surface-hover);
+}
+
+.cb-v2-action-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--v2-subtle);
+}
+
+.cb-v2-action-row.is-overdue .cb-v2-action-dot {
+    background: var(--v2-danger);
+}
+
+.cb-v2-action-row > span:nth-child(2) {
+    display: grid;
+    min-width: 0;
+    gap: 1px;
+}
+
+.cb-v2-action-row strong {
+    overflow: hidden;
+    color: var(--v2-text);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-v2-action-row small {
+    overflow: hidden;
+    color: var(--v2-subtle);
+    font-size: 10.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-v2-action-row b {
+    color: var(--v2-text);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.cb-v2-action-row.is-overdue b {
+    color: var(--v2-danger);
+}
+
+.cb-v2-action-row.cb-v2-action-receivable b {
+    color: var(--v2-positive);
+}
+
+/* --- Limits and goals --------------------------------------------------- */
+
 .cb-v2-progress-list {
     display: grid;
-    gap: 14px;
-    margin-top: 17px;
+    gap: 11px;
+    margin-top: 12px;
+}
+
+.cb-v2-goals-panel .cb-v2-progress-list {
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: 20px;
+}
+
+.cb-v2-limits-panel .cb-v2-progress-item-head,
+.cb-v2-goals-panel .cb-v2-progress-item-head {
+    flex-wrap: wrap;
+}
+
+.cb-v2-limits-panel .cb-v2-progress-item-head > span:last-child,
+.cb-v2-goals-panel .cb-v2-progress-item-head > span:last-child {
+    flex-basis: 100%;
+    max-width: 100%;
+    overflow: visible;
+    padding-left: 18px;
+    text-align: left;
+    text-overflow: clip;
+    white-space: normal;
 }
 
 .cb-v2-progress-item {
     display: grid;
-    gap: 7px;
+    gap: 5px;
     min-width: 0;
     --meter-tone: var(--v2-tone-neutral);
 }
@@ -1065,8 +653,6 @@ html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .
 .cb-v2-meter--initial { --meter-tone: var(--v2-tone-initial); }
 .cb-v2-meter--info { --meter-tone: var(--v2-tone-info); }
 
-/* Cabeçalho do medidor: mesma leitura de linha do Dashboard anterior (nome à
-   esquerda, valores à direita), agora precedida pelo ícone da categoria. */
 .cb-v2-progress-item-head {
     display: flex;
     align-items: center;
@@ -1074,7 +660,6 @@ html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .
     min-width: 0;
 }
 
-/* Ícone discreto: acompanha a cor do medidor e não cria um tile próprio. */
 .cb-v2-progress-icon {
     display: grid;
     flex: 0 0 auto;
@@ -1082,15 +667,18 @@ html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .
     color: var(--meter-tone);
 }
 
-.cb-v2-progress-icon svg { width: 13px; height: 13px; }
+.cb-v2-progress-icon svg {
+    width: 12px;
+    height: 12px;
+}
 
 .cb-v2-progress-item-head > strong {
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     color: var(--v2-text);
-    font-size: 12px;
-    font-weight: 620;
+    font-size: 11.5px;
+    font-weight: 610;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -1098,191 +686,73 @@ html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .
 .cb-v2-progress-item-head > span:last-child {
     flex: 0 1 auto;
     min-width: 0;
+    overflow: hidden;
     color: var(--v2-muted);
-    font-size: 11px;
+    font-size: 10.5px;
     font-variant-numeric: tabular-nums;
-    line-height: 1.25;
     text-align: right;
-    overflow-wrap: anywhere;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-/* Linha da barra: o percentual divide a mesma linha do trilho, logo depois
-   dele, sem virar uma coluna própria. */
+.cb-v2-progress-sep {
+    color: var(--v2-subtle);
+    font-size: 9.5px;
+}
+
 .cb-v2-progress-bar {
-    display: flex;
-    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 28px;
+    gap: 7px;
     align-items: center;
-    gap: 8px;
 }
 
-.cb-v2-progress-item .cb-v2-meter-track {
-    flex: 1 1 0;
+.cb-v2-meter-track {
+    display: block;
     width: 100%;
-    min-width: 0;
     height: 4px;
-    margin: 0;
     overflow: hidden;
     appearance: none;
     -webkit-appearance: none;
     border: 0;
-    border-radius: 3px;
-    background: var(--cb-v2-progress-track);
-    --cb-v2-progress-track: var(--v2-tone-track);
-    --cb-v2-progress-value: var(--meter-tone);
+    border-radius: 4px;
+    background: var(--v2-progress-track);
 }
 
-.cb-v2-progress-item .cb-v2-meter-track::-webkit-progress-bar {
-    background: var(--cb-v2-progress-track);
+.cb-v2-meter-track::-webkit-progress-bar {
     border-radius: inherit;
+    background: var(--v2-progress-track);
 }
 
-.cb-v2-progress-item .cb-v2-meter-track::-webkit-progress-value {
+.cb-v2-meter-track::-webkit-progress-value {
+    border-radius: inherit;
     background: var(--meter-tone);
-    border-radius: inherit;
 }
 
-.cb-v2-progress-item .cb-v2-meter-track::-moz-progress-bar {
+.cb-v2-meter-track::-moz-progress-bar {
+    border-radius: inherit;
     background: var(--meter-tone);
-    border-radius: inherit;
 }
 
-/* Percentual integrado à barra: pequeno, na cor do medidor e na mesma linha do
-   trilho. Largura mínima evita que o fim do trilho "ande" entre os itens; a
-   altura de linha é a do próprio trilho para que o rótulo não acrescente
-   altura ao item (o texto transborda a caixa de linha, sem clipping). */
 .cb-v2-progress-label {
-    flex: 0 0 auto;
-    min-width: 26px;
     color: var(--meter-tone);
-    font-size: 10px;
+    font-size: 9.5px;
     font-variant-numeric: tabular-nums;
-    font-weight: 700;
-    line-height: 4px;
+    font-weight: 650;
     text-align: right;
 }
 
-.cb-v2-tabs {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px;
-    padding: 4px;
-    margin-top: 16px;
-    border: 1px solid var(--v2-border);
-    border-radius: 10px;
-    background: var(--v2-detail-surface);
-}
-
-.cb-v2-tabs button {
-    display: flex;
-    min-height: 38px;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--v2-muted);
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 620;
-    transition: background-color 180ms ease, color 180ms ease;
-}
-
-.cb-v2-tabs button[aria-selected="true"] {
-    background: var(--v2-accent-soft);
-    color: var(--v2-accent-on-soft);
-}
-
-.cb-v2-tabs button span {
-    display: inline-grid;
-    min-width: 17px;
-    height: 17px;
-    place-items: center;
-    border-radius: 50%;
-    background: var(--v2-tab-badge);
-    color: var(--v2-text);
-    font-size: 9px;
-}
-
-.cb-v2-action-total {
-    margin: 14px 0 8px;
-    color: var(--v2-muted);
-    font-size: 11px;
-}
-
-.cb-v2-action-total strong {
-    color: var(--v2-danger);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-}
-
-.cb-v2-action-list {
-    display: grid;
-}
-
-.cb-v2-action-row {
-    display: grid;
-    grid-template-columns: 8px minmax(0, 1fr) auto;
-    gap: 10px;
-    align-items: center;
-    padding: 11px 0;
-    border-top: 1px solid var(--v2-border);
-}
-
-.cb-v2-action-row:hover strong,
-.cb-v2-action-row:hover b {
-    color: var(--v2-row-hover-text);
-}
-
-.cb-v2-action-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--v2-danger);
-}
-
-.cb-v2-action-receivable .cb-v2-action-dot { background: var(--v2-positive); }
-.cb-v2-action-row.is-overdue .cb-v2-action-dot { background: var(--v2-warning); }
-
-.cb-v2-action-row > span:nth-child(2) {
-    display: grid;
-    min-width: 0;
-    gap: 3px;
-}
-
-.cb-v2-action-row strong,
-.cb-v2-action-row b {
-    overflow: hidden;
-    color: var(--v2-text);
-    font-size: 12px;
-    font-weight: 630;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    transition: color 180ms ease;
-}
-
-.cb-v2-action-row small {
-    overflow: hidden;
-    color: var(--v2-muted);
-    font-size: 11px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.cb-v2-action-row b {
-    color: var(--v2-danger);
-    font-variant-numeric: tabular-nums;
-}
-
-.cb-v2-action-receivable b { color: var(--v2-positive); }
+/* --- Empty states ------------------------------------------------------- */
 
 .cb-v2-empty-state {
     display: grid;
     justify-items: start;
-    gap: 7px;
-    padding: 24px 0 4px;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 14px;
+    border: 1px dashed var(--v2-border);
+    border-radius: 10px;
     color: var(--v2-muted);
-    font-size: 11px;
-    line-height: 1.45;
 }
 
 .cb-v2-empty-state svg {
@@ -1292,145 +762,222 @@ html[data-theme="light"] .cb-v2-credit-card--physical.cb-v2-credit-card--tonal .
 }
 
 .cb-v2-empty-state p {
-    max-width: 30ch;
     margin: 0;
+    font-size: 12px;
 }
 
 .cb-v2-empty-state a {
-    color: var(--v2-accent);
-    font-weight: 620;
+    color: var(--v2-accent-strong);
+    font-size: 11.5px;
+    font-weight: 600;
 }
 
 .cb-v2-empty-card {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 12px;
+    display: flex;
     align-items: center;
-    padding: 20px;
+    gap: 10px;
+    padding: 14px;
+    border: 1px dashed var(--v2-border);
+    border-radius: 10px;
     color: var(--v2-muted);
-    transition: border-color 180ms ease, background-color 180ms ease;
-}
-
-.cb-v2-empty-card:hover {
-    border-color: var(--v2-border-strong);
-    background: var(--v2-surface-raised);
-}
-
-.cb-v2-empty-card > svg {
-    width: 18px;
-    height: 18px;
-    color: var(--v2-accent);
 }
 
 .cb-v2-empty-card > span {
     display: grid;
-    min-width: 0;
-    gap: 4px;
+    flex: 1 1 auto;
+    gap: 2px;
 }
 
-.cb-v2-empty-card strong { color: var(--v2-text); font-size: 12px; }
-.cb-v2-empty-card small { color: var(--v2-muted); font-size: 11px; line-height: 1.4; }
-
-@media (max-width: 1279px) {
-    .cb-v2-grid { grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.35fr); }
-    .cb-v2-metrics-grid { grid-template-columns: 1fr; }
+.cb-v2-empty-card strong {
+    color: var(--v2-text);
+    font-size: 12.5px;
+    font-weight: 620;
 }
 
-@media (max-width: 1023px) {
-    .cb-v2-heading-row { display: grid; align-items: flex-start; }
-    .cb-v2-quick-actions { justify-items: stretch; }
-    .cb-v2-context-actions { justify-content: flex-start; }
-    .cb-v2-grid { grid-template-columns: minmax(260px, 0.85fr) minmax(0, 1.15fr); }
+.cb-v2-empty-card small {
+    font-size: 10.5px;
+}
+
+.cb-v2-empty-card > svg {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    color: var(--v2-subtle);
+}
+
+/* --- Responsive --------------------------------------------------------- */
+
+@media (min-width: 768px) {
+    .cb-v2-account-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        column-gap: 26px;
+    }
+}
+
+@media (min-width: 1240px) and (max-width: 1399px) {
+    .cb-v2-account-copy strong {
+        display: -webkit-box;
+        overflow: hidden;
+        white-space: normal;
+        text-overflow: clip;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+    }
+}
+
+@media (min-width: 1240px) {
+    .cb-v2-goals-panel .cb-v2-progress-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1180px) {
+    .cb-v2-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .cb-v2-bottom-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cb-v2-goals-panel {
+        grid-column: 1 / -1;
+    }
+
+    .cb-v2-goals-panel .cb-v2-progress-list {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 900px) {
+    .cb-v2-heading-row {
+        display: grid;
+        gap: 14px;
+        margin-bottom: 16px;
+    }
+
+    .cb-v2-context-actions {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 2px;
+        justify-content: stretch;
+    }
+
+    .cb-v2-context-actions a {
+        justify-content: flex-start;
+        padding-inline: 8px;
+    }
 }
 
 @media (max-width: 767px) {
-    .cb-v2-content { padding-top: 20px; }
-    .cb-v2-heading-row { display: grid; gap: 17px; margin-bottom: 18px; }
-    .cb-v2-heading-row h1 { font-size: 24px; }
-    /* Primeira dobra enxuta no mobile: subtítulo introdutório e atalhos de
-       ação ficam fora do fluxo (display:none remove da árvore de foco).
-       Desktop/tablet (>=768px) continuam exibindo os dois blocos. */
-    .cb-v2-heading-row > div > p:last-child { display: none; }
-    .cb-v2-heading-row .cb-v2-quick-actions { display: none; }
-    .cb-v2-grid { grid-template-columns: 1fr; gap: 15px; }
-    .cb-v2-left-column,
-    .cb-v2-right-column { gap: 15px; }
+    .cb-v2-content {
+        padding-top: 16px;
+    }
+
+    .cb-v2-heading-row h1 {
+        font-size: 22px;
+    }
+
+    .cb-v2-context-actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cb-v2-context-actions a {
+        justify-content: flex-start;
+        padding-inline: 8px;
+    }
+
+    .cb-v2-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+
     .cb-v2-left-column { display: contents; }
-    .cb-v2-financial-panel { order: 0; }
-    .cb-v2-card-section { order: 1; overflow: hidden; }
-    .cb-v2-accounts-panel { order: 2; }
-    .cb-v2-metrics-grid { display: contents; }
-    .cb-v2-actions-panel { order: 3; }
-    .cb-v2-metrics-grid > :first-child { order: 4; }
-    .cb-v2-metrics-grid > :last-child { order: 5; }
-    .cb-v2-right-column { display: contents; }
-    .cb-v2-card-carousel { --cb-cards-gap: 12px; --cb-cards-peek: 0px; }
-    .cb-v2-card-rail { display: flex; gap: 12px; overflow-x: auto; padding: 0 0 8px; scroll-snap-type: x mandatory; }
-    .cb-v2-credit-card { min-width: 0; width: 100%; flex-basis: auto; }
-    .cb-v2-credit-card--physical { width: 100%; min-height: 184px; max-width: none; flex: 0 0 auto; aspect-ratio: 1.586 / 1; gap: 6px; padding: 14px 15px 13px; }
-    .cb-v2-card-section .cb-v2-credit-card--physical {
-        min-height: 176px;
-        aspect-ratio: 1.86 / 1;
-        padding: 13px 15px 12px;
+
+    .cb-v2-right-column {
+        display: contents;
     }
-    .cb-v2-credit-card--physical .cb-v2-credit-card-data { padding-top: 5px; }
-    /* Home mobile: mesmo respiro, em incremento menor (+1px) para o cartão
-       continuar compacto em 320–440. */
-    [data-dashboard] .cb-v2-card-section .cb-v2-credit-card--physical {
-        gap: 7px;
-        padding: 14px 15px 13px;
+
+    .cb-v2-bottom-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
     }
-    [data-dashboard] .cb-v2-card-section .cb-v2-credit-card--physical .cb-v2-credit-card-data { padding-top: 6px; }
-    [data-dashboard] .cb-v2-card-section .cb-v2-card-rail > .cb-v2-credit-card--physical { flex: 0 0 100%; width: 100%; }
-    [data-dashboard] .cb-v2-card-rail > [data-v2-card-item]:nth-child(n+7) { display: none; }
-    .cb-v2-all-invoices-slide {
-        display: grid;
-        flex: 0 0 100%;
-        min-width: 0;
-        min-height: 176px;
-        align-content: center;
-        justify-items: start;
-        gap: 9px;
-        padding: 22px;
-        border: 1px solid var(--v2-border-strong);
-        border-radius: 13px;
-        background: var(--v2-detail-surface);
-        color: var(--v2-text);
-        scroll-snap-align: start;
+
+    .cb-v2-goals-panel .cb-v2-progress-list {
+        grid-template-columns: minmax(0, 1fr);
     }
-    .cb-v2-all-invoices-slide > svg { width: 22px; height: 22px; color: var(--v2-accent); }
-    .cb-v2-all-invoices-slide > strong { font-size: 16px; }
-    .cb-v2-all-invoices-slide > span:not(.cb-v2-all-invoices-arrow) { color: var(--v2-muted); font-size: 12px; }
-    .cb-v2-all-invoices-arrow { color: var(--v2-accent); font-size: 20px; }
-    .cb-v2-carousel-dots { min-height: 13px; margin-top: 3px; }
-    [data-dashboard] .cb-v2-card-section:has(.cb-v2-card-rail > .cb-v2-credit-card:only-child) .cb-v2-carousel-controls,
-    [data-dashboard] .cb-v2-card-section:has(.cb-v2-card-rail > .cb-v2-credit-card:only-child) .cb-v2-carousel-dots { display: none; }
-    .cb-v2-panel { padding: 16px; }
-    .cb-v2-balance-breakdown { gap: 7px; }
-    .cb-v2-balance { font-size: 34px; }
+
+    .cb-v2-financial-panel {
+        padding: 16px;
+    }
+
+    .cb-v2-financial-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 16px;
+    }
+
+    .cb-v2-balance {
+        font-size: 36px;
+    }
+
+    .cb-v2-balance-breakdown {
+        gap: 14px;
+        border-top: 1px solid var(--v2-border);
+        border-left: 0;
+        padding-top: 14px;
+    }
+
+    .cb-v2-balance-breakdown > div {
+        padding: 0;
+    }
+
+    .cb-v2-balance-breakdown > div + div {
+        border-left: 0;
+        padding-left: 0;
+    }
+
+    .cb-v2-balance-breakdown strong {
+        font-size: 16px;
+    }
+
+    .cb-v2-account-list {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .cb-v2-progress-item-head > span:last-child {
+        max-width: 62%;
+    }
 }
 
-@media (max-width: 389px) {
-    .cb-v2-balance-breakdown { grid-template-columns: 1fr; }
-    .cb-v2-account-row { grid-template-columns: 36px minmax(0, 1fr) minmax(88px, auto); gap: 9px; }
-    .cb-v2-provider-mark { width: 34px; height: 34px; }
-    .cb-v2-credit-card--physical { min-height: 180px; }
-    .cb-v2-card-section .cb-v2-credit-card--physical { min-height: 172px; }
-    .cb-v2-credit-card--physical .cb-v2-credit-card-data strong { font-size: 17px; }
-    .cb-v2-credit-card--physical .cb-v2-credit-card-status > strong { font-size: 12px; }
-    .cb-v2-credit-card--physical .cb-v2-credit-card-status > small { font-size: 9px; }
+@media (max-width: 420px) {
+    .cb-v2-balance {
+        font-size: 32px;
+    }
+
+    .cb-v2-panel,
+    .cb-v2-card-section {
+        padding: 14px;
+    }
+
+    .cb-v2-financial-panel {
+        padding: 14px;
+    }
+
+    .cb-v2-balance-breakdown strong {
+        font-size: 14.5px;
+    }
+
+    .cb-v2-section-tools .cb-v2-text-link {
+        display: none;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .cb-v2-credit-card--physical {
-        transition: border-color 120ms ease;
+    .cb-v2-account-row,
+    .cb-v2-action-row,
+    .cb-v2-context-actions a {
+        transition-duration: 0.01ms;
     }
-
-    .cb-v2-credit-card--physical:hover {
-        transform: none;
-    }
-}
-/* Keep legible text on bright yellow provider emblems. */
-.emblem-wrap-solid[data-cb-color="#FFE600" i] .emblem-text {
-    color: #000 !important;
 }

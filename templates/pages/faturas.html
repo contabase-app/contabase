@@ -1,17 +1,21 @@
 {{define "faturas-page"}}
 {{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/faturas.css"}}">
 {{template "app-v2-document-head-end" .}}
-<main id="main-content" class="cb-v2-main cb-v2-faturas-main" data-page-section="invoice" data-page-title="{{.Title}}">
+<main id="main-content" class="cb-v2-main cb-v2-faturas-main" data-page-section="invoice" data-page-title="{{.Title}}" data-ui="premium">
     {{template "app-v2-appbar" .}}
     <div class="cb-v2-content cb-v2-faturas-content">
-        <header class="cb-v2-faturas-header">
+        <header class="cb-v2-faturas-header ui-page-header">
             <div>
-                <p class="cb-v2-eyebrow">Cartões e faturas</p>
-                <h1>Fatura</h1>
-                <p>Consulte a composição da fatura e acompanhe os pagamentos do período.</p>
+                <p class="ui-eyebrow">Cartões e faturas</p>
+                <h1 class="ui-page-title">Fatura</h1>
+                <p class="ui-page-description">Consulte a composição da fatura e acompanhe os pagamentos do período.</p>
             </div>
-            <a class="cb-v2-faturas-back" href="/faturas"><i data-lucide="arrow-left"></i><span>Faturas</span></a>
+            <div class="flex items-center gap-2">
+                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-privacy-toggle aria-pressed="false" aria-label="Ocultar valores financeiros" data-tooltip-hover data-tooltip-text="Ocultar valores financeiros"><i data-lucide="eye" data-privacy-icon aria-hidden="true"></i></button>
+                <a class="ui-btn ui-btn--secondary ui-btn--sm cb-v2-faturas-header-action" href="/faturas"><i data-lucide="arrow-left"></i><span>Faturas</span></a>
+            </div>
         </header>
         {{template "faturas-content" .}}
     </div>
@@ -22,18 +26,22 @@
 
 {{define "faturas-empty-page"}}
 {{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/faturas.css"}}">
 {{template "app-v2-document-head-end" .}}
-<main id="main-content" class="cb-v2-main cb-v2-faturas-main" data-page-section="invoice" data-page-title="{{.Title}}">
+<main id="main-content" class="cb-v2-main cb-v2-faturas-main" data-page-section="invoice" data-page-title="{{.Title}}" data-ui="premium">
     {{template "app-v2-appbar" .}}
     <div class="cb-v2-content cb-v2-faturas-content">
-        <header class="cb-v2-faturas-header">
+        <header class="cb-v2-faturas-header ui-page-header">
             <div>
-                <p class="cb-v2-eyebrow">Cartões e faturas</p>
-                <h1>Fatura</h1>
-                <p>Consulte a composição da fatura e acompanhe os pagamentos do período.</p>
+                <p class="ui-eyebrow">Cartões e faturas</p>
+                <h1 class="ui-page-title">Fatura</h1>
+                <p class="ui-page-description">Consulte a composição da fatura e acompanhe os pagamentos do período.</p>
             </div>
-            <a class="cb-v2-faturas-back" href="/faturas"><i data-lucide="arrow-left"></i><span>Faturas</span></a>
+            <div class="flex items-center gap-2">
+                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-privacy-toggle aria-pressed="false" aria-label="Ocultar valores financeiros" data-tooltip-hover data-tooltip-text="Ocultar valores financeiros"><i data-lucide="eye" data-privacy-icon aria-hidden="true"></i></button>
+                <a class="ui-btn ui-btn--secondary ui-btn--sm cb-v2-faturas-header-action" href="/faturas"><i data-lucide="arrow-left"></i><span>Faturas</span></a>
+            </div>
         </header>
         {{template "faturas-empty-content" .}}
     </div>
@@ -68,128 +76,112 @@
 {{end}}
 
 {{define "invoice-summary"}}
-<section id="invoice-summary" {{if and .OOB (not .OOBContent)}}hx-swap-oob="outerHTML"{{end}} class="w-full space-y-4 md:space-y-5">
+<section id="invoice-summary" {{if and .OOB (not .OOBContent)}}hx-swap-oob="outerHTML"{{end}} class="cb-invoice-summary">
     {{if not .IsFaturasIndex}}
-    <!-- Direct invoice links need identity and dates because there is no card rail. -->
-    <div class="cb-card-dense px-5 py-4 md:px-6 md:py-5">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div class="flex items-center gap-4">
-                <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" data-cb-color="{{.CardColor}}">
+    <!-- Direct invoice links need card identity because there is no card rail. -->
+    <div class="ui-panel cb-invoice-identity">
+        <div class="cb-invoice-identity-row">
+            <div class="cb-invoice-identity-main">
+                <span class="cb-invoice-identity-logo" data-cb-color="{{.CardColor}}">
                     {{if .CardProviderLogoPath}}
                     <img src="{{assetPath .CardProviderLogoPath}}" alt="" class="institution-logo" data-avatar-fallback>
-                    <span class="hidden text-xs font-black uppercase text-white tracking-tighter" data-avatar-text>{{.CardProviderMark}}</span>
+                    <span class="hidden" data-avatar-text>{{.CardProviderMark}}</span>
                     {{else if .CardProviderMark}}
-                    <span class="text-xs font-black uppercase text-white tracking-tighter">{{.CardProviderMark}}</span>
+                    <span class="cb-invoice-identity-mark">{{.CardProviderMark}}</span>
                     {{else}}
-                    <i data-lucide="{{if .CardIcon}}{{.CardIcon}}{{else}}credit-card{{end}}" class="w-5 h-5 icon-colored" data-cb-color="{{.CardColor}}"></i>
+                    <i data-lucide="{{if .CardIcon}}{{.CardIcon}}{{else}}credit-card{{end}}" aria-hidden="true"></i>
                     {{end}}
                 </span>
-                <div class="min-w-0">
-                    <h1 class="text-lg font-black text-[var(--cb-text-main)] tracking-tight truncate leading-tight">{{.CardName}}</h1>
-                    <div class="flex items-center gap-1.5 mt-1 flex-wrap">
-                        <span class="cb-status-chip cb-status-chip-info">{{.Reference}}</span>
-                        {{if .HasCycleBadge}}<span class="cb-status-chip {{if eq .CycleLabel "Fechada"}}cb-status-chip-danger{{else if eq .CycleLabel "Aberta"}}cb-status-chip-success{{else}}cb-status-chip-warning{{end}} shrink-0">{{.CycleLabel}}</span>{{end}}
-                        {{if .HasFinancialBadge}}<span class="cb-status-chip {{if eq .FinancialLabel "Paga"}}cb-status-chip-success{{else if eq .FinancialLabel "Pendente"}}cb-status-chip-warning{{else if eq .FinancialLabel "Parcial"}}cb-status-chip-warning{{else if eq .FinancialLabel "Vazia"}}cb-status-chip-neutral{{else}}cb-status-chip-neutral{{end}} shrink-0">{{.FinancialLabel}}</span>{{end}}
-                    </div>
+                <div class="cb-invoice-identity-copy">
+                    <h2 class="cb-invoice-identity-name">{{.CardName}}</h2>
+                    <p class="cb-invoice-identity-reference">Competência {{.Reference}}</p>
                 </div>
             </div>
-
-            <div class="flex items-center gap-6 md:gap-8 self-start md:self-auto flex-wrap">
-                <div class="space-y-0.5">
-                    <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)] block">Fecha em</span>
-                    <div class="flex items-center gap-1.5 text-xs font-bold text-[var(--cb-text-main)]">
-                        <i data-lucide="calendar" class="w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
-                        <span>{{.ClosingLabel}}</span>
-                    </div>
-                </div>
-                <div class="h-8 w-px bg-[var(--cb-border-subtle)] hidden sm:block"></div>
-                <div class="space-y-0.5">
-                    <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)] block">Vencimento</span>
-                    <div class="flex items-center gap-1.5 text-xs font-bold text-[var(--cb-text-main)]">
-                        <i data-lucide="calendar-check" class="w-3.5 h-3.5 text-[var(--cb-text-muted)]"></i>
-                        <span>{{.DueLabel}}</span>
-                    </div>
-                </div>
+            <div class="cb-invoice-identity-dates">
+                <span><i data-lucide="calendar" aria-hidden="true"></i>Fecha {{.ClosingLabel}}</span>
+                <span><i data-lucide="calendar-check" aria-hidden="true"></i>Vence {{.DueLabel}}</span>
             </div>
         </div>
 
         {{if .FilterLabel}}
-        <div class="flex flex-wrap items-center gap-1.5 mt-4 pt-3 border-t border-[var(--cb-border-subtle)]">
-            <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Filtro:</span>
-            <span class="cb-status-chip cb-status-chip-info">{{.FilterLabel}}</span>
-            <a href="{{.ClearFiltersURL}}" class="inline-flex items-center gap-0.5 rounded-full bg-[var(--cb-surface-2)] hover:bg-[var(--cb-surface-3)] px-2.5 py-0.5 text-[10px] font-semibold text-[var(--cb-text-muted)] transition-colors">
-                <i data-lucide="x" class="w-2.5 h-2.5"></i>Limpar
-            </a>
+        <div class="cb-invoice-filter">
+            <span class="cb-invoice-filter-label">Filtro</span>
+            <span class="ui-badge ui-badge--accent">{{.FilterLabel}}</span>
+            <a class="ui-pill cb-invoice-filter-clear" href="{{.ClearFiltersURL}}"><i data-lucide="x" aria-hidden="true"></i>Limpar</a>
         </div>
         {{end}}
     </div>
     {{end}}
 
     {{if .ShowSensitiveWarning}}
-    <div class="cb-banner-warning px-4 py-3">
-        <div class="flex items-start gap-2.5">
-            <i data-lucide="triangle-alert" class="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0"></i>
-            <p class="text-xs text-amber-700 dark:text-amber-300 leading-relaxed font-medium">{{.SensitiveWarningText}}</p>
-        </div>
+    <div class="cb-banner-warning cb-invoice-warning" role="status">
+        <i data-lucide="triangle-alert" aria-hidden="true"></i>
+        <p>{{.SensitiveWarningText}}</p>
     </div>
     {{end}}
 
-    <!-- Summary + Payment Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
-        <!-- Resumo da Fatura Card (Col Span 2) -->
-        <div class="lg:col-span-2 h-full cb-card-dense p-4 sm:p-5 flex flex-col">
-            <div>
-                <h3 class="cb-section-title mb-3">Resumo da Fatura</h3>
-                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    <!-- Total Fatura -->
-                    <div class="col-span-2 sm:col-span-1 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3 flex flex-col justify-between">
-                        <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Total da Fatura</span>
-                        <p class="text-base xs:text-xl sm:text-2xl font-black text-[var(--cb-text-main)] mt-1 tracking-tight whitespace-nowrap overflow-x-auto scrollbar-hide" data-sensitive>R$ {{.Total.Reais}}{{.Total.Cents}}</p>
-                        <span class="cb-text-micro text-[var(--cb-text-muted)] mt-1.5 block truncate">{{if .ClosingLabel}}{{.ClosingLabel}}{{end}} - {{if .DueLabel}}{{.DueLabel}}{{end}}</span>
+    <div class="cb-invoice-layout">
+        <section class="ui-panel cb-invoice-main" aria-label="Resumo da fatura">
+            <header class="cb-invoice-main-head">
+                <div class="ui-section-title">
+                    <span class="ui-section-icon" aria-hidden="true"><i data-lucide="receipt-text"></i></span>
+                    <div>
+                        <h2>Resumo da fatura</h2>
+                        <p>Competência {{.Reference}}</p>
                     </div>
+                </div>
+                <div class="cb-invoice-badges">
+                    {{if .HasCycleBadge}}<span class="ui-badge {{if eq .CycleLabel "Fechada"}}ui-badge--neutral{{else if eq .CycleLabel "Aberta"}}ui-badge--info{{else}}ui-badge--warning{{end}}">{{.CycleLabel}}</span>{{end}}
+                    {{if .HasFinancialBadge}}<span class="ui-badge {{if eq .FinancialLabel "Paga"}}ui-badge--success{{else if eq .FinancialLabel "Pendente"}}ui-badge--warning{{else if eq .FinancialLabel "Parcial"}}ui-badge--warning{{else}}ui-badge--neutral{{end}}">{{.FinancialLabel}}</span>{{end}}
+                </div>
+            </header>
 
-                    <!-- Total Pago -->
-                    <div class="rounded-lg p-2.5 flex flex-col gap-0.5">
-                        <span class="cb-text-micro font-semibold uppercase tracking-wider text-[var(--cb-text-muted)]">Total Pago</span>
-                        <p class="text-sm xs:text-base font-bold mt-0.5 tracking-tight whitespace-nowrap overflow-x-auto scrollbar-hide cb-tone-success cb-tone-text-muted" data-sensitive>R$ {{.TotalPaid.Reais}}{{.TotalPaid.Cents}}</p>
-                        <span class="cb-text-micro text-[var(--cb-text-subtle)] block truncate">Valor já liquidado</span>
-                    </div>
+            <div class="cb-invoice-hero">
+                <div class="cb-invoice-hero-copy">
+                    <p class="cb-invoice-hero-label">Total da fatura</p>
+                    <p class="cb-invoice-hero-value" data-sensitive>R$ {{.Total.Reais}}{{.Total.Cents}}</p>
+                </div>
+                <div class="cb-invoice-hero-meta">
+                    <span><i data-lucide="calendar" aria-hidden="true"></i>Fecha {{.ClosingLabel}}</span>
+                    <span><i data-lucide="calendar-check" aria-hidden="true"></i>Vence {{.DueLabel}}</span>
+                </div>
+            </div>
 
-                    <!-- Pendente -->
-                    <div class="rounded-lg p-2.5 flex flex-col gap-0.5">
-                        <span class="cb-text-micro font-semibold uppercase tracking-wider text-[var(--cb-text-muted)]">Pendente</span>
-                        <p class="text-sm xs:text-base font-bold mt-0.5 tracking-tight whitespace-nowrap overflow-x-auto scrollbar-hide cb-tone-warning cb-tone-text-muted" data-sensitive>R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</p>
-                        <span class="cb-text-micro text-[var(--cb-text-subtle)] block truncate">Saldo restante a pagar</span>
-                    </div>
+            <div class="cb-invoice-figures">
+                <div class="cb-invoice-figure">
+                    <span class="cb-invoice-figure-label">Total pago</span>
+                    <strong class="cb-invoice-figure-value is-success" data-sensitive>R$ {{.TotalPaid.Reais}}{{.TotalPaid.Cents}}</strong>
+                    <span class="cb-invoice-figure-note">Valor já liquidado</span>
+                </div>
+                <div class="cb-invoice-figure">
+                    <span class="cb-invoice-figure-label">Pendente</span>
+                    <strong class="cb-invoice-figure-value is-warning" data-sensitive>R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</strong>
+                    <span class="cb-invoice-figure-note">Saldo restante a pagar</span>
                 </div>
             </div>
 
             {{if .HasCreditLimit}}
-            <!-- Indicador de Limite do Cartão -->
-            <div class="mt-3 md:mt-4 border-t border-[var(--cb-border-subtle)] pt-3 md:pt-4">
-                <div class="flex items-center justify-between gap-2 mb-2">
-                    <h4 class="cb-section-title flex items-center gap-1.5">
-                        <i data-lucide="credit-card" class="w-3 h-3 text-[var(--cb-text-subtle)]"></i>
-                        Limite do cartão
-                    </h4>
-                    <span class="cb-text-micro font-semibold tabular-nums shrink-0 {{if le .LimitPercent 30}}text-[var(--cb-danger)]{{else if le .LimitPercent 70}}text-[var(--cb-warning)]{{else}}text-[var(--cb-text-subtle)]{{end}}">{{.LimitPercent}}% livre</span>
+            <div class="cb-invoice-limit">
+                <div class="cb-invoice-limit-head">
+                    <span class="cb-invoice-limit-title"><i data-lucide="credit-card" aria-hidden="true"></i>Limite do cartão</span>
+                    <span class="cb-invoice-limit-percent {{if le .LimitPercent 30}}is-danger{{else if le .LimitPercent 70}}is-warning{{else}}is-neutral{{end}}">{{.LimitPercent}}% livre</span>
                 </div>
-                <div class="grid grid-cols-3 gap-2 mb-2">
-                    <div class="min-w-0">
-                        <span class="cb-label-micro">Disponível</span>
-                        <span class="block cb-value-secondary" data-sensitive>R$ {{.LimitAvailable.Reais}}{{.LimitAvailable.Cents}}</span>
+                <div class="cb-invoice-limit-figures">
+                    <div class="cb-invoice-limit-figure">
+                        <span>Disponível</span>
+                        <strong data-sensitive>R$ {{.LimitAvailable.Reais}}{{.LimitAvailable.Cents}}</strong>
                     </div>
-                    <div class="min-w-0">
-                        <span class="cb-label-micro">Em uso</span>
-                        <span class="block cb-value-secondary" data-sensitive>R$ {{.LimitUsed.Reais}}{{.LimitUsed.Cents}}</span>
+                    <div class="cb-invoice-limit-figure">
+                        <span>Em uso</span>
+                        <strong data-sensitive>R$ {{.LimitUsed.Reais}}{{.LimitUsed.Cents}}</strong>
                     </div>
-                    <div class="min-w-0">
-                        <span class="cb-label-micro">Limite total</span>
-                        <span class="block cb-value-secondary" data-sensitive>R$ {{.CreditLimit.Reais}}{{.CreditLimit.Cents}}</span>
+                    <div class="cb-invoice-limit-figure">
+                        <span>Limite total</span>
+                        <strong data-sensitive>R$ {{.CreditLimit.Reais}}{{.CreditLimit.Cents}}</strong>
                     </div>
                 </div>
                 <progress class="cb-invoice-limit-progress {{if le .LimitPercent 30}}is-danger{{else if le .LimitPercent 70}}is-warning{{else}}is-success{{end}}" value="{{.LimitPercent}}" max="100" aria-label="Limite disponível: {{.LimitPercent}}%">{{.LimitPercent}}%</progress>
-                <p class="cb-muted-text mt-2 leading-snug">
+                <p class="cb-invoice-limit-note">
                     {{if le .LimitPercent 30}}Disponibilidade baixa.
                     {{else if le .LimitPercent 70}}Disponibilidade moderada.
                     {{else}}Boa disponibilidade de limite.{{end}}
@@ -197,238 +189,235 @@
             </div>
             {{end}}
 
-            <!-- Payment History integrated -->
-            <div class="mt-4 md:mt-6 border-t border-[var(--cb-border-subtle)] pt-3 md:pt-5">
+            <div class="cb-invoice-section">
+                <div class="cb-invoice-section-head"><h3>Histórico de pagamentos</h3></div>
                 {{if .HasPayments}}
-                <h4 class="cb-section-title mb-3">Histórico de Pagamentos</h4>
-                <div class="space-y-1.5">
+                <ul class="ui-list cb-invoice-list" role="list">
                     {{range .InvoicePayments}}
-                    <div class="flex items-center justify-between gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-2.5 md:p-3 hover:bg-[var(--cb-surface-3)] transition-colors">
-                        <div class="min-w-0">
-                            <p class="text-xs font-bold text-[var(--cb-text-main)] truncate">
-                                {{if .AccountName}}{{.AccountName}} &middot; {{end}}{{.Source}}
-                            </p>
-                            <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">{{.DateLabel}}{{if .Note}} &middot; {{.Note}}{{end}}</p>
+                    <li class="ui-row">
+                        <span class="ui-row__status" aria-hidden="true"><i data-lucide="arrow-down-left"></i></span>
+                        <div class="ui-row__main">
+                            <p class="ui-row__title">{{if .AccountName}}{{.AccountName}}{{else}}{{.Source}}{{end}}</p>
+                            <p class="ui-row__meta"><span>{{.DateLabel}}</span>{{if and .AccountName .Source}}<span>· {{.Source}}</span>{{end}}{{if .Note}}<span>· {{.Note}}</span>{{end}}</p>
                         </div>
-                        <span class="text-xs font-extrabold text-[var(--cb-success)] shrink-0" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
-                    </div>
+                        <span class="ui-row__amount is-income" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                    </li>
                     {{end}}
-                </div>
+                </ul>
                 {{else if .HasLegacyPaymentSummary}}
-                <div class="flex flex-col items-center justify-center py-3 text-center">
-                    <i data-lucide="clock" class="w-4 h-4 text-[var(--cb-warning)] mb-1.5"></i>
-                    <p class="text-xs text-[var(--cb-text-muted)]">{{.LegacyPaymentNotice}}</p>
-                </div>
+                <div class="cb-invoice-empty-row"><i data-lucide="clock" aria-hidden="true"></i><p>{{.LegacyPaymentNotice}}</p></div>
                 {{else}}
-                <div class="flex items-center gap-1.5 justify-center py-1 text-center text-[var(--cb-text-muted)]">
-                    <i data-lucide="info" class="w-3.5 h-3.5"></i>
-                    <p class="cb-text-micro font-semibold">Nenhum pagamento registrado</p>
-                </div>
+                <div class="cb-invoice-empty-row"><i data-lucide="info" aria-hidden="true"></i><p>Nenhum pagamento registrado</p></div>
                 {{end}}
             </div>
 
             {{if .HasGeneralRefunds}}
-            <div class="mt-4 md:mt-6 border-t border-[var(--cb-border-subtle)] pt-3 md:pt-5">
-                <h4 class="cb-section-title mb-3">Reembolsos gerais</h4>
-                <div class="space-y-1.5">
+            <div class="cb-invoice-section">
+                <div class="cb-invoice-section-head"><h3>Reembolsos gerais</h3></div>
+                <ul class="ui-list cb-invoice-list" role="list">
                     {{range .GeneralRefunds}}
-                    <div class="flex items-center justify-between gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-2.5 md:p-3">
-                        <div class="min-w-0">
-                            <p class="truncate text-xs font-bold text-[var(--cb-text-main)]">{{.Description}}</p>
-                            <p class="cb-text-micro mt-0.5 text-[var(--cb-text-muted)]">{{.DateLabel}}</p>
+                    <li class="ui-row">
+                        <span class="ui-row__status" aria-hidden="true"><i data-lucide="undo-2"></i></span>
+                        <div class="ui-row__main">
+                            <p class="ui-row__title">{{.Description}}</p>
+                            <p class="ui-row__meta"><span>{{.DateLabel}}</span><span>· Reembolso geral</span></p>
                         </div>
-                        <div class="flex shrink-0 items-center gap-1.5">
-                            <span class="text-xs font-extrabold text-[var(--cb-success)]" data-sensitive>- R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                        <div class="cb-invoice-refund-side">
+                            <span class="ui-row__amount is-income" data-sensitive>- R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                             {{if $.CanMutateItems}}
-                            <button type="button" hx-get="/cartoes/faturas/reembolsos/{{.ID}}/editar?invoice_id={{$.InvoiceID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" class="btn-tactile inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)]" data-tooltip-hover data-tooltip-text="Editar reembolso" aria-label="Editar reembolso">
-                                <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
-                            </button>
-                            <button type="button" hx-post="/cartoes/faturas/reembolsos/{{.ID}}/remover" hx-vals='{"invoice_id":"{{$.InvoiceID}}"}' hx-swap="none" hx-confirm="Remover este reembolso? O saldo da fatura será recalculado." class="btn-tactile inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--cb-text-muted)] hover:bg-red-500/10 hover:text-[var(--cb-danger)]" data-tooltip-hover data-tooltip-text="Remover reembolso" aria-label="Remover reembolso">
-                                <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
-                            </button>
+                            <div class="ui-row__actions">
+                                <button type="button" hx-get="/cartoes/faturas/reembolsos/{{.ID}}/editar?invoice_id={{$.InvoiceID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" class="ui-row__action" data-tooltip-hover data-tooltip-text="Editar reembolso" aria-label="Editar reembolso">
+                                    <i data-lucide="pencil"></i>
+                                </button>
+                                <button type="button" hx-post="/cartoes/faturas/reembolsos/{{.ID}}/remover" hx-vals='{"invoice_id":"{{$.InvoiceID}}"}' hx-swap="none" hx-confirm="Remover este reembolso? O saldo da fatura será recalculado." class="ui-row__action cb-invoice-refund-remove" data-tooltip-hover data-tooltip-text="Remover reembolso" aria-label="Remover reembolso">
+                                    <i data-lucide="trash-2"></i>
+                                </button>
+                            </div>
                             {{end}}
                         </div>
-                    </div>
+                    </li>
                     {{end}}
-                </div>
+                </ul>
             </div>
             {{end}}
-        </div>
+        </section>
 
-        <!-- Payment Actions Card (Col Span 1) -->
-        <div class="lg:col-span-1 self-start">
+        <aside class="ui-panel cb-invoice-actions" aria-label="Ações da fatura">
             {{if .CanAttemptPayment}}
-            <div class="cb-card-dense p-4 md:p-5">
-                <div class="space-y-3">
-                    <h3 class="cb-section-title">Ações da Fatura</h3>
-
-                    <div class="grid grid-cols-1 gap-2.5 pt-1">
-                        <button type="button" data-open-settle-payment {{if not .CanSubmitPayment}}disabled{{end}}
-                            class="cb-button cb-button-primary cb-invoice-action btn-tactile min-w-0 w-full rounded-xl disabled:cursor-not-allowed disabled:opacity-50">
-                            {{if .CanSubmitPayment}}<i data-lucide="badge-check" class="shrink-0"></i><span class="cb-invoice-action-label"><span>Quitar</span><span>fatura</span></span>{{else}}<span class="px-2 text-center">{{.PaymentDisabledReason}}</span>{{end}}
-                        </button>
-
-                        <button type="button" {{if not .CanSubmitPayment}}disabled{{end}}
-                            class="cb-button cb-button-secondary cb-invoice-action btn-tactile min-w-0 w-full rounded-xl disabled:cursor-not-allowed disabled:opacity-50"
-                            data-onclick="openPartialPaymentModal">
-                            <i data-lucide="coins" class="shrink-0 text-[var(--cb-text-muted)]"></i><span class="cb-invoice-action-label"><span>Pagamento</span><span>parcial</span></span>
-                        </button>
-
-                        <button type="button"
-                            hx-get="/cartoes/faturas/reembolso?invoice_id={{.InvoiceID}}"
-                            hx-target="#bottom-sheet-container"
-                            hx-swap="innerHTML"
-                            class="cb-button cb-button-secondary cb-invoice-action btn-tactile min-w-0 w-full rounded-xl">
-                            <i data-lucide="undo-2" class="shrink-0 text-[var(--cb-success)]"></i><span class="cb-invoice-action-label"><span>Reembolso</span><span>geral</span></span>
-                        </button>
-                    </div>
+            <div class="ui-section-title">
+                <span class="ui-section-icon" aria-hidden="true"><i data-lucide="wallet"></i></span>
+                <div>
+                    <h2>Ações da fatura</h2>
+                    <p>Registre pagamentos ou reembolsos deste período.</p>
                 </div>
-
-                <!-- Explanations remain available without competing with the actions. -->
-                <details class="mt-6 border-t border-[var(--cb-border-subtle)] pt-5">
-                    <summary class="flex cursor-pointer list-none items-center justify-between gap-2 cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">
-                        <span class="flex items-center gap-1.5"><i data-lucide="help-circle" class="w-3.5 h-3.5"></i>Sobre as ações</span>
-                        <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
-                    </summary>
-                    <div class="mt-4 space-y-3 text-[11px] text-[var(--cb-text-muted)] leading-relaxed">
-                        <div class="flex items-start gap-2">
-                            <i data-lucide="info" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0 mt-0.5"></i>
-                            <p>A escolha de conta de origem e data é feita de forma guiada diretamente dentro do modal de confirmação.</p>
-                        </div>
-                        <div class="flex items-start gap-2">
-                            <i data-lucide="check-circle" class="w-3.5 h-3.5 text-[var(--cb-accent)] shrink-0 mt-0.5"></i>
-                            <p><strong class="font-bold text-[var(--cb-text-main)]">Quitar fatura:</strong> Registra a baixa total do valor restante pendente no período atual.</p>
-                        </div>
-                        <div class="flex items-start gap-2">
-                            <i data-lucide="coins" class="w-3.5 h-3.5 text-[var(--cb-warning)] shrink-0 mt-0.5"></i>
-                            <p><strong class="font-bold text-[var(--cb-text-main)]">Pagamento parcial:</strong> Permite abater qualquer valor, mantendo a fatura aberta com o saldo restante.</p>
-                        </div>
-                        <div class="flex items-start gap-2">
-                            <i data-lucide="undo-2" class="w-3.5 h-3.5 text-[var(--cb-success)] shrink-0 mt-0.5"></i>
-                            <p><strong class="font-bold text-[var(--cb-text-main)]">Reembolso geral:</strong> Use quando o crédito corresponde a uma compra de outra fatura. Ele reduz o saldo atual sem criar receita.</p>
-                        </div>
-                    </div>
-                </details>
             </div>
-            {{else}}
-            <!-- Fatura Quitada Card -->
-            <div class="h-full cb-card-dense p-6 flex flex-col items-center justify-center text-center cb-tone-success cb-tone-state-panel">
-                <div class="w-12 h-12 rounded-full flex items-center justify-center mb-3 cb-tone-success cb-tone-icon">
-                    <i data-lucide="check-circle-2" class="w-6 h-6 text-[var(--cb-success)]"></i>
+
+            <div class="cb-invoice-actions-list">
+                <button type="button" data-open-settle-payment {{if not .CanSubmitPayment}}disabled{{end}}
+                    class="ui-btn ui-btn--primary cb-invoice-action-btn">
+                    {{if .CanSubmitPayment}}<i data-lucide="badge-check" aria-hidden="true"></i><span>Quitar fatura</span>{{else}}<span>{{.PaymentDisabledReason}}</span>{{end}}
+                </button>
+
+                <button type="button" {{if not .CanSubmitPayment}}disabled{{end}}
+                    class="ui-btn ui-btn--secondary cb-invoice-action-btn"
+                    data-onclick="openPartialPaymentModal">
+                    <i data-lucide="coins" aria-hidden="true"></i><span>Pagamento parcial</span>
+                </button>
+
+                <button type="button"
+                    hx-get="/cartoes/faturas/reembolso?invoice_id={{.InvoiceID}}"
+                    hx-target="#bottom-sheet-container"
+                    hx-swap="innerHTML"
+                    class="ui-btn ui-btn--secondary cb-invoice-action-btn">
+                    <i data-lucide="undo-2" aria-hidden="true"></i><span>Reembolso geral</span>
+                </button>
+            </div>
+
+            <!-- Explanations remain available without competing with the actions. -->
+            <details class="cb-invoice-actions-info">
+                <summary><span><i data-lucide="help-circle" aria-hidden="true"></i>Sobre as ações</span><i data-lucide="chevron-down" aria-hidden="true"></i></summary>
+                <div class="cb-invoice-actions-notes">
+                    <div><i data-lucide="info" aria-hidden="true"></i><p>A escolha de conta de origem e data é feita de forma guiada diretamente dentro do modal de confirmação.</p></div>
+                    <div><i data-lucide="check-circle" aria-hidden="true"></i><p><strong>Quitar fatura:</strong> Registra a baixa total do valor restante pendente no período atual.</p></div>
+                    <div><i data-lucide="coins" aria-hidden="true"></i><p><strong>Pagamento parcial:</strong> Permite abater qualquer valor, mantendo a fatura aberta com o saldo restante.</p></div>
+                    <div><i data-lucide="undo-2" aria-hidden="true"></i><p><strong>Reembolso geral:</strong> Use quando o crédito corresponde a uma compra de outra fatura. Ele reduz o saldo atual sem criar receita.</p></div>
                 </div>
-                <h3 class="text-sm font-bold text-[var(--cb-text-main)]">Fatura Quitada</h3>
-                <p class="text-xs text-[var(--cb-text-muted)] mt-1 max-w-[200px]">Nenhuma pendência financeira para este período.</p>
+            </details>
+            {{else}}
+            <div class="cb-invoice-paid">
+                <span class="cb-invoice-paid-icon" aria-hidden="true"><i data-lucide="check-circle-2"></i></span>
+                <h2>Fatura quitada</h2>
+                <p>Nenhuma pendência financeira para este período.</p>
             </div>
             {{end}}
-        </div>
+        </aside>
     </div>
 
     {{if .CanAttemptPayment}}
-    <div id="invoice-settle-payment-modal" data-invoice-settle-modal data-contabase-overlay data-overlay-priority="120" data-overlay-close="closeSettlePaymentModal" class="fixed inset-0 z-[120] hidden items-end justify-center bg-black/60 p-4 md:items-center">
-        <div class="w-full max-w-md rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-5 shadow-2xl">
-            <div class="mb-4 flex items-start justify-between gap-3">
-                <div>
-                    <h3 class="text-sm font-bold text-[var(--cb-text-main)]">Confirmar quitação</h3>
-                    <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Revise os dados antes de registrar o pagamento integral.</p>
+    <div id="invoice-settle-payment-modal" data-invoice-settle-modal data-contabase-overlay data-overlay-priority="120" data-overlay-close="closeSettlePaymentModal" class="cb-invoice-overlay fixed inset-0 z-[120] hidden bg-black/60" role="dialog" aria-modal="true" aria-labelledby="invoice-settle-title" aria-describedby="invoice-settle-description">
+        <div class="cb-invoice-modal">
+            <header class="cb-invoice-modal-head">
+                <div class="cb-invoice-modal-heading">
+                    <span class="cb-invoice-modal-kicker">Quitação</span>
+                    <h3 id="invoice-settle-title">Confirmar quitação</h3>
+                    <p id="invoice-settle-description">{{.CardName}} · Competência {{.Reference}}. Revise a conta e a data antes de registrar o pagamento integral.</p>
                 </div>
-                <button type="button" class="btn-tactile flex h-8 w-8 items-center justify-center rounded-xl text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-2)]"
-                    data-onclick="closeSettlePaymentModal" aria-label="Cancelar quitação">
-                    <i data-lucide="x" class="h-4 w-4"></i>
+                <button type="button" class="cb-invoice-modal-close" data-onclick="closeSettlePaymentModal" aria-label="Cancelar quitação">
+                    <i data-lucide="x" aria-hidden="true"></i>
                 </button>
-            </div>
+            </header>
 
-            <form hx-post="/cartoes/faturas/pagar" hx-target="#faturas-content" hx-swap="outerHTML" class="space-y-3.5">
-                <input type="hidden" name="invoice_id" value="{{.InvoiceID}}">
-                <input type="hidden" name="account_id" value="{{.AccountID}}">
-                <input type="hidden" name="payment_mode" value="settle">
-                <input type="hidden" name="confirm_settle" value="1">
-
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3">
-                        <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Competência</span>
-                        <p class="mt-1 text-sm font-extrabold text-[var(--cb-text-main)]">{{.Reference}}</p>
+            <form hx-post="/cartoes/faturas/pagar" hx-target="#faturas-content" hx-swap="outerHTML" class="cb-invoice-modal-form">
+                <div class="cb-invoice-modal-body">
+                    <div class="cb-invoice-modal-summary">
+                        <div class="cb-invoice-modal-figure">
+                            <span class="cb-invoice-modal-label">Competência</span>
+                            <strong class="cb-invoice-modal-value">{{.Reference}}</strong>
+                        </div>
+                        <div class="cb-invoice-modal-figure is-attention">
+                            <span class="cb-invoice-modal-label">Valor a quitar</span>
+                            <strong class="cb-invoice-modal-value" data-sensitive>R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</strong>
+                        </div>
                     </div>
-                    <div class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3">
-                        <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Valor a quitar</span>
-                        <p class="mt-1 text-sm font-extrabold text-[var(--cb-warning)]" data-sensitive>R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</p>
+
+                    <input type="hidden" name="invoice_id" value="{{.InvoiceID}}">
+                    <input type="hidden" name="account_id" value="{{.AccountID}}">
+                    <input type="hidden" name="payment_mode" value="settle">
+                    <input type="hidden" name="confirm_settle" value="1">
+
+                    <label class="cb-invoice-field">
+                        <span class="ui-label">Conta selecionada</span>
+                        <select name="payment_account_id" required data-settle-payment-account class="ui-select">
+                            {{range .PaymentAccounts}}
+                            <option value="{{.ID}}" data-balance-after="R$ {{.BalanceAfterPayment.Reais}}{{.BalanceAfterPayment.Cents}}" {{if eq .ID $.DefaultPaymentAccountID}}selected{{end}}>{{.Name}} (R$ {{.Money.Reais}}{{.Money.Cents}})</option>
+                            {{end}}
+                        </select>
+                    </label>
+                    <label class="cb-invoice-field">
+                        <span class="ui-label">Data de pagamento</span>
+                        <input type="date" name="payment_date" value="{{.PaymentDateInput}}" class="ui-input">
+                    </label>
+                    <div class="cb-invoice-modal-note">
+                        <i data-lucide="wallet" aria-hidden="true"></i>
+                        <span>Saldo estimado da conta após pagamento: <strong data-settle-balance-after data-sensitive>{{range $idx, $account := .PaymentAccounts}}{{if eq $idx 0}}R$ {{$account.BalanceAfterPayment.Reais}}{{$account.BalanceAfterPayment.Cents}}{{end}}{{end}}</strong></span>
                     </div>
                 </div>
-
-                <label class="block">
-                    <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Conta selecionada</span>
-                    <select name="payment_account_id" required data-settle-payment-account class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]">
-                        {{range .PaymentAccounts}}
-                        <option value="{{.ID}}" data-balance-after="R$ {{.BalanceAfterPayment.Reais}}{{.BalanceAfterPayment.Cents}}" {{if eq .ID $.DefaultPaymentAccountID}}selected{{end}}>{{.Name}} (R$ {{.Money.Reais}}{{.Money.Cents}})</option>
-                        {{end}}
-                    </select>
-                </label>
-                <label class="block">
-                    <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Data de pagamento</span>
-                    <input type="date" name="payment_date" value="{{.PaymentDateInput}}"
-                        class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]">
-                </label>
-                <div class="rounded-xl px-3 py-2 text-xs font-semibold cb-tone-success cb-tone-notice">
-                    Saldo estimado da conta após pagamento: <span data-settle-balance-after>{{range $idx, $account := .PaymentAccounts}}{{if eq $idx 0}}R$ {{$account.BalanceAfterPayment.Reais}}{{$account.BalanceAfterPayment.Cents}}{{end}}{{end}}</span>
-                </div>
-                <div class="grid grid-cols-2 gap-2 pt-1">
-                    <button type="button"
-                        class="cb-button cb-button-secondary btn-tactile h-10 rounded-xl text-xs font-bold"
-                        data-onclick="closeSettlePaymentModal">
+                <footer class="cb-invoice-modal-actions">
+                    <button type="button" class="ui-btn ui-btn--ghost cb-invoice-modal-btn" data-onclick="closeSettlePaymentModal">
                         Cancelar
                     </button>
-                    <button type="submit" {{if not .CanSubmitPayment}}disabled{{end}}
-                        class="cb-button cb-button-primary btn-tactile flex h-10 items-center justify-center gap-2 rounded-xl text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i data-lucide="check" class="h-4 w-4"></i>Confirmar
+                    <button type="submit" {{if not .CanSubmitPayment}}disabled{{end}} class="ui-btn ui-btn--primary cb-invoice-modal-btn">
+                        <i data-lucide="check" aria-hidden="true"></i>Confirmar
                     </button>
-                </div>
+                </footer>
             </form>
         </div>
     </div>
-    <div id="invoice-partial-payment-modal" data-invoice-payment-modal data-pending-cents="{{.PendingAmountInput}}" data-contabase-overlay data-overlay-priority="120" data-overlay-close="closePartialPaymentModal" class="fixed inset-0 z-[120] hidden items-end justify-center bg-black/60 p-4 md:items-center">
-        <div class="w-full max-w-md rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-5 shadow-2xl">
-            <div class="mb-4 flex items-center justify-between gap-3">
-                <div>
-                    <h3 class="text-sm font-bold text-[var(--cb-text-main)]">Pagamento parcial</h3>
-                    <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Saldo pendente: R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</p>
+    <div id="invoice-partial-payment-modal" data-invoice-payment-modal data-pending-cents="{{.PendingAmountInput}}" data-contabase-overlay data-overlay-priority="120" data-overlay-close="closePartialPaymentModal" class="cb-invoice-overlay fixed inset-0 z-[120] hidden bg-black/60" role="dialog" aria-modal="true" aria-labelledby="invoice-partial-title" aria-describedby="invoice-partial-description">
+        <div class="cb-invoice-modal">
+            <header class="cb-invoice-modal-head">
+                <div class="cb-invoice-modal-heading">
+                    <span class="cb-invoice-modal-kicker">Pagamento</span>
+                    <h3 id="invoice-partial-title">Pagamento parcial</h3>
+                    <p id="invoice-partial-description">{{.CardName}} · Competência {{.Reference}}. Abata qualquer valor mantendo a fatura aberta com o saldo restante.</p>
                 </div>
-                <button type="button" class="btn-tactile flex h-8 w-8 items-center justify-center rounded-xl text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-2)]"
-                    data-onclick="closePartialPaymentModal" aria-label="Fechar">
-                    <i data-lucide="x" class="h-4 w-4"></i>
+                <button type="button" class="cb-invoice-modal-close" data-onclick="closePartialPaymentModal" aria-label="Fechar">
+                    <i data-lucide="x" aria-hidden="true"></i>
                 </button>
-            </div>
+            </header>
 
-            <form hx-post="/cartoes/faturas/pagar" hx-target="#faturas-content" hx-swap="outerHTML" class="space-y-3.5">
-                <input type="hidden" name="invoice_id" value="{{.InvoiceID}}">
-                <input type="hidden" name="account_id" value="{{.AccountID}}">
-                <input type="hidden" name="payment_mode" value="partial">
-                <label class="block">
-                    <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Valor</span>
-                    <input type="text" name="payment_amount" inputmode="numeric" autocomplete="off" placeholder="R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}" data-partial-payment-amount data-money-mask
-                        class="mt-1 h-11 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-sm font-semibold text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]">
-                </label>
-                <label class="block">
-                    <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Conta</span>
-                    <select name="payment_account_id" class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]">
-                        {{range .PaymentAccounts}}
-                        <option value="{{.ID}}" {{if eq .ID $.DefaultPaymentAccountID}}selected{{end}}>{{.Name}} (R$ {{.Money.Reais}}{{.Money.Cents}})</option>
-                        {{end}}
-                    </select>
-                </label>
-                <label class="block">
-                    <span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Data de pagamento</span>
-                    <input type="date" name="payment_date" value="{{.PaymentDateInput}}"
-                        class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]">
-                </label>
-                <div class="rounded-xl px-3 py-2 text-xs font-semibold cb-tone-warning cb-tone-notice">
-                    Saldo restante após este pagamento: <span data-partial-payment-remaining>R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</span>
+            <form hx-post="/cartoes/faturas/pagar" hx-target="#faturas-content" hx-swap="outerHTML" class="cb-invoice-modal-form">
+                <div class="cb-invoice-modal-body">
+                    <div class="cb-invoice-modal-summary">
+                        <div class="cb-invoice-modal-figure is-attention">
+                            <span class="cb-invoice-modal-label">Saldo pendente</span>
+                            <strong class="cb-invoice-modal-value" data-sensitive>R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</strong>
+                        </div>
+                        <div class="cb-invoice-modal-figure">
+                            <span class="cb-invoice-modal-label">Competência</span>
+                            <strong class="cb-invoice-modal-value">{{.Reference}}</strong>
+                        </div>
+                    </div>
+
+                    <input type="hidden" name="invoice_id" value="{{.InvoiceID}}">
+                    <input type="hidden" name="account_id" value="{{.AccountID}}">
+                    <input type="hidden" name="payment_mode" value="partial">
+                    <label class="cb-invoice-field">
+                        <span class="ui-label">Valor</span>
+                        <input type="text" name="payment_amount" inputmode="numeric" autocomplete="off" placeholder="R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}" data-partial-payment-amount data-money-mask
+                            aria-describedby="invoice-partial-error"
+                            class="ui-input">
+                        <p id="invoice-partial-error" class="cb-invoice-modal-error" data-partial-payment-error aria-live="polite" hidden></p>
+                    </label>
+                    <label class="cb-invoice-field">
+                        <span class="ui-label">Conta</span>
+                        <select name="payment_account_id" class="ui-select">
+                            {{range .PaymentAccounts}}
+                            <option value="{{.ID}}" {{if eq .ID $.DefaultPaymentAccountID}}selected{{end}}>{{.Name}} (R$ {{.Money.Reais}}{{.Money.Cents}})</option>
+                            {{end}}
+                        </select>
+                    </label>
+                    <label class="cb-invoice-field">
+                        <span class="ui-label">Data de pagamento</span>
+                        <input type="date" name="payment_date" value="{{.PaymentDateInput}}" class="ui-input">
+                    </label>
+                    <div class="cb-invoice-modal-note is-attention">
+                        <i data-lucide="coins" aria-hidden="true"></i>
+                        <span>Saldo restante após este pagamento: <strong data-partial-payment-remaining data-sensitive>R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</strong></span>
+                    </div>
                 </div>
-                <button type="submit" {{if not .CanSubmitPayment}}disabled{{end}}
-                    class="cb-button cb-button-primary btn-tactile flex h-10 w-full items-center justify-center gap-2 rounded-xl text-xs font-bold disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i data-lucide="check" class="h-4 w-4"></i>Confirmar
-                </button>
+                <footer class="cb-invoice-modal-actions">
+                    <button type="button" class="ui-btn ui-btn--ghost cb-invoice-modal-btn" data-onclick="closePartialPaymentModal">
+                        Cancelar
+                    </button>
+                    <button type="submit" {{if not .CanSubmitPayment}}disabled{{end}} class="ui-btn ui-btn--primary cb-invoice-modal-btn">
+                        <i data-lucide="check" aria-hidden="true"></i>Confirmar
+                    </button>
+                </footer>
             </form>
         </div>
     </div>
+
     {{end}}
     {{if not .HideMonthNavigation}}<div class="cb-card-dense px-4 py-3 md:p-5">
         <h3 class="cb-section-title mb-2 md:mb-3.5">Faturas do cartão</h3>
@@ -462,66 +451,59 @@
 {{end}}
 
 {{define "invoice-transactions"}}
-<section id="invoice-transactions" {{if and .OOB (not .OOBContent)}}hx-swap-oob="outerHTML"{{end}} class="w-full bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-4 sm:p-6 mt-4 sm:mt-6">
-    <div class="mb-4 sm:mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-            <h2 class="text-xs font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Lançamentos na Fatura</h2>
-            <p class="mt-1 text-xs text-[var(--cb-text-muted)] leading-normal">Agrupados por dia e ordenados conforme sua preferência.</p>
+<section id="invoice-transactions" {{if and .OOB (not .OOBContent)}}hx-swap-oob="outerHTML"{{end}} class="ui-panel cb-invoice-transactions">
+    <header class="cb-invoice-transactions-head">
+        <div class="ui-section-title">
+            <span class="ui-section-icon" aria-hidden="true"><i data-lucide="receipt-text"></i></span>
+            <div>
+                <h2>Lançamentos na fatura</h2>
+                <p>Agrupados por dia · {{if eq (len .Transactions) 1}}1 lançamento{{else}}{{len .Transactions}} lançamentos{{end}}</p>
+            </div>
         </div>
-        <div class="flex w-full md:w-auto rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-1">
-            <a href="{{.SortRecentURL}}"
-                class="flex-1 md:flex-none flex items-center justify-center text-center rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all duration-150 {{if eq .SortOrder "desc"}}bg-[var(--cb-accent-solid)] text-white{{else}}text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
-                <span class="block sm:hidden">Recentes</span>
-                <span class="hidden sm:block">Compras recentes</span>
+        <nav class="ui-tabs cb-invoice-sort" aria-label="Ordenação dos lançamentos">
+            <a href="{{.SortRecentURL}}" class="ui-tab{{if eq .SortOrder "desc"}} is-active{{end}}"{{if eq .SortOrder "desc"}} aria-current="true"{{end}} aria-label="Ordenar por compras recentes">
+                <span class="cb-invoice-sort-short" aria-hidden="true">Recentes</span><span class="cb-invoice-sort-full" aria-hidden="true">Recentes</span>
             </a>
-            <a href="{{.SortChronologicalURL}}"
-                class="flex-1 md:flex-none flex items-center justify-center text-center rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap transition-all duration-150 {{if eq .SortOrder "asc"}}bg-[var(--cb-accent-solid)] text-white{{else}}text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
-                <span class="block sm:hidden">Cronológica</span>
-                <span class="hidden sm:block">Ordem cronológica</span>
+            <a href="{{.SortChronologicalURL}}" class="ui-tab{{if eq .SortOrder "asc"}} is-active{{end}}"{{if eq .SortOrder "asc"}} aria-current="true"{{end}} aria-label="Ordenar por ordem cronológica">
+                <span class="cb-invoice-sort-short" aria-hidden="true">Cronológica</span><span class="cb-invoice-sort-full" aria-hidden="true">Cronológica</span>
             </a>
-        </div>
-    </div>
+        </nav>
+    </header>
+
     {{if .Transactions}}
-		<div class="space-y-5" data-show-more-group="faturas" data-show-more-initial="{{.InitialVisibleItems}}" data-show-more-total="{{len .Transactions}}" data-show-more-one-way>
-		{{$invoiceID := .InvoiceID}}
-		{{$nextReference := .NextReference}}
-		{{$canMutateItems := .CanMutateItems}}
+    <div class="cb-invoice-groups" data-show-more-group="faturas" data-show-more-initial="{{.InitialVisibleItems}}" data-show-more-total="{{len .Transactions}}" data-show-more-one-way>
+        {{$invoiceID := .InvoiceID}}
+        {{$nextReference := .NextReference}}
+        {{$canMutateItems := .CanMutateItems}}
         {{range .TransactionGroups}}
-            <section data-show-more-item="{{.FirstIndex}}" class="space-y-3">
-                <div class="sticky top-[8.75rem] z-[1] flex items-center gap-2.5 mb-2.5 md:top-[8.25rem]">
-                    <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)] whitespace-nowrap">{{.DateLabel}}</span>
-                    <span class="flex-1 h-px cb-date-separator-line"></span>
-                </div>
-                <div class="space-y-2">
+        <section class="cb-invoice-group" data-show-more-item="{{.FirstIndex}}">
+            <h3 class="cb-invoice-day">
+                <span class="cb-invoice-day-label">{{.DateLabel}}</span>
+                <span class="cb-invoice-day-line cb-date-separator-line" aria-hidden="true"></span>
+            </h3>
+            <div class="ui-list cb-invoice-group-rows">
                 {{range .Transactions}}
-                    <div data-show-more-item="{{.ListIndex}}">
+                <div data-show-more-item="{{.ListIndex}}">
                     {{if .IsProjected}}
-                    <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 transition-all hover:-translate-y-0.5 hover:shadow-sm shadow-sm">
-                        <div class="flex items-center gap-3">
-                            <!-- Category icon circle -->
-                            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-{{.CategoryColor}}-500/10 text-{{.CategoryColor}}-600 dark:bg-{{.CategoryColor}}-500/20 dark:text-{{.CategoryColor}}-400 border border-{{.CategoryColor}}-500/10 select-none">
-                                <i data-lucide="{{if and .CategoryIcon (ne .CategoryIcon "tag")}}{{.CategoryIcon}}{{else}}repeat{{end}}" class="w-5 h-5"></i>
-                            </span>
-                            <span class="min-w-0 flex-1">
-                                <div class="flex items-center justify-between gap-3">
-                                    <div class="min-w-0 flex-1">
-                                        <div class="flex items-center gap-1.5">
-                                            <h4 class="truncate text-sm font-bold text-[var(--cb-text-main)] leading-tight">{{.Description}}</h4>
-                                            <span class="cb-status-chip cb-status-chip-info">Previsto</span>
-                                        </div>
-                                        <p class="mt-0.5 truncate text-xs text-[var(--cb-text-muted)]">{{.CategoryName}} · {{.DateLabel}}</p>
-                                    </div>
-                                    <div class="text-right flex-shrink-0">
-                                        <p class="text-sm font-black text-[var(--cb-accent)]" data-sensitive>{{.AmountDisplay}}</p>
-                                        <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">{{.TimeDisplay}}</p>
-                                    </div>
-                                </div>
-                            </span>
+                    <div class="ui-row ui-row--invoice cb-invoice-row is-projected">
+                        <span class="ui-row__status" aria-hidden="true"><i data-lucide="{{if and .CategoryIcon (ne .CategoryIcon "tag")}}{{.CategoryIcon}}{{else}}repeat{{end}}"></i></span>
+                        <div class="ui-row__main">
+                            <p class="ui-row__title" title="{{.Description}}">{{.Description}}</p>
+                            <p class="ui-row__meta">
+                                <span>{{.CategoryName}}</span>
+                                <span class="ui-badge ui-badge--info">Previsto</span>
+                                {{if .HasInstallmentInfo}}<span class="ui-badge ui-badge--neutral">{{if and .IsSeries (le .TotalInstallments 1)}}Recorrente{{else}}{{.InstallmentNumber}}/{{.TotalInstallments}}{{end}}</span>{{end}}
+                            </p>
                         </div>
-                    </article>
+                        <span class="ui-row__end">
+                            <span class="ui-row__end-stack">
+                                <span class="ui-row__amount is-projected" data-sensitive>{{.AmountDisplay}}</span>
+                                <span class="ui-row__note">{{.TimeDisplay}}</span>
+                            </span>
+                        </span>
+                    </div>
                     {{else}}
-                    <article id="invoice-tx-{{.ID}}" class="invoice-transaction-row relative overflow-hidden rounded-xl"
-                        data-tx-id="{{.ID}}"
+                    <article id="invoice-tx-{{.ID}}" class="invoice-transaction-row" data-tx-id="{{.ID}}"
                         data-swipe-row="true"
                         data-swipe-left-url="/transacoes/{{.ID}}?invoice_id={{$invoiceID}}"
                         data-swipe-left-method="DELETE"
@@ -531,116 +513,100 @@
                         data-swipe-right-method="POST"
                         data-swipe-right-swap="none"
                         data-swipe-right-vals='{"expected_invoice_id":"{{$invoiceID}}","expected_destination_reference":"{{$nextReference}}","expected_updated_at":"{{.UpdatedAt}}","expected_move_scope":"{{if .IsSeries}}chain{{else}}single{{end}}"}'>
-                        <div data-swipe-bg-left class="absolute inset-y-0 left-0 flex w-28 origin-left items-center justify-start rounded-l-xl bg-[var(--cb-danger)] px-6 opacity-0 pointer-events-none">
-                            <i data-lucide="trash-2" class="w-5 h-5 text-white"></i>
+                        <div data-swipe-bg-left class="cb-invoice-swipe-bg cb-invoice-swipe-bg--delete" aria-hidden="true">
+                            <i data-lucide="trash-2"></i>
                         </div>
-                        <div data-swipe-bg-right class="absolute inset-y-0 right-0 flex w-32 origin-right items-center justify-end rounded-r-xl bg-[var(--cb-accent)] px-6 opacity-0 pointer-events-none">
-                            <span class="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-white">
-                                <i data-lucide="calendar-plus" class="w-5 h-5"></i>
-                                Mover
-                            </span>
+                        <div data-swipe-bg-right class="cb-invoice-swipe-bg cb-invoice-swipe-bg--move" aria-hidden="true">
+                            <span><i data-lucide="calendar-plus"></i>Mover</span>
                         </div>
-                        <div
-                            data-swipe-content
-                            class="relative z-10 flex w-full items-center gap-3 rounded-xl border bg-[var(--cb-surface-2)] p-3 text-left transition-colors duration-200 border-[var(--cb-border-subtle)] hover:bg-[var(--cb-surface-3)] hover:border-[var(--cb-border-strong)] hover:shadow-sm">
-                            <button type="button"
-                                class="flex min-w-0 flex-1 items-center gap-3 text-left"
+                        <div data-swipe-content class="ui-row ui-row--invoice cb-invoice-row">
+                            <span class="ui-row__status" aria-hidden="true"><i data-lucide="{{if and .CategoryIcon (ne .CategoryIcon "tag")}}{{.CategoryIcon}}{{else}}credit-card{{end}}"></i></span>
+                            <button type="button" class="ui-row__main ui-row__main--button"
                                 hx-get="/transacoes/{{.ID}}/editar?invoice_id={{$invoiceID}}"
                                 hx-target="#bottom-sheet-container"
                                 hx-swap="innerHTML"
                                 hx-push-url="false">
-
-                                <!-- Category icon circle -->
-                                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-{{.CategoryColor}}-500/10 text-{{.CategoryColor}}-600 dark:bg-{{.CategoryColor}}-500/20 dark:text-{{.CategoryColor}}-400 border border-{{.CategoryColor}}-500/10 select-none">
-                                    <i data-lucide="{{if and .CategoryIcon (ne .CategoryIcon "tag")}}{{.CategoryIcon}}{{else}}credit-card{{end}}" class="w-5 h-5"></i>
-                                </span>
-
-                                <span class="min-w-0 flex-1">
-                                    <div class="flex items-center justify-between gap-3">
-                                        <span class="min-w-0 flex-1">
-                                            <h4 class="truncate text-sm font-bold text-[var(--cb-text-main)] leading-tight">{{.Description}}</h4>
-                                            <div class="flex items-center gap-1.5 mt-1 flex-wrap">
-                                                <p class="truncate text-xs text-[var(--cb-text-muted)]">{{.CategoryName}}</p>
-                                                {{if .HasInstallmentInfo}}
-                                                <span class="cb-status-chip cb-status-chip-neutral">
-                                                    {{if and .IsSeries (le .TotalInstallments 1)}}Recorrente{{else}}{{.InstallmentNumber}}/{{.TotalInstallments}}{{end}}
-                                                </span>
-                                                {{end}}
-                                                {{if .HasRefund}}
-                                                <span class="cb-status-chip cb-status-chip-success" title="{{.RefundDescriptions}}">
-                                                    Reembolso {{.RefundedAmountDisplay}}
-                                                </span>
-                                                {{end}}
-                                            </div>
-                                        </span>
-                                        <span class="text-right flex-shrink-0">
-                                            <p class="text-sm font-black {{.AmountClass}}" data-sensitive>{{.AmountDisplay}}</p>
-                                            {{if .HasRefund}}<p class="cb-text-micro font-semibold text-[var(--cb-success)]" data-sensitive>Líquido {{.EffectiveAmountDisplay}}</p>{{end}}
-                                            <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">{{.TimeDisplay}}</p>
-                                        </span>
-                                    </div>
+                                <span class="ui-row__title" title="{{.Description}}">{{.Description}}</span>
+                                <span class="ui-row__meta">
+                                    <span>{{.CategoryName}}</span>
+                                    {{if .HasInstallmentInfo}}<span class="ui-badge ui-badge--neutral">{{if and .IsSeries (le .TotalInstallments 1)}}Recorrente{{else}}{{.InstallmentNumber}}/{{.TotalInstallments}}{{end}}</span>{{end}}
+                                    {{if .HasRefund}}<span class="ui-badge ui-badge--success" title="{{.RefundDescriptions}}">Reembolso <span data-sensitive>{{.RefundedAmountDisplay}}</span></span>{{end}}
                                 </span>
                             </button>
-                            {{if $canMutateItems}}
-                            {{if .HasRefund}}
-                            <button type="button"
-                                hx-get="/transacoes/{{.ID}}/reembolsos"
-                                hx-target="#bottom-sheet-container"
-                                hx-swap="innerHTML"
-                                class="btn-tactile inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] text-[var(--cb-success)] transition-colors hover:bg-emerald-500/10"
-                                data-tooltip-hover
-                                data-tooltip-text="Gerenciar reembolsos"
-                                aria-label="Gerenciar reembolsos de {{.Description}}">
-                                <i data-lucide="list-tree" class="h-4 w-4"></i>
-                            </button>
-                            {{end}}
-                            <button type="button"
-                                hx-get="/transacoes/{{.ID}}/reembolso"
-                                hx-target="#bottom-sheet-container"
-                                hx-swap="innerHTML"
-                                class="btn-tactile inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] text-[var(--cb-success)] transition-colors hover:bg-emerald-500/10"
-                                data-tooltip-hover
-                                data-tooltip-text="Informar reembolso"
-                                aria-label="Informar reembolso para {{.Description}}">
-                                <i data-lucide="undo-2" class="h-4 w-4"></i>
-                            </button>
-                            {{end}}
-                            <button type="button"
-                                hx-post="/transacoes/{{.ID}}/mover-fatura"
-                                hx-vals='{"expected_invoice_id":"{{$invoiceID}}","expected_destination_reference":"{{$nextReference}}","expected_updated_at":"{{.UpdatedAt}}","expected_move_scope":"{{if .IsSeries}}chain{{else}}single{{end}}"}'
-                                hx-swap="none"
-                                hx-indicator="#htmx-indicator"
-                                class="btn-tactile hidden md:inline-flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] text-[var(--cb-accent)] transition-colors hover:bg-[var(--cb-accent-soft)]"
-                                data-tooltip-hover
-                                data-tooltip-text="Mover para próxima fatura"
-                                aria-label="Mover para próxima fatura">
-                                <i data-lucide="calendar-plus" class="h-4 w-4"></i>
-                            </button>
+                            <span class="ui-row__end">
+                                <span class="ui-row__end-stack">
+                                    <span class="ui-row__amount {{if eq .Type "INCOME"}}is-income{{else}}is-expense{{end}}" data-sensitive>{{.AmountDisplay}}</span>
+                                    {{if .HasRefund}}<span class="ui-row__note is-success">Líquido <span data-sensitive>{{.EffectiveAmountDisplay}}</span></span>{{end}}
+                                    <span class="ui-row__note">{{.TimeDisplay}}</span>
+                                </span>
+                                {{if $canMutateItems}}
+                                <span class="ui-row__actions">
+                                    {{if .HasRefund}}
+                                    <button type="button"
+                                        hx-get="/transacoes/{{.ID}}/reembolsos"
+                                        hx-target="#bottom-sheet-container"
+                                        hx-swap="innerHTML"
+                                        class="ui-row__action cb-invoice-row-action is-success"
+                                        data-tooltip-hover
+                                        data-tooltip-text="Gerenciar reembolsos"
+                                        aria-label="Gerenciar reembolsos de {{.Description}}">
+                                        <i data-lucide="list-tree"></i>
+                                    </button>
+                                    {{end}}
+                                    <button type="button"
+                                        hx-get="/transacoes/{{.ID}}/reembolso"
+                                        hx-target="#bottom-sheet-container"
+                                        hx-swap="innerHTML"
+                                        class="ui-row__action cb-invoice-row-action is-success"
+                                        data-tooltip-hover
+                                        data-tooltip-text="Informar reembolso"
+                                        aria-label="Informar reembolso para {{.Description}}">
+                                        <i data-lucide="undo-2"></i>
+                                    </button>
+                                    <button type="button"
+                                        hx-post="/transacoes/{{.ID}}/mover-fatura"
+                                        hx-vals='{"expected_invoice_id":"{{$invoiceID}}","expected_destination_reference":"{{$nextReference}}","expected_updated_at":"{{.UpdatedAt}}","expected_move_scope":"{{if .IsSeries}}chain{{else}}single{{end}}"}'
+                                        hx-swap="none"
+                                        hx-indicator="#htmx-indicator"
+                                        class="ui-row__action ui-row__action--desktop cb-invoice-row-action is-accent"
+                                        data-tooltip-hover
+                                        data-tooltip-text="Mover para próxima fatura"
+                                        aria-label="Mover para próxima fatura">
+                                        <i data-lucide="calendar-plus"></i>
+                                    </button>
+                                </span>
+                                {{end}}
+                            </span>
                         </div>
                     </article>
                     {{end}}
-                    </div>
-                {{end}}
                 </div>
-            </section>
+                {{end}}
+            </div>
+        </section>
         {{end}}
-        {{if gt (len .Transactions) .InitialVisibleItems}}
-        <div data-show-more-toggle-container class="mt-5 cb-card-dense text-center">
-            <p class="text-sm font-semibold text-[var(--cb-text-main)]">{{.VisibleItemCountLabel}}</p>
-            <p class="mt-1 text-xs text-[var(--cb-text-muted)]">{{.HiddenItemCountLabel}}</p>
-            <button data-onclick-ev="toggleShowMore" data-show-more-toggle type="button" class="cb-button cb-button-primary btn-tactile mt-3 inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-bold">
-                {{.LoadMoreButtonLabel}}
-            </button>
-        </div>
-        {{end}}
-        </div>
-    {{else}}
-        <p class="text-sm text-[var(--cb-text-muted)] text-center py-8">Nenhum lançamento nesta fatura ainda.</p>
+    {{if gt (len .Transactions) .InitialVisibleItems}}
+    <div data-show-more-toggle-container class="cb-invoice-more">
+        <p class="cb-invoice-more-count">{{.VisibleItemCountLabel}}</p>
+        <p class="cb-invoice-more-hint">{{.HiddenItemCountLabel}}</p>
+        <button data-onclick-ev="toggleShowMore" data-show-more-toggle type="button" class="ui-btn ui-btn--secondary cb-invoice-more-btn">
+            {{.LoadMoreButtonLabel}}
+        </button>
+    </div>
     {{end}}
-    <aside class="cb-v2-swipe-hint mt-5 cb-card-dense items-start gap-2 text-xs leading-relaxed text-[var(--cb-text-muted)]">
-        <i data-lucide="help-circle" class="w-4 h-4 shrink-0 text-[var(--cb-accent)] mt-0.5"></i>
+    </div>
+    {{else}}
+    <div class="ui-empty cb-invoice-empty">
+        <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="receipt-text"></i></span>
+        <p class="ui-empty__title">Nenhum lançamento nesta fatura ainda</p>
+        <p class="ui-empty__text">Compras, assinaturas e parcelas aparecem aqui quando a competência recebe lançamentos.</p>
+    </div>
+    {{end}}
+
+    <aside class="cb-v2-swipe-hint cb-invoice-swipe-hint">
+        <i data-lucide="help-circle" class="cb-invoice-swipe-hint-icon" aria-hidden="true"></i>
         <span>
-            <strong class="font-bold text-[var(--cb-text-main)]">Dica de Navegação:</strong>
+            <strong>Dica de navegação:</strong>
             Arraste o lançamento para a Esquerda (&larr;) para mover a cobrança para a próxima fatura | Arraste para a Direita (&rarr;) para apagar o registro.
         </span>
     </aside>

@@ -1,4 +1,4 @@
-// Package features is the single authority for opt-in application features.
+// Package features is the single authority for application feature availability.
 package features
 
 import (
@@ -10,12 +10,24 @@ const investmentsEnv = "CONTABASE_FEATURE_INVESTMENTS"
 
 // Flags contains read-only availability decisions for the current process.
 type Flags struct {
-	Investments bool
+	Investments                 bool
+	InvestmentOperations        bool
+	InvestmentSettlements       bool
+	InvestmentSettlementEffects bool
 }
 
-// FromEnv defaults every feature to disabled. Only explicit true/1 enables
-// Investments; unknown values fail closed.
+// FromEnv enables Investments when its variable is absent. Explicit values,
+// including empty and unknown values, retain the legacy true/1-only contract.
+// Controlled financial operations still require explicit opt-in at every level.
 func FromEnv() Flags {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv(investmentsEnv)))
-	return Flags{Investments: value == "true" || value == "1"}
+	value, present := os.LookupEnv(investmentsEnv)
+	value = strings.ToLower(strings.TrimSpace(value))
+	investments := !present || value == "true" || value == "1"
+	operations := strings.ToLower(strings.TrimSpace(os.Getenv("CONTABASE_FEATURE_INVESTMENT_OPERATIONS")))
+	settlements := strings.ToLower(strings.TrimSpace(os.Getenv("CONTABASE_FEATURE_INVESTMENT_SETTLEMENTS")))
+	effects := strings.ToLower(strings.TrimSpace(os.Getenv("CONTABASE_FEATURE_INVESTMENT_SETTLEMENT_EFFECTS")))
+	ops := investments && (operations == "true" || operations == "1")
+	c1 := ops && (settlements == "true" || settlements == "1")
+	return Flags{Investments: investments, InvestmentOperations: ops, InvestmentSettlements: c1,
+		InvestmentSettlementEffects: c1 && (effects == "true" || effects == "1")}
 }

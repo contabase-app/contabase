@@ -19,7 +19,7 @@ type seededCategory struct {
 }
 
 func TestSeederPersonalWorkspace(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory database: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestSeederPersonalWorkspace(t *testing.T) {
 }
 
 func TestSeederBusinessWorkspace(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory database: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestSeederBusinessWorkspace(t *testing.T) {
 }
 
 func TestSeederPersonalCanonicalCategoryTree(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory database: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestSeederPersonalCanonicalCategoryTree(t *testing.T) {
 }
 
 func TestSeederBusinessCanonicalCategoryTree(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory database: %v", err)
 	}
@@ -628,7 +628,7 @@ func TestWorkspaceCategoryReseedApplyRollsBackOnSeedError(t *testing.T) {
 }
 
 func TestSeederTypesAreConsistent(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory database: %v", err)
 	}
@@ -677,7 +677,7 @@ func TestSeederTypesAreConsistent(t *testing.T) {
 }
 
 func TestSeederPartialExistingCategories(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory database: %v", err)
 	}
@@ -715,7 +715,7 @@ func TestSeederPartialExistingCategories(t *testing.T) {
 }
 
 func TestSeederPartialExistingAccounts(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory database: %v", err)
 	}
@@ -761,7 +761,7 @@ func TestSeederPartialExistingAccounts(t *testing.T) {
 }
 
 func TestSeederPartialExistingCards(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory database: %v", err)
 	}
@@ -951,7 +951,7 @@ func assertSeedNameMissing(t *testing.T, categories []seededCategory, name strin
 
 func openSeederTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("open memory database: %v", err)
 	}

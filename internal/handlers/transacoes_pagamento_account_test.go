@@ -292,8 +292,8 @@ func TestTogglePagamentoRejectsArchivedPaymentAccount(t *testing.T) {
 
 func TestTogglePagamentoBlocksAccountChangeForSpecialTransactions(t *testing.T) {
 	tests := []struct {
-		name         string
-		setup        func(*testing.T, *sql.DB, int64)
+		name          string
+		setup         func(*testing.T, *sql.DB, int64)
 		wantAccountID string
 	}{
 		{

@@ -7,11 +7,10 @@ import (
 	"time"
 
 	"github.com/contabase-app/contabase/internal/auth"
-	"github.com/contabase-app/contabase/internal/database"
 )
 
 func TestWithAuthAddsNoStoreHeaders(t *testing.T) {
-	db, err := database.Open(":memory:")
+	db, err := openRawServerFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory db: %v", err)
 	}
@@ -68,7 +67,7 @@ func TestWithAuthAddsNoStoreHeaders(t *testing.T) {
 }
 
 func TestWithAuthHTMXRequest(t *testing.T) {
-	db, err := database.Open(":memory:")
+	db, err := openRawServerFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory db: %v", err)
 	}
@@ -117,7 +116,7 @@ func TestWithAuthHTMXRequest(t *testing.T) {
 }
 
 func TestWithAuthMissingSession(t *testing.T) {
-	db, err := database.Open(":memory:")
+	db, err := openRawServerFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory db: %v", err)
 	}
@@ -149,7 +148,7 @@ func TestWithAuthMissingSession(t *testing.T) {
 }
 
 func TestWithAuthClearsSessionPastAbsoluteLifetime(t *testing.T) {
-	db, err := database.Open(":memory:")
+	db, err := openRawServerFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory db: %v", err)
 	}
@@ -200,7 +199,7 @@ func TestWithAuthClearsSessionPastAbsoluteLifetime(t *testing.T) {
 }
 
 func TestWithAuthForbiddenResponse(t *testing.T) {
-	db, err := database.Open(":memory:")
+	db, err := openRawServerFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory db: %v", err)
 	}
@@ -252,7 +251,7 @@ func TestWithAuthForbiddenResponse(t *testing.T) {
 }
 
 func TestWithAuthExportDownload(t *testing.T) {
-	db, err := database.Open(":memory:")
+	db, err := openRawServerFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory db: %v", err)
 	}
@@ -302,7 +301,7 @@ func TestWithAuthExportDownload(t *testing.T) {
 }
 
 func TestSessionCheckEndpointReturns204WhenAuthenticated(t *testing.T) {
-	db, err := database.Open(":memory:")
+	db, err := openRawServerFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory db: %v", err)
 	}
@@ -352,7 +351,7 @@ func TestSessionCheckEndpointReturns204WhenAuthenticated(t *testing.T) {
 }
 
 func TestSessionCheckEndpointRedirectsWhenUnauthenticated(t *testing.T) {
-	db, err := database.Open(":memory:")
+	db, err := openRawServerFixture(t)
 	if err != nil {
 		t.Fatalf("failed to open memory db: %v", err)
 	}

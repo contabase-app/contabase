@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/contabase-app/contabase/internal/civildate"
+	"github.com/contabase-app/contabase/internal/investments"
 	"github.com/contabase-app/contabase/internal/models"
 	"github.com/google/uuid"
 )
@@ -40,17 +41,19 @@ const investmentColumns = `id, workspace_id, account_id, name, institution, kind
 // (the authenticated user), never from a payload. status, redeemed_* and
 // archived_at are never caller-supplied: a lot is born ATIVA and clean.
 type CreateInvestmentInput struct {
-	WorkspaceID    string
-	AccountID      string
-	CreatedBy      string
-	Name           string
-	Institution    string
-	Kind           string
-	PrincipalCents int64
-	TaxRegime      string
-	AppliedDate    string
-	MaturityDate   *string
-	YieldNote      string
+	WorkspaceID     string
+	AccountID       string
+	SourceAccountID string // Empty retains the established record-only service contract.
+	CreatedBy       string
+	RequestID       string // Optional form key; repeats reuse the existing primary key.
+	Name            string
+	Institution     string
+	Kind            string
+	PrincipalCents  int64
+	TaxRegime       string
+	AppliedDate     string
+	MaturityDate    *string
+	YieldNote       string
 }
 
 // UpdateInvestmentInput carries exactly the editable set. Identity, account,
@@ -78,14 +81,56 @@ const (
 	InvestmentListAll
 )
 
-// InvestmentDetail pairs a lot with its derived current value and full
-// tenant-scoped valuation history. CurrentIsPrincipal marks the fallback:
-// true when no valuation exists yet, so CurrentCents is principal_cents.
+// InvestmentDetail carries scoped purchases and positions. CurrentIsPrincipal
+// means no position was recorded; the purchase-aware reader leaves its value
+// unknown. The legacy pure builder below retains its single-purchase fallback.
 type InvestmentDetail struct {
-	Investment         models.Investment
-	CurrentCents       int64
-	CurrentIsPrincipal bool
-	Valuations         []models.InvestmentValuation
+	AdjustedVariation                  investments.AdjustedVariation
+	Withdrawals                        []models.InvestmentWithdrawal
+	PurchaseStates                     map[string]models.InvestmentPurchaseState
+	TotalWithdrawnCents                int64
+	MaintainedPurchaseCount            int
+	LatestWithdrawalDate               string
+	Investment                         models.Investment
+	CurrentCents                       int64
+	CurrentIsPrincipal                 bool
+	PositionDate                       string
+	YieldCents                         int64
+	ReturnBasisPoints                  int64
+	ReturnAvailable                    bool
+	Valuations                         []models.InvestmentValuation
+	Purchases                          []models.InvestmentPurchase
+	PurchaseTransfers                  map[string]InvestmentPurchaseTransfer
+	TotalPurchasesCents                int64
+	PurchaseCount                      int
+	LatestPurchaseDate                 string
+	PositionStale, DifferenceAvailable bool
+}
+
+// BuildInvestmentDetail derives the summary from the same tenant-scoped
+// history that the page displays. Valuations are returned by the service in
+// ascending civil-date order; the domain validates dates and selects current.
+func BuildInvestmentDetail(inv models.Investment, valuations []models.InvestmentValuation) (InvestmentDetail, error) {
+	current, err := investments.CurrentValueCents(inv, valuations)
+	if err != nil {
+		return InvestmentDetail{}, err
+	}
+	yield, err := investments.YieldCents(current, inv.PrincipalCents)
+	if err != nil {
+		return InvestmentDetail{}, err
+	}
+	basisPoints, available, err := investments.AccumulatedReturnBasisPoints(yield, inv.PrincipalCents)
+	if err != nil {
+		return InvestmentDetail{}, err
+	}
+	detail := InvestmentDetail{Investment: inv, CurrentCents: current, CurrentIsPrincipal: len(valuations) == 0,
+		YieldCents: yield, ReturnBasisPoints: basisPoints, ReturnAvailable: available, Valuations: valuations}
+	for _, valuation := range valuations {
+		if valuation.ValuationDate > detail.PositionDate {
+			detail.PositionDate = valuation.ValuationDate
+		}
+	}
+	return detail, nil
 }
 
 func validInvestmentTaxRegime(regime string) bool {
@@ -157,7 +202,7 @@ func scanInvestment(scan func(dest ...any) error) (models.Investment, error) {
 // cannot slip between validation and insert. The migration trigger remains
 // the second barrier; this layer must not rely on it.
 func CreateInvestment(ctx context.Context, db *sql.DB, input CreateInvestmentInput) (models.Investment, error) {
-	if input.WorkspaceID == "" || input.AccountID == "" || input.CreatedBy == "" {
+	if input.WorkspaceID == "" || input.AccountID == "" || input.CreatedBy == "" || (input.SourceAccountID != "" && input.RequestID == "") {
 		return models.Investment{}, fmt.Errorf("%w: contexto de criação incompleto", ErrInvestmentValidation)
 	}
 	name, institution, kind, maturity, yieldNote, err := validateInvestmentFields(input.Name, input.Institution, input.Kind, input.TaxRegime, input.YieldNote, input.MaturityDate)
@@ -173,6 +218,16 @@ func CreateInvestment(ctx context.Context, db *sql.DB, input CreateInvestmentInp
 	}
 	if err := validateMaturityNotBeforeApplied(applied, maturity); err != nil {
 		return models.Investment{}, err
+	}
+	id := uuid.NewString()
+	if input.RequestID != "" {
+		requestID, err := uuid.Parse(input.RequestID)
+		if err != nil {
+			return models.Investment{}, fmt.Errorf("%w: formulário inválido; reabra o cadastro", ErrInvestmentValidation)
+		}
+		// The authenticated workspace and author scope a retry key. A caller
+		// cannot use it as an investment ID or collide with another tenant.
+		id = uuid.NewSHA1(uuid.NameSpaceOID, []byte(input.WorkspaceID+"\x00"+input.CreatedBy+"\x00"+requestID.String())).String()
 	}
 
 	tx, err := db.BeginTx(ctx, nil)
@@ -191,10 +246,32 @@ func CreateInvestment(ctx context.Context, db *sql.DB, input CreateInvestmentInp
 	if accountHits != 1 {
 		return models.Investment{}, ErrInvestmentInvalidAccount
 	}
+	if input.RequestID != "" {
+		previous, err := scanInvestment(func(dest ...any) error {
+			return tx.QueryRowContext(ctx, `SELECT `+investmentColumns+` FROM investments
+				WHERE id = ? AND workspace_id = ? AND created_by = ?`, id, input.WorkspaceID, input.CreatedBy).Scan(dest...)
+		})
+		if err == nil {
+			sameMaturity := previous.MaturityDate == nil && maturity == nil ||
+				previous.MaturityDate != nil && maturity != nil && *previous.MaturityDate == *maturity
+			if previous.AccountID != input.AccountID || previous.Name != name || previous.Institution != institution ||
+				previous.Kind != kind || previous.PrincipalCents != input.PrincipalCents || previous.TaxRegime != input.TaxRegime ||
+				previous.AppliedDate != input.AppliedDate || previous.YieldNote != yieldNote || !sameMaturity {
+				return models.Investment{}, fmt.Errorf("%w: este formulário já cadastrou outro investimento; reabra o cadastro", ErrInvestmentConflict)
+			}
+			if err := verifyInvestmentPurchaseTransferTx(ctx, tx, input.WorkspaceID, "initial:"+id, input.SourceAccountID, input.AccountID, input.CreatedBy, input.AppliedDate, input.PrincipalCents); err != nil {
+				return models.Investment{}, err
+			}
+			return previous, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return models.Investment{}, err
+		}
+	}
 
 	now := time.Now().Unix()
 	inv := models.Investment{
-		ID:             uuid.NewString(),
+		ID:             id,
 		WorkspaceID:    input.WorkspaceID,
 		AccountID:      input.AccountID,
 		Name:           name,
@@ -220,8 +297,13 @@ func CreateInvestment(ctx context.Context, db *sql.DB, input CreateInvestmentInp
 	if err != nil {
 		return models.Investment{}, err
 	}
+	if input.SourceAccountID != "" {
+		if err := createInvestmentPurchaseTransferTx(ctx, tx, input.WorkspaceID, "initial:"+id, input.SourceAccountID, input.AccountID, input.CreatedBy, input.AppliedDate, input.PrincipalCents); err != nil {
+			return models.Investment{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
-		return models.Investment{}, err
+		return models.Investment{}, &InvestmentCommitError{err: err}
 	}
 	return inv, nil
 }
@@ -404,6 +486,9 @@ func RedeemInvestment(ctx context.Context, db *sql.DB, input RedeemInvestmentInp
 		return err
 	}
 	defer tx.Rollback()
+	if err := rejectFundedInvestmentTx(ctx, tx, input.WorkspaceID, input.InvestmentID); err != nil {
+		return err
+	}
 	var status, appliedDate string
 	err = tx.QueryRowContext(ctx, `SELECT status, applied_date FROM investments
 		WHERE id = ? AND workspace_id = ?`, input.InvestmentID, input.WorkspaceID).Scan(&status, &appliedDate)
@@ -422,6 +507,13 @@ func RedeemInvestment(ctx context.Context, db *sql.DB, input RedeemInvestmentInp
 	}
 	if civildate.CivilDateDaysBetween(applied, redeemed) < 0 {
 		return fmt.Errorf("%w: resgate anterior à aplicação", ErrInvestmentValidation)
+	}
+	var latestPurchase sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT MAX(purchase_date) FROM investment_purchases WHERE workspace_id = ? AND investment_id = ?`, input.WorkspaceID, input.InvestmentID).Scan(&latestPurchase); err != nil {
+		return err
+	}
+	if latestPurchase.Valid && input.RedeemedDate < latestPurchase.String {
+		return fmt.Errorf("%w: encerramento anterior à última compra", ErrInvestmentValidation)
 	}
 	var latestValuationDate sql.NullString
 	err = tx.QueryRowContext(ctx, `SELECT MAX(valuation_date) FROM investment_valuations

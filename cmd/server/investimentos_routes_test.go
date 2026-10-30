@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"html"
 	"html/template"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/contabase-app/contabase/internal/handlers"
 	"github.com/contabase-app/contabase/internal/services"
+	"github.com/google/uuid"
 )
 
 type investimentosRoutesHarness struct {
@@ -99,7 +101,7 @@ func TestInvestimentosFeatureGateOffHidesRoutesAndNavigationWithoutChangingData(
 }
 
 func investimentosRouteForm() url.Values {
-	return url.Values{"account_id": {"inv-a"}, "name": {"Lote HTTP A"}, "institution": {"Banco A"}, "kind": {"CDB"}, "principal_cents": {"100000"}, "tax_regime": {"IR_REGRESSIVO"}, "applied_date": {"2026-01-15"}, "yield_note": {"100% CDI"}}
+	return url.Values{"account_id": {"inv-a"}, "name": {"Lote HTTP A"}, "institution": {"Banco A"}, "kind": {"CDB"}, "principal_amount": {"1000,00"}, "request_id": {uuid.NewString()}, "tax_regime": {"IR_REGRESSIVO"}, "applied_date": {"2026-01-15"}, "yield_note": {"100% CDI"}}
 }
 
 func (h *investimentosRoutesHarness) request(t *testing.T, method, path, session string, form url.Values, csrf, hx bool) *httptest.ResponseRecorder {
@@ -192,8 +194,8 @@ func TestInvestimentosRoutesCRUDAndTenantAuthority(t *testing.T) {
 	}
 	rr := h.request(t, "POST", "/investimentos", h.admin, form, true, true)
 	requireInvestimentosStatus(t, rr, 200)
-	if rr.Header().Get("HX-Refresh") != "true" {
-		t.Fatal("missing HX-Refresh")
+	if !strings.HasPrefix(rr.Header().Get("HX-Redirect"), "/investimentos/") || !strings.HasSuffix(rr.Header().Get("HX-Redirect"), "?created=1") {
+		t.Fatal("missing creation redirect")
 	}
 	invs, err := services.ListInvestments(context.Background(), h.db, "workspace-rbac", services.InvestmentListAll)
 	if err != nil || len(invs) != 1 {
@@ -216,7 +218,7 @@ func TestInvestimentosRoutesCRUDAndTenantAuthority(t *testing.T) {
 	bForm.Set("name", "Lote exclusivo B")
 	rr = h.request(t, "POST", "/investimentos", b, bForm, true, false)
 	requireInvestimentosStatus(t, rr, 303)
-	if rr.Header().Get("Location") != "/investimentos" {
+	if !strings.HasPrefix(rr.Header().Get("Location"), "/investimentos/") || !strings.HasSuffix(rr.Header().Get("Location"), "?created=1") {
 		t.Fatal("invalid redirect")
 	}
 	for _, route := range []struct{ method, suffix string }{{"GET", ""}, {"POST", "/editar"}} {
@@ -285,6 +287,13 @@ func TestInvestimentosRoutesCRUDAndTenantAuthority(t *testing.T) {
 
 func TestInvestimentosRoutesFiltersAndRealTemplates(t *testing.T) {
 	h := newInvestimentosRoutesHarness(t)
+	h.exec(t, `INSERT INTO accounts(id,workspace_id,name,type,archived_at) VALUES
+ ('checking-b','workspace-b','Corrente B','CHECKING',NULL),
+ ('checking-archived','workspace-rbac','Corrente arquivada','CHECKING',100),
+ ('credit-a','workspace-rbac','Crédito A','CREDIT_CARD',NULL)`)
+	destinationSelect := regexp.MustCompile(`(?s)<select\b[^>]*name="account_id"[^>]*>.*?</select>`)
+	sourceSelect := regexp.MustCompile(`(?s)<select\b[^>]*name="source_account_id"[^>]*>.*?</select>`)
+
 	active := h.create(t, "Active lot")
 	redeemed := h.create(t, "Redeemed lot")
 	archived := h.create(t, "Archived lot")
@@ -306,12 +315,22 @@ func TestInvestimentosRoutesFiltersAndRealTemplates(t *testing.T) {
 					t.Fatalf("filter=%q name=%q want=%v", tc.filter, name, want)
 				}
 			}
-			for _, bad := range []string{`value="inv-b"`, `value="checking-a"`, `value="archived-a"`} {
-				if strings.Contains(rr.Body.String(), bad) {
-					t.Fatalf("bad account option %s", bad)
+			destination := destinationSelect.FindString(rr.Body.String())
+			source := sourceSelect.FindString(rr.Body.String())
+			if !strings.Contains(destination, `value="inv-a"`) || !strings.Contains(source, `value="checking-a"`) {
+				t.Fatal("missing allowed investment destination or cash source")
+			}
+			for _, bad := range []string{`value="inv-b"`, `value="checking-a"`, `value="archived-a"`, `value="checking-b"`, `value="checking-archived"`, `value="credit-a"`} {
+				if strings.Contains(destination, bad) {
+					t.Fatalf("bad destination option %s", bad)
 				}
 			}
-			for _, want := range []string{`hx-post="/investimentos"`, `hx-swap="none"`, `hx-indicator="#htmx-indicator"`, `name="csrf_token" value="`, `name="principal_cents"`, `name="account_id"`} {
+			for _, bad := range []string{`value="inv-a"`, `value="inv-b"`, `value="archived-a"`, `value="checking-b"`, `value="checking-archived"`, `value="credit-a"`} {
+				if strings.Contains(source, bad) {
+					t.Fatalf("bad source option %s", bad)
+				}
+			}
+			for _, want := range []string{`hx-post="/investimentos"`, `hx-swap="none"`, `hx-indicator="#htmx-indicator"`, `name="csrf_token" value="`, `name="principal_amount"`, `name="account_id"`} {
 				if !strings.Contains(rr.Body.String(), want) {
 					t.Fatalf("missing form contract: %s", want)
 				}
@@ -327,15 +346,19 @@ func TestInvestimentosRoutesFiltersAndRealTemplates(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "Sem posição registrada") || !strings.Contains(rr.Body.String(), "R$ 1.000,00") {
 		t.Fatal("principal fallback missing")
 	}
-	for _, forbidden := range []string{`name="account_id"`, `name="principal_cents"`, `name="applied_date"`, `name="status"`, `name="archived_at"`, `hx-post="/investimentos/` + active + `/valuation"`} {
-		if strings.Contains(rr.Body.String(), forbidden) {
+	editForm := regexp.MustCompile(`(?s)<form[^>]*action="/investimentos/` + regexp.QuoteMeta(active) + `/editar"[^>]*>.*?</form>`).FindString(rr.Body.String())
+	if editForm == "" || !strings.Contains(editForm, `name="name"`) {
+		t.Fatal("original investment edit form missing")
+	}
+	for _, forbidden := range []string{`name="account_id"`, `name="principal_amount"`, `name="applied_date"`, `name="status"`, `name="archived_at"`, `hx-post="/investimentos/` + active + `/valuation"`} {
+		if strings.Contains(editForm, forbidden) {
 			t.Fatalf("edit exposes forbidden field: %s", forbidden)
 		}
 	}
 	h.exec(t, `INSERT INTO investment_valuations (id,workspace_id,investment_id,valuation_date,amount_cents,created_by,created_at) VALUES ('v1','workspace-rbac',?,'2026-02-01',110000,'admin-user',200)`, active)
 	rr = h.request(t, "GET", "/investimentos/"+active, h.admin, nil, false, false)
 	requireInvestimentosStatus(t, rr, 200)
-	if strings.Contains(rr.Body.String(), "Sem posição registrada") || !strings.Contains(rr.Body.String(), "R$ 1.100,00") || !strings.Contains(rr.Body.String(), "2026-02-01") {
+	if strings.Contains(rr.Body.String(), "Sem posição registrada") || !strings.Contains(rr.Body.String(), "R$ 1.100,00") || !strings.Contains(rr.Body.String(), `datetime="2026-02-01">01/02/2026</time>`) {
 		t.Fatal("valuation not rendered")
 	}
 	rr = h.request(t, "GET", "/investimentos", h.admin, nil, false, false)
@@ -382,6 +405,65 @@ func TestInvestimentosRoutesFiltersAndRealTemplates(t *testing.T) {
 	requireInvestimentosStatus(t, rr, 200)
 	if !strings.Contains(rr.Body.String(), "Nenhum investimento neste filtro") {
 		t.Fatal("empty state missing")
+	}
+}
+
+func TestInvestimentosDetailPatrimonialDifference(t *testing.T) {
+	h := newInvestimentosRoutesHarness(t)
+	for _, tc := range []struct {
+		name, date, amount, gain, percent, tone string
+	}{
+		{"positive", "2026-02-01", "102500", "+ R$ 25,00", "+2,50%", "text-emerald-700"},
+		{"loss", "2026-02-02", "98000", "- R$ 20,00", "-2,00%", "text-red-700"},
+		{"zero", "2026-02-03", "100000", "R$ 0,00", "0,00%", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			id := h.create(t, tc.name)
+			h.exec(t, `INSERT INTO investment_valuations (id,workspace_id,investment_id,valuation_date,amount_cents,created_by,created_at) VALUES (?, 'workspace-rbac', ?, ?, ?, 'admin-user', 200)`, "val-"+tc.name, id, tc.date, tc.amount)
+			rr := h.request(t, "GET", "/investimentos/"+id, h.admin, nil, false, false)
+			requireInvestimentosStatus(t, rr, 200)
+			body := html.UnescapeString(rr.Body.String())
+			visibleDate := tc.date[8:10] + "/" + tc.date[5:7] + "/" + tc.date[:4]
+			for _, want := range []string{tc.gain, "Posição em ", "Diferença patrimonial"} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("missing %q", want)
+				}
+			}
+			if strings.Contains(body, tc.percent) {
+				t.Fatal("position difference presented as a return percentage")
+			}
+			dateTime := regexp.MustCompile(`(?is)<time\b([^>]*)>(.*?)</time>`)
+			dateFound := false
+			for _, match := range dateTime.FindAllStringSubmatch(body, -1) {
+				if strings.Contains(match[1], `datetime="`+tc.date+`"`) && html.UnescapeString(match[2]) == visibleDate {
+					dateFound = true
+					break
+				}
+			}
+			if !dateFound {
+				t.Fatalf("missing semantic date: datetime=%q visible=%q", tc.date, visibleDate)
+			}
+			if strings.Contains(body, "NaN%") || strings.Contains(body, "Inf%") || strings.Contains(body, "Sem posição registrada") {
+				t.Fatal("invalid return state")
+			}
+			if tc.tone != "" && !strings.Contains(body, tc.tone) {
+				t.Fatalf("missing tone %q", tc.tone)
+			}
+		})
+	}
+	id := h.create(t, "fallback")
+	rr := h.request(t, "GET", "/investimentos/"+id, h.admin, nil, false, false)
+	requireInvestimentosStatus(t, rr, 200)
+	for _, want := range []string{"Total de compras realizadas", "Sem posição registrada", "Sem valor patrimonial conhecido", "Indisponível"} {
+		if !strings.Contains(rr.Body.String(), want) {
+			t.Fatalf("fallback missing %q", want)
+		}
+	}
+	if strings.Contains(rr.Body.String(), "Posição em ") {
+		t.Fatal("fallback invented valuation date")
+	}
+	if strings.Contains(rr.Body.String(), "R$ 0,00") || strings.Contains(rr.Body.String(), "0,00%") {
+		t.Fatal("missing position presented as a confirmed zero variation")
 	}
 }
 
@@ -595,7 +677,7 @@ func TestInvestimentosValuationRenderedFormAndHistory(t *testing.T) {
 	if match == "" {
 		t.Fatal("ATIVA valuation form missing")
 	}
-	for _, want := range []string{`method="post"`, `hx-post="/investimentos/` + id + `/valuations"`, `hx-swap="none"`, `hx-indicator="#htmx-indicator"`, `name="valuation_date"`, `name="amount_cents"`, `min="0"`, `min="2026-01-15"`} {
+	for _, want := range []string{`method="post"`, `hx-post="/investimentos/` + id + `/valuations"`, `hx-swap="none"`, `hx-indicator="#htmx-indicator"`, `name="valuation_date"`, `name="amount"`, `type="text"`, `inputmode="decimal"`, `data-investment-money="zero"`, `min="2026-01-15"`} {
 		if !strings.Contains(match, want) {
 			t.Fatalf("form missing %s", want)
 		}
@@ -611,6 +693,8 @@ func TestInvestimentosValuationRenderedFormAndHistory(t *testing.T) {
 	}
 	// Submit the actual rendered token via cookie + form through withAuth.
 	form := investimentosValuationForm()
+	form.Del("amount_cents")
+	form.Set("amount", "R$ 1.100,00")
 	form.Set("csrf_token", token[1])
 	req := httptest.NewRequest("POST", "/investimentos/"+id+"/valuations", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -627,11 +711,11 @@ func TestInvestimentosValuationRenderedFormAndHistory(t *testing.T) {
 	h.exec(t, `UPDATE investments SET status='RESGATADA', redeemed_date='2026-02-01', redeemed_by='admin-user' WHERE id=?`, id)
 	rr = h.request(t, "GET", "/investimentos/"+id, h.admin, nil, false, false)
 	requireInvestimentosStatus(t, rr, 200)
-	if strings.Contains(rr.Body.String(), `hx-post="/investimentos/`+id+`/valuations"`) || strings.Contains(rr.Body.String(), `name="amount_cents"`) {
+	if strings.Contains(rr.Body.String(), `hx-post="/investimentos/`+id+`/valuations"`) || strings.Contains(rr.Body.String(), `name="amount"`) || strings.Contains(rr.Body.String(), `name="amount_cents"`) {
 		t.Fatal("RESGATADA has valuation form")
 	}
 	table := regexp.MustCompile(`(?s)<table.*?</table>`).FindString(rr.Body.String())
-	if !strings.Contains(table, "2026-02-01") || !strings.Contains(table, "R$ 1.100,00") || strings.Contains(table, "<input") || strings.Contains(table, "<button") || strings.Contains(table, "hx-post") {
+	if !strings.Contains(table, `datetime="2026-02-01">01/02/2026</time>`) || !strings.Contains(table, "R$ 1.100,00") || strings.Contains(table, "<input") || strings.Contains(table, "<button") || strings.Contains(table, "hx-post") {
 		t.Fatalf("history not read-only: %s", table)
 	}
 }
@@ -771,7 +855,7 @@ func TestInvestimentosLifecycleRenderedFormsHistoryAndFilters(t *testing.T) {
 	for _, state := range []string{"ATIVA", "RESGATADA", "ARQUIVADA"} {
 		rr := h.request(t, "GET", base, h.admin, nil, false, false)
 		requireInvestimentosStatus(t, rr, 200)
-		body := rr.Body.String()
+		body := html.UnescapeString(rr.Body.String())
 		for _, action := range []string{"editar", "valuations", "resgatar", "arquivar"} {
 			want := (state == "ATIVA" && action != "arquivar") || (state == "RESGATADA" && action == "arquivar")
 			if strings.Contains(body, `action="`+base+`/`+action+`"`) != want {
@@ -784,11 +868,23 @@ func TestInvestimentosLifecycleRenderedFormsHistoryAndFilters(t *testing.T) {
 			}
 		}
 		if state != "ATIVA" {
-			if !strings.Contains(body, "RESGATADA") || !strings.Contains(body, "R$ 1.200,00") {
+			stateLabel := "Encerrada"
+			if state == "ARQUIVADA" {
+				stateLabel = "Arquivada"
+			}
+			if !strings.Contains(body, stateLabel) || !strings.Contains(body, "R$ 1.200,00") {
 				t.Fatal("redeemed detail missing")
 			}
+			for _, want := range []string{`Posição em <time datetime="2026-02-01">01/02/2026</time>`, "+ R$ 200,00", "Diferença patrimonial", "Em relação ao total de compras"} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("redeemed summary missing %q", want)
+				}
+			}
+			if strings.Contains(body, "+20,00%") || strings.Contains(body, "NaN%") || strings.Contains(body, "Inf%") {
+				t.Fatal("patrimonial difference presented as an unsupported return percentage")
+			}
 			table := regexp.MustCompile(`(?s)<table.*?</table>`).FindString(body)
-			if !strings.Contains(table, "2026-02-01") || !strings.Contains(table, "R$ 1.200,00") {
+			if !strings.Contains(table, `datetime="2026-02-01">01/02/2026</time>`) || !strings.Contains(table, "R$ 1.200,00") {
 				t.Fatal("final history missing")
 			}
 			if state == "RESGATADA" {
@@ -814,7 +910,7 @@ func TestInvestimentosLifecycleRenderedFormsHistoryAndFilters(t *testing.T) {
 		allowed := map[string]bool{"csrf_token": true}
 		if action == "resgatar" {
 			allowed["redeemed_date"] = true
-			allowed["final_amount_cents"] = true
+			allowed["final_amount"] = true
 		}
 		if len(names) != len(allowed) {
 			t.Fatalf("fields=%v", names)
@@ -829,6 +925,10 @@ func TestInvestimentosLifecycleRenderedFormsHistoryAndFilters(t *testing.T) {
 			t.Fatal("rendered CSRF invalid")
 		}
 		form := investimentosLifecycleForm()
+		if action == "resgatar" {
+			form.Del("final_amount_cents")
+			form.Set("final_amount", "R$ 1.200,00")
+		}
 		form.Set("csrf_token", token[1])
 		req := httptest.NewRequest("POST", base+"/"+action, strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

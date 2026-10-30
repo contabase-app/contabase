@@ -4,8 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"html"
+	"html/template"
+	"math"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -17,9 +21,212 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/contabase-app/contabase/internal/civildate"
 	"github.com/contabase-app/contabase/internal/models"
 	"github.com/contabase-app/contabase/internal/services"
+	"github.com/google/uuid"
 )
+
+func TestInvestimentosI1ConsolidationHistoryAndReadOnly(t *testing.T) {
+	h, other := seedInvestmentHandlerDB(t)
+	h.Templates = template.Must(template.New("investimentos-i1").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath": func(path string) string { return path + "?v=test" },
+		"upper":     strings.ToUpper,
+	})).ParseFiles(
+		resolveTemplatePath(t, "templates/pages/investimentos.html"),
+		resolveTemplatePath(t, "templates/pages/investimento_detalhe.html"),
+		resolveTemplatePath(t, "templates/components/investimento_form.html"),
+		resolveTemplatePath(t, "templates/components/investimento_valuation_form.html"),
+		resolveTemplatePath(t, "templates/components/investimento_retirada_form.html"),
+		resolveTemplatePath(t, "templates/components/app_shell.html"),
+	))
+	other.Templates = h.Templates
+	h.CSRFToken = "i1-csrf"
+	ctx := context.Background()
+	create := func(handler *InvestimentosHandler, name string) models.Investment {
+		values := investmentFormValues()
+		values["name"] = []string{name}
+		if handler == other {
+			values["account_id"] = []string{"acc-inv-b"}
+		}
+		return mustHandlerCreate(t, handler, values)
+	}
+	position := func(handler *InvestimentosHandler, inv models.Investment, date string, cents int64) {
+		_, err := services.UpsertInvestmentValuation(ctx, h.WriterDB, services.UpsertInvestmentValuationInput{
+			WorkspaceID: handler.WorkspaceID, InvestmentID: inv.ID, ActingUserID: handler.UserID,
+			ValuationDate: date, AmountCents: cents,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	first := create(h, "I1 primeira")
+	position(h, first, "2026-03-01", 110000)
+	position(h, first, "2026-02-01", 800000) // inserted later, but an older civil date
+	second := create(h, "I1 segunda")
+	position(h, second, "2026-05-01", 50000)
+	zero := create(h, "I1 zero conhecido")
+	position(h, zero, "2026-04-01", 0)
+	missing := create(h, "I1 sem posição")
+	closed := create(h, "I1 encerrada")
+	archived := create(h, "I1 arquivada")
+	for _, inv := range []models.Investment{closed, archived} {
+		if err := services.RedeemInvestment(ctx, h.WriterDB, services.RedeemInvestmentInput{
+			WorkspaceID: h.WorkspaceID, InvestmentID: inv.ID, ActingUserID: h.UserID,
+			RedeemedDate: "2026-06-01", FinalAmountCents: 900000,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := services.ArchiveInvestment(ctx, h.WriterDB, services.ArchiveInvestmentInput{
+		WorkspaceID: h.WorkspaceID, InvestmentID: archived.ID, ActingUserID: h.UserID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	foreign := create(other, "I1 exclusivo B")
+	position(other, foreign, "2026-08-01", 990000)
+	execTestSQL(t, h.DB, `UPDATE accounts SET current_balance=72345 WHERE workspace_id='ws-a' AND id='acc-checking-a'`)
+	execTestSQL(t, h.DB, `INSERT INTO transactions (id, workspace_id, user_id, account_id, type, amount, date, description, status)
+		VALUES ('i1-ledger', 'ws-a', 'user-a', 'acc-checking-a', 'EXPENSE', 125, 1768478400, 'I1 fixture', 'paid')`)
+	before := queryScalarInvestments(t, h, `SELECT (SELECT COUNT(*) FROM transactions) || ':' ||
+		(SELECT SUM(amount) FROM transactions) || ':' || group_concat(id || ':' || current_balance)
+		FROM (SELECT id,current_balance FROM accounts ORDER BY id)`)
+	beforePositions, err := services.GetInvestmentValuations(ctx, h.DB, h.WorkspaceID, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every GET below must also succeed when SQLite rejects all writes.
+	h.DB.SetMaxOpenConns(1)
+	execTestSQL(t, h.DB, `PRAGMA query_only=ON`)
+	positions, err := h.latestInvestmentPositions(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, leaked := positions[foreign.ID]; leaked {
+		t.Fatal("foreign workspace position leaked")
+	}
+	all, err := h.listInvestments(ctx, services.InvestmentListAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err := summarizeInvestmentPositions(all, positions)
+	if err != nil || summary.ActiveCount != 4 || summary.WithoutPosition != 1 || summary.KnownTotal != "R$ 1.600,00" || summary.LatestDate != "01/05/2026" {
+		t.Fatalf("consolidation: %+v, %v", summary, err)
+	}
+	for _, filter := range []string{"ATIVAS", "TODAS", "RESGATADAS", "ARQUIVADAS"} {
+		rr := httptest.NewRecorder()
+		h.HandleInvestimentos(rr, httptest.NewRequest("GET", "/investimentos?status="+filter, nil))
+		body := html.UnescapeString(rr.Body.String())
+		for _, want := range []string{"Resumo das aplicações ativas", "R$ 1.600,00", `datetime="2026-05-01">01/05/2026</time>`, "Total parcial"} {
+			if rr.Code != 200 || !strings.Contains(body, want) {
+				t.Fatalf("filter %s missing %q: %d %s", filter, want, rr.Code, body)
+			}
+		}
+		if strings.Contains(body, foreign.Name) || strings.Contains(body, "R$ 9.900,00") {
+			t.Fatal("foreign data leaked in list")
+		}
+		if filter == "ATIVAS" && (!strings.Contains(body, `Em <time datetime="2026-03-01">01/03/2026</time>`) || !strings.Contains(body, "Sem posição registrada") || !strings.Contains(body, "R$ 0,00") || strings.Contains(body, closed.Name)) {
+			t.Fatal("active positions, dates or closed exclusion incorrect")
+		}
+		if filter == "RESGATADAS" && !strings.Contains(body, "Encerrada") {
+			t.Fatal("closed application not identified separately")
+		}
+	}
+	rr := httptest.NewRecorder()
+	h.HandleDetalheInvestimento(rr, httptest.NewRequest("GET", "/investimentos/"+first.ID, nil), first.ID)
+	body := html.UnescapeString(rr.Body.String())
+	if rr.Code != 200 || !strings.Contains(body, first.Name) || !strings.Contains(body, `Posição em <time datetime="2026-03-01">01/03/2026</time>`) || !strings.Contains(body, "R$ 1.100,00") {
+		t.Fatalf("latest detail: %d %s", rr.Code, body)
+	}
+	historyHeading := regexp.MustCompile(`(?is)<h2\b[^>]*\sid\s*=\s*["']investment-history-title["'][^>]*>`).FindStringIndex(body)
+	if historyHeading == nil {
+		t.Fatal("investment history missing")
+	}
+	historyStart := strings.LastIndex(body[:historyHeading[0]], "<section")
+	historyCloseOffset := strings.Index(body[historyHeading[1]:], "</section>")
+	if historyStart < 0 || historyCloseOffset < 0 {
+		t.Fatal("investment history section boundaries missing")
+	}
+	historyEnd := historyHeading[1] + historyCloseOffset + len("</section>")
+	history := body[historyStart:historyEnd]
+	if !strings.Contains(history, "Histórico e evolução das posições") {
+		t.Fatal("investment history heading missing from its section")
+	}
+	olderPosition := `datetime="2026-02-01">01/02/2026</time>`
+	newerPosition := `datetime="2026-03-01">01/03/2026</time>`
+	if strings.Index(history, olderPosition) < 0 || strings.Index(history, olderPosition) >= strings.Index(history, newerPosition) || !strings.Contains(history, "R$ 8.000,00") || !strings.Contains(history, "R$ 1.100,00") {
+		t.Fatal("recorded history is incomplete or out of order")
+	}
+	rr = httptest.NewRecorder()
+	h.HandleDetalheInvestimento(rr, httptest.NewRequest("GET", "/investimentos/"+missing.ID, nil), missing.ID)
+	body = html.UnescapeString(rr.Body.String())
+	if rr.Code != 200 || !strings.Contains(body, "Sem posição registrada") || !strings.Contains(body, "Indisponível") || strings.Contains(body, "0,00%") || strings.Contains(body, "R$ 0,00") {
+		t.Fatalf("missing position shown as known: %d %s", rr.Code, body)
+	}
+	rr = httptest.NewRecorder()
+	other.HandleDetalheInvestimento(rr, httptest.NewRequest("GET", "/investimentos/"+first.ID, nil), first.ID)
+	if rr.Code != 404 {
+		t.Fatalf("foreign detail: %d", rr.Code)
+	}
+	rr = httptest.NewRecorder()
+	other.HandleInvestimentos(rr, httptest.NewRequest("GET", "/investimentos", nil))
+	body = html.UnescapeString(rr.Body.String())
+	if rr.Code != 200 || !strings.Contains(body, "R$ 9.900,00") || strings.Contains(body, first.Name) || strings.Contains(body, "R$ 1.600,00") {
+		t.Fatalf("workspace B consolidation: %d %s", rr.Code, body)
+	}
+	afterPositions, err := services.GetInvestmentValuations(ctx, h.DB, h.WorkspaceID, first.ID)
+	if err != nil || !reflect.DeepEqual(beforePositions, afterPositions) {
+		t.Fatalf("GET changed recorded positions: %v", err)
+	}
+	after := queryScalarInvestments(t, h, `SELECT (SELECT COUNT(*) FROM transactions) || ':' ||
+		(SELECT SUM(amount) FROM transactions) || ':' || group_concat(id || ':' || current_balance)
+		FROM (SELECT id,current_balance FROM accounts ORDER BY id)`)
+	if before != after {
+		t.Fatalf("GET changed ledger or balances: %s -> %s", before, after)
+	}
+}
+
+func TestInvestimentosI1MaturityCivilDates(t *testing.T) {
+	// Same instant falls on different civil dates: use the app's configured
+	// date, then compare calendar days, including a month boundary.
+	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
+	today := civildate.CivilDateAt(time.Date(2026, 10, 13, 1, 0, 0, 0, time.UTC), appTimeLocation())
+	if today.String() != "2026-10-12" {
+		t.Fatal("today shifted away from the application calendar")
+	}
+	for _, tc := range []struct{ date, status, want string }{
+		{"2026-10-11", "ATIVA", "Vencida"},
+		{"2026-10-12", "ATIVA", "Vencendo nos próximos 30 dias · Vence hoje"},
+		{"2026-11-11", "ATIVA", "Vencendo nos próximos 30 dias"},
+		{"2026-11-12", "ATIVA", "Sem vencimento próximo"},
+		{"", "ATIVA", "Sem data de vencimento"},
+		{"2026-10-11", "RESGATADA", "Encerrada"},
+	} {
+		inv := models.Investment{Status: tc.status}
+		if tc.date != "" {
+			inv.MaturityDate = &tc.date
+		}
+		got, err := investmentMaturityLabel(inv, today)
+		if err != nil || got != tc.want {
+			t.Fatalf("%s/%s: %q, %v", tc.date, tc.status, got, err)
+		}
+	}
+}
+
+func TestInvestimentosI1UnknownTotalAndOverflow(t *testing.T) {
+	active := []models.Investment{{ID: "a", Status: "ATIVA"}, {ID: "b", Status: "ATIVA"}}
+	summary, err := summarizeInvestmentPositions(active, nil)
+	if err != nil || summary.WithoutPosition != 2 || summary.KnownTotal != "Sem posição registrada" || summary.LatestDate != "Indisponível" {
+		t.Fatalf("unknown positions: %+v %v", summary, err)
+	}
+	_, err = summarizeInvestmentPositions(active, map[string]models.InvestmentValuation{
+		"a": {AmountCents: math.MaxInt64, ValuationDate: "2026-02-01"},
+		"b": {AmountCents: 1, ValuationDate: "2026-02-01"},
+	})
+	if err == nil {
+		t.Fatal("position total overflow must not wrap into a false financial value")
+	}
+}
 
 // --- fixtures -----------------------------------------------------------------
 
@@ -41,14 +248,15 @@ func seedInvestmentHandlerDB(t *testing.T) (*InvestimentosHandler, *Investimento
 
 func investmentFormValues() map[string][]string {
 	return map[string][]string{
-		"account_id":      {"acc-inv-a"},
-		"name":            {"CDB Banco X"},
-		"institution":     {"Banco X"},
-		"kind":            {"CDB"},
-		"principal_cents": {"100000"},
-		"tax_regime":      {"IR_REGRESSIVO"},
-		"applied_date":    {"2026-01-15"},
-		"yield_note":      {"100% CDI"},
+		"account_id":       {"acc-inv-a"},
+		"name":             {"CDB Banco X"},
+		"institution":      {"Banco X"},
+		"kind":             {"CDB"},
+		"principal_amount": {"1000,00"},
+		"request_id":       {uuid.NewString()},
+		"tax_regime":       {"IR_REGRESSIVO"},
+		"applied_date":     {"2026-01-15"},
+		"yield_note":       {"100% CDI"},
 	}
 }
 
@@ -79,7 +287,7 @@ func TestInvestimentosParseCreateFormUsesInternalContext(t *testing.T) {
 	}
 
 	values["maturity_date"] = []string{"2027-06-30"}
-	values["principal_cents"] = []string{"123"}
+	values["principal_amount"] = []string{"1,23"}
 	req = httptest.NewRequest(http.MethodPost, "/investimentos", strings.NewReader(formValuesEncode(values)))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	input, err = h.parseInvestmentCreateForm(req)
@@ -90,11 +298,11 @@ func TestInvestimentosParseCreateFormUsesInternalContext(t *testing.T) {
 		t.Fatalf("maturity/principal não parseados: %+v", input)
 	}
 
-	values["principal_cents"] = []string{"1.000,50"}
+	values["principal_amount"] = []string{"300,001"}
 	req = httptest.NewRequest(http.MethodPost, "/investimentos", strings.NewReader(formValuesEncode(values)))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if _, err := h.parseInvestmentCreateForm(req); !errors.Is(err, services.ErrInvestmentValidation) {
-		t.Fatalf("centavos não-inteiros devem falhar como validação, got %v", err)
+		t.Fatalf("frações além de centavos devem falhar como validação, got %v", err)
 	}
 }
 
@@ -193,6 +401,18 @@ func TestInvestimentosUpdateFlow(t *testing.T) {
 
 // --- detail / list / error mapping ----------------------------------------------
 
+func TestInvestmentReturnFormattingLargeValues(t *testing.T) {
+	if got := formatInvestmentBasisPoints(10000); got != "+100,00%" {
+		t.Fatalf("percentual grande: %q", got)
+	}
+	if got := formatInvestmentBasisPoints(-50); got != "-0,50%" {
+		t.Fatalf("percentual negativo pequeno: %q", got)
+	}
+	if got := formatCurrencyLabel(8_000_000_000_000_000_000); got != "R$ 80.000.000.000.000.000,00" {
+		t.Fatalf("moeda grande: %q", got)
+	}
+}
+
 func TestInvestimentosDetailAndListIsolation(t *testing.T) {
 	h, handlerB := seedInvestmentHandlerDB(t)
 	created := mustHandlerCreate(t, h, investmentFormValues())
@@ -202,7 +422,7 @@ func TestInvestimentosDetailAndListIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail.Investment.ID != created.ID || detail.CurrentCents != 100000 || !detail.CurrentIsPrincipal {
+	if detail.Investment.ID != created.ID || detail.TotalPurchasesCents != 100000 || detail.CurrentCents != 0 || !detail.CurrentIsPrincipal || detail.DifferenceAvailable {
 		t.Fatalf("detail sem valuation: %+v", detail)
 	}
 	if len(valuations) != 0 {
@@ -230,12 +450,13 @@ func TestInvestimentosDetailAndListIsolation(t *testing.T) {
 
 	// Listagem só enxerga o próprio workspace.
 	if _, err := handlerB.createInvestment(formRequest("/investimentos", map[string][]string{
-		"account_id":      {"acc-inv-b"},
-		"name":            {"LCI Banco B"},
-		"kind":            {"LCI"},
-		"principal_cents": {"50000"},
-		"tax_regime":      {"ISENTO_PF"},
-		"applied_date":    {"2026-02-01"},
+		"account_id":       {"acc-inv-b"},
+		"name":             {"LCI Banco B"},
+		"kind":             {"LCI"},
+		"principal_amount": {"500,00"},
+		"request_id":       {uuid.NewString()},
+		"tax_regime":       {"ISENTO_PF"},
+		"applied_date":     {"2026-02-01"},
 	})); err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +492,7 @@ func TestMapInvestmentErrorStatuses(t *testing.T) {
 	assertStatus(services.ErrInvestmentInvalidStatus, http.StatusConflict)
 	assertStatus(services.ErrInvestmentConflict, http.StatusConflict)
 	validation := func() error {
-		req := formRequest("/investimentos", map[string][]string{"principal_cents": {"abc"}})
+		req := formRequest("/investimentos", map[string][]string{"principal_amount": {"abc"}})
 		_, err := h.parseInvestmentCreateForm(req)
 		return err
 	}()
@@ -326,7 +547,7 @@ func TestInvestimentosHTTPNilWriterAndCancelledContext(t *testing.T) {
 		h.WriterDB = nil
 		rr := httptest.NewRecorder()
 		// Invalid payload would yield 400 if parsing/service were reached.
-		invoke(rr, formRequest("/investimentos", map[string][]string{"principal_cents": {"invalid"}}))
+		invoke(rr, formRequest("/investimentos", map[string][]string{"principal_amount": {"invalid"}}))
 		if rr.Code != 500 {
 			t.Fatalf("nil writer status=%d", rr.Code)
 		}

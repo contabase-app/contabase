@@ -3,15 +3,107 @@ function toggleLancamentosSearch() {
     if (el) el.classList.toggle('hidden');
 }
 
+function syncLancamentosFilterTrigger() {
+    var panel = document.getElementById('lancamentosFilterPanel');
+    var trigger = document.getElementById('lancamentosFilterTrigger');
+    if (!panel || !trigger) return;
+    var isHidden = panel.classList.contains('hidden');
+    var wrapper = document.getElementById('lancamentos-list-wrapper');
+    var active = wrapper
+        ? wrapper.getAttribute('data-has-active-filters') === 'true'
+        : trigger.getAttribute('data-has-active-filters') === 'true';
+    trigger.setAttribute('aria-expanded', isHidden ? 'false' : 'true');
+    trigger.setAttribute('aria-label', (isHidden ? 'Abrir filtros' : 'Fechar filtros') + (active ? ', filtros ativos' : ''));
+    trigger.setAttribute('data-has-active-filters', active ? 'true' : 'false');
+    trigger.classList.toggle('is-active', active);
+}
+
+var lastLancamentosFilterFocus = null;
+
+function focusLancamentosFilterPanel() {
+    var panel = document.getElementById('lancamentosFilterPanel');
+    if (!panel) return;
+    var close = panel.querySelector('[data-onclick="toggleLancamentosFilters"]');
+    if (close && typeof close.focus === 'function') {
+        close.focus({ preventScroll: true });
+    }
+}
+
+function returnLancamentosFilterFocus() {
+    var panel = document.getElementById('lancamentosFilterPanel');
+    var active = document.activeElement;
+    if (active && active !== document.body && panel && !panel.contains(active)) return;
+    var trigger = document.getElementById('lancamentosFilterTrigger');
+    if (!trigger || typeof trigger.focus !== 'function') return;
+    if (lastLancamentosFilterFocus && lastLancamentosFilterFocus !== trigger && lastLancamentosFilterFocus !== document.body) {
+        if (lastLancamentosFilterFocus.isConnected) {
+            lastLancamentosFilterFocus.focus({ preventScroll: true });
+            return;
+        }
+    }
+    trigger.focus({ preventScroll: true });
+}
+
+function getLancamentosFilterFocusable() {
+    var panel = document.getElementById('lancamentosFilterPanel');
+    if (!panel) return [];
+    return Array.prototype.slice.call(panel.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
+    )).filter(function(el) {
+        return !!(el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
+    });
+}
+
+function trapLancamentosFilterFocus(event) {
+    if (event.key !== 'Tab') return;
+    var panel = document.getElementById('lancamentosFilterPanel');
+    if (!panel || panel.classList.contains('hidden')) return;
+    if (typeof window.getTopOverlayId === 'function' && window.getTopOverlayId() !== 'lancamentosFilterPanel') return;
+    var focusable = getLancamentosFilterFocusable();
+    if (!focusable.length) return;
+    var first = focusable[0];
+    var last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && (document.activeElement === last || !panel.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+    }
+}
+
+function bindLancamentosFilterTriggerState() {
+    var panel = document.getElementById('lancamentosFilterPanel');
+    if (!panel || panel.dataset.triggerStateBound === 'true') return;
+    panel.dataset.triggerStateBound = 'true';
+    panel.dataset.filterWasOpen = panel.classList.contains('hidden') ? 'false' : 'true';
+    if (typeof MutationObserver === 'function') {
+        new MutationObserver(function() {
+            var isHidden = panel.classList.contains('hidden');
+            syncLancamentosFilterTrigger();
+            var wasOpen = panel.dataset.filterWasOpen === 'true';
+            if (isHidden && wasOpen) {
+                returnLancamentosFilterFocus();
+            }
+            panel.dataset.filterWasOpen = isHidden ? 'false' : 'true';
+        }).observe(panel, { attributes: true, attributeFilter: ['class'] });
+    }
+    syncLancamentosFilterTrigger();
+}
+
 function toggleLancamentosFilters() {
     var el = document.getElementById('lancamentosFilterPanel');
     if (el) {
         var wasHidden = el.classList.contains('hidden');
+        if (wasHidden) lastLancamentosFilterFocus = document.activeElement;
         el.classList.toggle('hidden');
+        syncLancamentosFilterTrigger();
         if (wasHidden && !el.classList.contains('hidden')) {
             if (typeof window.overlayDidOpen === 'function') window.overlayDidOpen('lancamentos-filters');
+            window.setTimeout(focusLancamentosFilterPanel, 0);
         } else if (!wasHidden && el.classList.contains('hidden')) {
             if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
+            returnLancamentosFilterFocus();
         }
     }
 }
@@ -21,24 +113,45 @@ function closeLancamentosFilters(event) {
     var el = document.getElementById('lancamentosFilterPanel');
     if (el && !el.classList.contains('hidden')) {
         el.classList.add('hidden');
+        syncLancamentosFilterTrigger();
         if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
     }
 }
 
 function resetLancamentosFilters(mes, ano) {
     closeLancamentosFilters();
-    var url = '/lancamentos?mes=' + encodeURIComponent(mes || '') + '&ano=' + encodeURIComponent(ano || '');
+    var fallbackURL = '/lancamentos?mes=' + encodeURIComponent(mes || '') + '&ano=' + encodeURIComponent(ano || '');
     var headerReset = document.getElementById('clearFiltersBtn');
-    if (headerReset && headerReset.getAttribute('hx-get')) {
-        htmx.ajax('GET', headerReset.getAttribute('hx-get'), {
+    var resetURL = headerReset && headerReset.getAttribute('data-clear-filters-url');
+    if (!resetURL) resetURL = fallbackURL;
+    if (window.htmx) {
+        var focusAfterReset = function() {
+            document.removeEventListener('htmx:afterSettle', focusAfterReset);
+            var trigger = document.getElementById('lancamentosFilterTrigger');
+            if (trigger) trigger.focus({ preventScroll: true });
+        };
+        document.addEventListener('htmx:afterSettle', focusAfterReset);
+        htmx.ajax('GET', resetURL, {
             target: '#main-content',
             select: '#main-content',
-            swap: 'innerHTML'
+            swap: 'outerHTML'
         });
-        history.replaceState({htmx: true}, '', headerReset.getAttribute('hx-get'));
+        history.replaceState({htmx: true}, '', resetURL);
         return;
     }
-    window.location.href = url;
+    window.location.href = resetURL;
+}
+
+function syncLancamentosSearchFromURL() {
+    var input = document.querySelector('#lancamentosFilters input[name="q"]');
+    if (!input) return;
+    var value = '';
+    try {
+        value = new URLSearchParams(window.location.search).get('q') || '';
+    } catch (error) {
+        return;
+    }
+    if (input.value !== value) input.value = value;
 }
 
 function syncLancamentosFilterChips(form) {
@@ -128,6 +241,7 @@ document.addEventListener('change', function(e) {
     var panel = document.getElementById('lancamentosFilterPanel');
     if (panel && !panel.classList.contains('hidden') && !e.target.closest('#lancamentosFilterPanel')) {
         panel.classList.add('hidden');
+        syncLancamentosFilterTrigger();
         if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
     }
     // Reset bulk delete state before filter request.
@@ -149,14 +263,20 @@ document.addEventListener('htmx:afterSwap', function(e) {
     }
 });
 
-(function() {
+function initLancamentosFilterForm() {
     var form = document.getElementById('lancamentosFilters');
     if (!form) return;
-    form.addEventListener('submit', function(e) { e.preventDefault(); });
+    bindLancamentosFilterTriggerState();
     syncLancamentosFilterChips(form);
     updateLancamentosCategoryVisuals(form);
     syncOrdemVisuals(form);
-})();
+}
+
+document.addEventListener('submit', function(e) {
+    if (e.target && e.target.id === 'lancamentosFilters') e.preventDefault();
+});
+
+initLancamentosFilterForm();
 
 window.selectLancamentosFilterCategory = function(id, name) {
     var form = document.getElementById('lancamentosFilters');
@@ -165,6 +285,7 @@ window.selectLancamentosFilterCategory = function(id, name) {
     var panel = document.getElementById('lancamentosFilterPanel');
     if (panel && !panel.classList.contains('hidden')) {
         panel.classList.add('hidden');
+        syncLancamentosFilterTrigger();
         if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
     }
     // Reset bulk delete state before category filter request.
@@ -246,3 +367,36 @@ window.resetLancamentosFiltersFromForm = function() {
     var ano = form ? (form.querySelector('[name="ano"]') ? form.querySelector('[name="ano"]').value : '') : '';
     resetLancamentosFilters(mes, ano);
 };
+
+window.handleClearLancamentosFilters = function(event) {
+    if (event && typeof event.preventDefault === 'function') event.preventDefault();
+    window.resetLancamentosFiltersFromForm();
+};
+
+document.addEventListener('keydown', function(event) {
+    var panel = document.getElementById('lancamentosFilterPanel');
+    if (!panel || panel.classList.contains('hidden')) return;
+    if (typeof window.getTopOverlayId === 'function' && window.getTopOverlayId() !== 'lancamentosFilterPanel') return;
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeLancamentosFilters();
+        return;
+    }
+    trapLancamentosFilterFocus(event);
+});
+
+document.addEventListener('htmx:afterSettle', function() {
+    initLancamentosFilterForm();
+    syncLancamentosFilterTrigger();
+});
+
+document.addEventListener('htmx:historyRestore', function() {
+    syncLancamentosFilterTrigger();
+    syncLancamentosSearchFromURL();
+});
+
+window.addEventListener('popstate', function() {
+    window.setTimeout(syncLancamentosSearchFromURL, 0);
+});
+
+syncLancamentosSearchFromURL();

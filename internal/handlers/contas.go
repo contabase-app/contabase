@@ -65,6 +65,10 @@ type PendingItemRow struct {
 	DueDateUnix                 int64
 	DueDate                     string
 	AccountName                 string
+	AccountProviderSlug         string
+	AccountColor                string
+	ProviderMark                string
+	ProviderLogoPath            string
 	ContactName                 string
 	IsOverdue                   bool
 	IsScheduled                 bool
@@ -128,6 +132,8 @@ func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Requ
 		}
 		data = ContasData{
 			Aba:         aba,
+			Busca:       q,
+			HasFilters:  q != "",
 			Payables:    payables,
 			Receivables: receivables,
 		}
@@ -243,7 +249,7 @@ func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOve
 		)`
 
 	sqlQuery := `
-		SELECT id, description, amount, due_ref, account_name, contact_name, scheduled_payment_at, is_invoice, account_id, account_type, has_recurring_rule FROM (
+		SELECT id, description, amount, due_ref, account_name, contact_name, scheduled_payment_at, is_invoice, account_id, account_type, provider_slug, account_color, has_recurring_rule FROM (
 			SELECT
 				t.id AS id,
 				COALESCE(t.description, '') AS description,
@@ -255,6 +261,8 @@ func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOve
 				0 AS is_invoice,
 				t.account_id AS account_id,
 				a.type AS account_type,
+				COALESCE(a.provider_slug, '') AS provider_slug,
+				COALESCE(NULLIF(a.color, ''), '') AS account_color,
 				CASE WHEN t.recurring_rule_id IS NOT NULL THEN 1 ELSE 0 END AS has_recurring_rule
 			FROM transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
@@ -292,7 +300,7 @@ func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOve
 			UNION ALL
 			SELECT
 				id, description, amount, due_ref, account_name, contact_name,
-				scheduled_payment_at, is_invoice, account_id, account_type, has_recurring_rule
+				scheduled_payment_at, is_invoice, account_id, account_type, provider_slug, account_color, has_recurring_rule
 			FROM (
 				SELECT
 					i.id AS id,
@@ -305,6 +313,8 @@ func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOve
 					1 AS is_invoice,
 					a.id AS account_id,
 					a.type AS account_type,
+					COALESCE(a.provider_slug, '') AS provider_slug,
+					COALESCE(NULLIF(a.color, ''), '') AS account_color,
 					0 AS has_recurring_rule
 				FROM invoices i
 				JOIN accounts a ON a.id = i.account_id
@@ -358,10 +368,12 @@ func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOve
 		var scheduledPaymentAt sql.NullInt64
 		var accountType string
 		var hasRecurringRule int
-		if err := rows.Scan(&row.ID, &row.Description, &row.Amount, &row.DueDateUnix, &row.AccountName, &row.ContactName, &scheduledPaymentAt, &isInvoice, &row.PaymentAccountID, &accountType, &hasRecurringRule); err != nil {
+		if err := rows.Scan(&row.ID, &row.Description, &row.Amount, &row.DueDateUnix, &row.AccountName, &row.ContactName, &scheduledPaymentAt, &isInvoice, &row.PaymentAccountID, &accountType, &row.AccountProviderSlug, &row.AccountColor, &hasRecurringRule); err != nil {
 			return nil, err
 		}
 		row.IsInvoice = isInvoice == 1
+		row.ProviderMark = accountProviderMark(row.AccountProviderSlug, row.AccountName)
+		row.ProviderLogoPath = accountProviderLogoPathForAccount(row.AccountProviderSlug, row.AccountName)
 		row.PaymentAccountChangeAllowed = !row.IsInvoice && paymentAccountChangeAllowed(itemType, accountType, row.PaymentAccountID, sql.NullString{}, sql.NullString{}, hasRecurringRule == 1)
 		row.AmountMoney = MoneyMinor(row.Amount)
 		row.DueDate = formatDateLabelFromUnix(row.DueDateUnix)

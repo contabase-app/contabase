@@ -84,7 +84,7 @@ func TestMigration63AddsSessionRecentReauthentication(t *testing.T) {
 		t.Fatalf("create legacy sessions fixture: %v", err)
 	}
 	seedAppliedMigrationsBefore(t, db, 63)
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 63); err != nil {
 		t.Fatalf("run migration 63: %v", err)
 	}
 
@@ -659,7 +659,7 @@ func TestMigration50BackfillsRecurringSeriesWithoutRewritingTransactions(t *test
 	createLegacyRecurringVersioningFixture(t, db)
 	seedAppliedMigrationsBefore(t, db, 50)
 
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 50); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
 	assertMigrationApplied(t, db, 50)
@@ -786,7 +786,7 @@ func TestMigration50ForeignKeyListOmitsConstraintsOnMigratedDatabase(t *testing.
 	createLegacyRecurringVersioningFixture(t, db)
 	seedAppliedMigrationsBefore(t, db, 50)
 
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 50); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
 	assertMigrationApplied(t, db, 50)
@@ -857,6 +857,7 @@ func TestOpenCreatesPreMigrationBackupForExistingFileDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open raw existing database: %v", err)
 	}
+	defer rawDB.Close()
 	if _, err := rawDB.Exec(`CREATE TABLE legacy_marker (id INTEGER PRIMARY KEY, note TEXT NOT NULL)`); err != nil {
 		t.Fatalf("create legacy marker: %v", err)
 	}
@@ -867,11 +868,15 @@ func TestOpenCreatesPreMigrationBackupForExistingFileDatabase(t *testing.T) {
 		t.Fatalf("close raw existing database: %v", err)
 	}
 
-	db, err := Open("file:" + dbPath)
+	owner, err := OpenRuntimeDBs("file:" + dbPath)
 	if err != nil {
 		t.Fatalf("open existing database: %v", err)
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		if err := owner.Close(); err != nil {
+			t.Errorf("close existing database pools: %v", err)
+		}
+	})
 
 	backupPath := singlePreMigrationBackup(t, dir)
 	backupDB, err := sql.Open("sqlite", backupPath)
@@ -902,11 +907,15 @@ func TestOpenSkipsPreMigrationBackupForNewFileDatabase(t *testing.T) {
 	t.Setenv("DATA_DIR", dir)
 	dbPath := filepath.Join(dir, "new.db")
 
-	db, err := Open("file:" + dbPath)
+	owner, err := OpenRuntimeDBs("file:" + dbPath)
 	if err != nil {
 		t.Fatalf("open new database: %v", err)
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		if err := owner.Close(); err != nil {
+			t.Errorf("close new database pools: %v", err)
+		}
+	})
 
 	backupDir := filepath.Join(dir, "backups", "pre-migration")
 	entries, err := os.ReadDir(backupDir)
@@ -1030,6 +1039,7 @@ func TestOpenMigratesLegacyDatabaseAndReopenIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open raw legacy database: %v", err)
 	}
+	defer rawDB.Close()
 
 	legacyDDL := []string{
 		`PRAGMA foreign_keys = ON`,
@@ -1127,10 +1137,16 @@ func TestOpenMigratesLegacyDatabaseAndReopenIsIdempotent(t *testing.T) {
 		t.Fatalf("close raw legacy database: %v", err)
 	}
 
-	db, err := Open("file:" + dbPath)
+	owner, err := OpenRuntimeDBs("file:" + dbPath)
 	if err != nil {
 		t.Fatalf("open migrated legacy database: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := owner.Close(); err != nil {
+			t.Errorf("close migrated legacy database pools: %v", err)
+		}
+	})
+	db := owner.DB
 
 	assertColumnExists(t, db, "transactions", "payment_status")
 	assertColumnExists(t, db, "transactions", "recurring_rule_id")
@@ -1178,13 +1194,20 @@ func TestOpenMigratesLegacyDatabaseAndReopenIsIdempotent(t *testing.T) {
 	if migrationCount != len(migrations) {
 		t.Fatalf("expected %d applied migrations after migrate, got %d", len(migrations), migrationCount)
 	}
-	db.Close()
+	if err := owner.Close(); err != nil {
+		t.Fatalf("close migrated legacy database before reopen: %v", err)
+	}
 
-	db2, err := Open("file:" + dbPath)
+	owner2, err := OpenRuntimeDBs("file:" + dbPath)
 	if err != nil {
 		t.Fatalf("reopen migrated database: %v", err)
 	}
-	defer db2.Close()
+	t.Cleanup(func() {
+		if err := owner2.Close(); err != nil {
+			t.Errorf("close reopened legacy database pools: %v", err)
+		}
+	})
+	db2 := owner2.DB
 
 	if err := db2.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&migrationCount); err != nil {
 		t.Fatalf("count schema_migrations after reopen: %v", err)
@@ -1255,6 +1278,7 @@ func TestOpenMigratesLegacyContactsWithoutCustomClientID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open raw legacy contacts database: %v", err)
 	}
+	defer rawDB.Close()
 	legacyDDL := []string{
 		`PRAGMA foreign_keys = ON`,
 		`CREATE TABLE workspaces (
@@ -1281,11 +1305,16 @@ func TestOpenMigratesLegacyContactsWithoutCustomClientID(t *testing.T) {
 		t.Fatalf("close raw legacy contacts database: %v", err)
 	}
 
-	db, err := Open("file:" + dbPath)
+	owner, err := OpenRuntimeDBs("file:" + dbPath)
 	if err != nil {
 		t.Fatalf("open migrated legacy contacts database: %v", err)
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		if err := owner.Close(); err != nil {
+			t.Errorf("close migrated legacy contacts database pools: %v", err)
+		}
+	})
+	db := owner.DB
 
 	assertColumnExists(t, db, "contacts", "custom_client_id")
 	assertColumnExists(t, db, "workspaces", "theme_token")

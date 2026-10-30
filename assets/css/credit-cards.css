@@ -1,0 +1,178 @@
+/*
+ * ContaBase — Credit card foundations (shared)
+ *
+ * Single source for what is genuinely common between the Dashboard card
+ * (.wallet-card) and the Faturas hub tile (.cb-v2-credit-card):
+ *
+ *   - institutional tonal surface and adaptive foreground tokens;
+ *   - light/dark scheme selected by JS from the institution color;
+ *   - contrast-safe text/border/track tokens and status dot tones;
+ *   - status badge semantics (base) and the on-face pill variant;
+ *   - progress meter on the tonal surface;
+ *   - logo/avatar foundation.
+ *
+ * Loaded after ui-tokens.css and before the consumer stylesheet
+ * (dashboard-wallet.css / faturas-index.css). Geometry, layout and behavior
+ * stay in each consumer: the components keep independent functional contracts.
+ * Structural palette remains in ui-tokens.css; no parallel palette here.
+ */
+
+/* --- 1. Institutional tonal surface -------------------------------------- */
+
+.cb-card-face {
+    /* Dark scheme is always safe and is the default without JS. */
+    --card-fg: #ffffff;
+    --card-fg-soft: #ffffffeb;
+    --card-fg-muted: #ffffffe0;
+    --card-line: #ffffff2b;
+    --card-track: #ffffff38;
+    --card-fill: #ffffffe8;
+    --card-badge-bg: #00000030;
+    --card-badge-border: #ffffff38;
+    --card-hover-ring: #ffffff3d;
+    --card-dot-open: #8fd0ff;
+    --card-dot-closed: #ffce7a;
+    --card-dot-paid: #7ce7b4;
+    --card-dot-overdue: #ff96ad;
+    --card-shadow: inset 0 1px 0 #ffffff26, 0 14px 30px -16px #0000008c;
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--cb-runtime-color-value, #6d28d9) 70%, #1b1724);
+    background: oklch(from color-mix(in srgb, var(--cb-runtime-color-value, #6d28d9) 80%, #1b1724) min(l, .53) c h);
+    color: var(--card-fg);
+    box-shadow: var(--card-shadow);
+}
+
+/* Luminous institution colors switch to dark ink for AA contrast. */
+.cb-card-face[data-card-scheme="light"] {
+    --card-fg: #191c2b;
+    --card-fg-soft: #191c2bf0;
+    --card-fg-muted: #191c2bcc;
+    --card-line: #191c2b26;
+    --card-track: #191c2b21;
+    --card-fill: #191c2bb8;
+    --card-badge-bg: #ffffff80;
+    --card-badge-border: #191c2b33;
+    --card-hover-ring: #191c2b40;
+    --card-dot-open: #0369a1;
+    --card-dot-closed: #b45309;
+    --card-dot-paid: #047857;
+    --card-dot-overdue: #be123c;
+    --card-shadow: inset 0 0 0 1px #191c2b1f, 0 14px 30px -16px #0000008c;
+    background: color-mix(in srgb, var(--cb-runtime-color-value, #e5e7eb) 74%, #ffffff);
+}
+
+/* --- 2. Status badge (base) ---------------------------------------------- */
+
+.cb-v2-credit-card-status {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 4px;
+    color: var(--v2-muted);
+    text-align: right;
+}
+
+.cb-v2-credit-card-dot {
+    width: 5px;
+    height: 5px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.cb-v2-credit-card-status > strong {
+    color: currentColor;
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+}
+
+.cb-v2-credit-card-status > small {
+    overflow: hidden;
+    color: var(--v2-subtle);
+    font-size: 10px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-v2-credit-card-status.is-open { color: var(--v2-info); }
+.cb-v2-credit-card-status.is-closed { color: var(--v2-warning); }
+.cb-v2-credit-card-status.is-paid { color: var(--v2-positive); }
+.cb-v2-credit-card-status.is-overdue { color: var(--v2-danger); }
+
+/* On-face variant: translucent pill integrated into the institutional face. */
+.cb-card-face .cb-v2-credit-card-status {
+    flex: 0 0 auto;
+    padding: 2px 8px 2px 7px;
+    border: 1px solid var(--card-badge-border);
+    border-radius: 999px;
+    background: var(--card-badge-bg);
+    gap: 5px;
+    color: var(--card-fg);
+    font-size: 10.5px;
+    line-height: 1.5;
+}
+
+.cb-card-face .cb-v2-credit-card-status > strong {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .01em;
+    color: var(--card-fg);
+    white-space: nowrap;
+}
+
+.cb-card-face .cb-v2-credit-card-dot {
+    width: 5px;
+    height: 5px;
+    background: var(--card-fg);
+}
+
+.cb-card-face .cb-v2-credit-card-status.is-open .cb-v2-credit-card-dot { background: var(--card-dot-open); }
+.cb-card-face .cb-v2-credit-card-status.is-closed .cb-v2-credit-card-dot { background: var(--card-dot-closed); }
+.cb-card-face .cb-v2-credit-card-status.is-paid .cb-v2-credit-card-dot { background: var(--card-dot-paid); }
+.cb-card-face .cb-v2-credit-card-status.is-overdue .cb-v2-credit-card-dot { background: var(--card-dot-overdue); }
+
+/* --- 3. Progress on the tonal face --------------------------------------- */
+
+.cb-card-face .cb-card-progress {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    border: 0;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--card-track);
+}
+
+.cb-card-face .cb-card-progress::-webkit-progress-bar { background: var(--card-track); }
+.cb-card-face .cb-card-progress::-webkit-progress-value { background: var(--card-fill); border-radius: 999px; }
+.cb-card-face .cb-card-progress::-moz-progress-bar { background: var(--card-fill); border-radius: 999px; }
+
+/* --- 4. Logo / monogram --------------------------------------------------
+   Size and container are set by the consumer; the foundation guarantees image
+   fit and monogram typography without deforming the institution mark. */
+
+.cb-card-logo {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    overflow: hidden;
+}
+
+.cb-card-logo img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.cb-card-logo-monogram {
+    overflow-wrap: anywhere;
+    font-weight: 650;
+    line-height: 1;
+    letter-spacing: -.02em;
+}

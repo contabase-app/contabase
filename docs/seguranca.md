@@ -70,9 +70,29 @@ Esse modo nao libera dominio publico, IP publico HTTP nem acesso por outros disp
 ## Chaves de seguranca
 
 - `AUTH_ENCRYPTION_KEY` protege segredos ligados a autenticacao e 2FA.
-- `SECURITY_MASTER_KEY` protege segredos internos quando usados.
+- `SECURITY_MASTER_KEY` protege a senha SMTP com AES-256-GCM. Exige exatamente 32 bytes e deve ser configurada explicitamente em qualquer ambiente, inclusive desenvolvimento. Para gerar uma chave nova, use `openssl rand -hex 16`.
 
 Preserve essas chaves em cofre seguro junto com os backups.
+
+Sem senha SMTP persistida, a ausencia de `SECURITY_MASTER_KEY` nao impede a inicializacao. Se houver senha cifrada, a ausencia de chave ou uma chave incorreta impede o envio dos alertas SMTP; o aplicativo preserva o ciphertext e os demais recursos continuam disponiveis. Uma nova senha SMTP so pode ser gravada com uma chave valida.
+
+Instalacoes antigas de desenvolvimento podem conter senhas SMTP cifradas com uma chave publica interna. Essa chave deixou de ser usada automaticamente, inclusive para leitura. Configurar uma chave nova nao recupera esse ciphertext. Preserve o banco e as chaves existentes antes de qualquer intervencao. Um administrador pode configurar uma chave forte persistente e informar novamente a senha SMTP na Administracao, substituindo a credencial de forma explicita. A remocao tambem exige a acao administrativa existente. Se for necessario recuperar o segredo antigo sem conhece-lo, planeje uma migracao offline especifica antes de alterar os dados.
+
+Ao mover um banco entre ambientes ou restaurar um backup, mantenha a chave original correspondente. Nao gere uma chave a cada reinicio nem substitua uma chave existente durante uma atualizacao. Restaurar apenas o banco nao recupera a chave; os fluxos de backup nao a incluem automaticamente.
+
+## Credenciais legadas
+
+A identidade de seed historica nao e mais reativada no startup. Hashes vazios, invalidos ou correspondentes a senha publica conhecida sao inutilizados, e a conta passa a exigir recuperacao administrativa explicita. A contencao preserva status, vinculos, permissoes, dados de workspace e fatores 2FA. Nenhuma senha temporaria e emitida automaticamente pelo startup.
+
+Um administrador recupera o acesso pela redefinicao de senha existente em `Administracao > Usuarios` ou pelo Admin CLI. O fluxo gera uma senha temporaria, exige troca no proximo login, revoga sessoes e desafios anteriores e mantem os fatores 2FA cadastrados. Se o autenticador tambem foi perdido, desative o 2FA em uma acao administrativa separada. Nao edite a tabela `users` diretamente e nao reintroduza um build que recrie a credencial publica.
+
+## Recuperacao de atualizacao
+
+Os fluxos de instalacao e atualizacao so reativam automaticamente um bundle ou imagem anterior quando existe prova administrativa local de que ele e uma copia verificada da propria Beta 6, com conteudo exato, emitida apos health valido, e quando a candidata ainda nao foi iniciada. A prova fica fora do bundle, pertence ao administrador local e nao e uma assinatura de fornecedor.
+
+Nao existe downgrade automatico para a Beta 5. Depois de qualquer tentativa de startup da candidata, o retorno automatico e bloqueado, pois o schema pode ter avancado. Nesse caso, mantenha o servico parado e preserve banco, WAL, uploads, configuracao, chaves e backups. Repare a falha com um artefato corrigido, verificado e compativel com o schema atual. Restaurar banco ou voltar schema exige plano e autorizacao proprios; o fallback de codigo nao restaura banco, configuracao nem chaves.
+
+A politica inicial reconhece somente `v1.0.0-beta.6`. Versoes futuras exigem revisao especifica antes de receber a mesma prova.
 
 ## Sessoes
 
@@ -127,7 +147,10 @@ Antes de atualizar, confirme:
 1. backup recente;
 2. segredo preservado;
 3. proxy e dominio corretos;
-4. healthcheck funcionando.
+4. healthcheck funcionando;
+5. `AUTH_ENCRYPTION_KEY` e `SECURITY_MASTER_KEY` preservadas e coerentes com o banco;
+6. contas legadas que dependam de recuperacao administrativa identificadas;
+7. plano de reparo caso a candidata falhe depois do startup, sem presumir rollback de schema.
 
 ## O que esta fora do escopo
 

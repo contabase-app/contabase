@@ -79,10 +79,10 @@ func TestCreditCardAvailableLimitSinglePurchaseOnCurrentInvoice(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	const (
-		wsID      = "ws-single"
-		cardID    = "card-single"
-		ccID      = "cc-single"
-		invID     = "inv-single-2026-07"
+		wsID   = "ws-single"
+		cardID = "card-single"
+		ccID   = "cc-single"
+		invID  = "inv-single-2026-07"
 	)
 
 	seedCreditCardWithLimit(t, db, wsID, cardID, ccID, 1000000)

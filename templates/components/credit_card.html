@@ -1,10 +1,26 @@
 {{/* Canonical visual tile for dashboard and invoice hub credit cards. */}}
 {{define "credit-card-tile"}}
-<a class="cb-v2-credit-card cb-v2-credit-card--physical cb-v2-credit-card--tonal{{if .IsSelected}} is-selected{{end}}" data-v2-card-item data-card-visual="physical"{{if .IsFaturasIndex}} data-faturas-card data-faturas-card-id="{{.ID}}" data-faturas-content-url="{{.ContentURL}}"{{if .IsSelected}} aria-current="page"{{end}}{{end}} href="{{if .Href}}{{.Href}}{{else}}/cartoes/faturas/{{.InvoiceID}}{{end}}" data-cb-color="{{.Color}}">
-    <span class="cb-v2-credit-card-top"><strong>{{.Name}}</strong><span class="cb-v2-credit-card-status{{if eq .StatusLabel "Vencido"}} is-overdue{{else if eq .Status "PAID"}} is-paid{{else if eq .Status "CLOSED"}} is-closed{{else}} is-open{{end}}"><span class="cb-v2-credit-card-dot" aria-hidden="true"></span><strong>{{.StatusLabel}}</strong>{{if .ClosingDaysLabel}}<small>{{.ClosingDaysLabel}}</small>{{end}}</span><span class="cb-v2-provider-mark{{if .ProviderLogoPath}} cb-v2-provider-mark--image{{end}}">{{if .ProviderLogoPath}}<img src="{{assetPath .ProviderLogoPath}}" alt="" class="institution-logo" data-avatar-fallback><span class="hidden" data-avatar-text>{{.ProviderMark}}</span>{{else if .ProviderMark}}{{.ProviderMark}}{{else}}CB{{end}}</span></span>
-    <span class="cb-v2-credit-card-data"><span><small>{{if .InvoiceID}}Fatura atual{{else}}Sem fatura{{end}}</small><strong data-sensitive>{{if .InvoiceID}}R$ {{.Money.Reais}}{{.Money.Cents}}{{else}}—{{end}}</strong></span><span><small>Vencimento</small><strong>{{if .InvoiceID}}Dia {{.DueDateCompact}}{{else}}—{{end}}</strong></span></span>
+<a class="cb-v2-credit-card cb-card-face cb-v2-credit-card--physical cb-v2-credit-card--tonal{{if .IsSelected}} is-selected{{end}}" data-v2-card-item data-card-visual="physical"{{if .IsFaturasIndex}} data-faturas-card data-faturas-card-id="{{.ID}}" data-faturas-content-url="{{.ContentURL}}"{{if .IsSelected}} aria-current="page"{{end}}{{end}} href="{{if .Href}}{{.Href}}{{else}}/cartoes/faturas/{{.InvoiceID}}{{end}}" data-cb-color="{{.Color}}">
+    <span class="cb-v2-credit-card-top">
+        <span class="cb-v2-credit-card-identity">
+            <span class="cb-card-logo cb-v2-credit-card-logo">{{if .ProviderLogoPath}}<img src="{{assetPath .ProviderLogoPath}}" alt="" width="30" height="30" class="institution-logo" data-avatar-fallback><span class="hidden" data-avatar-text>{{.ProviderMark}}</span>{{else}}<span class="cb-card-logo-monogram">{{if .ProviderMark}}{{.ProviderMark}}{{else}}CB{{end}}</span>{{end}}</span>
+            <strong class="cb-v2-credit-card-name">{{.Name}}</strong>
+            {{if and .IsSelected .IsFaturasIndex}}<span class="cb-v2-credit-card-selected" aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false"><path d="M3.2 8.4 6.4 11.5 12.8 4.6"/></svg></span>{{end}}
+        </span>
+        <span class="cb-v2-credit-card-status{{if eq .StatusLabel "Vencido"}} is-overdue{{else if eq .Status "PAID"}} is-paid{{else if eq .Status "CLOSED"}} is-closed{{else}} is-open{{end}}"><span class="cb-v2-credit-card-dot" aria-hidden="true"></span><strong>{{.StatusLabel}}</strong></span>
+    </span>
+    <span class="cb-v2-credit-card-amount">
+        <small>{{if .InvoiceID}}Fatura atual{{else}}Sem fatura{{end}}</small>
+        <strong data-sensitive>{{if .InvoiceID}}R$ {{.Money.Reais}}{{.Money.Cents}}{{else}}—{{end}}</strong>
+    </span>
+    <span class="cb-v2-credit-card-meta">
+        <span class="cb-v2-credit-card-due"><small>Vencimento</small> <strong>{{if .InvoiceID}}Dia {{.DueDateCompact}}{{else}}—{{end}}</strong></span>
+        {{if .ClosingDaysLabel}}<span class="cb-v2-credit-card-closing">{{.ClosingDaysLabel}}</span>{{end}}
+    </span>
     <span class="cb-v2-credit-card-limit"><small>Limite disponível</small><strong data-sensitive>R$ {{.LimitMoney.Reais}}{{.LimitMoney.Cents}}</strong></span>
-    <progress class="cb-v2-progress" value="{{.LimitPercent}}" max="100" aria-label="Limite disponível de {{.Name}}">{{.LimitPercent}}%</progress>
-    <span class="cb-v2-card-usage">{{.LimitPercent}}% disponível</span>
+    <span class="cb-v2-credit-card-progress-row">
+        <progress class="cb-card-progress" value="{{.LimitPercent}}" max="100" aria-label="Limite disponível de {{.Name}}">{{.LimitPercent}}%</progress>
+        <span class="cb-v2-card-usage">{{.LimitPercent}}% disponível</span>
+    </span>
 </a>
 {{end}}

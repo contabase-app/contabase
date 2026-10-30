@@ -16,7 +16,7 @@ func TestHandleExportarDREPDFBusinessIncluiIdentidadePeriodoEDados(t *testing.T)
 
 	seedDREPDFBusinessScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-biz", UserID: "u-pdf-biz"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-biz", UserID: "u-pdf-biz"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/dre.pdf?month=2026-08", nil)
 	rr := httptest.NewRecorder()
 
@@ -83,7 +83,7 @@ func TestHandleExportarDREPDFPersonalSemDadosCorporativosNaoQuebra(t *testing.T)
 	execTestSQL(t, db, `INSERT INTO workspaces (id, name, type, created_at, updated_at) VALUES ('ws-pdf-personal', 'Casa PDF', 'personal', ?, ?)`, now, now)
 	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-pdf-personal', 'u-pdf-personal', 'ADMIN', ?)`, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-personal", UserID: "u-pdf-personal"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-personal", UserID: "u-pdf-personal"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/dre.pdf?mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 
@@ -171,7 +171,7 @@ func TestHandleExportarExtratoPDF_Movimentos(t *testing.T) {
 
 	seedExtratoPDFScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/export.pdf?tipo=extrato-movimentos&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 
@@ -201,7 +201,7 @@ func TestHandleExportarExtratoPDF_Diario(t *testing.T) {
 
 	seedExtratoPDFScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/export.pdf?tipo=extrato-diario&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 
@@ -231,7 +231,7 @@ func TestHandleExportarExtratoPDF_TransferenciaNeutra(t *testing.T) {
 
 	seedExtratoPDFScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/export.pdf?tipo=extrato-movimentos&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 
@@ -252,7 +252,7 @@ func TestHandleExportarExtratoPDF_DiarioIgnoraTransferencia(t *testing.T) {
 
 	seedExtratoPDFScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/export.pdf?tipo=extrato-diario&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 
@@ -276,7 +276,7 @@ func TestHandleExportarExtratoPDF_WorkspaceIsolation(t *testing.T) {
 		VALUES ('tx-pdf-other', 'ws-rpt2', 'u-rpt2', 'chk-rpt2', 'cat-other', 'EXPENSE', 99999, ?, 'Despesa Outro WS', 'paid', ?, 1, 1, ?, ?)
 	`, augDate, augDate, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/export.pdf?tipo=extrato-movimentos&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 
@@ -292,7 +292,7 @@ func TestHandleExportarExtratoPDF_PeriodoInvalido(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/export.pdf?tipo=extrato-movimentos&mes=99&ano=2026", nil)
 	rr := httptest.NewRecorder()
 
@@ -307,7 +307,7 @@ func TestHandleExportarExtratoPDF_TipoInvalido(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/export.pdf?tipo=invalido&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 
@@ -398,7 +398,7 @@ func TestHandleExportarCaixaPDFBusinessIncluiIdentidadePeriodoEDados(t *testing.
 		('tx-pdf-caixa-other', 'ws-pdf-caixa-other', 'u-pdf-caixa', 'acc-pdf-caixa-other', 'cat-pdf-caixa-other', 'INCOME', 999999, ?, ?, 'Receita Outro Workspace', 'paid', ?, 1, 1, ?, ?)
 	`, augDate, augDate, augDate, now, now, augDate, augDate, augDate, now, now, augDate, augDate, augDate, now, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-caixa", UserID: "u-pdf-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-caixa", UserID: "u-pdf-caixa"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/caixa.pdf?month=2026-08", nil)
 	rr := httptest.NewRecorder()
 
@@ -462,7 +462,7 @@ func TestHandleExportarCaixaPDFPrevisaoUsaModoETitulo(t *testing.T) {
 		('tx-pdf-caixa-prev', 'ws-pdf-caixa', 'u-pdf-caixa', 'acc-pdf-caixa', 'cat-pdf-caixa-admin', 'EXPENSE', 25000, ?, ?, 'Banco previsto agosto', 'pending', NULL, 1, 1, ?, ?)
 	`, accountingDate, targetDue, now, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-caixa", UserID: "u-pdf-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-caixa", UserID: "u-pdf-caixa"}
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/relatorios/caixa.pdf?modo=previsao&mes=%d&ano=%d", targetMonth.Month(), targetMonth.Year()), nil)
 	rr := httptest.NewRecorder()
 
@@ -509,7 +509,7 @@ func TestHandleExportarCaixaPDFRealizadoNaoContemSaldoProjetado(t *testing.T) {
 		('tx-pdf-caixa-rev-2', 'ws-pdf-caixa', 'u-pdf-caixa', 'acc-pdf-caixa', 'cat-pdf-caixa-rev', 'INCOME', 50000, ?, ?, 'Mensalidade', 'paid', ?, 1, 1, ?, ?)
 	`, augDate, augDate, augDate, now, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-caixa", UserID: "u-pdf-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-caixa", UserID: "u-pdf-caixa"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/caixa.pdf?month=2026-08", nil)
 	rr := httptest.NewRecorder()
 
@@ -531,7 +531,7 @@ func TestHandleExportarCaixaPDFPrevisaoContemSaldoProjetadoEFaturaCartao(t *test
 
 	seedCaixaPDFScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-caixa", UserID: "u-pdf-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-caixa", UserID: "u-pdf-caixa"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/caixa.pdf?modo=previsao&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 
@@ -632,7 +632,7 @@ func TestPDFCaixaRealizadoUmaPaginaQuandoCategoriasVazias(t *testing.T) {
 		('acc-pdf-cp1', 'ws-pdf-cp1', 'Conta', 'CHECKING', 100000, 100000, ?, ?)
 	`, now, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-cp1", UserID: "u-pdf-cp1"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-cp1", UserID: "u-pdf-cp1"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/caixa.pdf?month=2026-08", nil)
 	rr := httptest.NewRecorder()
 
@@ -657,7 +657,7 @@ func TestPDFDREPaginaExtraApenasComConteudoReal(t *testing.T) {
 
 	seedDREPDFBusinessScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-biz", UserID: "u-pdf-biz"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-biz", UserID: "u-pdf-biz"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/dre.pdf?month=2026-08", nil)
 	rr := httptest.NewRecorder()
 
@@ -683,7 +683,7 @@ func TestPDFFontEmbebidaSubtypeTrueTypeNaoType1(t *testing.T) {
 
 	seedCaixaPDFScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-caixa", UserID: "u-pdf-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-caixa", UserID: "u-pdf-caixa"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/caixa.pdf?month=2026-08", nil)
 	rr := httptest.NewRecorder()
 
@@ -717,7 +717,7 @@ func TestPDFFontEmbebidaDREPReservaTextoComAcentos(t *testing.T) {
 
 	seedDREPDFBusinessScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-biz", UserID: "u-pdf-biz"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-biz", UserID: "u-pdf-biz"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/dre.pdf?month=2026-08", nil)
 	rr := httptest.NewRecorder()
 
@@ -749,7 +749,7 @@ func TestPDFFontEmbebidaExtratoMovimentosUTF8(t *testing.T) {
 
 	seedExtratoPDFScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pdf-ext", UserID: "u-pdf-ext"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/export.pdf?tipo=extrato-movimentos&mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 

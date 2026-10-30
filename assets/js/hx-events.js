@@ -14,11 +14,6 @@
                     if (typeof closeBottomSheet === 'function') closeBottomSheet();
                     break;
 
-                case 'closeContatosModal':
-                    if (typeof closeContatosModal === 'function') closeContatosModal();
-                    if (el.tagName === 'FORM') el.reset();
-                    break;
-
                 case 'resetBulkSelection':
                 case 'resetBulkSelectionDel':
                     var bulkContainers = document.querySelectorAll('[data-bulk-select]');

@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Recibo #{{.TransactionID}}</title>
-    <link rel="stylesheet" href="/assets/css/recibo.css">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/recibo.css"}}">
 </head>
 <body>
     <main class="sheet">
@@ -52,7 +52,7 @@
             {{if .CanPrint}}<button class="btn primary" data-onclick="print">Imprimir Recibo</button>{{end}}
         </div>
     </main>
-    <script src="/assets/js/recibo.js"></script>
+    <script src="{{assetPath "/assets/js/recibo.js"}}"></script>
 </body>
 </html>
 {{end}}

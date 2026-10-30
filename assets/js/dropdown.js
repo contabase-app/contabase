@@ -6,6 +6,8 @@
     if (!panel) return;
     dd.classList.add('is-open');
     panel.classList.remove('hidden');
+    var toggle = dd.querySelector('[data-dropdown-toggle]');
+    if (toggle) toggle.setAttribute('aria-expanded', 'true');
     var chevron = dd.querySelector('[data-dropdown-chevron]');
     if (chevron) chevron.classList.add('rotate-180');
     if (dd.hasAttribute('aria-expanded')) dd.setAttribute('aria-expanded', 'true');
@@ -15,6 +17,8 @@
     var panel = dd.querySelector('[data-dropdown-panel]');
     dd.classList.remove('is-open');
     if (panel) panel.classList.add('hidden');
+    var toggle = dd.querySelector('[data-dropdown-toggle]');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
     var chevron = dd.querySelector('[data-dropdown-chevron]');
     if (chevron) chevron.classList.remove('rotate-180');
     if (dd.hasAttribute('aria-expanded')) dd.setAttribute('aria-expanded', 'false');

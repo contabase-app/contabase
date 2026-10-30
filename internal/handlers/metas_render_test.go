@@ -32,7 +32,7 @@ func TestBuildMetasDataLoadsRenderMetadata(t *testing.T) {
 		t.Fatalf("write profile file: %v", err)
 	}
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		WorkspaceID: "ws-a",
 		UserID:      "user-a",
@@ -74,7 +74,7 @@ func TestLoadMetasRenderMetadataFallsBackForMissingUser(t *testing.T) {
 		VALUES ('ws-meta', 'Workspace Meta', '', 'business', ?, ?)
 	`, now, now)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		WorkspaceID: "ws-meta",
 		UserID:      "user-missing",
@@ -118,7 +118,7 @@ func TestHandleListarMetasRendersCaixinhaStates(t *testing.T) {
 
 	execTestSQL(t, db, `UPDATE boxes SET category_id = NULL WHERE id = 'a-box-rounded'`)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasPageTemplates(t),
 		WorkspaceID: "ws-a",
@@ -286,7 +286,7 @@ func TestHandleListarMetasRendersLimitCards(t *testing.T) {
 	defer db.Close()
 	seedLimitDuplicateScenario(t, db)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasPageTemplates(t),
 		WorkspaceID: "ws-a",
@@ -314,7 +314,7 @@ func TestHandleNovaMetaEditsBoxWithoutCategory(t *testing.T) {
 	seedCaixinhaProjectionScenario(t, db)
 	execTestSQL(t, db, `UPDATE boxes SET category_id = NULL WHERE id = 'a-box-rounded'`)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasFormTemplates(t),
 		WorkspaceID: "ws-a",
@@ -335,13 +335,14 @@ func TestHandleNovaMetaEditsBoxWithoutCategory(t *testing.T) {
 	assertContains(t, body, `name="box_id" value="a-box-rounded"`)
 	assertContains(t, body, `name="category_id" value=""`)
 	assertContains(t, body, `Sem categoria`)
-	assertContains(t, body, `aria-label="Confirmar reserva"`)
+	assertContains(t, body, `aria-label="Salvar reserva"`)
 }
 
 func TestBuildMetasDataHandlesLegacyBoxesWithoutTargetDateColumn(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	seedCaixinhaProjectionScenario(t, db)
+	restoreClassificationReserveGuards := suspendClassificationReserveTriggersForFixture(t, db)
 
 	execTestSQL(t, db, `PRAGMA foreign_keys = OFF`)
 	execTestSQL(t, db, `
@@ -366,9 +367,10 @@ func TestBuildMetasDataHandlesLegacyBoxesWithoutTargetDateColumn(t *testing.T) {
 	execTestSQL(t, db, `ALTER TABLE boxes_legacy RENAME TO boxes`)
 	execTestSQL(t, db, `CREATE INDEX IF NOT EXISTS idx_boxes_workspace ON boxes(workspace_id)`)
 	execTestSQL(t, db, `CREATE INDEX IF NOT EXISTS idx_boxes_workspace_category ON boxes(workspace_id, category_id)`)
+	restoreClassificationReserveGuards()
 	execTestSQL(t, db, `PRAGMA foreign_keys = ON`)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData legacy boxes schema: %v", err)

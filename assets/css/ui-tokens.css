@@ -1,0 +1,201 @@
+/*
+ * ContaBase — UI foundation tokens (single source)
+ *
+ * Loaded after app-shell.css and before any page/component stylesheet.
+ *
+ * Reference split:
+ *  - Structural palette (canvas, sidebar, surfaces, borders, text, controls):
+ *    the authenticated shell, which is the palette rendered by /contas.
+ *  - Brand accent and financial semantics: the approved Premium Dashboard
+ *    identity. Light values were already identical; dark values converge on the
+ *    Dashboard's refiner scale so the Dashboard does not lose its identity.
+ *
+ * No page may redefine these tokens. Page stylesheets consume them.
+ */
+
+.cb-v2,
+.cb-v2-body {
+    /* --- Structural colors (reference: /contas) -------------------------- */
+    --ui-canvas: var(--v2-canvas);
+    --ui-sidebar: var(--v2-sidebar);
+    --ui-surface: var(--v2-surface);
+    --ui-surface-raised: var(--v2-surface-raised);
+    --ui-surface-hover: var(--v2-surface-hover);
+    --ui-border: var(--v2-border);
+    --ui-border-strong: var(--v2-border-strong);
+    --ui-text: var(--v2-text);
+    --ui-text-muted: var(--v2-muted);
+    --ui-text-subtle: var(--v2-subtle);
+    --ui-progress-track: var(--v2-progress-track);
+
+    /* --- Brand accent and financial semantics ---------------------------- */
+    --ui-accent: var(--v2-accent);
+    --ui-accent-strong: var(--v2-accent-strong);
+    --ui-accent-soft: var(--v2-accent-soft);
+    --ui-focus: var(--v2-accent-strong);
+    --ui-success: var(--v2-positive);
+    --ui-warning: var(--v2-warning);
+    --ui-danger: var(--v2-danger);
+    --ui-info: var(--v2-info);
+
+    /* Action colors stay darker than the decorative accent so white text
+       keeps AA contrast in both themes. */
+    --ui-action-bg: #6d4de0;
+    --ui-action-bg-hover: #5b2fcc;
+    --ui-action-fg: #ffffff;
+
+    /* --- Typography ------------------------------------------------------ */
+    --ui-font-family: "Geist Sans", system-ui, sans-serif;
+    --ui-fs-xs: 10px;
+    --ui-fs-sm: 11.5px;
+    --ui-fs-md: 13px;
+    --ui-fs-lg: 17px;
+    /* Page title: the h1 of a content page (Contas and the pages migrated
+       next). Display: a page-level greeting/identity heading, one step below
+       the page title. Both belong to the same scale; a page never hardcodes a
+       font size outside it. */
+    --ui-fs-title: clamp(25px, 3.4vw, 32px);
+    --ui-fs-display: clamp(20px, 2.6vw, 25px);
+    --ui-fw-display: 640;
+    --ui-fw-title: 680;
+    --ui-fw-item: 590;
+
+    /* --- Geometry (official scale) --------------------------------------- */
+    --ui-border-width: 1px;
+    --ui-radius-panel: 18px;   /* large panel, sheet, modal */
+    --ui-radius-card: 14px;    /* KPI, compact card, raised block */
+    --ui-radius-control: 12px; /* input, select, textarea, search, button */
+    --ui-radius-button: 12px;
+    --ui-radius-tab: 12px;     /* tablist container (never a full pill) */
+    --ui-radius-tab-item: 8px;
+    --ui-radius-badge: 999px;  /* compact chip/badge only */
+    --ui-radius-pill: 999px;   /* compact action pills only */
+
+    /* Compatibility aliases for the first Premium consumers. */
+    --ui-radius-xs: 8px;
+    --ui-radius-sm: 10px;
+    --ui-radius-md: 14px;
+    --ui-radius-lg: 18px;
+
+    --ui-control-height: 42px;
+    --ui-control-height-sm: 34px;
+    --ui-control-height-lg: 44px;
+    --ui-panel-pad: 22px;
+    --ui-gap: 18px;
+    --ui-section-gap: 24px;
+
+    /* Tile: avatar, icon tile and compact row action. */
+    --ui-radius-tile: 10px;
+
+    /* --- Authenticated navigation (sidebar, drawer, bottom nav) -----------
+       One geometry for every authenticated route. Page stylesheets must not
+       redefine these values or the active state; the shell owns them. */
+    --ui-nav-width: 248px;
+    --ui-nav-width-collapsed: 72px;
+    --ui-nav-item-height: 40px;
+    --ui-nav-item-height-sm: 34px;
+    --ui-nav-group-height: 38px;
+    --ui-nav-item-radius: 10px;
+    --ui-nav-item-radius-sm: 8px;
+    --ui-nav-item-pad: 11px;
+    --ui-nav-gap: 10px;
+    --ui-nav-active-bg: var(--v2-accent-soft);
+    --ui-nav-active-fg: var(--v2-accent-on-soft);
+    --ui-nav-active-icon: var(--v2-accent-strong);
+    --ui-nav-active-indicator: var(--v2-accent);
+    --ui-nav-active-indicator-width: 2px;
+
+    /* Shell icon buttons: collapse toggle, theme, notifications, appbar. */
+    --ui-icon-button-size: 40px;      /* appbar / touch context */
+    --ui-icon-button-size-sm: 34px;   /* sidebar header */
+    --ui-icon-button-size-xs: 30px;   /* dense footer utilities */
+    --ui-icon-button-radius: 10px;
+    --ui-icon-button-bg: var(--v2-surface);
+    --ui-icon-button-border: var(--v2-border);
+
+    /* --- Interaction states ---------------------------------------------- */
+    --ui-disabled-opacity: .5;
+    --ui-transition: 160ms ease;
+    --ui-field-bg: var(--v2-surface-raised);
+    --ui-field-border: var(--v2-border-strong);
+    /* Mouse/touch focus is a quiet neutral emphasis. Keyboard focus adds the
+       outline from the modality helper, so the field never needs a violet ring. */
+    --ui-field-focus-border: color-mix(in srgb, var(--ui-border-strong) 35%, var(--ui-text-muted));
+
+    /* Tabs: neutral container, active item with a perceptible violet surface.
+       The active state never depends on a 1px border alone. */
+    --ui-tab-bg: var(--v2-surface-raised);
+    --ui-tab-active-bg: color-mix(in srgb, var(--v2-accent) 16%, var(--v2-surface));
+    --ui-tab-active-fg: var(--v2-accent-strong);
+    --ui-tab-active-border: color-mix(in srgb, var(--v2-accent) 42%, var(--v2-border));
+
+    /* Competence month rail: same selection language everywhere. */
+    --ui-month-active-bg: color-mix(in srgb, var(--v2-accent) 18%, var(--v2-surface));
+    --ui-month-active-fg: var(--v2-accent-strong);
+    --ui-month-active-border: color-mix(in srgb, var(--v2-accent) 52%, var(--v2-border));
+
+    --ui-shadow-panel: 0 1px 2px #00000026, 0 18px 40px -28px #00000073;
+    --ui-shadow-raised: 0 12px 28px -20px #00000099;
+    --ui-shadow-floating: 0 18px 40px -18px #000000b3;   /* fixed bar / dock */
+
+    /* --- Breakpoints (canonical scale) ------------------------------------
+       CSS variables cannot be used inside @media, so this is documentation:
+       359  extreme compact (bottom nav labels)
+       389  compact mobile (paddings, icon sizes)
+       639  phone landscape / large phone
+       767  mobile layout of the Premium components
+       1023 shell switches to drawer + bottom nav
+       1279 desktop compact
+       1759 wide desktop (Dashboard two columns)
+       Legacy page stylesheets still use 640/699/900/1180/1240; they keep
+       their own values until their turn in the migration (section 17). */
+
+    /* --- Compatibility bridge for legacy --cb-* consumers ----------------
+       Scoped to the authenticated shell. Legacy pages keep their markup,
+       Tailwind utilities and component classes; only the palette/geometry
+       primitives they already reference now resolve to the canonical values.
+       Standalone/auth surfaces outside .cb-v2 are untouched. */
+    --cb-bg: var(--ui-canvas);
+    --cb-bg-soft: var(--ui-surface-raised);
+    --cb-surface-1: var(--ui-surface);
+    --cb-surface-2: var(--ui-surface-raised);
+    --cb-surface-3: var(--ui-surface-hover);
+    --cb-surface-overlay: color-mix(in srgb, var(--ui-surface) 92%, transparent);
+    --cb-border-subtle: var(--ui-border);
+    --cb-border-strong: var(--ui-border-strong);
+    --cb-border-focus: var(--ui-focus);
+    --cb-text-main: var(--ui-text);
+    --cb-text-muted: var(--ui-text-muted);
+    --cb-text-subtle: var(--ui-text-subtle);
+    --cb-text-inverse: var(--ui-canvas);
+    --cb-accent: var(--ui-accent);
+    --cb-accent-solid: var(--ui-action-bg);
+    --cb-accent-hover: var(--ui-action-bg-hover);
+    --cb-accent-text: var(--ui-action-fg);
+    --cb-accent-soft: var(--ui-accent-soft);
+    --cb-success: var(--ui-success);
+    --cb-danger: var(--ui-danger);
+    --cb-warning: var(--ui-warning);
+    --cb-info: var(--ui-info);
+}
+
+html[data-theme="light"] .cb-v2,
+html[data-theme="light"] .cb-v2-body {
+    --ui-month-active-bg: color-mix(in srgb, var(--v2-accent) 16%, var(--v2-surface));
+    --ui-month-active-border: color-mix(in srgb, var(--v2-accent) 46%, var(--v2-border));
+
+    --ui-shadow-panel: 0 1px 2px #0f172a0a, 0 18px 40px -30px #0f172a1f;
+    --ui-shadow-raised: 0 10px 24px -18px #0f172a1f;
+    --ui-shadow-floating: 0 16px 36px -20px #0f172a33;
+}
+
+@media (max-width: 767px) {
+    .cb-v2,
+    .cb-v2-body {
+        --ui-panel-pad: 16px;
+        --ui-gap: 14px;
+        --ui-section-gap: 18px;
+        --ui-control-height: 44px;
+        --ui-control-height-sm: 40px;
+    }
+}

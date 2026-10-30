@@ -17,7 +17,7 @@ func TestHandleResgateCaixinhaAdjustsReservedAndFreeWithoutChangingRealBalance(t
 	defer db.Close()
 	seedCaixinhaResgateScenario(t, db)
 
-	handler := MetasHandler{
+	handler := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-a",
@@ -76,7 +76,7 @@ func TestHandleResgateCaixinhaRejectsAboveReserved(t *testing.T) {
 	defer db.Close()
 	seedCaixinhaResgateScenario(t, db)
 
-	handler := MetasHandler{
+	handler := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-a",
@@ -121,7 +121,7 @@ func TestHandleResgateCaixinhaRejectsInvalidAmount(t *testing.T) {
 	defer db.Close()
 	seedCaixinhaResgateScenario(t, db)
 
-	handler := MetasHandler{
+	handler := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-a",
@@ -150,7 +150,7 @@ func TestHandleResgateCaixinhaRejectsForeignWorkspaceBox(t *testing.T) {
 	defer db.Close()
 	seedCaixinhaResgateScenario(t, db)
 
-	handler := MetasHandler{
+	handler := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-a",

@@ -1,38 +1,39 @@
 {{define "configuracoes-perfil-page"}}
-{{template "configuracoes-v2-section-start" .}}
+{{template "configuracoes-premium-section-start" .}}
 {{template "configuracoes-perfil-content" .}}
-{{template "configuracoes-v2-section-end" .}}
+{{template "configuracoes-premium-section-end" .}}
 {{end}}
 
 {{define "configuracoes-perfil-content"}}
 <div id="settings-dynamic-payload" class="w-full">
-    <!-- Header Mobile Only -->
-    <header class="sticky top-14 z-20 bg-[var(--cb-surface-overlay)] backdrop-blur-xl border-b border-[var(--cb-border-subtle)] transition-colors md:hidden w-full">
-        <div class="mx-auto flex max-w-7xl items-center gap-4 px-4 pt-4 pb-3">
-            <button type="button" hx-get="/configuracoes" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] btn-tactile">
-                <i data-lucide="arrow-left" class="h-4 w-4"></i>
-            </button>
-            <div class="min-w-0 flex-1">
-                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
-                <h1 class="mt-0.5 text-lg font-bold text-[var(--cb-text-main)] md:text-xl capitalize">perfil</h1>
-            </div>
-        </div>
-    </header>
+    <div class="cb-v2-configuracoes-body">
 
-    <div class="w-full px-4 pb-[7rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
-
-        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-danger">{{.FlashError}}</div>{{end}}
-        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-success">{{.FlashSuccess}}</div>{{end}}
+        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-danger" role="alert">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-success" role="status">{{.FlashSuccess}}</div>{{end}}
 
         <!-- Section header -->
-        <div class="mb-6">
-            <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Meu Perfil</h1>
-            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Atualize seus dados pessoais e credenciais.</p>
-        </div>
+        <header class="cb-v2-configuracoes-head ui-page-header">
+            <div class="min-w-0">
+                <p class="ui-eyebrow">Configurações</p>
+                <h1 class="ui-page-title">Meu Perfil</h1>
+                <p class="ui-page-description">Atualize seus dados pessoais e credenciais.</p>
+            </div>
+        </header>
 
         <div class="space-y-4 md:space-y-5">
-            <!-- Meu Perfil -->
-            <form class="cb-card-dense p-4 md:p-6" hx-post="/configuracoes/perfil" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" enctype="multipart/form-data">
+            <!-- Dados pessoais -->
+            <form class="ui-panel p-4 md:p-6"
+                hx-post="/configuracoes/perfil"
+                hx-target="#settings-dynamic-payload"
+                hx-swap="outerHTML"
+                hx-disabled-elt="find button[type='submit']"
+                hx-sync="this:drop"
+                hx-indicator="#htmx-indicator"
+                enctype="multipart/form-data">
+                <div class="mb-5">
+                    <h2 class="cb-v2-perfil-section-title">Dados pessoais</h2>
+                    <p class="cb-v2-perfil-section-desc">Nome e e-mail usados na sua conta.</p>
+                </div>
                 <input type="hidden" name="photo_path" value="{{.Perfil.PhotoPath}}">
                 <div class="grid grid-cols-1 gap-6 md:grid-cols-[140px_1fr]">
                     <div class="flex flex-col items-center gap-3 md:items-start">
@@ -44,116 +45,113 @@
                             {{.UserInitials}}
                             {{end}}
                         </div>
-                        <label class="inline-flex items-center gap-2 h-9 px-3 rounded-xl border border-[var(--cb-border-subtle)] text-xs font-medium text-[var(--cb-text-muted)] cursor-pointer hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95 transition-all btn-tactile">
-                            <i data-lucide="camera" class="w-3.5 h-3.5"></i>
+                        <label class="ui-btn ui-btn--secondary ui-btn--sm cb-v2-perfil-photo-button">
+                            <i data-lucide="camera" aria-hidden="true"></i>
                             <span>Alterar foto</span>
-                            <input type="file" name="photo_file" accept="image/jpeg,image/png" class="hidden" data-onchange="submitProfilePhoto">
+                            <input type="file" name="photo_file" accept="image/jpeg,image/png,image/webp" class="sr-only" aria-describedby="profilePhotoHelp">
                         </label>
+                        <p id="profilePhotoHelp" class="cb-v2-perfil-help text-center md:text-left">JPG, PNG ou WebP até 2 MB. A foto é aplicada ao salvar o perfil.</p>
                     </div>
                     <div class="space-y-5">
                         <div class="grid grid-cols-1 gap-5 md:grid-cols-2">
-                            <label class="block"><span class="cb-label">Nome</span><input type="text" name="name" value="{{.Perfil.Name}}" class="cb-input"></label>
-                            <label class="block"><span class="cb-label">E-mail</span><input type="email" name="email" value="{{.Perfil.Email}}" class="cb-input"></label>
+                            <div>
+                                <label class="ui-label" for="profileName">Nome</label>
+                                <input id="profileName" type="text" name="name" value="{{.Perfil.Name}}" class="ui-input" autocomplete="name" required>
+                            </div>
+                            <div>
+                                <label class="ui-label" for="profileEmail">E-mail</label>
+                                <input id="profileEmail" type="email" name="email" value="{{.Perfil.Email}}" class="ui-input" inputmode="email" autocomplete="email" required>
+                            </div>
                         </div>
-                        <div class="flex items-center gap-3">
-                            <button class="cb-button cb-button-primary h-11 px-6 text-sm">Salvar Perfil</button>
+                        <div class="cb-v2-perfil-actions">
+                            <button type="submit" class="ui-btn ui-btn--primary">Salvar Perfil</button>
                         </div>
                     </div>
                 </div>
             </form>
 
             <!-- Senha e segurança -->
-            <div class="cb-card-dense p-4 md:p-6">
-                <div class="flex items-center justify-between gap-4">
-                    <div>
-                        <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">Senha e segurança</h3>
-                        <p class="text-xs text-[var(--cb-text-muted)] mt-0.5">Altere sua senha para proteger sua conta.</p>
+            <section class="ui-panel p-4 md:p-6" aria-labelledby="passwordSectionTitle">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <h2 id="passwordSectionTitle" class="cb-v2-perfil-section-title">Senha e segurança</h2>
+                        <p class="cb-v2-perfil-section-desc">Altere sua senha para proteger sua conta.</p>
                     </div>
-                    <button type="button" id="togglePasswordForm" class="cb-button cb-button-ghost h-10 px-4 text-xs">
+                    <button type="button" id="togglePasswordForm" class="ui-btn ui-btn--secondary ui-btn--sm cb-v2-perfil-password-toggle" aria-expanded="false" aria-controls="passwordFormArea">
                         Alterar senha
                     </button>
                 </div>
-                <div id="passwordFormArea" class="hidden mt-5">
-                    <form id="passwordChangeForm" class="space-y-4" hx-post="/configuracoes/perfil/senha" hx-target="#passwordFormArea" hx-swap="innerHTML">
-                        <input type="text" name="username" value="{{.Perfil.Email}}" autocomplete="username" class="hidden" tabindex="-1" aria-hidden="true">
-                        <label class="block">
-                            <span class="cb-label">Senha atual</span>
-                            <input type="password" name="current_password" autocomplete="current-password" required minlength="1" class="cb-input">
-                        </label>
-                        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                            <label class="block">
-                                <span class="cb-label">Nova senha</span>
-                                <input type="password" name="new_password" autocomplete="new-password" required minlength="8" class="cb-input">
-                            </label>
-                            <label class="block">
-                                <span class="cb-label">Confirmar nova senha</span>
-                                <input type="password" name="confirm_password" autocomplete="new-password" required minlength="8" class="cb-input">
-                            </label>
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <button type="submit" class="cb-button cb-button-primary h-10 px-5 text-sm">Confirmar troca de senha</button>
-                            <button type="button" id="cancelPasswordForm" class="cb-button cb-button-secondary h-10 px-5 text-sm">Cancelar</button>
-                        </div>
-                    </form>
+
+                <div id="passwordFormArea" class="hidden cb-v2-perfil-password">
+                    {{template "configuracoes-perfil-password-form" .}}
                 </div>
-                <div class="border-t border-[var(--cb-border-subtle)] my-4"></div>
+
+                <div class="border-t border-[var(--cb-border-subtle)] my-5"></div>
+
                 <div>
-                    <h4 class="text-sm font-semibold text-[var(--cb-text-main)]">Sessões ativas</h4>
-                    <p class="text-xs text-[var(--cb-text-muted)] mt-0.5">Encerra sessões abertas em outros dispositivos, mantendo este conectado.</p>
+                    <h3 class="cb-v2-perfil-section-title">Sessões ativas</h3>
+                    <p class="cb-v2-perfil-section-desc">Encerra sessões abertas em outros dispositivos, mantendo este conectado.</p>
                     <button type="button"
-                        class="btn-tactile mt-3 h-10 rounded-xl border border-red-500/30 px-4 text-xs font-semibold text-[var(--cb-danger)] transition-all hover:bg-[var(--cb-surface-3)] active:scale-95 dark:border-red-500/20"
+                        class="ui-btn ui-btn--secondary cb-v2-perfil-session-action mt-3"
                         data-onclick="revokeOtherSessions">
-                        <span class="flex items-center gap-1.5"><i data-lucide="log-out" class="h-3.5 w-3.5"></i> Sair dos outros dispositivos</span>
+                        <i data-lucide="log-out" aria-hidden="true"></i>
+                        <span>Sair dos outros dispositivos</span>
                     </button>
                 </div>
-            </div>
+            </section>
 
-            <!-- Workspace Padrão de Entrada -->
-            <form class="cb-card-dense p-4 md:p-6" hx-post="/configuracoes/perfil/padrao" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
-                <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">Workspace Padrão de Entrada</h3>
-                <p class="text-xs text-[var(--cb-text-muted)] mt-0.5 mb-4">Escolha o workspace aberto por padrão ao fazer login.</p>
-                <label class="block mb-4">
-                    <span class="cb-label">Selecione o workspace</span>
-                    <select name="default_workspace_id" class="cb-input">
+            <!-- Workspace padrão de entrada -->
+            <form class="ui-panel p-4 md:p-6 space-y-4"
+                hx-post="/configuracoes/perfil/padrao"
+                hx-target="#settings-dynamic-payload"
+                hx-swap="outerHTML"
+                hx-disabled-elt="find button[type='submit']"
+                hx-sync="this:drop"
+                hx-indicator="#htmx-indicator">
+                <div>
+                    <h2 class="cb-v2-perfil-section-title">Workspace padrão de entrada</h2>
+                    <p class="cb-v2-perfil-section-desc">Escolha o workspace aberto por padrão ao fazer login.</p>
+                </div>
+                <div>
+                    <label class="ui-label" for="defaultWorkspace">Workspace</label>
+                    <select id="defaultWorkspace" name="default_workspace_id" class="ui-select">
                         <option value="">Usar workspace inicial automático</option>
                         {{range .ProfileWorkspaces}}
                         <option value="{{.ID}}" {{if eq $.Perfil.DefaultWorkspaceID .ID}}selected{{end}}>{{.Name}}</option>
                         {{end}}
                     </select>
-                </label>
-                <button class="cb-button cb-button-secondary h-10 px-4 text-xs">Salvar Workspace Padrão</button>
+                </div>
+                <div class="cb-v2-perfil-actions">
+                    <button type="submit" class="ui-btn ui-btn--secondary">Salvar workspace padrão</button>
+                </div>
             </form>
 
             <!-- Aparência (Tema) -->
-            <div class="cb-card-dense p-4 md:p-6">
-                <div class="flex items-start justify-between gap-4">
-                    <div>
-                        <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">Aparência do Aplicativo</h3>
-                        <p class="text-xs text-[var(--cb-text-muted)] mt-0.5">Selecione o tema visual do ContaBase.</p>
-                    </div>
-                </div>
+            <section class="ui-panel p-4 md:p-6" aria-labelledby="appearanceTitle">
+                <h2 id="appearanceTitle" class="cb-v2-perfil-section-title">Aparência do aplicativo</h2>
+                <p class="cb-v2-perfil-section-desc">Selecione o tema visual do ContaBase.</p>
                 <div class="mt-5 grid grid-cols-2 gap-3 max-w-md">
                     <button type="button"
                         data-onclick-tab="applyTheme" data-tab="light" data-theme-option="light"
                         class="btn-tactile flex flex-col items-center justify-center p-4 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)] text-center transition-all hover:bg-[var(--cb-surface-3)]">
-                        <i data-lucide="sun" class="w-6 h-6 text-[var(--cb-warning)] mb-2"></i>
-                        <span class="text-xs font-semibold">Tema Claro</span>
+                        <i data-lucide="sun" class="w-6 h-6 text-[var(--cb-warning)] mb-2" aria-hidden="true"></i>
+                        <span class="text-xs font-semibold">Tema claro</span>
                     </button>
                     <button type="button"
                         data-onclick-tab="applyTheme" data-tab="dark" data-theme-option="dark"
                         class="btn-tactile flex flex-col items-center justify-center p-4 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)] text-center transition-all hover:bg-[var(--cb-surface-3)]">
-                        <i data-lucide="moon" class="w-6 h-6 text-[var(--cb-info)] mb-2"></i>
-                        <span class="text-xs font-semibold">Tema Escuro</span>
+                        <i data-lucide="moon" class="w-6 h-6 text-[var(--cb-info)] mb-2" aria-hidden="true"></i>
+                        <span class="text-xs font-semibold">Tema escuro</span>
                     </button>
                 </div>
-            </div>
+            </section>
 
             <!-- Autenticação de Dois Fatores (2FA) -->
-            <div class="cb-card-dense p-4 md:p-6">
+            <section class="ui-panel p-4 md:p-6" aria-labelledby="twoFactorTitle">
                 <div class="flex items-start justify-between gap-4">
-                    <div>
-                        <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">Autenticação de Dois Fatores (2FA)</h3>
-                        <p class="text-xs text-[var(--cb-text-muted)] mt-0.5">Adicione uma camada extra de segurança à sua conta.</p>
+                    <div class="min-w-0">
+                        <h2 id="twoFactorTitle" class="cb-v2-perfil-section-title">Autenticação de Dois Fatores (2FA)</h2>
+                        <p class="cb-v2-perfil-section-desc">Adicione uma camada extra de segurança à sua conta.</p>
                     </div>
                     {{if .Perfil.TwoFactorEnabled}}
                     <span class="cb-status-chip cb-status-chip-success">Ativo</span>
@@ -185,36 +183,51 @@
                     {{template "perfil-2fa-disabled" .}}
                     {{end}}
                 </div>
-            </div>
+            </section>
         </div>
     </div>
+    <script src="{{assetPath "/assets/js/perfil-ui.js"}}"></script>
 </div>
 {{end}}
 
+{{/* Conteúdo interno compartilhado entre a área inicial (fechada) e a
+     resposta HTMX. O container #passwordFormArea existe em um único lugar para
+     cada renderização, e o swap do formulário usa outerHTML. */}}
+{{define "configuracoes-perfil-password-form"}}
+{{if .PasswordAreaError}}<div id="passwordFormError" class="mb-4 rounded-xl border px-4 py-3 text-sm cb-flash-danger" role="alert" tabindex="-1" data-password-feedback="error">{{.PasswordAreaError}}</div>{{end}}
+{{if .PasswordAreaSuccess}}<div id="passwordFormSuccess" class="mb-4 rounded-xl border px-4 py-3 text-sm cb-flash-success" role="status" tabindex="-1" data-password-feedback="success">{{.PasswordAreaSuccess}}</div>{{end}}
+<form id="passwordChangeForm" class="space-y-4"
+    hx-post="/configuracoes/perfil/senha"
+    hx-target="#passwordFormArea"
+    hx-swap="outerHTML"
+    hx-disabled-elt="find button[type='submit']"
+    hx-sync="this:drop"
+    hx-indicator="#htmx-indicator">
+    <input type="text" name="username" value="{{.Perfil.Email}}" autocomplete="username" class="hidden" tabindex="-1" aria-hidden="true">
+    <div>
+        <label class="ui-label" for="currentPassword">Senha atual</label>
+        <input id="currentPassword" type="password" name="current_password" autocomplete="current-password" required minlength="1" class="ui-input">
+    </div>
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div>
+            <label class="ui-label" for="newPassword">Nova senha</label>
+            <input id="newPassword" type="password" name="new_password" autocomplete="new-password" required minlength="8" class="ui-input" aria-describedby="passwordNewHelp">
+        </div>
+        <div>
+            <label class="ui-label" for="confirmPassword">Confirmar nova senha</label>
+            <input id="confirmPassword" type="password" name="confirm_password" autocomplete="new-password" required minlength="8" class="ui-input" aria-describedby="passwordNewHelp">
+        </div>
+    </div>
+    <p id="passwordNewHelp" class="cb-v2-perfil-help">A nova senha deve ter no mínimo 8 caracteres.</p>
+    <div class="cb-v2-perfil-actions">
+        <button type="submit" class="ui-btn ui-btn--primary">Confirmar troca de senha</button>
+        <button type="button" id="cancelPasswordForm" class="ui-btn ui-btn--secondary">Cancelar</button>
+    </div>
+</form>
+{{end}}
+
 {{define "configuracoes-perfil-password-area"}}
-<div id="passwordFormArea">
-    {{if .PasswordAreaError}}<div class="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-100">{{.PasswordAreaError}}</div>{{end}}
-    {{if .PasswordAreaSuccess}}<div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-100">{{.PasswordAreaSuccess}}</div>{{end}}
-    <form class="space-y-4" hx-post="/configuracoes/perfil/senha" hx-target="#passwordFormArea" hx-swap="innerHTML">
-        <input type="text" name="username" value="{{.Perfil.Email}}" autocomplete="username" class="hidden" tabindex="-1" aria-hidden="true">
-        <label class="block">
-            <span class="cb-label">Senha atual</span>
-            <input type="password" name="current_password" autocomplete="current-password" required minlength="1" class="cb-input">
-        </label>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <label class="block">
-                <span class="cb-label">Nova senha</span>
-                <input type="password" name="new_password" autocomplete="new-password" required minlength="8" class="cb-input">
-            </label>
-            <label class="block">
-                <span class="cb-label">Confirmar nova senha</span>
-                <input type="password" name="confirm_password" autocomplete="new-password" required minlength="8" class="cb-input">
-            </label>
-        </div>
-        <div class="flex items-center gap-3">
-            <button type="submit" class="cb-button cb-button-primary h-10 px-5 text-sm">Confirmar troca de senha</button>
-            <button type="button" id="cancelPasswordForm" class="cb-button cb-button-secondary h-10 px-5 text-sm">Cancelar</button>
-        </div>
-    </form>
+<div id="passwordFormArea" class="cb-v2-perfil-password">
+    {{template "configuracoes-perfil-password-form" .}}
 </div>
 {{end}}

@@ -12,7 +12,7 @@ import (
 
 func openIconTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}

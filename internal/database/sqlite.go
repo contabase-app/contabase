@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -649,6 +650,9 @@ func prepareSQLiteOpenConfig(dbURL string, withImmediate bool) (sqliteOpenConfig
 	}
 	normalized := normalizeSQLiteDSN(dbURL)
 	dbPath := sqliteFilePath(normalized)
+	if isSQLiteMemoryDSN(normalized) {
+		dbPath = ":memory:"
+	}
 	if withImmediate && isSQLiteMemoryDSN(normalized) {
 		return sqliteOpenConfig{}, fmt.Errorf("sqlite runtime pools require a disk-backed database")
 	}
@@ -731,11 +735,15 @@ func openSinglePool(dbURL string, jobHooks *sqliteRuntimeJobHooks) (*sql.DB, *sq
 	if err != nil {
 		return nil, nil, err
 	}
-	db, err := openSQLitePool(config.normalDSN)
+	db, guard, err := newSQLiteGuardPool(config.normalDSN)
 	if err != nil {
 		return nil, nil, err
 	}
 	if err := initializeSQLiteDatabase(db, config); err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	if err := publishSQLiteGuard(db, guard); err != nil {
 		_ = db.Close()
 		return nil, nil, err
 	}
@@ -761,7 +769,7 @@ func openRuntimeDBs(dbURL string, hooks *sqliteRuntimeOpenTestHooks) (*RuntimeDB
 			return nil, err
 		}
 	}
-	normalDB, err := openSQLitePool(config.normalDSN)
+	normalDB, normalGuard, err := newSQLiteGuardPool(config.normalDSN)
 	if err != nil {
 		return nil, err
 	}
@@ -780,7 +788,7 @@ func openRuntimeDBs(dbURL string, hooks *sqliteRuntimeOpenTestHooks) (*RuntimeDB
 			return nil, err
 		}
 	}
-	immediateDB, err := openSQLitePool(config.immediateDSN)
+	immediateDB, immediateGuard, err := newSQLiteGuardPool(config.immediateDSN)
 	if err != nil {
 		return nil, err
 	}
@@ -804,6 +812,12 @@ func openRuntimeDBs(dbURL string, hooks *sqliteRuntimeOpenTestHooks) (*RuntimeDB
 	}
 	if hooks != nil && hooks.afterInitialize != nil {
 		hooks.afterInitialize()
+	}
+	if err := publishSQLiteGuard(normalDB, normalGuard); err != nil {
+		return nil, err
+	}
+	if err := publishSQLiteGuard(immediateDB, immediateGuard); err != nil {
+		return nil, err
 	}
 	var beforeJobsStart func() error
 	var jobHooks *sqliteRuntimeJobHooks
@@ -943,8 +957,21 @@ func openExistingForMaintenance(dbURL string, readWrite bool) (*sql.DB, string, 
 		safeDSN = fmt.Sprintf("file:%s?mode=ro", canonicalPath)
 	}
 
-	db, err := sql.Open("sqlite", safeDSN)
+	var db *sql.DB
+	var err error
+	if readWrite {
+		var guard *sqliteGuardConnector
+		db, guard, err = newSQLiteGuardPool(safeDSN)
+		if err == nil {
+			err = publishSQLiteGuard(db, guard)
+		}
+	} else {
+		db, err = sql.Open("sqlite", safeDSN)
+	}
 	if err != nil {
+		if db != nil {
+			_ = db.Close()
+		}
 		return nil, "", fmt.Errorf("failed to open maintenance database: %w", err)
 	}
 	db.SetMaxOpenConns(1)
@@ -1186,19 +1213,31 @@ func materializeMonthlyBoxRecharges(ctx context.Context, db *sql.DB, civilNow ti
 		}
 	}()
 
-	rows, err := conn.QueryContext(ctx, `
-		SELECT id, target_amount, monthly_recharge,
-			continue_after_target, automatic_contribution_state,
-			monthly_recharge_anchor_month, created_at
-		FROM boxes
-		WHERE monthly_recharge > 0
-		ORDER BY id
-	`)
+	// CONTROL-PLANE GLOBAL: this internal job discovers only workspace IDs.
+	// Eligibility and all financial data are read in the scoped query below.
+	workspaceRows, err := conn.QueryContext(ctx, `SELECT id FROM workspaces ORDER BY id`)
 	if err != nil {
-		return fmt.Errorf("monthly box recharge select eligible boxes: %w", err)
+		return fmt.Errorf("monthly box recharge discover workspaces: %w", err)
+	}
+	var workspaceIDs []string
+	for workspaceRows.Next() {
+		var workspaceID string
+		if err := workspaceRows.Scan(&workspaceID); err != nil {
+			_ = workspaceRows.Close()
+			return fmt.Errorf("monthly box recharge scan workspace: %w", err)
+		}
+		workspaceIDs = append(workspaceIDs, workspaceID)
+	}
+	if err := workspaceRows.Err(); err != nil {
+		_ = workspaceRows.Close()
+		return fmt.Errorf("monthly box recharge discover workspaces: %w", err)
+	}
+	if err := workspaceRows.Close(); err != nil {
+		return fmt.Errorf("monthly box recharge close workspaces: %w", err)
 	}
 	type monthlyBox struct {
 		id                  string
+		workspaceID         string
 		target              int64
 		recharge            int64
 		continueAfterTarget int64
@@ -1207,49 +1246,60 @@ func materializeMonthlyBoxRecharges(ctx context.Context, db *sql.DB, civilNow ti
 		createdAt           int64
 	}
 	var boxes []monthlyBox
-	for rows.Next() {
-		var box monthlyBox
-		var stateRaw string
-		if err := rows.Scan(
-			&box.id,
-			&box.target,
-			&box.recharge,
-			&box.continueAfterTarget,
-			&stateRaw,
-			&box.anchor,
-			&box.createdAt,
-		); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("monthly box recharge scan eligible box: %w", err)
+	for _, workspaceID := range workspaceIDs {
+		rows, err := conn.QueryContext(ctx, `
+			SELECT id, workspace_id, target_amount, monthly_recharge,
+				continue_after_target, automatic_contribution_state,
+				monthly_recharge_anchor_month, created_at
+			FROM boxes
+			WHERE workspace_id = ? AND monthly_recharge > 0
+			ORDER BY id
+		`, workspaceID)
+		if err != nil {
+			return fmt.Errorf("monthly box recharge select eligible boxes for workspace %q: %w", workspaceID, err)
 		}
-		box.state = BoxAutomaticContributionState(stateRaw)
-		if !box.state.valid() {
+		for rows.Next() {
+			var box monthlyBox
+			if err := rows.Scan(
+				&box.id,
+				&box.workspaceID,
+				&box.target,
+				&box.recharge,
+				&box.continueAfterTarget,
+				&box.state,
+				&box.anchor,
+				&box.createdAt,
+			); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("monthly box recharge scan eligible box: %w", err)
+			}
+			boxes = append(boxes, box)
+		}
+		if err := rows.Err(); err != nil {
 			_ = rows.Close()
-			return fmt.Errorf("monthly box recharge box %q has invalid contribution state %q", box.id, stateRaw)
+			return fmt.Errorf("monthly box recharge eligible boxes: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return fmt.Errorf("monthly box recharge close eligible boxes: %w", err)
+		}
+	}
+	// The previous global query processed boxes by id. Keep that order while
+	// sourcing each box from a workspace-scoped query.
+	sort.Slice(boxes, func(i, j int) bool { return boxes[i].id < boxes[j].id })
+	for _, box := range boxes {
+		if !box.state.valid() {
+			return fmt.Errorf("monthly box recharge box %q has invalid contribution state %q", box.id, box.state)
 		}
 		if box.continueAfterTarget != 0 && box.continueAfterTarget != 1 {
-			_ = rows.Close()
 			return fmt.Errorf("monthly box recharge box %q has invalid continue-after-target value %d", box.id, box.continueAfterTarget)
 		}
-		boxes = append(boxes, box)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return fmt.Errorf("monthly box recharge eligible boxes: %w", err)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("monthly box recharge close eligible boxes: %w", err)
 	}
 
 	for _, box := range boxes {
 		anchorMonth := box.anchor.String
 		if !box.anchor.Valid || anchorMonth == "" {
 			anchorMonth = time.Unix(box.createdAt, 0).In(civilNow.Location()).Format("2006-01")
-			if _, err := conn.ExecContext(ctx, `
-				UPDATE boxes
-				SET monthly_recharge_anchor_month = ?
-				WHERE id = ? AND monthly_recharge_anchor_month IS NULL
-			`, anchorMonth, box.id); err != nil {
+			if err := setMonthlyBoxRechargeAnchor(ctx, conn, box.workspaceID, box.id, anchorMonth); err != nil {
 				return fmt.Errorf("monthly box recharge set anchor for box %q: %w", box.id, err)
 			}
 		}
@@ -1257,12 +1307,8 @@ func materializeMonthlyBoxRecharges(ctx context.Context, db *sql.DB, civilNow ti
 			continue
 		}
 
-		var balance int64
-		if err := conn.QueryRowContext(ctx, `
-			SELECT COALESCE(SUM(amount), 0)
-			FROM box_virtual_ledger
-			WHERE box_id = ?
-		`, box.id).Scan(&balance); err != nil {
+		balance, err := monthlyBoxLedgerBalance(ctx, conn, box.workspaceID, box.id)
+		if err != nil {
 			return fmt.Errorf("monthly box recharge calculate balance for box %q: %w", box.id, err)
 		}
 
@@ -1273,6 +1319,7 @@ func materializeMonthlyBoxRecharges(ctx context.Context, db *sql.DB, civilNow ti
 			changed, err := transitionBoxAutomaticContributionState(
 				ctx,
 				conn,
+				box.workspaceID,
 				box.id,
 				BoxAutomaticContributionStateActive,
 				materializedAt,
@@ -1295,12 +1342,13 @@ func materializeMonthlyBoxRecharges(ctx context.Context, db *sql.DB, civilNow ti
 			Active:              true,
 		})
 		if decision.TargetReached && decision.AmountCents == 0 {
-			if err := recordBoxContributionGoalReached(ctx, conn, box.id, materializedAt); err != nil {
+			if err := recordBoxContributionGoalReached(ctx, conn, box.workspaceID, box.id, materializedAt); err != nil {
 				return fmt.Errorf("monthly box recharge recognize reached target for box %q: %w", box.id, err)
 			}
 			changed, err := transitionBoxAutomaticContributionState(
 				ctx,
 				conn,
+				box.workspaceID,
 				box.id,
 				BoxAutomaticContributionStateBlocked,
 				materializedAt,
@@ -1314,17 +1362,11 @@ func materializeMonthlyBoxRecharges(ctx context.Context, db *sql.DB, civilNow ti
 			continue
 		}
 
-		var alreadyMaterialized int
-		if err := conn.QueryRowContext(ctx, `
-			SELECT EXISTS (
-				SELECT 1
-				FROM box_virtual_ledger
-				WHERE box_id = ? AND automatic_recharge_month = ?
-			)
-		`, box.id, civilMonth).Scan(&alreadyMaterialized); err != nil {
+		alreadyMaterialized, err := monthlyBoxRechargeExists(ctx, conn, box.workspaceID, box.id, civilMonth)
+		if err != nil {
 			return fmt.Errorf("monthly box recharge read identity for box %q month %s: %w", box.id, civilMonth, err)
 		}
-		if alreadyMaterialized != 0 {
+		if alreadyMaterialized {
 			continue
 		}
 
@@ -1334,36 +1376,22 @@ func materializeMonthlyBoxRecharges(ctx context.Context, db *sql.DB, civilNow ti
 			return fmt.Errorf("monthly box recharge calculated non-positive amount %d for box %q", automaticAmount, box.id)
 		}
 
-		result, err := conn.ExecContext(ctx, `
-			INSERT INTO box_virtual_ledger (
-				id, box_id, reference_date, amount, type, description,
-				automatic_recharge_month, created_at
-			) VALUES (?, ?, ?, ?, 'RECHARGE', 'Aporte Automático', ?, ?)
-			ON CONFLICT(box_id, automatic_recharge_month)
-			WHERE automatic_recharge_month IS NOT NULL
-			DO NOTHING
-		`, uuid.NewString(), box.id, materializedAt, automaticAmount, civilMonth, materializedAt)
+		inserted, err := insertMonthlyBoxRecharge(ctx, conn, box.workspaceID, box.id, automaticAmount, civilMonth, materializedAt)
 		if err != nil {
 			return fmt.Errorf("monthly box recharge materialize box %q month %s: %w", box.id, civilMonth, err)
 		}
-		rowsAffected, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("monthly box recharge result box %q month %s: %w", box.id, civilMonth, err)
-		}
-		if rowsAffected == 0 {
+		if !inserted {
 			continue
-		}
-		if rowsAffected != 1 {
-			return fmt.Errorf("monthly box recharge box %q month %s affected %d rows", box.id, civilMonth, rowsAffected)
 		}
 
 		if blocksAfterRecharge {
-			if err := recordBoxContributionGoalReached(ctx, conn, box.id, materializedAt); err != nil {
+			if err := recordBoxContributionGoalReached(ctx, conn, box.workspaceID, box.id, materializedAt); err != nil {
 				return fmt.Errorf("monthly box recharge record reached target for box %q: %w", box.id, err)
 			}
 			changed, err := transitionBoxAutomaticContributionState(
 				ctx,
 				conn,
+				box.workspaceID,
 				box.id,
 				BoxAutomaticContributionStateBlocked,
 				materializedAt,
@@ -1382,4 +1410,87 @@ func materializeMonthlyBoxRecharges(ctx context.Context, db *sql.DB, civilNow ti
 	}
 	committed = true
 	return nil
+}
+
+func setMonthlyBoxRechargeAnchor(ctx context.Context, store boxContributionLifecycleStore, workspaceID, boxID, month string) error {
+	result, err := store.ExecContext(ctx, `
+		UPDATE boxes
+		SET monthly_recharge_anchor_month = ?
+		WHERE id = ? AND workspace_id = ? AND monthly_recharge_anchor_month IS NULL
+	`, month, boxID, workspaceID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("monthly box recharge anchor result: %w", err)
+	}
+	if rowsAffected != 1 {
+		return fmt.Errorf("monthly box recharge anchor affected %d rows; expected one owned unanchored box", rowsAffected)
+	}
+	return nil
+}
+
+func monthlyBoxLedgerBalance(ctx context.Context, store boxContributionLifecycleStore, workspaceID, boxID string) (int64, error) {
+	var balance int64
+	err := store.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(l.amount), 0)
+		FROM boxes b
+		LEFT JOIN box_virtual_ledger l ON l.box_id = b.id
+		WHERE b.id = ? AND b.workspace_id = ?
+		GROUP BY b.id
+	`, boxID, workspaceID).Scan(&balance)
+	return balance, err
+}
+
+func monthlyBoxRechargeExists(ctx context.Context, store boxContributionLifecycleStore, workspaceID, boxID, month string) (bool, error) {
+	var exists int
+	err := store.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM box_virtual_ledger l
+			WHERE l.box_id = b.id AND l.automatic_recharge_month = ?
+		)
+		FROM boxes b
+		WHERE b.id = ? AND b.workspace_id = ?
+	`, month, boxID, workspaceID).Scan(&exists)
+	return exists != 0, err
+}
+
+func insertMonthlyBoxRecharge(ctx context.Context, store boxContributionLifecycleStore, workspaceID, boxID string, amount int64, month string, at int64) (bool, error) {
+	result, err := store.ExecContext(ctx, `
+		INSERT INTO box_virtual_ledger (
+			id, box_id, reference_date, amount, type, description,
+			automatic_recharge_month, created_at
+		)
+		SELECT ?, b.id, ?, ?, 'RECHARGE', 'Aporte Automático', ?, ?
+		FROM boxes b
+		WHERE b.id = ? AND b.workspace_id = ?
+		ON CONFLICT(box_id, automatic_recharge_month)
+		WHERE automatic_recharge_month IS NOT NULL
+		DO NOTHING
+	`, uuid.NewString(), at, amount, month, at, boxID, workspaceID)
+	if err != nil {
+		return false, err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("monthly box recharge insert result: %w", err)
+	}
+	if rowsAffected == 1 {
+		return true, nil
+	}
+	if rowsAffected != 0 {
+		return false, fmt.Errorf("monthly box recharge insert affected %d rows; expected at most one", rowsAffected)
+	}
+	// The same transaction distinguishes a valid monthly conflict from a
+	// missing/foreign box or an otherwise suppressed insert.
+	exists, err := monthlyBoxRechargeExists(ctx, store, workspaceID, boxID, month)
+	if err != nil {
+		return false, fmt.Errorf("monthly box recharge verify zero-row insert ownership: %w", err)
+	}
+	if !exists {
+		return false, fmt.Errorf("monthly box recharge insert affected zero rows without monthly identity")
+	}
+	return false, nil
 }

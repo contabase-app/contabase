@@ -13,6 +13,8 @@ function fixture(selectedIndex, width = 900) {
         return {
             dataset: {}, isConnected: true,
             classList: {
+                add: (key) => classes.add(key),
+                remove: (key) => classes.delete(key),
                 contains: (key) => classes.has(key),
                 toggle: (key, value) => value ? classes.add(key) : classes.delete(key),
             },
@@ -27,14 +29,14 @@ function fixture(selectedIndex, width = 900) {
         };
     }
     const rail = Object.assign(node(), { scrollLeft: 0, clientWidth: width, scrollWidth: 1500 });
-    rail.getBoundingClientRect = () => ({ left: 0 });
+    rail.getBoundingClientRect = () => ({ left: 0, right: width, width });
     rail.scrollTo = ({ left }) => { rail.scrollLeft = left; };
     const cards = ['itau', 'xp', 'sem-fatura', 'inter', 'nubank'].map((id, index) => {
         const card = node();
         card.href = `http://localhost/faturas?ano=2026&cartao=${id}&mes=9`;
         card.dataset = { faturasCardId: id, faturasContentUrl: `/faturas/conteudo?ano=2026&cartao=${id}&mes=9` };
         card.classList.toggle('is-selected', index === selectedIndex);
-        card.getBoundingClientRect = () => ({ left: index * 300 - rail.scrollLeft, width: 280 });
+        card.getBoundingClientRect = () => { const left = index * 300 - rail.scrollLeft; return { left, right: left + 280, width: 280 }; };
         return card;
     });
     const dots = cards.map(node);
@@ -45,7 +47,11 @@ function fixture(selectedIndex, width = 900) {
     const monthLink = { href: 'http://localhost/faturas?ano=2026&cartao=xp&mes=10&ordem=asc' };
     const document = Object.assign(node(), {
         body: node(),
-        querySelectorAll: (selector) => selector === '#faturas-index-card-rail' ? [section] : [monthLink],
+        querySelectorAll: (selector) => {
+            if (selector === '#faturas-index-card-rail') return [section];
+            if (selector === '[data-month-selector] a') return [monthLink];
+            return [];
+        },
         querySelector: () => null,
         getElementById: () => target,
     });
@@ -81,7 +87,9 @@ test('URL selection survives desktop layout scroll with XP in the center', () =>
 
 test('a card without an invoice is selected and revealed on mobile', () => {
     const ui = fixture(2, 324);
-    assert.equal(ui.rail.scrollLeft, 600);
+    // Minimal reveal: card 2 spans 600..880 in a 324px viewport, so the rail
+    // only needs to move 556px to bring its right edge into view.
+    assert.equal(ui.rail.scrollLeft, 556);
     ui.rail.emit('scroll');
     ui.flush();
     assert.deepEqual(ui.selected(), ['sem-fatura']);

@@ -1,8 +1,9 @@
 {{define "configuracoes-page"}}
 {{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/configuracoes.css"}}">
 {{template "app-v2-document-head-end" .}}
-<main id="main-content" class="cb-v2-main cb-v2-configuracoes-main" data-page-section="settings" data-page-title="{{.Title}}">
+<main id="main-content" class="cb-v2-main cb-v2-configuracoes-main" data-page-section="settings" data-page-title="{{.Title}}" data-ui="premium">
     {{template "app-v2-appbar" .}}
 {{template "configuracoes-content" .}}
 </main>
@@ -10,16 +11,41 @@
 {{template "app-v2-document-end" .}}
 {{end}}
 
-{{define "configuracoes-v2-section-start"}}
+{{/* Envelope próprio da Administração. Compartilha a fundação premium com
+     Configurações, mas adiciona a camada administrativa e o identificador de
+     escopo sem alterar o envelope das páginas pessoais/corporativas. */}}
+{{define "configuracoes-admin-section-start"}}
 {{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
+<link rel="stylesheet" href="{{assetPath "/assets/css/configuracoes.css"}}">
+<link rel="stylesheet" href="{{assetPath "/assets/css/admin-premium.css"}}">
+{{template "app-v2-document-head-end" .}}
+<main id="main-content" class="cb-v2-main cb-v2-configuracoes-main cb-v2-admin-main" data-page-section="settings" data-page-title="{{.Title}}" data-ui="premium">
+    {{template "app-v2-appbar" .}}
+    <div class="cb-v2-content cb-v2-configuracoes-content cb-v2-admin-content">
+{{end}}
+
+{{define "configuracoes-admin-section-end"}}
+    </div>
+</main>
+<script src="{{assetPath "/assets/js/admin-accessibility.js"}}"></script>
+{{template "app-v2-shell-after-main" .}}
+{{template "app-v2-document-end" .}}
+{{end}}
+
+{{/* Envelope Premium das seções de Configurações pessoais/corporativas. Não
+     carrega a camada administrativa e não contamina o envelope da Administração. */}}
+{{define "configuracoes-premium-section-start"}}
+{{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/configuracoes.css"}}">
 {{template "app-v2-document-head-end" .}}
-<main id="main-content" class="cb-v2-main cb-v2-configuracoes-main" data-page-section="settings" data-page-title="{{.Title}}">
+<main id="main-content" class="cb-v2-main cb-v2-configuracoes-main" data-page-section="settings" data-page-title="{{.Title}}" data-ui="premium">
     {{template "app-v2-appbar" .}}
     <div class="cb-v2-content cb-v2-configuracoes-content cb-v2-configuracoes-section">
 {{end}}
 
-{{define "configuracoes-v2-section-end"}}
+{{define "configuracoes-premium-section-end"}}
     </div>
 </main>
 {{template "app-v2-shell-after-main" .}}
@@ -28,250 +54,58 @@
 
 {{define "configuracoes-content"}}
 <div class="cb-v2-content cb-v2-configuracoes-content">
-    <header class="cb-v2-configuracoes-header">
-        <div>
-            <p class="cb-v2-eyebrow">Preferências</p>
-            <h1>Configurações</h1>
-            <p>Gerencie seu perfil, o workspace e as opções permitidas para sua função.</p>
+    <header class="cb-v2-configuracoes-head ui-page-header">
+        <div class="min-w-0">
+            <p class="ui-eyebrow">Preferências</p>
+            <h1 class="ui-page-title">Configurações</h1>
+            <p class="ui-page-description">Gerencie seu perfil, o workspace e as opções permitidas para sua função.</p>
         </div>
     </header>
 
-    <section class="cb-v2-configuracoes-context" aria-label="Contexto de configurações">
-        <i data-lucide="panel-left"></i>
-        <p>As opções desta área ficam reunidas no menu lateral.</p>
+    <section class="cb-v2-hub-grid" aria-label="Seções de configurações">
+        <a class="cb-v2-hub-card ui-panel" href="/configuracoes/perfil">
+            <span class="cb-v2-hub-icon"><i data-lucide="user" aria-hidden="true"></i></span>
+            <span class="cb-v2-hub-copy"><strong>Meu Perfil</strong><small>Dados pessoais, senha e segurança da conta.</small></span>
+            <i data-lucide="chevron-right" class="cb-v2-hub-chevron" aria-hidden="true"></i>
+        </a>
+        {{if .CanManageWorkspaceProfile}}
+        <a class="cb-v2-hub-card ui-panel" href="/configuracoes/workspace">
+            <span class="cb-v2-hub-icon"><i data-lucide="building-2" aria-hidden="true"></i></span>
+            <span class="cb-v2-hub-copy"><strong>Perfil corporativo</strong><small>Dados da empresa e identidade visual do workspace.</small></span>
+            <i data-lucide="chevron-right" class="cb-v2-hub-chevron" aria-hidden="true"></i>
+        </a>
+        {{end}}
+        {{if .CanManageOps}}
+        <a class="cb-v2-hub-card ui-panel" href="/configuracoes/categorias">
+            <span class="cb-v2-hub-icon"><i data-lucide="tags" aria-hidden="true"></i></span>
+            <span class="cb-v2-hub-copy"><strong>Categorias</strong><small>Despesas, receitas, subcategorias e grupos macro.</small></span>
+            <i data-lucide="chevron-right" class="cb-v2-hub-chevron" aria-hidden="true"></i>
+        </a>
+        <a class="cb-v2-hub-card ui-panel" href="/configuracoes/contas">
+            <span class="cb-v2-hub-icon"><i data-lucide="wallet" aria-hidden="true"></i></span>
+            <span class="cb-v2-hub-copy"><strong>Contas</strong><small>Contas bancárias, saldos e conciliações.</small></span>
+            <i data-lucide="chevron-right" class="cb-v2-hub-chevron" aria-hidden="true"></i>
+        </a>
+        <a class="cb-v2-hub-card ui-panel" href="/configuracoes/cartoes">
+            <span class="cb-v2-hub-icon"><i data-lucide="credit-card" aria-hidden="true"></i></span>
+            <span class="cb-v2-hub-copy"><strong>Cartões</strong><small>Limites, fechamento, vencimento e conta de pagamento.</small></span>
+            <i data-lucide="chevron-right" class="cb-v2-hub-chevron" aria-hidden="true"></i>
+        </a>
+        {{end}}
     </section>
 
-    <!-- Navegação legada mantida apenas como fallback de marcação durante a migração. -->
-    <div data-config-legacy-hub-nav class="flex flex-col gap-3 md:hidden w-full pb-28">
-        <button type="button" hx-get="/configuracoes/perfil" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
-            class="btn-tactile cb-card-dense flex items-center justify-between w-full p-4 text-left min-h-[72px]">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl cb-tone-accent cb-tone-surface"><i data-lucide="user" class="h-5 w-5 text-[var(--cb-accent)]"></i></span>
-                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Meu Perfil</span>
-            </div>
-            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)] shrink-0"></i>
-        </button>
-        {{if .CanManageWorkspaceProfile}}
-        <button type="button" hx-get="/configuracoes/workspace" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
-            class="btn-tactile cb-card-dense flex items-center justify-between w-full p-4 text-left min-h-[72px]">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl cb-tone-info cb-tone-surface"><i data-lucide="building-2" class="h-5 w-5 text-[var(--cb-info)]"></i></span>
-                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Perfil corporativo</span>
-            </div>
-            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)] shrink-0"></i>
-        </button>
-        {{end}}
-        {{if .CanManageOps}}
-        <button type="button" hx-get="/configuracoes/categorias" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
-            class="btn-tactile cb-card-dense flex items-center justify-between w-full p-4 text-left min-h-[72px]">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl cb-tone-success cb-tone-surface"><i data-lucide="tags" class="h-5 w-5 text-[var(--cb-success)]"></i></span>
-                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Categorias</span>
-            </div>
-            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)] shrink-0"></i>
-        </button>
-        <button type="button" hx-get="/configuracoes/contas" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
-            class="btn-tactile cb-card-dense flex items-center justify-between w-full p-4 text-left min-h-[72px]">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl cb-tone-info cb-tone-surface"><i data-lucide="wallet" class="h-5 w-5 text-[var(--cb-info)]"></i></span>
-                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Contas</span>
-            </div>
-            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)] shrink-0"></i>
-        </button>
-        <button type="button" hx-get="/configuracoes/cartoes" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
-            class="btn-tactile cb-card-dense flex items-center justify-between w-full p-4 text-left min-h-[72px]">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl cb-tone-info cb-tone-surface"><i data-lucide="credit-card" class="h-5 w-5 text-[var(--cb-info)]"></i></span>
-                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Cartões</span>
-            </div>
-            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)] shrink-0"></i>
-        </button>
-        {{end}}
-        {{if .CanManageGlobal}}
-        <div class="pt-2 mt-2 border-t border-[var(--cb-border-subtle)]"></div>
-        <p class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-subtle)] px-1">Administração</p>
-        <button type="button" hx-get="/admin/usuarios" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
-            class="btn-tactile cb-card-dense flex items-center justify-between w-full p-4 text-left min-h-[72px]">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl cb-tone-danger cb-tone-surface"><i data-lucide="shield" class="h-5 w-5 text-[var(--cb-danger)]"></i></span>
-                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Usuários</span>
-            </div>
-            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)] shrink-0"></i>
-        </button>
-        <button type="button" hx-get="/admin/workspaces" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
-            class="btn-tactile cb-card-dense flex items-center justify-between w-full p-4 text-left min-h-[72px]">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl cb-tone-accent cb-tone-surface"><i data-lucide="layers" class="h-5 w-5 text-[var(--cb-accent)]"></i></span>
-                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Workspaces</span>
-            </div>
-            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)] shrink-0"></i>
-        </button>
-        <button type="button" hx-get="/admin/backups" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
-            class="btn-tactile cb-card-dense flex items-center justify-between w-full p-4 text-left min-h-[72px]">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl cb-tone-warning cb-tone-surface"><i data-lucide="database" class="h-5 w-5 text-[var(--cb-warning)]"></i></span>
-                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Backups</span>
-            </div>
-            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)] shrink-0"></i>
-        </button>
-        <button type="button" hx-get="/admin/auditoria" hx-target="#main-content" hx-swap="innerHTML" hx-push-url="true"
-            class="btn-tactile cb-card-dense flex items-center justify-between w-full p-4 text-left min-h-[72px]">
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl cb-tone-info cb-tone-surface"><i data-lucide="eye" class="h-5 w-5 text-[var(--cb-info)]"></i></span>
-                <span class="text-sm font-semibold text-[var(--cb-text-main)]">Auditoria</span>
-            </div>
-            <i data-lucide="chevron-right" class="h-5 w-5 text-[var(--cb-text-muted)] shrink-0"></i>
-        </button>
-        {{end}}
-    </div>
-
-    <!-- Desktop: SaaS Split Layout -->
-    <div data-config-legacy-hub-nav class="hidden md:flex gap-8 w-full max-w-full">
-        <aside class="md:w-64 flex-none border-r border-[var(--cb-border-subtle)] pr-6">
-            <div class="mb-6">
-                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
-                <h2 class="text-lg font-bold text-[var(--cb-text-main)]">Painel de Controle</h2>
-            </div>
-            {{template "configuracoes-sidebar" .}}
-        </aside>
-
-        <div id="settings-content" class="flex-1 pl-4">
-            {{if eq .Section "perfil"}}
-                {{template "configuracoes-perfil-content" .}}
-            {{else if eq .Section "workspace"}}
-                {{template "configuracoes-workspace-content" .}}
-            {{else if eq .Section "categorias"}}
-                {{template "configuracoes-categorias-content" .}}
-            {{else if eq .Section "contas"}}
-                {{template "configuracoes-contas-content" .}}
-            {{else if eq .Section "cartoes"}}
-                {{template "configuracoes-cartoes-content" .}}
-            {{else if eq .Section "admin-users"}}
-                {{template "configuracoes-admin_users-content" .}}
-            {{else if eq .Section "admin-workspaces"}}
-                {{template "configuracoes-admin_workspaces-content" .}}
-            {{else if eq .Section "admin-backups"}}
-                {{template "configuracoes-admin_backups-content" .}}
-            {{else if eq .Section "admin-auditoria"}}
-                {{template "configuracoes-admin_auditoria-content" .}}
-            {{end}}
+    {{if .CanManageGlobal}}
+    <section class="cb-v2-hub-admin" aria-labelledby="hubAdminTitle">
+        <h2 id="hubAdminTitle" class="cb-v2-section-title">Administração</h2>
+        <div class="cb-v2-hub-admin-links">
+            <a href="/admin/usuarios">Usuários</a>
+            <a href="/admin/workspaces">Workspaces</a>
+            <a href="/admin/backups">Backups</a>
+            <a href="/admin/auditoria">Auditoria</a>
         </div>
-    </div>
-</div>
-{{end}}
+    </section>
+    {{end}}
 
-{{define "configuracoes-sidebar"}}
-<nav class="md:w-56 shrink-0 space-y-1" data-config-sidebar>
-    <div class="cb-card-dense p-3 space-y-0.5">
-        <p class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-subtle)] px-2 mb-2">Configurações</p>
-        <a href="/configuracoes/perfil"
-            hx-get="/configuracoes/perfil"
-            hx-target="#settings-dynamic-payload"
-            hx-select="#settings-dynamic-payload"
-            hx-swap="outerHTML"
-            hx-push-url="true"
-            data-config-section="perfil"
-            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
-                {{if eq .Section "perfil"}}bg-[var(--cb-accent-soft)] text-[var(--cb-accent-solid)]{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
-            <i data-lucide="user" class="w-4 h-4"></i>Meu Perfil
-        </a>
-        {{if .CanManageWorkspaceProfile}}
-        <a href="/configuracoes/workspace"
-            hx-get="/configuracoes/workspace"
-            hx-target="#settings-dynamic-payload"
-            hx-select="#settings-dynamic-payload"
-            hx-swap="outerHTML"
-            hx-push-url="true"
-            data-config-section="workspace"
-            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
-                {{if eq .Section "workspace"}}bg-[var(--cb-accent-soft)] text-[var(--cb-accent-solid)]{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
-            <i data-lucide="building-2" class="w-4 h-4"></i>Perfil corporativo
-        </a>
-        {{end}}
-        {{if .CanManageOps}}
-        <div class="pt-2 mt-2 border-t border-[var(--cb-border-subtle)]"></div>
-        <a href="/configuracoes/categorias"
-            hx-get="/configuracoes/categorias"
-            hx-target="#settings-dynamic-payload"
-            hx-select="#settings-dynamic-payload"
-            hx-swap="outerHTML"
-            hx-push-url="true"
-            data-config-section="categorias"
-            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
-                {{if eq .Section "categorias"}}bg-[var(--cb-accent-soft)] text-[var(--cb-accent-solid)]{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
-            <i data-lucide="tags" class="w-4 h-4"></i>Categorias
-        </a>
-        <a href="/configuracoes/contas"
-            hx-get="/configuracoes/contas"
-            hx-target="#settings-dynamic-payload"
-            hx-select="#settings-dynamic-payload"
-            hx-swap="outerHTML"
-            hx-push-url="true"
-            data-config-section="contas"
-            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
-                {{if eq .Section "contas"}}bg-[var(--cb-accent-soft)] text-[var(--cb-accent-solid)]{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
-            <i data-lucide="wallet" class="w-4 h-4"></i>Contas
-        </a>
-        <a href="/configuracoes/cartoes"
-            hx-get="/configuracoes/cartoes"
-            hx-target="#settings-dynamic-payload"
-            hx-select="#settings-dynamic-payload"
-            hx-swap="outerHTML"
-            hx-push-url="true"
-            data-config-section="cartoes"
-            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
-                {{if eq .Section "cartoes"}}bg-[var(--cb-accent-soft)] text-[var(--cb-accent-solid)]{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
-            <i data-lucide="credit-card" class="w-4 h-4"></i>Cartões
-        </a>
-        {{end}}
-        {{if .CanManageGlobal}}
-        <div class="pt-2 mt-2 border-t border-[var(--cb-border-subtle)]"></div>
-        <p class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-subtle)] px-2 mb-1">Administração</p>
-        <a href="/admin/usuarios"
-            hx-get="/admin/usuarios"
-            hx-target="#settings-dynamic-payload"
-            hx-select="#settings-dynamic-payload"
-            hx-swap="outerHTML"
-            hx-push-url="true"
-            data-config-section="admin-users"
-            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
-                {{if eq .Section "admin-users"}}bg-[var(--cb-accent-soft)] text-[var(--cb-accent-solid)]{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
-            <i data-lucide="shield" class="w-4 h-4"></i>Usuários
-        </a>
-        <a href="/admin/workspaces"
-            hx-get="/admin/workspaces"
-            hx-target="#settings-dynamic-payload"
-            hx-select="#settings-dynamic-payload"
-            hx-swap="outerHTML"
-            hx-push-url="true"
-            data-config-section="admin-workspaces"
-            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
-                {{if eq .Section "admin-workspaces"}}bg-[var(--cb-accent-soft)] text-[var(--cb-accent-solid)]{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
-            <i data-lucide="layers" class="w-4 h-4"></i>Workspaces
-        </a>
-        <a href="/admin/backups"
-            hx-get="/admin/backups"
-            hx-target="#settings-dynamic-payload"
-            hx-select="#settings-dynamic-payload"
-            hx-swap="outerHTML"
-            hx-push-url="true"
-            data-config-section="admin-backups"
-            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
-                {{if eq .Section "admin-backups"}}bg-[var(--cb-accent-soft)] text-[var(--cb-accent-solid)]{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
-            <i data-lucide="database" class="w-4 h-4"></i>Backups
-        </a>
-        <a href="/admin/auditoria"
-            hx-get="/admin/auditoria"
-            hx-target="#settings-dynamic-payload"
-            hx-select="#settings-dynamic-payload"
-            hx-swap="outerHTML"
-            hx-push-url="true"
-            data-config-section="admin-auditoria"
-            class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium transition-all
-                {{if eq .Section "admin-auditoria"}}bg-[var(--cb-accent-soft)] text-[var(--cb-accent-solid)]{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
-            <i data-lucide="eye" class="w-4 h-4"></i>Auditoria
-        </a>
-        {{end}}
-    </div>
-</nav>
+    <p class="cb-v2-help">A navegação completa também está disponível no menu lateral.</p>
+</div>
 {{end}}

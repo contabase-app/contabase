@@ -12,7 +12,7 @@ import (
 )
 
 func TestMigration56BoxContributionLifecycleFreshSchema(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("open fresh database: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestMigration56UpgradePreservesBoxesLedgerAndBehaviorDefaults(t *testing.T)
 }
 
 func TestBoxContributionLifecycleTransitionsAreAtomicAndIdempotent(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
@@ -178,20 +178,20 @@ func TestBoxContributionLifecycleTransitionsAreAtomicAndIdempotent(t *testing.T)
 	now := time.Date(2026, time.August, 7, 12, 0, 0, 0, time.UTC)
 	insertMonthlyRechargeBox(t, db, "box-lifecycle", "ws-lifecycle", 1000, 10000, now.Unix())
 
-	changed, err := TransitionBoxAutomaticContributionState(context.Background(), db, "box-lifecycle", BoxAutomaticContributionStateBlocked, now)
+	changed, err := TransitionBoxAutomaticContributionState(context.Background(), db, "ws-lifecycle", "box-lifecycle", BoxAutomaticContributionStateBlocked, now)
 	if err != nil || !changed {
 		t.Fatalf("ACTIVE -> BLOCKED changed=%v err=%v", changed, err)
 	}
 	assertBoxContributionLifecycle(t, db, "box-lifecycle", 1, BoxAutomaticContributionStateBlocked)
 	assertLifecycleEvent(t, db, "box-lifecycle", 1, BoxContributionLifecycleEventBlocked, BoxAutomaticContributionStateActive, BoxAutomaticContributionStateBlocked)
 
-	changed, err = TransitionBoxAutomaticContributionState(context.Background(), db, "box-lifecycle", BoxAutomaticContributionStateBlocked, now.Add(time.Minute))
+	changed, err = TransitionBoxAutomaticContributionState(context.Background(), db, "ws-lifecycle", "box-lifecycle", BoxAutomaticContributionStateBlocked, now.Add(time.Minute))
 	if err != nil || changed {
 		t.Fatalf("repeated BLOCKED changed=%v err=%v, want idempotent no-op", changed, err)
 	}
 	assertBoxContributionLifecycle(t, db, "box-lifecycle", 1, BoxAutomaticContributionStateBlocked)
 
-	changed, err = TransitionBoxAutomaticContributionState(context.Background(), db, "box-lifecycle", BoxAutomaticContributionStateActive, now.Add(2*time.Minute))
+	changed, err = TransitionBoxAutomaticContributionState(context.Background(), db, "ws-lifecycle", "box-lifecycle", BoxAutomaticContributionStateActive, now.Add(2*time.Minute))
 	if err != nil || !changed {
 		t.Fatalf("BLOCKED -> ACTIVE changed=%v err=%v", changed, err)
 	}
@@ -200,7 +200,7 @@ func TestBoxContributionLifecycleTransitionsAreAtomicAndIdempotent(t *testing.T)
 }
 
 func TestBoxContributionLifecycleTransitionRollbackLeavesNoPartialState(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestBoxContributionLifecycleTransitionRollbackLeavesNoPartialState(t *testi
 		t.Fatalf("create failure trigger: %v", err)
 	}
 
-	changed, err := TransitionBoxAutomaticContributionState(context.Background(), db, "box-lifecycle-rollback", BoxAutomaticContributionStateBlocked, now)
+	changed, err := TransitionBoxAutomaticContributionState(context.Background(), db, "ws-lifecycle-rollback", "box-lifecycle-rollback", BoxAutomaticContributionStateBlocked, now)
 	if err == nil || changed || !strings.Contains(err.Error(), "forced lifecycle event failure") {
 		t.Fatalf("rollback transition changed=%v err=%v", changed, err)
 	}
@@ -254,7 +254,7 @@ func TestBoxContributionLifecycleConcurrentSameTransition(t *testing.T) {
 		go func(db *sql.DB) {
 			defer wg.Done()
 			<-start
-			changed, err := TransitionBoxAutomaticContributionState(context.Background(), db, "box-lifecycle-race", BoxAutomaticContributionStateBlocked, now)
+			changed, err := TransitionBoxAutomaticContributionState(context.Background(), db, "ws-lifecycle-race", "box-lifecycle-race", BoxAutomaticContributionStateBlocked, now)
 			results <- result{changed: changed, err: err}
 		}(db)
 	}
@@ -278,7 +278,7 @@ func TestBoxContributionLifecycleConcurrentSameTransition(t *testing.T) {
 }
 
 func TestBoxContributionLifecycleTransitionsDoNotMutateLedger(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestBoxContributionLifecycleTransitionsDoNotMutateLedger(t *testing.T) {
 		BoxAutomaticContributionStateBlocked,
 		BoxAutomaticContributionStateActive,
 	} {
-		changed, err := TransitionBoxAutomaticContributionState(context.Background(), db, "box-lifecycle-ledger", state, now.Add(time.Duration(i)*time.Minute))
+		changed, err := TransitionBoxAutomaticContributionState(context.Background(), db, "ws-lifecycle-ledger", "box-lifecycle-ledger", state, now.Add(time.Duration(i)*time.Minute))
 		if err != nil || !changed {
 			t.Fatalf("transition %s changed=%v err=%v", state, changed, err)
 		}
@@ -309,27 +309,29 @@ func TestBoxContributionLifecycleTransitionsDoNotMutateLedger(t *testing.T) {
 }
 
 func TestBoxContributionLifecycleTransitionInputValidation(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
 	defer db.Close()
 
 	tests := []struct {
-		name  string
-		db    *sql.DB
-		boxID string
-		state BoxAutomaticContributionState
-		when  time.Time
+		name        string
+		db          *sql.DB
+		workspaceID string
+		boxID       string
+		state       BoxAutomaticContributionState
+		when        time.Time
 	}{
-		{name: "nil database", db: nil, boxID: "box", state: BoxAutomaticContributionStateActive, when: time.Now()},
-		{name: "empty box", db: db, boxID: " ", state: BoxAutomaticContributionStateActive, when: time.Now()},
-		{name: "invalid state", db: db, boxID: "box", state: "UNKNOWN", when: time.Now()},
-		{name: "zero time", db: db, boxID: "box", state: BoxAutomaticContributionStateActive, when: time.Time{}},
+		{name: "nil database", db: nil, workspaceID: "ws", boxID: "box", state: BoxAutomaticContributionStateActive, when: time.Now()},
+		{name: "empty workspace", db: db, workspaceID: " ", boxID: "box", state: BoxAutomaticContributionStateActive, when: time.Now()},
+		{name: "empty box", db: db, workspaceID: "ws", boxID: " ", state: BoxAutomaticContributionStateActive, when: time.Now()},
+		{name: "invalid state", db: db, workspaceID: "ws", boxID: "box", state: "UNKNOWN", when: time.Now()},
+		{name: "zero time", db: db, workspaceID: "ws", boxID: "box", state: BoxAutomaticContributionStateActive, when: time.Time{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if changed, err := TransitionBoxAutomaticContributionState(context.Background(), tt.db, tt.boxID, tt.state, tt.when); err == nil || changed {
+			if changed, err := TransitionBoxAutomaticContributionState(context.Background(), tt.db, tt.workspaceID, tt.boxID, tt.state, tt.when); err == nil || changed {
 				t.Fatalf("changed=%v err=%v, want validation error", changed, err)
 			}
 		})

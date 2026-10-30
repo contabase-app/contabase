@@ -130,3 +130,36 @@ func seedDashboardMonthlyLimitsInvoicePaymentScenario(t *testing.T, db *sql.DB, 
 			('dash-month-other-payment-row', 'ws-dashboard-monthly-other', 'invoice-dashboard-monthly-other', 'acc-dashboard-monthly-other', 'dash-month-other-workspace-payment', 90000, ?, 'manual', ?)
 	`, currentMonth, nowUnix, currentMonth, nowUnix)
 }
+
+func TestDashboardLimitExceededKeepsRealPercentAndCapsOnlyTheBar(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := appTime(time.Now())
+	seedDashboardMonthlyLimitsInvoicePaymentScenario(t, db, now)
+	execTestSQL(t, db, `UPDATE cost_limits SET max_amount_monthly = 5000 WHERE id = 'limit-dashboard-card'`)
+
+	dashboard := BuildDashboardData(db, "user-dashboard-monthly", "ws-dashboard-monthly")
+	var card *DashboardLimitCard
+	for i := range dashboard.Limits {
+		if dashboard.Limits[i].CategoryName == "Compras Cartao" {
+			card = &dashboard.Limits[i]
+			break
+		}
+	}
+	if card == nil {
+		t.Fatalf("limit card not found: %#v", dashboard.Limits)
+	}
+	if got := moneyDisplayToCentsForTest(t, card.Spent); got != 20000 {
+		t.Fatalf("spent = %d, want 20000 (invoice payment excluded, card purchase counted once)", got)
+	}
+	if card.PercentExact != 400 {
+		t.Fatalf("PercentExact = %d, want 400", card.PercentExact)
+	}
+	if card.Percent != 100 {
+		t.Fatalf("Percent (bar) = %d, want capped 100", card.Percent)
+	}
+	if card.Tone() != ToneExceeded || card.ToneLabel() != "Limite atingido" {
+		t.Fatalf("tone = %q/%q, want exceeded/Limite atingido", card.Tone(), card.ToneLabel())
+	}
+}

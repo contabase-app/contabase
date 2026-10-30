@@ -28,21 +28,44 @@
 .cb-v2-configuracoes-content {
     width: min(100%, 1180px);
     margin-inline: auto;
-    padding-top: 32px;
-    padding-bottom: 88px;
+    padding-top: 28px;
+    padding-bottom: 24px;
 }
 
-.cb-v2-configuracoes-header { margin-bottom: 24px; }
-.cb-v2-configuracoes-header h1 { margin: 4px 0 6px; color: var(--v2-text); font-size: clamp(24px, 2.2vw, 31px); line-height: 1.1; letter-spacing: -0.035em; }
-.cb-v2-configuracoes-header p:not(.cb-v2-eyebrow) { margin: 0; color: var(--v2-muted); font-size: 13px; }
-.cb-v2-configuracoes-section { padding-top: 32px; }
-.cb-v2-configuracoes-content .cb-card-dense { border-color: var(--v2-border); border-radius: 14px; background: var(--v2-surface); box-shadow: none; }
-.cb-v2-configuracoes-content .cb-card-dense:hover { border-color: var(--v2-border-strong); transform: none; }
-.cb-v2-configuracoes-main [data-config-legacy-hub-nav] { display: none !important; }
-.cb-v2-configuracoes-context { display: flex; max-width: 520px; align-items: center; gap: 10px; padding: 14px 0; color: var(--v2-muted); font-size: 13px; }
-.cb-v2-configuracoes-context p { margin: 0; }
-.cb-v2-configuracoes-context svg { width: 17px; height: 17px; color: var(--v2-accent); }
-.cb-v2-configuracoes-main #settings-dynamic-payload > header { display: none !important; }
+/* Conteúdo interno de Configurações: o envelope acima já define largura,
+   centralização e respiro. Páginas internas não repetem padding lateral nem
+   max-width, mantendo o mesmo eixo de Administração e do hub. */
+.cb-v2-configuracoes-body {
+    width: 100%;
+    min-width: 0;
+}
+
+.cb-v2-configuracoes-head { margin-bottom: 24px; }
+/* Hub compacto: links diretos para as seções reais, sem duplicar a sidebar. */
+.cb-v2-hub-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.cb-v2-hub-card {
+    display: flex;
+    min-height: 78px;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    color: inherit;
+    text-decoration: none;
+    transition: border-color var(--ui-transition), background-color var(--ui-transition);
+}
+.cb-v2-hub-card:hover { border-color: var(--ui-border-strong); background: var(--ui-surface-raised); }
+.cb-v2-hub-card:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+.cb-v2-hub-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 10px; background: var(--ui-surface-raised); color: var(--ui-accent-strong); }
+.cb-v2-hub-icon svg { width: 18px; height: 18px; }
+.cb-v2-hub-copy { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.cb-v2-hub-copy strong { color: var(--ui-text); font-size: 13.5px; font-weight: 650; line-height: 1.35; }
+.cb-v2-hub-copy small { color: var(--ui-text-muted); font-size: 12px; line-height: 1.4; }
+.cb-v2-hub-chevron { width: 16px; height: 16px; flex: 0 0 auto; color: var(--ui-text-subtle); }
+.cb-v2-hub-admin { display: grid; gap: 6px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--ui-border); }
+.cb-v2-hub-admin-links { display: flex; flex-wrap: wrap; gap: 2px 16px; }
+.cb-v2-hub-admin-links a { display: inline-flex; min-height: 44px; align-items: center; color: var(--ui-text-muted); font-size: 12px; font-weight: 550; text-decoration: none; }
+.cb-v2-hub-admin-links a:hover { color: var(--ui-text); text-decoration: underline; }
+.cb-v2-hub-admin-links a:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; border-radius: 4px; }
 
 .cb-provider-picker {
     min-width: 0;
@@ -354,12 +377,769 @@
     .cb-provider-choice { transition: none; }
 }
 
-@media (min-width: 768px) {
-    .cb-v2-configuracoes-section #settings-dynamic-payload > div { margin-inline: auto; }
+@media (max-width: 1023px) {
+    /* Ações do cabeçalho de Configurações são alvos de toque no mobile/tablet,
+       seguindo a mesma geometria de Metas e Relatórios. */
+    .cb-v2-configuracoes-head [data-privacy-toggle] {
+        width: 2.75rem;
+        height: 2.75rem;
+        min-height: 2.75rem;
+        padding: 0;
+    }
 }
 
 @media (max-width: 767px) {
-    .cb-v2-configuracoes-content { padding-top: 24px; padding-bottom: 112px; }
-    .cb-v2-configuracoes-header h1 { font-size: 25px; }
-    .cb-v2-configuracoes-section { padding-top: 20px; }
+    .cb-v2-configuracoes-content { padding-top: 24px; padding-bottom: 24px; }
+    .cb-v2-configuracoes-head { align-items: flex-start; }
+}
+
+@media (max-width: 359px) {
+    /* Em 320px as duas abas de Categorias precisam caber sem overflow
+       horizontal; a redução é só no padding lateral do controle. */
+    .cb-v2-configuracoes-main [data-cat-tab] { padding-inline: 12px; }
+
+    /* Abaixo de 360px a linha de ações não comporta Conciliar + quatro
+       alvos de 44px. O grupo desce inteiro, alinhado à direita. */
+    .cb-v2-config-actions { flex-wrap: wrap; justify-content: flex-start; }
+    .cb-v2-config-actions-group { flex: 1 1 100%; justify-content: flex-end; }
+}
+
+/* === PERFIL (CFG3) ===
+   Composição escopada dos formulários de Perfil e Alteração de Senha sobre os
+   componentes canônicos (ui-panel/ui-label/ui-input/ui-btn). Não redefine
+   geometria global nem afeta Administração. */
+.cb-v2-perfil-section-title {
+    margin: 0;
+    color: var(--ui-text);
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: -.01em;
+    line-height: 1.35;
+}
+
+.cb-v2-perfil-section-desc {
+    margin: 2px 0 0;
+    color: var(--ui-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.cb-v2-perfil-help {
+    margin: 6px 0 0;
+    max-width: 36ch;
+    color: var(--ui-text-subtle);
+    font-size: 11.5px;
+    line-height: 1.45;
+}
+
+.cb-v2-perfil-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.cb-v2-perfil-password { margin-top: 20px; }
+
+.cb-v2-perfil-photo-button { cursor: pointer; }
+
+.cb-v2-perfil-session-action {
+    border-color: color-mix(in srgb, var(--ui-danger) 35%, var(--ui-border));
+    color: var(--ui-danger);
+}
+
+.cb-v2-perfil-session-action:hover {
+    border-color: color-mix(in srgb, var(--ui-danger) 55%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-danger) 8%, var(--ui-surface));
+    color: var(--ui-danger);
+}
+
+@media (max-width: 767px) {
+    .cb-v2-perfil-help { max-width: none; font-size: 12px; }
+
+    /* Ações de toque do Perfil seguem o alvo de 44px do restante do app. */
+    .cb-v2-perfil-photo-button,
+    .cb-v2-perfil-password-toggle { min-height: 2.75rem; }
+}
+
+/* === CFG4 — Categorias, Contas e Cartões ===
+   Composição escopada usando ui-panel/ui-badge/ui-input/ui-btn e tokens --ui-*.
+   Não redefine componentes globais nem atinge as páginas de Administração. */
+.cb-v2-section-title {
+    margin: 0;
+    color: var(--ui-text);
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: -.01em;
+    line-height: 1.35;
+}
+
+.cb-v2-section-desc {
+    margin: 2px 0 0;
+    color: var(--ui-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.cb-v2-help {
+    margin: 6px 0 0;
+    color: var(--ui-text-subtle);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.cb-v2-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.cb-v2-config-form {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 8px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--ui-border);
+}
+
+.cb-v2-list-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0 10px;
+}
+
+.cb-v2-config-list { display: flex; flex-direction: column; }
+
+.cb-v2-config-row {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto auto;
+    grid-template-areas: "icon main value actions";
+    align-items: center;
+    gap: 8px 14px;
+    min-width: 0;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--ui-border);
+}
+
+/* A posição aplicada vive em uma faixa própria, abaixo da identificação e do
+   saldo financeiro, para não comprimir nenhum dos dois em telas estreitas. */
+.cb-v2-config-row.is-investment {
+    grid-template-areas:
+        "icon main value actions"
+        ". invest invest invest";
+    row-gap: 2px;
+}
+
+.cb-v2-config-row:last-child { border-bottom: 0; }
+.cb-v2-config-row.is-archived .cb-v2-config-title { color: var(--ui-text-muted); font-weight: 560; }
+.cb-v2-config-row.is-archived .cb-v2-config-amount { color: var(--ui-text-muted); }
+
+.cb-v2-config-icon {
+    grid-area: icon;
+    display: grid;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 auto;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--ui-border);
+    border-radius: 10px;
+    background: var(--ui-surface-raised);
+}
+
+.cb-v2-config-icon.emblem-wrap-solid { background-color: var(--ic, var(--ui-surface-raised)); }
+.cb-v2-config-icon.is-muted { filter: grayscale(1); opacity: .78; }
+.cb-v2-config-icon .emblem-text { font-size: 9px; }
+
+.cb-v2-config-main { grid-area: main; display: grid; gap: 4px; min-width: 0; }
+
+.cb-v2-config-title {
+    margin: 0;
+    color: var(--ui-text);
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.cb-v2-config-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    min-width: 0;
+    color: var(--ui-text-muted);
+    font-size: var(--ui-fs-sm);
+    line-height: 1.4;
+}
+
+.cb-v2-config-value { grid-area: value; display: grid; justify-items: end; gap: 2px; text-align: right; }
+.cb-v2-config-investment { grid-area: invest; min-width: 0; }
+
+.cb-v2-config-value-label {
+    color: var(--ui-text-subtle);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.cb-v2-config-amount {
+    color: var(--ui-text);
+    font-size: 14px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.012em;
+    white-space: nowrap;
+}
+
+.cb-v2-config-actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 2px; min-width: 0; }
+.cb-v2-config-actions-group { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; }
+
+/* === INVESTIMENTOS NA LISTAGEM ===
+   O saldo financeiro continua na coluna de valor. A posição aplicada fica em
+   um bloco próprio, compacto, com os avisos essenciais visíveis e a cobertura
+   detalhada sob demanda. Nenhum valor ou aviso é removido do contrato. */
+.cb-v2-configuracoes-main .cb-investment-patrimony {
+    min-width: 0;
+    margin: 3px 0 0;
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-summary {
+    display: flex;
+    min-height: 32px;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 1px 8px;
+    margin: 0;
+    padding: 3px 0;
+    list-style: none;
+    cursor: pointer;
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-summary::-webkit-details-marker { display: none; }
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-label {
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .015em;
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-value {
+    color: var(--ui-text);
+    font-size: 12.5px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-value.is-warning { color: var(--ui-warning); }
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--ui-text-subtle);
+    font-size: 10.5px;
+    line-height: 1.3;
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-state::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--ui-warning);
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-warning {
+    margin: 3px 0 0;
+    color: var(--ui-warning);
+    font-size: 11px;
+    font-weight: 550;
+    line-height: 1.4;
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-more {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 3px;
+    margin-left: 2px;
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-more svg {
+    width: 13px;
+    height: 13px;
+    transition: transform var(--ui-transition);
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-details[open] .cb-investment-patrimony-more svg {
+    transform: rotate(180deg);
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-summary:focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-title {
+    margin: 0;
+    color: var(--ui-text);
+    font-size: 11px;
+    font-weight: 650;
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-body {
+    display: grid;
+    gap: 6px;
+    padding: 4px 0 2px;
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-body .cb-investment-patrimony-note {
+    max-width: 65ch;
+    margin: 0;
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-account {
+    display: grid;
+    gap: 2px;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--ui-border);
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-account .cb-investment-patrimony-label {
+    color: var(--ui-text);
+    font-size: 10.5px;
+    font-weight: 650;
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-position {
+    padding: 6px 0;
+    border-top: 1px solid color-mix(in srgb, var(--ui-border) 60%, transparent);
+}
+
+.cb-v2-configuracoes-main .cb-investment-patrimony-position p { margin: 0; }
+.cb-v2-configuracoes-main .cb-investment-patrimony-position .cb-investment-patrimony-label {
+    color: var(--ui-text-muted);
+    font-weight: 600;
+}
+
+@media (max-width: 1023px) {
+    .cb-v2-configuracoes-main .cb-investment-patrimony-details summary { min-height: 44px; }
+}
+
+.cb-v2-icon-action {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ui-text-subtle);
+    cursor: pointer;
+    transition: background-color var(--ui-transition), color var(--ui-transition), border-color var(--ui-transition);
+}
+
+.cb-v2-icon-action:hover { background: var(--ui-surface-hover); color: var(--ui-text); }
+.cb-v2-icon-action:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+.cb-v2-icon-action svg { width: 14px; height: 14px; }
+.cb-v2-icon-action--danger { color: var(--ui-danger); }
+.cb-v2-icon-action--danger:hover { background: color-mix(in srgb, var(--ui-danger) 10%, transparent); color: var(--ui-danger); }
+.cb-v2-icon-action--warning:hover { background: color-mix(in srgb, var(--ui-warning) 12%, transparent); color: var(--ui-warning); }
+
+.cb-v2-config-edit {
+    display: grid;
+    gap: 14px;
+    margin: 8px 0;
+    padding: 16px;
+    border: 1px solid var(--ui-border);
+    border-radius: 12px;
+    background: var(--ui-surface-raised);
+}
+
+.cb-v2-edit-head { display: grid; gap: 2px; }
+.cb-v2-edit-name-row { display: flex; align-items: center; gap: 10px; }
+.cb-v2-edit-name-row .ui-input { flex: 1; }
+
+.cb-v2-readonly-value {
+    display: flex;
+    min-height: var(--ui-control-height);
+    align-items: center;
+    margin: 0;
+    padding: 0 13px;
+    border: 1px dashed var(--ui-border);
+    border-radius: var(--ui-radius-control);
+    background: var(--ui-surface);
+    color: var(--ui-text);
+    font-size: var(--ui-fs-md);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+.cb-v2-color-input {
+    width: 100%;
+    min-height: var(--ui-control-height);
+    padding: 5px;
+    border: 1px solid var(--ui-field-border);
+    border-radius: var(--ui-radius-control);
+    background: var(--ui-surface);
+}
+
+.cb-v2-feedback { margin: 0; padding: 9px 12px; border: 1px solid; border-radius: 10px; font-size: 12px; line-height: 1.45; }
+.cb-v2-feedback--error {
+    border-color: color-mix(in srgb, var(--ui-danger) 30%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-danger) 8%, transparent);
+    color: var(--ui-danger);
+}
+.cb-v2-feedback--success {
+    border-color: color-mix(in srgb, var(--ui-success) 30%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-success) 8%, transparent);
+    color: var(--ui-success);
+}
+
+.cb-v2-history { display: grid; gap: 8px; }
+.cb-v2-history-item {
+    display: grid;
+    gap: 2px;
+    padding: 10px 0;
+    border-top: 1px solid var(--ui-border);
+    color: var(--ui-text-muted);
+    font-size: 12px;
+}
+.cb-v2-history-item p { margin: 0; }
+
+.cb-v2-archived { margin-top: 18px; border-top: 1px solid var(--ui-border); padding-top: 6px; }
+.cb-v2-archived-summary {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 8px;
+    color: var(--ui-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+}
+.cb-v2-archived-summary::-webkit-details-marker { display: none; }
+.cb-v2-archived-summary svg { width: 15px; height: 15px; }
+.cb-v2-archived-chevron { margin-left: auto; transition: transform 160ms ease; }
+.cb-v2-archived[open] .cb-v2-archived-chevron { transform: rotate(180deg); }
+
+/* Categorias */
+.cb-v2-cat-toolbar { display: flex; flex-direction: column; gap: 8px; margin: 18px 0 12px; }
+.cb-v2-cat-summary { color: var(--ui-text-subtle); font-size: 11.5px; white-space: nowrap; }
+.cb-v2-cat-tabs { margin-bottom: 10px; }
+.cb-v2-cat-tabs .cb-tab { gap: 8px; }
+.cb-v2-cat-tab-icon {
+    display: grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    border-radius: 6px;
+    background: var(--ui-surface);
+}
+.cb-v2-cat-tab-icon svg { width: 14px; height: 14px; }
+.cb-v2-tone-expense { color: var(--ui-danger); }
+.cb-v2-tone-income { color: var(--ui-success); }
+.cb-v2-cat-count { color: var(--ui-text-subtle); font-size: 11px; font-variant-numeric: tabular-nums; }
+.cb-v2-cat-list { display: flex; flex-direction: column; }
+.cb-v2-cat-list.hidden { display: none; }
+.cb-v2-config-edit[hidden] { display: none; }
+.cb-v2-cat-group { border-bottom: 1px solid var(--ui-border); }
+.cb-v2-cat-group:last-child { border-bottom: 0; }
+
+.cb-v2-cat-parent { display: flex; align-items: center; gap: 8px; padding: 8px 0; min-width: 0; }
+
+.cb-v2-cat-toggle {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.cb-v2-cat-toggle:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+
+.cb-v2-cat-chevron {
+    display: grid;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    place-items: center;
+    color: var(--ui-text-subtle);
+    transition: transform 160ms ease;
+}
+.cb-v2-cat-chevron svg { width: 14px; height: 14px; }
+
+.cb-v2-cat-icon {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--ui-surface-raised);
+}
+.cb-v2-cat-icon svg { width: 15px; height: 15px; }
+
+.cb-v2-cat-main { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: 8px; }
+.cb-v2-cat-name {
+    min-width: 0;
+    margin: 0;
+    color: var(--ui-text);
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.cb-v2-cat-macro { flex: 0 1 auto; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb-v2-cat-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; }
+.cb-v2-cat-children { margin-left: 20px; padding-left: 12px; border-left: 1px solid var(--ui-border); }
+
+.cb-v2-cat-child {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 4px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--ui-border) 60%, transparent);
+}
+.cb-v2-cat-child:last-child { border-bottom: 0; }
+.cb-v2-cat-child-icon { display: grid; width: 22px; height: 22px; flex: 0 0 auto; place-items: center; color: var(--ui-text-subtle); }
+.cb-v2-cat-child-icon svg { width: 13px; height: 13px; }
+.cb-v2-cat-child-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    color: var(--ui-text-muted);
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.cb-v2-combobox-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; text-align: left; }
+.cb-v2-combobox-trigger svg { width: 16px; height: 16px; color: var(--ui-text-subtle); }
+.cb-v2-combobox-search { min-height: 36px; font-size: 13px; }
+.cb-v2-combobox-option { padding: 10px 14px; color: var(--ui-text-muted); font-size: 13px; line-height: 1.35; cursor: pointer; }
+.cb-v2-combobox-option:hover { background: var(--ui-surface-hover); }
+.cb-v2-combobox-option svg { width: 14px; height: 14px; }
+.cb-v2-combobox-dash { font-size: 11px; opacity: .55; }
+.cb-v2-option-active { background: var(--ui-accent-soft); color: var(--ui-accent-strong); }
+.cb-v2-option-inactive { color: var(--ui-text-muted); }
+
+.cb-v2-cat-help {
+    border: 1px solid var(--ui-border);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--ui-surface-raised) 65%, transparent);
+}
+.cb-v2-cat-help summary {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    color: var(--ui-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+}
+.cb-v2-cat-help summary::-webkit-details-marker { display: none; }
+.cb-v2-cat-help summary svg { width: 15px; height: 15px; }
+.cb-v2-cat-help-body { padding: 0 14px 12px; color: var(--ui-text-muted); font-size: 12px; line-height: 1.5; }
+.cb-v2-cat-help-body ul { display: grid; gap: 3px; margin: 0; padding-left: 18px; }
+.cb-v2-cat-edit.is-child { margin-left: 20px; }
+
+@media (min-width: 768px) {
+    .cb-v2-cat-toolbar { flex-direction: row; align-items: center; justify-content: space-between; }
+    .cb-v2-cat-toolbar .ui-search { max-width: 420px; }
+    .cb-v2-hub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+
+@media (max-width: 767px) {
+    .cb-v2-config-row {
+        grid-template-columns: 36px minmax(0, 1fr) auto;
+        grid-template-areas:
+            "icon main value"
+            "actions actions actions";
+        row-gap: 6px;
+    }
+    .cb-v2-config-row.is-investment {
+        grid-template-areas:
+            "icon main value"
+            "invest invest invest"
+            "actions actions actions";
+    }
+    .cb-v2-config-icon { grid-area: icon; width: 36px; height: 36px; align-self: start; margin-top: 2px; }
+    .cb-v2-config-main { grid-area: main; }
+    .cb-v2-config-value { grid-area: value; }
+    .cb-v2-config-investment { padding-left: 50px; }
+    /* A linha de ações ocupa a largura inteira para que Conciliar e o grupo de
+       ícones (44px cada) não quebrem em duas linhas em 360–430px. */
+    .cb-v2-config-actions {
+        grid-area: actions;
+        width: 100%;
+        flex-wrap: nowrap;
+        justify-content: flex-end;
+        gap: 4px;
+    }
+    .cb-v2-config-actions:has(> .ui-btn) { justify-content: space-between; }
+    .cb-v2-config-actions .cb-v2-icon-action { width: 44px; height: 44px; }
+    .cb-v2-config-actions .ui-btn { min-height: 44px; }
+    .cb-v2-config-actions-group { gap: 2px; }
+    .cb-v2-config-value-label { font-size: 9.5px; }
+    .cb-v2-config-amount { font-size: 13.5px; }
+
+    .cb-v2-cat-tabs .cb-tab { min-height: 44px; }
+    .cb-v2-cat-actions .cb-v2-icon-action { width: 44px; height: 44px; }
+    .cb-v2-cat-toggle { align-items: flex-start; }
+    .cb-v2-cat-icon { margin-top: 1px; }
+    .cb-v2-cat-main { display: grid; grid-template-columns: minmax(0, 1fr) auto; justify-content: start; gap: 3px 8px; }
+    .cb-v2-cat-name { grid-column: 1 / -1; white-space: normal; overflow-wrap: anywhere; }
+    /* No mobile o macrogrupo vira texto secundário: mantém a leitura sem
+       cortar nomes longos como "Investimentos/Patrimonial". */
+    .cb-v2-cat-macro {
+        display: inline;
+        justify-self: start;
+        max-width: 100%;
+        padding: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--ui-text-subtle);
+        font-size: 11px;
+        font-weight: 550;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+    }
+    .cb-v2-cat-count { align-self: center; }
+    .cb-v2-cat-children { margin-left: 12px; padding-left: 10px; }
+    .cb-v2-cat-edit.is-child { margin-left: 12px; }
+    .cb-v2-cat-edit .ui-btn { min-height: 44px; }
+    .cb-v2-cat-child .cb-v2-icon-action { width: 44px; height: 44px; }
+}
+
+/* === CFG5 — Perfil corporativo === */
+.cb-v2-company-section {
+    display: grid;
+    gap: 16px;
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--ui-border);
+}
+
+.cb-v2-company-section:last-of-type { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
+.cb-v2-company-section-head { display: grid; gap: 2px; }
+
+.cb-v2-logo-field {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--ui-border);
+}
+
+.cb-v2-logo-preview {
+    max-width: 220px;
+    max-height: 48px;
+    padding: 8px 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: 8px;
+    background: var(--ui-surface-raised);
+    object-fit: contain;
+}
+
+.cb-v2-logo-preview--on-light { background: var(--ui-action-fg); }
+
+.cb-v2-file-input { padding: 5px; font-size: 12px; }
+.cb-v2-file-input::file-selector-button {
+    min-height: 30px;
+    margin-right: 10px;
+    padding: 0 10px;
+    border: 1px solid var(--ui-border);
+    border-radius: 7px;
+    background: var(--ui-surface-raised);
+    color: var(--ui-text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.cb-v2-file-input::file-selector-button:hover { background: var(--ui-surface-hover); }
+
+.cb-v2-check {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 8px;
+    color: var(--ui-text-muted);
+    font-size: 12px;
+    line-height: 1.4;
+    cursor: pointer;
+}
+.cb-v2-check input { width: 16px; height: 16px; flex: 0 0 auto; accent-color: var(--ui-action-bg); }
+
+@media (max-width: 767px) {
+    .cb-v2-file-input { font-size: 14px; }
+    .cb-v2-file-input::file-selector-button { font-size: 13px; }
+}
+
+/* === PRIVACIDADE ===
+   Reusa o estado global (sessionStorage contabasePrivacy + body
+   .privacy-enabled gerido por privacy.js), no mesmo padrão de Metas,
+   Relatórios, Faturas, Lançamentos e Contatos. O escopo cobre a área inteira
+   de Configurações (.cb-v2-configuracoes-main), incluindo conteúdo trocado
+   por HTMX em #settings-dynamic-payload. Valores editáveis de formulário
+   (input/textarea/select) nunca são mascarados: o modo atua sobre a
+   apresentação dos valores exibidos, não sobre a edição. */
+.privacy-enabled .cb-v2-configuracoes-main [data-sensitive]:not(input):not(textarea):not(select) {
+    visibility: hidden;
+    user-select: none;
+}
+
+.privacy-enabled .cb-v2-configuracoes-main :is(span, strong, p, small, div, dd, b)[data-sensitive] {
+    position: relative;
+}
+
+.privacy-enabled .cb-v2-configuracoes-main :is(span, strong, p, small, div, dd, b)[data-sensitive]::after {
+    content: "••••";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    visibility: visible;
+    color: var(--ui-text-muted);
+    font-variant-numeric: normal;
+    letter-spacing: .12em;
+    pointer-events: none;
 }

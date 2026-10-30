@@ -9,7 +9,7 @@
 
     <div class="flex items-baseline justify-between gap-3 min-w-0">
         <span class="cb-text-micro font-medium text-[var(--cb-text-muted)] uppercase tracking-wider truncate">Saldo total</span>
-        <span class="text-lg sm:text-xl font-extrabold tabular-nums whitespace-nowrap shrink-0 leading-none {{if .Balance.IsNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.Balance.Money.Reais}}{{.Balance.Money.Cents}}</span>
+        <span class="text-lg sm:text-xl font-extrabold tabular-nums whitespace-nowrap shrink-0 leading-none {{if .Balance.IsNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>{{if .Balance.ReserveBalanceAvailable}}R$ {{.Balance.Money.Reais}}{{.Balance.Money.Cents}}{{else}}Indisponível{{end}}</span>
     </div>
 
     <div class="space-y-2">
@@ -18,14 +18,14 @@
                 <i data-lucide="lock" class="w-3.5 h-3.5 shrink-0"></i>
                 <span class="truncate">Reservado</span>
             </span>
-            <span class="text-xs font-bold tabular-nums whitespace-nowrap shrink-0 text-[var(--cb-text-main)]" data-sensitive>R$ {{.Balance.Reserved.Reais}}{{.Balance.Reserved.Cents}}</span>
+            <span class="text-xs font-bold tabular-nums whitespace-nowrap shrink-0 text-[var(--cb-text-main)]" data-sensitive>{{if .Balance.ReserveBalanceAvailable}}R$ {{.Balance.Reserved.Reais}}{{.Balance.Reserved.Cents}}{{else}}Indisponível{{end}}</span>
         </div>
         <div class="cb-metric-row py-2 min-h-[36px] gap-1.5">
             <span class="flex items-center gap-1.5 cb-text-micro font-medium text-[var(--cb-text-muted)] min-w-0 shrink">
                 <i data-lucide="wallet" class="w-3.5 h-3.5 text-[var(--cb-success)] shrink-0"></i>
                 <span class="truncate">Disponível</span>
             </span>
-            <span class="text-xs font-bold tabular-nums whitespace-nowrap shrink-0 {{if .Balance.FreeIsNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive><span data-balance-counter data-balance-raw="{{.Balance.Free.Reais}}">0</span>{{.Balance.Free.Cents}}</span>
+            <span class="text-xs font-bold tabular-nums whitespace-nowrap shrink-0 {{if .Balance.FreeIsNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>{{if .Balance.ReserveBalanceAvailable}}<span data-balance-counter data-balance-raw="{{.Balance.Free.Reais}}">0</span>{{.Balance.Free.Cents}}{{else}}Indisponível{{end}}</span>
         </div>
     </div>
 

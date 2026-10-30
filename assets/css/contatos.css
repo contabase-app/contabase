@@ -1,27 +1,7 @@
 /* Contatos dentro do shell global V2. O CSS altera apenas apresentacao; os
-   contratos HTMX e o CRUD continuam definidos pelos mesmos endpoints. */
-.cb-v2-contatos-main {
-  --cb-bg: var(--v2-canvas);
-  --cb-bg-soft: var(--v2-detail-surface);
-  --cb-surface-1: var(--v2-surface);
-  --cb-surface-2: var(--v2-surface-raised);
-  --cb-surface-3: var(--v2-surface-hover);
-  --cb-surface-overlay: var(--v2-surface);
-  --cb-border-subtle: var(--v2-border);
-  --cb-border-strong: var(--v2-border-strong);
-  --cb-border-focus: var(--v2-accent);
-  --cb-text-main: var(--v2-text);
-  --cb-text-muted: var(--v2-muted);
-  --cb-text-subtle: var(--v2-subtle);
-  --cb-accent: var(--v2-accent);
-  --cb-accent-solid: var(--v2-accent);
-  --cb-accent-hover: var(--v2-fab-hover);
-  --cb-accent-soft: var(--v2-accent-soft);
-  --cb-success: var(--v2-positive);
-  --cb-danger: var(--v2-danger);
-  --cb-warning: var(--v2-warning);
-  --cb-info: var(--v2-info);
-}
+   contratos HTMX e o CRUD continuam definidos pelos mesmos endpoints.
+   Layout e componentes consomem exclusivamente os tokens --ui-*; o bridge
+   legado --cb-* não é declarado aqui (o shell já o fornece quando necessário). */
 
 .cb-v2-contatos-content {
   width: min(100%, 1180px);
@@ -29,32 +9,16 @@
   padding: 30px 0 24px;
 }
 
+/* Header: composição e tipografia vêm de .ui-page-header/.ui-eyebrow/
+   .ui-page-title/.ui-page-description (premium.css); aqui fica só o que é
+   específico da composição desta página. */
 .cb-v2-contatos-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 24px;
+  min-width: 0;
 }
 
-.cb-v2-contatos-header h1 {
-  margin: 3px 0 5px;
-  color: var(--v2-text);
-  font-size: 31px;
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1.08;
-}
-
-.cb-v2-contatos-header > div > p:last-child {
-  max-width: 58ch;
-  margin: 0;
-  color: var(--v2-muted);
-  font-size: 13px;
-}
-
-.cb-v2-contatos-create { min-height: 44px; flex: 0 0 auto; }
+.cb-v2-contatos-create { flex: 0 0 auto; }
 .cb-v2-contatos-create svg { width: 16px; height: 16px; }
+.cb-v2-contatos-privacy { flex: 0 0 auto; }
 
 .cb-v2-contatos-toolbar {
   display: grid;
@@ -66,301 +30,350 @@
 }
 
 .cb-v2-contatos-tabs {
-  display: inline-grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  min-width: min(100%, 390px);
-  padding: 4px;
-  border: 1px solid var(--v2-border);
-  border-radius: 11px;
-  background: var(--v2-surface-raised);
+  width: min(100%, 390px);
 }
 
-.cb-v2-contatos-tab {
-  display: inline-flex;
-  min-width: 0;
-  min-height: 38px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 0 13px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--v2-muted);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: color 160ms ease, background-color 160ms ease;
-}
+.cb-v2-contatos-tabs .cb-tab svg { width: 14px; height: 14px; flex: 0 0 auto; }
 
-.cb-v2-contatos-tab svg { width: 15px; height: 15px; flex: 0 0 auto; }
-.cb-v2-contatos-tab:hover { background: var(--v2-surface-hover); color: var(--v2-text); }
-.cb-v2-contatos-tab.is-active { background: var(--v2-accent-soft); color: var(--v2-accent-on-soft); }
-
-.cb-v2-contatos-search { position: relative; display: block; }
-.cb-v2-contatos-search > svg {
-  position: absolute;
-  top: 50%;
-  left: 14px;
-  width: 16px;
-  height: 16px;
-  color: var(--v2-subtle);
-  pointer-events: none;
-  transform: translateY(-50%);
-}
-
-.cb-v2-contatos-search input {
-  width: 100%;
-  min-height: 44px;
-  padding: 0 14px 0 42px;
-  border: 1px solid var(--v2-border);
-  border-radius: 10px;
-  outline: 0;
-  background: var(--v2-surface);
-  color: var(--v2-text);
-  font: inherit;
-  font-size: 13px;
-  transition: border-color 160ms ease, box-shadow 160ms ease;
-}
-
-.cb-v2-contatos-search input::placeholder { color: var(--v2-subtle); }
-.cb-v2-contatos-search input:focus {
-  border-color: var(--v2-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v2-accent) 18%, transparent);
-}
+/* A busca usa .ui-search/.ui-input--search (premium.css): foco neutro no
+   ponteiro e outline de 2px no teclado vêm do componente compartilhado. */
 
 .cb-v2-contatos-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* auto-fill mantém trilhas de tamanho de card mesmo com poucos contatos:
+     um único registro não estica pela largura da página. */
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 14px;
 }
 
-.cb-contact-card,
-.cb-contact-edit-card {
+/* === Cards ===
+   Superfície própria da página: raio de card, borda canônica e metadados
+   separados por hairlines. Tudo consome --ui-*; nomes e e-mails longos
+   quebram linha em vez de truncar. */
+.cb-contact-card {
   min-width: 0;
-  border: 1px solid var(--v2-border);
-  border-radius: 12px;
-  background: var(--v2-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface);
 }
 
 .cb-contact-card {
   display: flex;
-  min-height: 190px;
   flex-direction: column;
   padding: 16px;
-  transition: border-color 160ms ease, background-color 160ms ease;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ui-text) 4%, transparent);
+  transition: border-color var(--ui-transition), background-color var(--ui-transition), box-shadow var(--ui-transition);
 }
 
-.cb-contact-card:hover { border-color: var(--v2-border-strong); background: var(--v2-surface-raised); }
+@media (hover: hover) {
+  .cb-contact-card:hover {
+    border-color: var(--ui-border-strong);
+    background: var(--ui-surface-raised);
+    box-shadow: var(--ui-shadow-raised);
+  }
+}
+
+.cb-contact-card:focus-within { border-color: var(--ui-border-strong); }
 .cb-contact-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .cb-contact-summary { display: flex; min-width: 0; align-items: center; gap: 11px; }
-.cb-contact-summary > div { min-width: 0; }
+.cb-contact-identity { display: grid; min-width: 0; justify-items: start; gap: 5px; }
 .cb-contact-summary h3 {
-  overflow: hidden;
-  margin: 0 0 4px;
-  color: var(--v2-text);
-  font-size: 14px;
-  font-weight: 650;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  margin: 0;
+  color: var(--ui-text);
+  font-size: 13.5px;
+  font-weight: 620;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .cb-contact-avatar {
   display: inline-flex;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--ui-radius-tile);
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 .cb-contact-avatar-client {
-  background: color-mix(in srgb, var(--cb-success) 12%, transparent);
-  color: var(--cb-success);
+  background: color-mix(in srgb, var(--ui-success) 12%, transparent);
+  color: var(--ui-success);
 }
 .cb-contact-avatar-vendor {
-  background: color-mix(in srgb, var(--cb-warning) 12%, transparent);
-  color: var(--cb-warning);
+  background: color-mix(in srgb, var(--ui-warning) 12%, transparent);
+  color: var(--ui-warning);
 }
 
-.cb-contact-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
-.cb-contact-action {
-  display: inline-flex;
-  width: 40px;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: var(--v2-muted);
-  cursor: pointer;
-  transition: color 160ms ease, background-color 160ms ease;
+.cb-contact-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; }
+.cb-contact-actions .cb-contact-action {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  color: var(--ui-text-muted);
 }
-.cb-contact-action svg { width: 16px; height: 16px; }
-.cb-contact-action:hover { background: var(--v2-surface-hover); color: var(--v2-text); }
-.cb-contact-action-danger:hover { background: color-mix(in srgb, var(--v2-danger) 12%, transparent); color: var(--v2-danger); }
+.cb-contact-actions .cb-contact-action svg { width: 15px; height: 15px; }
 
-.cb-contact-details { display: grid; gap: 7px; margin: 16px 0 0; font-size: 12px; }
-.cb-contact-details > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 8px; }
-.cb-contact-details dt { color: var(--v2-subtle); }
+.cb-contact-details { display: grid; gap: 0; margin: 14px 0 0; font-size: 12px; }
+.cb-contact-details > div {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--ui-border);
+}
+.cb-contact-details > div:last-child { border-bottom: 1px solid var(--ui-border); }
+.cb-contact-details dt {
+  color: var(--ui-text-muted);
+  font-size: 10.5px;
+  font-weight: 620;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .cb-contact-details dd {
-  overflow: hidden;
+  min-width: 0;
   margin: 0;
-  color: var(--v2-text);
-  font-weight: 550;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--ui-text);
+  font-size: 12.5px;
+  font-weight: 540;
+  overflow-wrap: anywhere;
 }
 
 .cb-contact-card-footer {
   margin-top: auto;
-  padding-top: 13px;
-  border-top: 1px solid var(--v2-border);
-  color: var(--v2-subtle);
+  padding-top: 12px;
+  color: var(--ui-text-subtle);
   font-size: 11px;
 }
 
-.cb-contact-empty {
+/* === Sheet de criação/edição ===
+   Apresentação própria da página dentro do #bottom-sheet-container global.
+   O overlay-stack continua dono de ESC, histórico e scroll do fundo; o focus
+   trap local segue o padrão aprovado em Metas/Lançamentos. */
+.contatos-sheet { position: fixed; inset: 0; z-index: 100; }
+
+.contatos-sheet__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(4 8 13 / 62%);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.contatos-sheet__layer {
+  position: relative;
   display: flex;
-  min-height: 260px;
+  min-height: 100%;
   align-items: center;
   justify-content: center;
+  padding: 24px;
+}
+
+.contatos-sheet__dialog {
+  display: flex;
+  width: min(100%, 560px);
+  max-height: min(90dvh, 760px);
+  min-width: 0;
   flex-direction: column;
-  padding: 32px;
-  border: 1px dashed var(--v2-border-strong);
-  border-radius: 12px;
-  color: var(--v2-muted);
-  text-align: center;
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--ui-radius-panel);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-floating);
+  outline: none;
+  animation: contatos-sheet-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.cb-contact-empty > span {
-  display: inline-flex;
-  width: 48px;
-  height: 48px;
+
+@keyframes contatos-sheet-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+.contatos-sheet__handle { display: none; }
+
+.contatos-sheet__head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.contatos-sheet__copy { min-width: 0; }
+
+.contatos-sheet__title {
+  margin: 0;
+  color: var(--ui-text);
+  font-size: var(--ui-fs-display);
+  font-weight: var(--ui-fw-display);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.contatos-sheet__subtitle {
+  margin: 5px 0 0;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-fs-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.contatos-sheet__close { flex: 0 0 auto; }
+
+.contatos-sheet__form { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.contatos-sheet__body { display: grid; gap: 16px; overflow-y: auto; padding: 18px 22px; }
+.contatos-sheet__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.contatos-sheet__field { display: block; min-width: 0; }
+.contatos-sheet__field .ui-label { margin-bottom: 6px; }
+
+.contatos-sheet__foot {
+  display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: center;
-  margin-bottom: 12px;
-  border: 1px solid var(--v2-border);
-  border-radius: 11px;
-  background: var(--v2-surface-raised);
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ui-border);
 }
-.cb-contact-empty svg { width: 21px; height: 21px; }
-.cb-contact-empty strong { color: var(--v2-text); font-size: 14px; }
-.cb-contact-empty p { margin: 4px 0 0; font-size: 12px; }
 
-.cb-contact-row { min-height: 0; }
-.cb-contact-row-copy { min-width: 0; }
-.cb-contact-row-copy strong,
-.cb-contact-row-copy p { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cb-contact-row-copy strong { color: var(--v2-text); font-size: 14px; }
-.cb-contact-row-copy p { margin: 4px 0 0; color: var(--v2-muted); font-size: 12px; }
-.cb-contact-row-copy small { display: block; margin-top: 5px; color: var(--v2-subtle); font-size: 11px; }
+.contatos-sheet__foot .ui-btn { min-height: 42px; }
 
-.cb-contact-edit-card { grid-column: 1 / -1; padding: 18px; }
-.cb-v2-contatos-form { display: grid; gap: 14px; }
-.cb-contact-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.cb-contact-form-grid label { display: block; min-width: 0; }
-.cb-v2-contatos-form .cb-input { min-height: 44px; }
-.cb-v2-contatos-form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 2px; }
-.cb-v2-contatos-form-actions .cb-button { min-height: 42px; }
+.contatos-sheet__danger {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--ui-danger) 34%, transparent);
+  border-radius: var(--ui-radius-card);
+  background: color-mix(in srgb, var(--ui-danger) 6%, transparent);
+}
+
+.contatos-sheet__danger-title { margin: 0; color: var(--ui-danger); font-size: 12px; font-weight: 650; }
+.contatos-sheet__danger-text { margin: 0; color: var(--ui-text-muted); font-size: 12px; line-height: 1.45; }
+
+.contatos-sheet__danger-btn {
+  justify-self: start;
+  border: 1px solid color-mix(in srgb, var(--ui-danger) 45%, transparent);
+  background: color-mix(in srgb, var(--ui-danger) 10%, transparent);
+  color: var(--ui-danger);
+}
+.contatos-sheet__danger-btn:hover { background: color-mix(in srgb, var(--ui-danger) 16%, transparent); }
 
 .cb-contact-form-error {
-  margin-bottom: 14px;
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--v2-danger) 42%, transparent);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--v2-danger) 11%, transparent);
-  color: var(--v2-danger);
+  border: 1px solid color-mix(in srgb, var(--ui-danger) 42%, transparent);
+  border-radius: var(--ui-radius-control);
+  background: color-mix(in srgb, var(--ui-danger) 11%, transparent);
+  color: var(--ui-danger);
   font-size: 13px;
 }
 
-.cb-contact-inline-error { margin: 0; }
-
-.cb-v2-contatos-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 120;
-  overflow-y: auto;
-  background: rgb(4 8 13 / 68%);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-}
-
-.cb-v2-contatos-modal-position { display: flex; min-height: 100%; align-items: center; justify-content: center; padding: 24px; }
-.cb-v2-contatos-modal-panel {
-  width: min(100%, 620px);
-  padding: 22px;
-  border: 1px solid var(--v2-border-strong);
-  border-radius: 16px;
-  background: var(--v2-surface);
-  box-shadow: 0 24px 70px rgb(0 0 0 / 34%);
-}
-
-.cb-v2-contatos-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
-.cb-v2-contatos-modal-header h2 { margin: 3px 0 3px; color: var(--v2-text); font-size: 21px; letter-spacing: -0.025em; }
-.cb-v2-contatos-modal-header > div > p:last-child { margin: 0; color: var(--v2-muted); font-size: 12px; }
-.cb-v2-contatos-modal-close {
-  display: inline-flex;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--v2-border);
-  border-radius: 10px;
-  background: var(--v2-surface-raised);
-  color: var(--v2-muted);
-  cursor: pointer;
-}
-.cb-v2-contatos-modal-close:hover { border-color: var(--v2-border-strong); color: var(--v2-text); }
-.cb-v2-contatos-modal-close svg { width: 18px; height: 18px; }
-
-.cb-v2-contatos-tab:focus-visible,
-.cb-contact-action:focus-visible,
-.cb-v2-contatos-modal-close:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
+.cb-contact-action:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
 
 @media (max-width: 980px) {
   .cb-v2-contatos-toolbar { grid-template-columns: 1fr; }
-  .cb-v2-contatos-tabs { width: 100%; }
-  .cb-v2-contatos-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 1023px) {
+  /* Ações de toque no shell mobile/tablet: 44×44 sem alterar a geometria
+     desktop aprovada (ui-btn--sm, 34px). O controle de privacidade permanece
+     fora do grupo que esconde "Novo contato" em ≤767px. */
+  .cb-v2-contatos-privacy {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+  .cb-v2-contatos-tabs .cb-tab { min-height: 44px; }
+  .cb-contact-actions .cb-contact-action { width: 44px; height: 44px; min-height: 44px; }
 }
 
 @media (max-width: 767px) {
   .cb-v2-contatos-content { padding-top: 20px; }
-  .cb-v2-contatos-header { align-items: flex-start; margin-bottom: 18px; }
-  .cb-v2-contatos-header h1 { font-size: 23px; }
-  .cb-v2-contatos-header > div > p:last-child { font-size: 12px; }
+  .cb-v2-contatos-header { align-items: flex-start; }
   .cb-v2-contatos-create { display: none; }
   .cb-v2-contatos-grid { grid-template-columns: 1fr; }
-  .cb-contact-action { width: 44px; height: 44px; }
+
+  /* Sheet vira bottom sheet: handle, raio superior e safe area no rodapé. */
+  .contatos-sheet__layer { align-items: flex-end; padding: 0; }
+  .contatos-sheet__dialog {
+    width: 100%;
+    max-height: 92dvh;
+    border-width: 1px 0 0;
+    border-radius: 18px 18px 0 0;
+  }
+  .contatos-sheet__handle {
+    display: block;
+    width: 38px;
+    height: 4px;
+    margin: 8px auto 0;
+    border-radius: 999px;
+    background: var(--ui-border-strong);
+  }
+  .contatos-sheet__head { padding: 12px 18px 14px; }
+  .contatos-sheet__body { padding: 16px 18px; }
+  .contatos-sheet__grid { grid-template-columns: 1fr; }
+  .contatos-sheet__foot {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
+  }
+  .contatos-sheet__foot .ui-btn { min-height: 44px; }
 }
 
 @media (max-width: 560px) {
-  .cb-v2-contatos-tabs { min-width: 0; }
-  .cb-v2-contatos-tab { gap: 5px; padding: 0 8px; font-size: 11px; }
-  .cb-v2-contatos-tab svg { width: 14px; height: 14px; }
-  .cb-contact-form-grid { grid-template-columns: 1fr; }
-  .cb-v2-contatos-modal-position { align-items: flex-end; padding: 0; }
-  .cb-v2-contatos-modal-panel {
-    max-height: min(92dvh, 760px);
-    overflow-y: auto;
-    padding: 20px 18px calc(20px + env(safe-area-inset-bottom));
-    border-width: 1px 0 0;
-    border-radius: 16px 16px 0 0;
-  }
-  .cb-v2-contatos-form-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .cb-v2-contatos-tabs { width: 100%; }
+  .cb-v2-contatos-tabs .cb-tab { gap: 5px; padding: 0 8px; font-size: 11px; }
+  .cb-v2-contatos-tabs .cb-tab svg { width: 14px; height: 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cb-v2-contatos-tab,
-  .cb-v2-contatos-search input,
   .cb-contact-card,
   .cb-contact-action { transition: none; }
+  .contatos-sheet__dialog { animation: none; }
+}
+
+/* === PRIVACIDADE ===
+   Reusa o estado global (sessionStorage contabasePrivacy + body
+   .privacy-enabled gerido por privacy.js), no mesmo padrão de Metas,
+   Relatórios, Faturas e Lançamentos: o valor original mantém a caixa, então a
+   geometria dos cards e do grid não muda. O escopo cobre a página inteira
+   (.cb-v2-contatos-main), incluindo todo o conteúdo trocado por HTMX em
+   #contatos-list/#contatos-grid. Inputs editáveis NÃO são mascarados: o modo
+   atua sobre a apresentação dos valores exibidos, nunca sobre a edição. */
+.privacy-enabled .cb-v2-contatos-main [data-sensitive] {
+  visibility: hidden;
+  user-select: none;
+}
+
+.privacy-enabled .cb-v2-contatos-main :is(span, strong, p, small, div, dd)[data-sensitive] {
+  position: relative;
+}
+
+/* O valor original permanece no DOM (mesma caixa), mas um e-mail longo não
+   pode inflar a linha enquanto está invisível: a máscara ocupa uma linha. */
+.privacy-enabled .cb-v2-contatos-main .cb-contact-details dd[data-sensitive] {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.privacy-enabled .cb-v2-contatos-main :is(span, strong, p, small, div, dd)[data-sensitive]::after {
+  content: "••••";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  visibility: visible;
+  color: var(--ui-text-muted);
+  font-variant-numeric: normal;
+  letter-spacing: .12em;
+  pointer-events: none;
 }

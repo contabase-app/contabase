@@ -715,7 +715,7 @@ func TestManualInvoiceMoveDerivedViewsAndFinancialDates(t *testing.T) {
 	execTestSQL(t, db, `UPDATE invoice_payments SET paid_at = ? WHERE id = 'ip-dst-partial'`, paymentDate)
 	execTestSQL(t, db, `UPDATE transactions SET date = ?, date_civil = '2026-08-01', paid_at = ?, paid_date_civil = '2026-08-01' WHERE id = 'payment-dst-partial'`, paymentDate, paymentDate)
 
-	report := RelatoriosHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+	report := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
 
 	descSrc := "desc"
 	beforeSourceFatura, err := buildFaturaDataForInvoice(db, "ws-test", "invoice-2026-09", descSrc)

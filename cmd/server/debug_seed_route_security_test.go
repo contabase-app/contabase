@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/contabase-app/contabase/internal/auth"
-	"github.com/contabase-app/contabase/internal/database"
 )
 
 func TestSeedDemoB2BRouteRequiresPostCSRFAndDebugMode(t *testing.T) {
@@ -95,7 +94,7 @@ func TestSeedDemoB2BRouteKeepsPerWorkspaceUserRateLimit(t *testing.T) {
 
 func openDebugSeedRouteTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := database.Open(":memory:")
+	db, err := openRawServerFixture(t)
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}

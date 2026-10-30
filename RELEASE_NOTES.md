@@ -5,7 +5,27 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
 ## Candidata atual
 
-- **v1.0.0-beta.5 — preparação local — 24 de setembro de 2026** — *Home renovada e identidade visual*
+- **v1.0.0-beta.6 — preparação local, não publicada** — *Investimentos, interface e estabilidade*
+
+  O menu de ações em Metas e Reservas permanece legível acima dos cartões vizinhos. A página de Faturas abre no primeiro mês com fatura em aberto quando o mês atual já está pago; uma competência escolhida manualmente continua prevalecendo.
+
+  Investimentos fica disponível por padrão quando a flag do módulo está ausente, em instalações novas e atualizadas. Desativações explícitas são preservadas. Novas aplicações permitem selecionar a origem e registrar compra, transferência e saldos na mesma operação atômica. O histórico mostra a origem e o lançamento correspondente; repetir a requisição não duplica o débito. O executor de pagamentos agendados evita a disputa entre writers SQLite durante o startup.
+
+  Relatórios, Contatos, Configurações e Administração receberam componentes Premium e ajustes de navegação, formulários e acessibilidade. As microfases locais alinham conteúdo e ações de Configurações, corrigem máscaras, contraste e áreas de toque e acrescentam o controle global de privacidade a Contas, Investimentos e Notificações. A autorização de auditoria, o tratamento de credenciais SMTP e as proteções de exportação também foram reforçados.
+
+  A contagem de dias para o fechamento de faturas passou a usar datas civis nos cartões e no Dashboard, eliminando a divergência de um dia na virada do dia, do mês ou do ano.
+
+  **Segurança e recuperação.** A identidade de seed legada não é mais reativada automaticamente: credenciais públicas ou inválidas são inutilizadas e a conta exige recuperação administrativa explícita, que preserva os fatores 2FA cadastrados. `SECURITY_MASTER_KEY` passa a ser obrigatória e explícita para gravar senha SMTP; não há fallback público. Senhas cifradas com a chave antiga deixam de ser lidas automaticamente, mas o ciphertext é preservado e pode ser substituído pela Administração. Os fluxos de atualização só retornam automaticamente a um código ou imagem verificado da própria Beta 6, nunca à Beta 5, e bloqueiam o retorno após qualquer tentativa de startup da candidata. Não há restore automático de banco, schema, configuração ou chaves.
+
+  O fluxo usa schema 77. Adoção histórica e resgates financeiros das novas aplicações continuam indisponíveis; as três flags de operações financeiras controladas permanecem opt-in. Registros patrimoniais legados não recebem débito retroativo, e a política existente de transferências continua permitindo saldo negativo. Consulte o [guia de Investimentos](docs/investimentos.md).
+
+  **Atualização prevista:** `v1.0.0-beta.5` → `v1.0.0-beta.6`. Faça backup antes de atualizar, preserve `SECURITY_MASTER_KEY` e revise contas legadas que dependam de recuperação administrativa. O upgrade operacional pelo instalador público ainda não foi comprovado integralmente.
+
+  **Distribuição:** esta é uma candidata local. Tag, GitHub Release, imagem GHCR e canal Beta dependem de revisão e autorização em etapas separadas.
+
+## Última Beta publicada
+
+- **v1.0.0-beta.5 — prerelease publicada** — *Home renovada e identidade visual*
 
   A Home/Dashboard ganhou apresentação renovada dos resumos financeiros, Limites e Metas. Os cartões compactos usam ícones e barras de progresso para facilitar a leitura.
 
@@ -13,9 +33,9 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
   A identidade visual foi atualizada no shell, nas telas de acesso e nos assets do PWA. A edição dos metadados de uma conta mantém o saldo apenas para leitura no formulário.
 
-  **Upgrade pretendido:** `v1.0.0-beta.4` → `v1.0.0-beta.5`. O caminho só será declarado validado depois dos smokes previstos no fluxo de release.
+  **Atualização:** `v1.0.0-beta.4` → `v1.0.0-beta.5`. Faça backup antes de atualizar.
 
-  **Distribuição:** esta preparação local não cria tag, GitHub Release, imagem GHCR nem altera o canal Beta. A beta.4 permanece no canal até os gates públicos serem aprovados.
+  **Distribuição:** tag e GitHub Release prerelease publicadas; canal Beta e imagem GHCR `:beta` promovidos para `v1.0.0-beta.5`.
 
 ## Marco anterior
 
@@ -229,6 +249,6 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
   Recorrências/parcelamentos (B4) e pagamento parcial de faturas (B5) foram resolvidos na v0.1.0-beta.2.
 
-- **[v0.1.0-alpha.1](docs/releases/v0.1.0-alpha.1.md)** — *03 de junho de 2026*
+- **v0.1.0-alpha.1** — *03 de junho de 2026*
 
   Primeira release pública de validação, preservada como registro histórico.

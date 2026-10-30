@@ -78,6 +78,72 @@ func TestFixedWorkspaceRBACMatrixIgnoresCustomPermissions(t *testing.T) {
 	}
 }
 
+func TestContatosEditFormRouteRequiresFixedUpdateRole(t *testing.T) {
+	db := openAdminUsersRBACTestDB(t)
+	defer db.Close()
+
+	authService := auth.NewService(db)
+	signer := &csrfSigner{secret: bytes.Repeat([]byte{12}, 32), ttl: time.Hour}
+	sessions := map[string]string{
+		models.RoleManager: createAdminUsersRBACSession(t, authService, "manager-user", models.RoleManager),
+		models.RoleUser:    createAdminUsersRBACSession(t, authService, "regular-user", models.RoleUser),
+	}
+
+	// Mesma expressão usada pela rota GET /contatos/{id} em main.go: o
+	// formulário de edição exige transactions:update, não apenas leitura.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/contatos/contact-id", fixedWorkspaceRBACHandler(authService, signer, http.MethodGet, func(ctx authContext) bool {
+		return hasPermission(ctx.Role, permTransactionsUpdate)
+	}))
+
+	cases := []struct {
+		role string
+		want int
+	}{
+		{role: models.RoleUser, want: http.StatusForbidden},
+		{role: models.RoleManager, want: http.StatusNoContent},
+	}
+	for _, tc := range cases {
+		t.Run(tc.role, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/contatos/contact-id", nil)
+			req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessions[tc.role]})
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+			if rr.Code != tc.want {
+				t.Fatalf("status = %d, want %d, body = %q", rr.Code, tc.want, rr.Body.String())
+			}
+		})
+	}
+}
+
+func TestContatosCreateSheetRouteRequiresCreatePermission(t *testing.T) {
+	db := openAdminUsersRBACTestDB(t)
+	defer db.Close()
+
+	authService := auth.NewService(db)
+	signer := &csrfSigner{secret: bytes.Repeat([]byte{14}, 32), ttl: time.Hour}
+	sessions := map[string]string{
+		models.RoleManager: createAdminUsersRBACSession(t, authService, "manager-user", models.RoleManager),
+		models.RoleUser:    createAdminUsersRBACSession(t, authService, "regular-user", models.RoleUser),
+	}
+
+	// Mesma expressão da rota GET /contatos/novo em main.go.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/contatos/novo", fixedWorkspaceRBACHandler(authService, signer, http.MethodGet, func(ctx authContext) bool {
+		return hasPermission(ctx.Role, permTransactionsCreate)
+	}))
+
+	for _, role := range []string{models.RoleUser, models.RoleManager} {
+		req := httptest.NewRequest(http.MethodGet, "/contatos/novo", nil)
+		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessions[role]})
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, req)
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("%s status = %d, want %d", role, rr.Code, http.StatusNoContent)
+		}
+	}
+}
+
 func TestConfiguracoesWorkspaceRequiresBusinessWorkspace(t *testing.T) {
 	db := openAdminUsersRBACTestDB(t)
 	defer db.Close()

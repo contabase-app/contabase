@@ -22,9 +22,9 @@ const (
 	InvestmentTaxRegimeManual = "MANUAL"
 )
 
-// Investment is one lot in one account. principal_cents, account_id,
+// Investment groups purchases in one account. principal_cents, account_id,
 // workspace_id, applied_date and authorship are immutable after creation
-// (1 investment = 1 lot); everything else is editable while ATIVA through
+// (principal/date describe the initial purchase); everything else is editable while ATIVA through
 // its own domain flow.
 type Investment struct {
 	ID             string  `json:"id"`
@@ -63,6 +63,21 @@ type InvestmentValuation struct {
 	UpdatedAt     *int64  `json:"updated_at,omitempty"`
 }
 
+// InvestmentPurchase is an immutable purchase, never a ledger transaction.
+// Legacy terms are unknown: nullable fields must not be inferred from today's
+// editable investment metadata. Recorded terms belong to this purchase alone.
+type InvestmentPurchase struct {
+	ID, WorkspaceID, InvestmentID                              string
+	PurchaseDate                                               string
+	PrincipalCents                                             int64
+	NoteReference                                              string
+	Kind, Institution, MaturityDate, TaxRegime, ConditionsNote *string
+	ConditionsSource                                           string
+	IsInitial                                                  bool
+	CreatedBy                                                  string
+	CreatedAt                                                  int64
+}
+
 // TaxEstimate carries an IR estimate with explicit availability. When
 // Available is false, TaxCents has no meaning and must never be read as a
 // zero estimate — unavailable is not zero.
@@ -88,4 +103,26 @@ type MonthlyVariation struct {
 	CurrentCents  int64
 	DeltaCents    int64
 	BasisPoints   int64
+}
+
+// Withdrawal records a receipt, independent of account balances and positions.
+type InvestmentWithdrawal struct {
+	ID, WorkspaceID, InvestmentID, WithdrawalDate, Mode, CreatedBy, RequestID, Note string
+	ReceivedCents, CreatedAt                                                        int64
+	Allocations                                                                     []InvestmentWithdrawalAllocation
+}
+
+type InvestmentWithdrawalAllocation struct {
+	WorkspaceID, InvestmentID, WithdrawalID, PurchaseID string
+	ReceivedCents                                       int64
+	PrincipalCents                                      *int64
+	ClosesPurchase                                      bool
+}
+
+// Unknown principal stays unknown even if a later allocation has a known part.
+type InvestmentPurchaseState struct {
+	Closed                  bool
+	PrincipalUnknown        bool
+	KnownPrincipalWithdrawn int64
+	LatestWithdrawalDate    string
 }

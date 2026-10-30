@@ -2,6 +2,7 @@ package services
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,9 +101,33 @@ func seedAccounts(t *testing.T, db *sql.DB) {
 
 func exec(t *testing.T, db *sql.DB, query string, args ...interface{}) {
 	t.Helper()
+	// Fault-injection DDL belongs to fixture maintenance. Runtime pools now
+	// reject schema changes, so retain these regression attacks off that path.
+	upper := strings.ToUpper(strings.TrimSpace(query))
+	if strings.HasPrefix(upper, "CREATE TRIGGER ") || strings.HasPrefix(upper, "DROP TRIGGER ") {
+		db = fixtureMaintenance(t, db)
+		defer db.Close()
+	}
 	if _, err := db.Exec(query, args...); err != nil {
 		t.Fatalf("exec: %v", err)
 	}
+}
+
+func fixtureMaintenance(t *testing.T, pool *sql.DB) *sql.DB {
+	t.Helper()
+	var path string
+	if err := pool.QueryRow(`SELECT file FROM pragma_database_list WHERE name='main'`).Scan(&path); err != nil {
+		t.Fatal(err)
+	}
+	if path == "" {
+		t.Fatal("fault injection requires a disposable disk fixture")
+	}
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	return db
 }
 
 func assertBalance(t *testing.T, db *sql.DB, accountID string, want int64) {

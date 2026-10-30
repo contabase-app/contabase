@@ -62,6 +62,9 @@ RESOLVED_COMPOSE_PROJECT=""
 STATE_FILE="${CONTABASE_STATE_FILE:-/etc/contabase/install-state.env}"
 INSTALL_CHANNEL="${CONTABASE_CHANNEL:-}"
 REPO_ROOT="$(pwd -P)"
+. "$(dirname "${BASH_SOURCE[0]}")/lib/contabase-recovery.sh"
+PREVIOUS_COMPOSE_ID=""
+RECOVERY_COMPOSE_FILE=""
 
 # Accept CONTABASE_ASSUME_YES=1 as headless mode (same as --yes)
 [ "${CONTABASE_ASSUME_YES:-0}" = "1" ] && YIELD=true
@@ -360,6 +363,7 @@ EOF
 }
 
 cleanup_update_tmp() {
+  if [ -n "$RECOVERY_COMPOSE_FILE" ]; then rm -f "$RECOVERY_COMPOSE_FILE"; fi
   if [ -n "$CANONICAL_BACKUP_HELPER_TMP" ] && [ -f "$CANONICAL_BACKUP_HELPER_TMP" ]; then
     rm -f "$CANONICAL_BACKUP_HELPER_TMP"
   fi
@@ -739,6 +743,7 @@ capture_previous_runtime() {
 
   PREVIOUS_IMAGE_ID="$(docker inspect "$container_id" --format '{{.Image}}' 2>/dev/null || true)"
   PREVIOUS_IMAGE_NAME="$(docker inspect "$container_id" --format '{{.Config.Image}}' 2>/dev/null || true)"
+  PREVIOUS_COMPOSE_ID="$(docker compose $COMPOSE_ARGS config | recovery_sha256)" || return 1
 
   if [ -n "$PREVIOUS_IMAGE_ID" ] && [ -n "$PREVIOUS_IMAGE_NAME" ]; then
     rollback_timestamp="$(date +%Y%m%d-%H%M%S)"
@@ -874,38 +879,60 @@ print_post_start_failure() {
 }
 
 rollback_runtime() {
+  [ "${RECOVERY_COMPLETED:-false}" != true ] || return 0
+  local override container_id image_id compose_id
   echo ""
   echo "=== Rollback do runtime Docker ==="
   echo "O banco e os uploads NAO serao restaurados automaticamente."
-  docker compose $COMPOSE_ARGS down >/dev/null 2>&1 || true
-
-  if [ -z "$PREVIOUS_ROLLBACK_TAG" ] || [ -z "$PREVIOUS_IMAGE_NAME" ]; then
-    echo "Erro: imagem anterior indisponivel; rollback automatico do runtime nao e possivel."
+  docker compose $COMPOSE_ARGS down || { recovery_blocked; return 1; }
+  STACK_STOPPED=true
+  if [ "$NEW_RUNTIME_STARTED" = true ] \
+    || [[ ! "$PREVIOUS_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]] \
+    || ! recovery_verify "$(dirname "$STATE_FILE")/recovery" docker "$PREVIOUS_VERSION" "${PREVIOUS_IMAGE_ID#sha256:}"; then
+    recovery_blocked
+    return 1
+  fi
+  RECOVERY_COMPOSE_FILE="$(mktemp "${TMPDIR:-/tmp}/contabase-recovery-config.XXXXXX")" || return 1
+  if ! docker compose $COMPOSE_ARGS config > "$RECOVERY_COMPOSE_FILE"; then
+    rm -f "$RECOVERY_COMPOSE_FILE"
+    return 1
+  fi
+  compose_id="$(recovery_sha256 < "$RECOVERY_COMPOSE_FILE")" || return 1
+  if [ -z "$PREVIOUS_COMPOSE_ID" ] || [ "$compose_id" != "$PREVIOUS_COMPOSE_ID" ]; then
+    rm -f "$RECOVERY_COMPOSE_FILE"
+    recovery_blocked
     return 1
   fi
 
-  if ! docker image tag "$PREVIOUS_ROLLBACK_TAG" "$PREVIOUS_IMAGE_NAME"; then
-    echo "Erro: nao foi possivel restaurar a tag da imagem anterior."
+  # Pin the content ID at the final activation point; mutable names are not proof.
+  override="$(mktemp "${TMPDIR:-/tmp}/contabase-recovery-compose.XXXXXX")" || return 1
+  printf 'services:\n  contabase:\n    image: %s\n    pull_policy: never\n' "$PREVIOUS_IMAGE_ID" > "$override" || { rm -f "$override"; return 1; }
+  NEW_RUNTIME_STARTED=true
+  if ! docker compose --project-directory "$REPO_ROOT" -f "$RECOVERY_COMPOSE_FILE" -f "$override" up -d --no-build --pull never --remove-orphans; then
+    rm -f "$override"
+    rm -f "$RECOVERY_COMPOSE_FILE"
+    docker compose $COMPOSE_ARGS down || true
     return 1
   fi
+  rm -f "$override"
+  rm -f "$RECOVERY_COMPOSE_FILE"
 
-  if ! docker compose $COMPOSE_ARGS up -d --no-build --remove-orphans; then
-    echo "Erro: a imagem anterior nao voltou a subir."
-    return 1
-  fi
-
-  STACK_STOPPED=false
   if detect_confirmed_runtime_version \
     && [ -n "$CONFIRMED_RUNTIME_VERSION" ] \
-    && [ "$CONFIRMED_RUNTIME_VERSION" = "$PREVIOUS_VERSION" ]; then
+    && [ "$CONFIRMED_RUNTIME_VERSION" = "$PREVIOUS_VERSION" ] \
+    && container_id="$RESOLVED_CONTAINER_ID" \
+    && image_id="$(docker inspect "$container_id" --format '{{.Image}}')" \
+    && [ "$image_id" = "$PREVIOUS_IMAGE_ID" ]; then
+    STACK_STOPPED=false
+    RECOVERY_COMPLETED=true
     echo "Rollback do runtime concluido: imagem anterior saudavel em $HEALTH_URL."
     echo "Codigo local pode permanecer atualizado; dados nao foram restaurados."
-    docker image rm "$PREVIOUS_ROLLBACK_TAG" >/dev/null 2>&1 || true
     return 0
   fi
 
   echo "Erro: rollback subiu a imagem anterior, mas o healthcheck continuou falhando."
   docker compose $COMPOSE_ARGS logs --tail 100 contabase || true
+  docker compose $COMPOSE_ARGS down || true
   return 1
 }
 
@@ -1244,6 +1271,13 @@ fi
   fail_with_rollback "runtime confirmado diverge da versao alvo antes da promocao."
 }
 RUNTIME_CONFIRMED=true
+if recovery_source_known "$CANONICAL_BUILD_DIR"; then
+  recovery_image="$(docker inspect "$RESOLVED_CONTAINER_ID" --format '{{.Image}}')" || recovery_image=""
+  if [[ "$recovery_image" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    recovery_record "$(dirname "$STATE_FILE")/recovery" docker "$TARGET_VERSION" "${recovery_image#sha256:}" \
+      || echo "Aviso: prova de recuperacao nao gravada; retorno automatico a esta imagem ficara bloqueado."
+  fi
+fi
 STACK_STOPPED=false
 if [ -n "$PREVIOUS_ROLLBACK_TAG" ]; then
   docker image rm "$PREVIOUS_ROLLBACK_TAG" >/dev/null 2>&1 || true

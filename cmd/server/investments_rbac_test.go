@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/contabase-app/contabase/internal/auth"
-	"github.com/contabase-app/contabase/internal/database"
 	"github.com/contabase-app/contabase/internal/handlers"
 	"github.com/contabase-app/contabase/internal/models"
 )
@@ -76,7 +75,7 @@ func (h *investmentsRBACHarness) session(t *testing.T, userID, workspaceID strin
 
 func (h *investmentsRBACHarness) exec(t *testing.T, query string, args ...any) {
 	t.Helper()
-	if _, err := h.db.Exec(query, args...); err != nil {
+	if _, err := serverFixtureExec(t, h.db, query, args...); err != nil {
 		t.Fatalf("fixture update: %v", err)
 	}
 }
@@ -252,7 +251,7 @@ func TestInvestmentsRBACWriteRequiresCSRF(t *testing.T) {
 }
 
 func TestInvestmentsRBACNewWorkspacesKeepAdminWithoutPersistedTokens(t *testing.T) {
-	db, err := database.Open(":memory:")
+	db, err := openRawServerFixture(t)
 	if err != nil {
 		t.Fatal(err)
 	}

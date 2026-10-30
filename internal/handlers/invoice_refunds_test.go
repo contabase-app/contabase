@@ -62,7 +62,7 @@ func TestRegistrarReembolsoReduzFaturaFechadaSemCriarReceita(t *testing.T) {
 	if len(projected) != 1 || projected[0].AmountCents != 20000 {
 		t.Fatalf("projected invoice cash = %#v, want one event of 20000", projected)
 	}
-	reportExpense, err := (&RelatoriosHandler{DB: db, WorkspaceID: "ws-test"}).queryUncategorizedExpenses(context.Background(), 0, 1<<62)
+	reportExpense, err := (&RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-test"}).queryUncategorizedExpenses(context.Background(), 0, 1<<62)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestRegistrarReembolsoGeralReduzSaldoAtualSemAlterarDespesaHistorica(t *tes
 	if limitUsed != 20000 {
 		t.Fatalf("limit used = %d, want 20000", limitUsed)
 	}
-	reportExpense, err := (&RelatoriosHandler{DB: db, WorkspaceID: "ws-test"}).queryUncategorizedExpenses(context.Background(), 0, 1<<62)
+	reportExpense, err := (&RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-test"}).queryUncategorizedExpenses(context.Background(), 0, 1<<62)
 	if err != nil {
 		t.Fatal(err)
 	}

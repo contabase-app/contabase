@@ -1,0 +1,32 @@
+{{define "investimento-retirada-form"}}
+<form method="post" action="/investimentos/{{.InvestmentID}}/retiradas" hx-post="/investimentos/{{.InvestmentID}}/retiradas" hx-swap="none" hx-indicator="#htmx-indicator" data-investment-operation hx-sync="this:drop" hx-disabled-elt="find button[type='submit']" class="space-y-4">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="request_id" value="{{.RequestID}}">
+    <p data-investment-operation-feedback role="alert" tabindex="-1" class="investment-feedback" {{if not .Error}}hidden{{end}}>{{.Error}}</p>
+    <fieldset class="investment-fieldset">
+        <legend>Recebimento</legend>
+        <div><label class="cb-label" for="investment-withdrawal-mode">Modalidade</label><select id="investment-withdrawal-mode" name="mode" class="cb-input" required><option value="PARTIAL" {{if eq .Mode "PARTIAL"}}selected{{end}}>Parcial</option><option value="TOTAL" {{if eq .Mode "TOTAL"}}selected{{end}}>Total das compras selecionadas</option></select><p class="investment-help">Parcial mantém as compras em carteira. Total encerra integralmente cada compra selecionada.</p></div>
+        <div class="investment-field-grid">
+            <div><label class="cb-label" for="investment-withdrawal-date">Data da retirada</label><input id="investment-withdrawal-date" type="date" name="withdrawal_date" value="{{.Date}}" class="cb-input" required></div>
+            <div><label class="cb-label" for="investment-withdrawal-received">Valor recebido (R$)</label><input id="investment-withdrawal-received" name="received_amount" value="{{.Received}}" data-investment-money="zero" inputmode="decimal" type="text" class="cb-input" placeholder="R$ 1.234,56" required><p class="investment-help">Informe o valor efetivamente recebido. Zero é permitido em uma retirada total com perda integral.</p></div>
+        </div>
+    </fieldset>
+    <fieldset class="investment-fieldset">
+        <legend>Compras afetadas</legend>
+        <p class="investment-help">Selecione as compras. Para uma compra, o valor atribuído vazio usa o total recebido. Para várias, informe cada valor: a soma deve corresponder ao total. Não há rateio automático.</p>
+        {{range .Options}}
+        <div class="investment-withdrawal-option">
+            <label class="investment-confirm-field" for="withdraw-purchase-{{.ID}}"><input id="withdraw-purchase-{{.ID}}" type="checkbox" name="purchase_id" value="{{.ID}}" {{if .Selected}}checked{{end}}> {{.Label}}</label>
+            <div class="investment-field-grid">
+                <div><label class="cb-label" for="withdraw-received-{{.ID}}">Valor recebido desta compra (R$)</label><input id="withdraw-received-{{.ID}}" type="text" inputmode="decimal" name="received_{{.ID}}" value="{{.Received}}" data-investment-money="zero" class="cb-input"></div>
+                <div><label class="cb-label" for="withdraw-principal-{{.ID}}">Principal baixado (R$, opcional)</label><input id="withdraw-principal-{{.ID}}" type="text" inputmode="decimal" name="principal_{{.ID}}" value="{{.Principal}}" data-investment-money="zero" class="cb-input"></div>
+            </div>
+        </div>
+        {{end}}
+        <p class="investment-help">Principal baixado é a parcela do capital original, que pode diferir do recebimento. Deixe vazio quando desconhecido; o principal remanescente ficará desconhecido.</p>
+    </fieldset>
+    <div><label class="cb-label" for="investment-withdrawal-note">Observações (opcional)</label><textarea id="investment-withdrawal-note" name="note" rows="3" maxlength="2000" class="cb-input">{{.Note}}</textarea></div>
+    <p class="investment-note">A retirada preserva as posições informadas e não movimenta dinheiro entre contas. Mesmo sem compras em carteira, o acompanhamento permanece aberto.</p>
+    <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm">Registrar retirada</button>
+</form>
+{{end}}

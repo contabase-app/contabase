@@ -23,7 +23,8 @@ type AccountClosingBalance struct {
 // BuildAccountClosingBalances reconstructs the operational balance of real accounts
 // at periodEnd by starting from current_balance and reversing paid movements
 // whose effective date (COALESCE(paid_at, date)) falls after periodEnd.
-// Reconciliations are reversed by their persisted delta when created_at > periodEnd.
+// Reconciliations use registration time; investment integration uses the
+// confirmed economic day close (UTC), including compensating revisions.
 // periodEnd is an inclusive Unix second; monthly callers use 23:59:59 UTC.
 //
 // Real account types: CHECKING, SAVINGS, WALLET, INVESTMENT.
@@ -39,6 +40,19 @@ func BuildAccountClosingBalances(db *sql.DB, workspaceID string, periodEnd int64
 	}
 	defer readTx.Rollback()
 
+	result, err := buildAccountClosingBalancesTx(ctx, readTx, workspaceID, periodEnd)
+	if err != nil {
+		return nil, err
+	}
+	if err := readTx.Commit(); err != nil {
+		return nil, fmt.Errorf("finish account closing snapshot: %w", err)
+	}
+	return result, nil
+}
+
+// buildAccountClosingBalancesTx is the canonical reconstruction shared by the
+// closing report and the balance series. The caller owns the read transaction.
+func buildAccountClosingBalancesTx(ctx context.Context, readTx *sql.Tx, workspaceID string, periodEnd int64) ([]AccountClosingBalance, error) {
 	realTypes := []interface{}{"CHECKING", "SAVINGS", "WALLET", "INVESTMENT"}
 
 	rows, err := readTx.QueryContext(ctx, `
@@ -74,12 +88,12 @@ func BuildAccountClosingBalances(db *sql.DB, workspaceID string, periodEnd int64
 	}
 
 	if len(accounts) == 0 {
-		return nil, readTx.Commit()
+		return nil, nil
 	}
 
 	txRows, err := readTx.QueryContext(ctx, `
 		SELECT t.account_id, t.destination_account_id, t.type, t.amount
-		FROM transactions t
+		FROM financial_transactions t
 		WHERE t.workspace_id = ?
 		  AND t.status = 'paid'
 		  AND COALESCE(NULLIF(t.paid_at, 0), t.date) > ?
@@ -135,7 +149,9 @@ func BuildAccountClosingBalances(db *sql.DB, workspaceID string, periodEnd int64
 		SELECT h.account_id, h.delta_cents
 		FROM account_balance_adjustments h
 		JOIN accounts a ON a.id = h.account_id AND a.workspace_id = h.workspace_id
-		WHERE h.workspace_id = ? AND h.created_at > ?
+		LEFT JOIN investment_adjustment_economic_dates f ON f.workspace_id=h.workspace_id
+		 AND f.account_id=h.account_id AND f.adjustment_id=h.id
+		WHERE h.workspace_id = ? AND COALESCE(f.economic_at,h.created_at) > ?
 	`, workspaceID, periodEnd)
 	if err != nil {
 		return nil, fmt.Errorf("query post-period reconciliations: %w", err)
@@ -173,8 +189,5 @@ func BuildAccountClosingBalances(db *sql.DB, workspaceID string, periodEnd int64
 		}
 	}
 
-	if err := readTx.Commit(); err != nil {
-		return nil, fmt.Errorf("finish account closing snapshot: %w", err)
-	}
 	return result, nil
 }

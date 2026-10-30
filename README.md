@@ -40,19 +40,24 @@ Acesse o canal público de instalação em https://get-contabase.pages.dev/ e si
 - [Segurança](SECURITY.md)
 - [Privacidade](PRIVACY.md)
 - [Termos de uso](TERMS.md)
-- [Candidata v1.0.0-beta.5 — preparação local](docs/releases/v1.0.0-beta.5.md)
-- [Última beta publicada](docs/releases/v1.0.0-beta.4.md)
-- [Beta publicada anterior](docs/releases/v1.0.0-beta.3.md)
+- [Candidata v1.0.0-beta.6 — preparação local](docs/releases/v1.0.0-beta.6.md)
+- [Última beta publicada — v1.0.0-beta.5](docs/releases/v1.0.0-beta.5.md)
+- [Beta publicada anterior — v1.0.0-beta.4](docs/releases/v1.0.0-beta.4.md)
+- [Histórico da beta.3](docs/releases/v1.0.0-beta.3.md)
 - [Notas da Beta.9 publicada](docs/releases/v0.1.0-beta.9.md)
 - [Histórico da beta.2](docs/releases/v1.0.0-beta.2.md)
 - [Histórico da primeira beta](docs/releases/v0.1.0-beta.1.md)
 
-## Destaques da candidata v1.0.0-beta.5
+## Destaques da candidata v1.0.0-beta.6
 
-- Home/Dashboard renovado, com resumos financeiros, Limites e Metas mais claros.
-- Novo sistema de ícones para categorias, limites e reservas.
-- Resumo de Lançamentos e layout responsivo aprimorados.
-- Identidade visual atualizada no shell, nas telas de acesso e no PWA.
+- Investimentos disponíveis por padrão quando a flag do módulo está ausente, em instalações novas e atualizadas. Desativações explícitas são preservadas.
+- Aplicações com conta de origem, transferência atômica e histórico vinculado; adoção histórica e resgates financeiros das novas aplicações permanecem indisponíveis. Consulte [Investimentos](docs/investimentos.md).
+- Relatórios, Contatos, Configurações e Administração com componentes Premium, navegação responsiva e ajustes de acessibilidade.
+- Controles de privacidade em Contas, Investimentos e Notificações; máscaras financeiras, alinhamento dos formulários e áreas de toque revisados.
+- O menu de ações em Metas e Reservas permanece acima dos cartões vizinhos.
+- Faturas abre no próximo mês com fatura em aberto quando o mês atual já está pago.
+
+Essas mudanças pertencem à candidata local; sua presença neste checkout não indica publicação no canal de instalação.
 
 ## Avisos da Beta
 

@@ -55,21 +55,18 @@ func loadTransactionRefundTarget(query interface {
 	var target transactionRefundTarget
 	err := query.QueryRow(`
 		SELECT t.id, t.description, t.invoice_id, i.status, t.amount,
-		       COALESCE((
-		           SELECT SUM(r.amount_cents)
-		           FROM transaction_refunds r
-		           WHERE r.workspace_id = t.workspace_id
-		             AND r.transaction_id = t.id
-		             AND r.reversed_at IS NULL
-		       ), 0)
+		       (t.amount - (`+transactionNetAmountTSQL+`))
 		FROM transactions t
-		JOIN invoices i ON i.id = t.invoice_id
+		JOIN invoices i ON i.id = t.invoice_id AND EXISTS (
+			SELECT 1 FROM accounts invoice_owner
+			WHERE invoice_owner.id = i.account_id AND invoice_owner.workspace_id = ?
+		)
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		WHERE t.id = ?
 		  AND t.workspace_id = ?
 		  AND t.type = ?
 		  AND a.type = ?
-	`, transactionID, workspaceID, models.TransactionTypeExpense, models.AccountTypeCreditCard).Scan(
+	`, workspaceID, transactionID, workspaceID, models.TransactionTypeExpense, models.AccountTypeCreditCard).Scan(
 		&target.TransactionID,
 		&target.Description,
 		&target.InvoiceID,

@@ -26,7 +26,7 @@ func TestDashboardAndMetasLimitsUseParentAndSubcategoryConsistently(t *testing.T
 		t.Fatalf("dashboard limit for Parent A not found: %#v", dashboard.Limits)
 	}
 
-	metasHandler := MetasHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+	metasHandler := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
 	metas, err := metasHandler.buildMetasData("", "")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -63,12 +63,12 @@ func TestDashboardAndMetasLimitsDoNotIncludeUnrelatedOrForeignWorkspaceExpenses(
 
 	dashboardA := BuildDashboardData(db, "user-a", "ws-a")
 	dashboardB := BuildDashboardData(db, "user-b", "ws-b")
-	metasHandlerA := MetasHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
+	metasHandlerA := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
 	metasA, err := metasHandlerA.buildMetasData("", "")
 	if err != nil {
 		t.Fatalf("buildMetasData ws-a: %v", err)
 	}
-	metasHandlerB := MetasHandler{DB: db, WorkspaceID: "ws-b", UserID: "user-b"}
+	metasHandlerB := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-b", UserID: "user-b"}
 	metasB, err := metasHandlerB.buildMetasData("", "")
 	if err != nil {
 		t.Fatalf("buildMetasData ws-b: %v", err)

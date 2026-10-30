@@ -83,7 +83,7 @@ func TestMetasMonthlyPlanningFullSnapshot(t *testing.T) {
 	defer db.Close()
 	seedMonthlyPlanningScenario(t, db)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-full", UserID: "user-a"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-full", UserID: "user-a"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -131,7 +131,7 @@ func TestMetasMonthlyPlanningRendersFullAndEmptyStates(t *testing.T) {
 	seedMonthlyPlanningScenario(t, db)
 
 	t.Run("full summary", func(t *testing.T) {
-		h := MetasHandler{
+		h := MetasHandler{ActorRole: testMetasAdminRole,
 			DB:          db,
 			Templates:   testMetasPageTemplates(t),
 			WorkspaceID: "ws-full",
@@ -148,11 +148,11 @@ func TestMetasMonthlyPlanningRendersFullAndEmptyStates(t *testing.T) {
 		assertContains(t, body, "Cobre cerca de 6,5 meses")
 		assertContains(t, body, "Baseado no custo essencial mensal configurado.")
 		assertContains(t, body, "Aportes programados")
-		assertContains(t, body, "Margem mensal estimada: R$ 1.885,00")
+		assertContains(t, body, "Margem mensal estimada: <span data-sensitive>R$ 1.885,00</span>")
 	})
 
 	t.Run("empty workspace", func(t *testing.T) {
-		h := MetasHandler{
+		h := MetasHandler{ActorRole: testMetasAdminRole,
 			DB:          db,
 			Templates:   testMetasPageTemplates(t),
 			WorkspaceID: "ws-no-references",
@@ -178,7 +178,7 @@ func TestMetasMonthlyPlanningNoEssentialReference(t *testing.T) {
 	defer db.Close()
 	seedMonthlyPlanningScenario(t, db)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-no-essential", UserID: "user-a"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-no-essential", UserID: "user-a"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -209,7 +209,7 @@ func TestMetasMonthlyPlanningNoReferences(t *testing.T) {
 	defer db.Close()
 	seedMonthlyPlanningScenario(t, db)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-no-references", UserID: "user-a"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-no-references", UserID: "user-a"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -236,7 +236,7 @@ func TestMetasMonthlyPlanningSnapshotErrorDoesNotBreak(t *testing.T) {
 		VALUES ('user-x', 'User X', 'x@exemplo.com', 'hash', ?, ?)
 	`, time.Now().UTC().Unix(), time.Now().UTC().Unix())
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-missing", UserID: "user-x"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-missing", UserID: "user-x"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData should not break on missing workspace: %v", err)
@@ -256,7 +256,7 @@ func TestMetasMonthlyPlanningReadOnly(t *testing.T) {
 		t.Fatalf("total_changes before: %v", err)
 	}
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-full", UserID: "user-a"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-full", UserID: "user-a"}
 	_, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -286,7 +286,7 @@ func TestMetasMonthlyPlanningCrossWorkspaceIsolation(t *testing.T) {
 		VALUES ('box-essential', 'ws-no-essential', 'Essential Box', 'cat-essential-1', 0, 50000, 'ACTIVE', ?, ?)
 	`, time.Now().UTC().Unix(), time.Now().UTC().Unix())
 
-	hFull := MetasHandler{DB: db, WorkspaceID: "ws-full", UserID: "user-a"}
+	hFull := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-full", UserID: "user-a"}
 	dataFull, err := hFull.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData ws-full: %v", err)
@@ -296,7 +296,7 @@ func TestMetasMonthlyPlanningCrossWorkspaceIsolation(t *testing.T) {
 		t.Fatalf("ws-full ProgrammedContributions = %d, want 11500 (should not leak from other ws)", fullProg)
 	}
 
-	hEssential := MetasHandler{DB: db, WorkspaceID: "ws-no-essential", UserID: "user-a"}
+	hEssential := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-no-essential", UserID: "user-a"}
 	dataEssential, err := hEssential.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData ws-no-essential: %v", err)
@@ -384,7 +384,7 @@ func TestMetasMonthlyPlanningMarginDisplay(t *testing.T) {
 
 	makeTest := func(wsID string, wantMargin int64, wantHasMargin bool) func(t *testing.T) {
 		return func(t *testing.T) {
-			h := MetasHandler{DB: db, WorkspaceID: wsID, UserID: "user-m"}
+			h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: wsID, UserID: "user-m"}
 			data, err := h.buildMetasData("", "caixinhas")
 			if err != nil {
 				t.Fatalf("buildMetasData %s: %v", wsID, err)
@@ -425,7 +425,7 @@ func TestMetasMonthlyPlanningZeroContributions(t *testing.T) {
 		VALUES ('ws-zero', 'user-z', 'ADMIN', ?)
 	`, now)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-zero", UserID: "user-z"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-zero", UserID: "user-z"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -442,7 +442,7 @@ func TestMetasMonthlyPlanningReservedAndAvailablePreserved(t *testing.T) {
 	defer db.Close()
 	seedMonthlyPlanningScenario(t, db)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-full", UserID: "user-a"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-full", UserID: "user-a"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -506,7 +506,7 @@ func TestMetasMonthlyPlanningProgrammedContributionsIntegration(t *testing.T) {
 			('l-int-c', 'int-c', 9500, 'RECHARGE', 'seed', ?, ?)
 	`, now, now, now, now)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-integration", UserID: "user-i"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-integration", UserID: "user-i"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -538,7 +538,7 @@ func TestMetasMonthlyPlanningZeroCoverage(t *testing.T) {
 		VALUES ('ws-cov-zero', 'user-cov', 'ADMIN', ?)
 	`, now)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-cov-zero", UserID: "user-cov"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-cov-zero", UserID: "user-cov"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -557,7 +557,7 @@ func TestMetasMonthlyPlanningHTMXFragmentsIncludeData(t *testing.T) {
 	defer db.Close()
 	seedMonthlyPlanningScenario(t, db)
 
-	h := &MetasHandler{DB: db, WorkspaceID: "ws-full", UserID: "user-a"}
+	h := &MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-full", UserID: "user-a"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)

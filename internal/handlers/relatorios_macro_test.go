@@ -53,7 +53,7 @@ func TestContabilRendimentosFinanceirosMacroGroup(t *testing.T) {
 	seedMacroContabilScenario(t, db)
 
 	ctx := context.Background()
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
 
 	// Insert income with Receitas Financeiras macro.
 	competenceDate := testUnixDate("2026-08-15")
@@ -83,7 +83,7 @@ func TestContabilRendimentosNaoDependeDeNomeCategoria(t *testing.T) {
 	seedMacroContabilScenario(t, db)
 
 	ctx := context.Background()
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
 
 	// Category with arbitrary name but macro = Receitas Financeiras.
 	now := time.Now().Unix()
@@ -119,7 +119,7 @@ func TestContabilRetiradasPorMacroNaoPorNome(t *testing.T) {
 	seedMacroContabilScenario(t, db)
 
 	ctx := context.Background()
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
 
 	competenceDate := testUnixDate("2026-08-20")
 	execTestSQL(t, db, `
@@ -154,7 +154,7 @@ func TestContabilProLaboreEquipePrestadoresNaoApareceComoRetirada(t *testing.T) 
 	seedMacroContabilScenario(t, db)
 
 	ctx := context.Background()
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
 
 	// Expense in Equipe e Prestadores (NOT Retiradas/Distribuição).
 	competenceDate := testUnixDate("2026-08-15")
@@ -181,7 +181,7 @@ func TestContabilInvestimentosPatrimonialSeparado(t *testing.T) {
 	seedMacroContabilScenario(t, db)
 
 	ctx := context.Background()
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
 
 	competenceDate := testUnixDate("2026-08-10")
 	execTestSQL(t, db, `
@@ -218,7 +218,7 @@ func TestContabilInvestimentosOutrosLegacyAlert(t *testing.T) {
 	seedMacroContabilScenario(t, db)
 
 	ctx := context.Background()
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
 
 	competenceDate := testUnixDate("2026-08-05")
 	execTestSQL(t, db, `
@@ -251,7 +251,7 @@ func TestContabilInvestimentosOutrosLegacyNoAlertWithoutData(t *testing.T) {
 	defer db.Close()
 	seedMacroContabilScenario(t, db)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
 
 	// No legacy transactions inserted.
 	data, err := handler.buildRelatoriosDataWithModo("test-no-legacy", "contabil", "movimentos", "realizado", 8, 2026)
@@ -268,7 +268,7 @@ func TestContabilBusinessOnly(t *testing.T) {
 	defer db.Close()
 	seedMacroContabilScenario(t, db)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
 
 	// Business workspace — contabil tab should be available.
 	data, err := handler.buildRelatoriosDataWithModo("test-biz", "contabil", "movimentos", "realizado", 8, 2026)
@@ -289,7 +289,7 @@ func TestContabilPersonalNaoExpoeDados(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO workspaces (id, name, type, created_at, updated_at) VALUES ('ws-pers', 'WS Pers', 'personal', ?, ?)`, now, now)
 	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-pers', 'u-pers', 'ADMIN', ?)`, now)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-pers", UserID: "u-pers"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-pers", UserID: "u-pers"}
 
 	data, err := handler.buildRelatoriosDataWithModo("test-pers", "contabil", "movimentos", "realizado", 8, 2026)
 	if err != nil {
@@ -354,7 +354,10 @@ func TestFilterDREOperationalExcludesRetiradas(t *testing.T) {
 			{MacroGroup: categorycontract.MacroEquipePrestadores, RawAmount: -25000},
 		},
 	}
-	out := filterDREOperational(in)
+	out, err := filterDREOperational(in)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Operational result: 100000 - 15000 - 30000 - 25000 = 30000 (Retiradas excluded)
 	if out.RawResultado != 30000 {
 		t.Fatalf("operational result should exclude Retiradas: want 30000, got %d", out.RawResultado)
@@ -376,7 +379,10 @@ func TestFilterDREOperationalExcludesInvestimentos(t *testing.T) {
 			{MacroGroup: categorycontract.MacroInvestimentosOutros, RawAmount: -5000},
 		},
 	}
-	out := filterDREOperational(in)
+	out, err := filterDREOperational(in)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Operational result: 100000 - 10000 = 90000 (both investment macros excluded)
 	if out.RawResultado != 90000 {
 		t.Fatalf("operational result should exclude Investimentos: want 90000, got %d", out.RawResultado)
@@ -398,7 +404,10 @@ func TestFilterDREOperationalIncludesReceitasFinanceiras(t *testing.T) {
 			{MacroGroup: categorycontract.MacroFinanceiro, RawAmount: -5000},
 		},
 	}
-	out := filterDREOperational(in)
+	out, err := filterDREOperational(in)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if out.RawResultado != 60000 {
 		t.Fatalf("Receitas Financeiras should be in operational result: want 60000, got %d", out.RawResultado)
 	}
@@ -415,7 +424,10 @@ func TestFilterDREOperationalIncludesReceitasFinanceiras(t *testing.T) {
 
 func TestFilterDREOperationalEmptyInEmptyOut(t *testing.T) {
 	in := DRERow{Competencia: "2026-08"}
-	out := filterDREOperational(in)
+	out, err := filterDREOperational(in)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if out.RawResultado != 0 {
 		t.Fatalf("empty input should produce empty output")
 	}
@@ -429,7 +441,7 @@ func TestContabilMissingReceitasFinanceirasAlert(t *testing.T) {
 	defer db.Close()
 	seedMacroContabilScenario(t, db)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
 
 	// Delete the Receitas Financeiras category to simulate missing.
 	db.Exec(`DELETE FROM categories WHERE macro_group = ?`, categorycontract.MacroReceitasFinanceiras)
@@ -448,7 +460,7 @@ func TestContabilMissingReceitasFinanceirasNoAlertWhenExists(t *testing.T) {
 	defer db.Close()
 	seedMacroContabilScenario(t, db)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
 
 	data, err := handler.buildRelatoriosDataWithModo("test-has-rf", "contabil", "movimentos", "realizado", 8, 2026)
 	if err != nil {
@@ -465,7 +477,7 @@ func TestContabilOutrasEntradasAlert(t *testing.T) {
 	seedMacroContabilScenario(t, db)
 
 	ctx := context.Background()
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
 
 	now := time.Now().Unix()
 	execTestSQL(t, db, `INSERT INTO categories (id, workspace_id, name, type, macro_group, created_at)
@@ -503,7 +515,7 @@ func TestContabilOutrasSaidasAlert(t *testing.T) {
 	seedMacroContabilScenario(t, db)
 
 	ctx := context.Background()
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-macro", UserID: "u-macro"}
 
 	now := time.Now().Unix()
 	execTestSQL(t, db, `INSERT INTO categories (id, workspace_id, name, type, macro_group, created_at)
@@ -544,7 +556,7 @@ func TestContabilAlertsBusinessOnly(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO workspaces (id, name, type, created_at, updated_at) VALUES ('ws-alert', 'WS Alert', 'personal', ?, ?)`, now, now)
 	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-alert', 'u-alert', 'ADMIN', ?)`, now)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-alert", UserID: "u-alert"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-alert", UserID: "u-alert"}
 
 	data, err := handler.buildRelatoriosDataWithModo("test-alert-pers", "contabil", "movimentos", "realizado", 8, 2026)
 	if err != nil {

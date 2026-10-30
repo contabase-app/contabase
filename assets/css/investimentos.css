@@ -1,0 +1,220 @@
+/* Investment surfaces inside the global V2 shell. The financial components keep
+   their existing markup and behavior; these aliases only adopt shared tokens. */
+.investment-page {
+    --cb-bg: var(--v2-canvas);
+    --cb-bg-soft: var(--v2-detail-surface);
+    --cb-surface-1: var(--v2-surface);
+    --cb-surface-2: var(--v2-surface-raised);
+    --cb-surface-3: var(--v2-surface-hover);
+    --cb-border-subtle: var(--v2-border);
+    --cb-border-strong: var(--v2-border-strong);
+    --cb-border-focus: var(--v2-accent);
+    --cb-text-main: var(--v2-text);
+    --cb-text-muted: var(--v2-muted);
+    --cb-text-subtle: var(--v2-subtle);
+    --cb-accent: var(--v2-accent);
+    color: var(--cb-text-main);
+}
+
+.investment-content { width: min(100%, 1180px); margin-inline: auto; padding: 30px 0 12px; display: flex; flex-direction: column; gap: 1.25rem; }
+.investment-page h1 { font-size: 1.875rem; font-weight: 700; letter-spacing: -.025em; line-height: 1.2; overflow-wrap: anywhere; }
+.investment-page h2 { font-size: 1.125rem; font-weight: 650; line-height: 1.4; }
+.investment-page h1, .investment-page h2 { text-wrap: balance; }
+.investment-page p { line-height: 1.55; }
+.investment-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.investment-heading-actions { display: flex; align-items: center; gap: .6rem; flex: 0 0 auto; }
+.investment-header-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-width: 0; }
+.investment-header-top .investment-back { margin-bottom: 0; }
+.investment-heading-actions [data-privacy-toggle],
+.investment-header-top [data-privacy-toggle] { width: 44px; height: 44px; min-height: 44px; padding: 0; flex: 0 0 auto; }
+.investment-heading p { margin-top: .45rem; color: var(--cb-text-main); opacity: .85; }
+.investment-page .cb-button { min-height: 44px; padding: .65rem 1rem; text-transform: none; letter-spacing: 0; font-size: .875rem; font-weight: 600; flex-shrink: 0; }
+.investment-page .cb-button:disabled { opacity: .5; cursor: not-allowed; }
+.investment-page :is(button,a,input,select,textarea):focus-visible { outline: 2px solid var(--cb-border-focus); outline-offset: 3px; }
+.investment-page .cb-input { width: 100%; min-height: 44px; }
+.investment-page .cb-input::placeholder { color: var(--cb-text-main); opacity: .7; }
+.investment-section-title { margin-bottom: .65rem; }
+
+/* Consolidated indicators: compact cards with the number as the reading target.
+   Every card keeps the same rows so values align across the grid. */
+.investment-metrics { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1.2fr; gap: .65rem; }
+.investment-metrics > div { padding: .9rem 1rem; background: var(--cb-surface-1); border: 1px solid var(--cb-border-subtle); border-radius: 12px; min-width: 0; }
+.investment-detail-metrics { grid-template-columns: 1fr 1fr 1.35fr 1fr; }
+.investment-page dt { font-size: .8125rem; color: var(--cb-text-main); opacity: .8; line-height: 1.4; }
+.investment-metrics dd { margin-top: .35rem; font-size: 1.2rem; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.investment-detail-metrics dd { font-size: 1.35rem; }
+.investment-metrics dd.is-unknown { font-weight: 500; opacity: .78; }
+.investment-metrics p, .investment-row p { margin-top: .2rem; font-size: .75rem; color: var(--cb-text-main); opacity: .8; overflow-wrap: anywhere; }
+
+.investment-note { font-size: .8125rem; color: var(--cb-text-main); opacity: .85; max-width: 90ch; margin-top: .6rem; }
+.investment-note.is-confirm { padding: .75rem .9rem; border: 1px solid var(--cb-border-subtle); border-radius: 10px; background: var(--cb-surface-2); opacity: 1; }
+
+.investment-toolbar { display: flex; justify-content: space-between; align-items: end; gap: 1rem; flex-wrap: wrap; }
+.investment-filter { display: flex; align-items: end; gap: .65rem; }
+.investment-filter select { min-width: 180px; }
+.investment-search { width: min(100%, 330px); }
+
+/* List: identity first, then the three readings, then the explicit way in. */
+.investment-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .6rem; }
+.investment-row { display: grid; grid-template-columns: minmax(180px,1.5fr) minmax(130px,1fr) minmax(150px,1.2fr) minmax(135px,1fr) auto; gap: 1rem; align-items: center; padding: 1.1rem 1.25rem; border: 1px solid var(--cb-border-subtle); border-radius: 12px; background: var(--cb-surface-1); }
+.investment-row > * { min-width: 0; }
+.investment-row:hover, .investment-row:focus-within { border-color: var(--cb-border-strong); }
+.investment-name { font-size: 1rem; font-weight: 650; overflow-wrap: anywhere; }
+.investment-name:hover { text-decoration: underline; }
+.investment-row dd { margin-top: .25rem; font-weight: 600; font-size: .9375rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.investment-row dl { align-self: start; }
+.investment-row dd.is-unknown { font-weight: 500; opacity: .78; }
+.investment-status { display: inline-block; border-radius: 999px; padding: .2rem .6rem; font-size: .75rem; font-weight: 600; margin-top: .4rem; color: var(--cb-text-main); background: color-mix(in srgb, var(--v2-tone-neutral) 18%, transparent); }
+.investment-status.is-active { color: color-mix(in srgb, var(--v2-tone-ok) 80%, var(--cb-text-main)); background: color-mix(in srgb, var(--v2-tone-ok) 16%, transparent); }
+.investment-detail-link { display: inline-flex; align-items: center; justify-content: flex-end; gap: .4rem; min-height: 44px; font-size: .8125rem; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+.investment-empty, .investment-empty-search { padding: 1.75rem; background: var(--cb-surface-1); border: 1px dashed var(--cb-border-strong); border-radius: 12px; }
+.investment-empty p { margin: .4rem 0 1rem; }
+.investment-back { display: inline-flex; align-items: center; min-height: 44px; font-size: .875rem; margin-bottom: .35rem; }
+
+/* Actions: one primary step, one edit step, one administrative step. */
+.investment-actions { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+.investment-action-admin { margin-left: auto; }
+
+.investment-detail-layout { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(0,1fr); gap: 1rem; align-items: start; }
+.investment-history, .investment-information { min-width: 0; padding: 1.25rem; }
+.investment-history > p { margin: .4rem 0 .9rem; font-size: .8125rem; }
+.investment-history-scroll { overflow-x: auto; }
+.investment-history-table { width: 100%; font-size: .875rem; text-align: left; font-variant-numeric: tabular-nums; }
+.investment-history-table th { font-weight: 500; background: var(--cb-surface-2); }
+.investment-history-table td { border-bottom: 1px solid var(--cb-border-subtle); overflow-wrap: anywhere; }
+.investment-history-table tr:last-child td { border-bottom: 0; }
+.investment-purchases { list-style: none; padding: 0; margin: 0; }
+.investment-purchases > li { padding: 1rem 0; border-bottom: 1px solid var(--cb-border-subtle); }
+.investment-purchases > li:last-child { border-bottom: 0; }
+.investment-purchase-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.investment-purchase-terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: .75rem 1.5rem; margin-top: .75rem; }
+.investment-purchase-terms dd { font-size: .875rem; margin-top: .2rem; overflow-wrap: anywhere; white-space: pre-wrap; }
+.investment-history-empty { display: flex; flex-direction: column; align-items: start; gap: .9rem; padding: 1rem 1.1rem; border: 1px dashed var(--cb-border-strong); border-radius: 12px; background: var(--cb-surface-2); }
+.investment-history-empty p { font-size: .875rem; }
+.investment-information h2 { margin-bottom: .9rem; }
+.investment-information dl { display: flex; flex-direction: column; gap: .6rem; }
+.investment-information dl > div { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.2fr); gap: .75rem; padding-bottom: .55rem; border-bottom: 1px solid var(--cb-border-subtle); }
+.investment-information dl > div:last-child { border-bottom: 0; padding-bottom: 0; }
+.investment-information dd { font-size: .875rem; overflow-wrap: anywhere; }
+.investment-information-note { margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--cb-border-subtle); }
+.investment-information-note h3 { font-size: .8125rem; font-weight: 700; letter-spacing: .02em; color: var(--cb-text-muted); }
+.investment-information-note p { margin-top: .4rem; overflow-wrap: anywhere; }
+
+/* Drawers. Without JS the panels stay in the document flow (see the :has()
+   fallback below) so every form keeps working through the native POST. */
+.investment-drawer { position: fixed; inset: 0 0 0 auto; margin: 0; width: min(580px, 100%); max-width: 100%; height: 100vh; height: 100dvh; max-height: 100dvh; overflow-y: auto; overscroll-behavior: contain; scroll-padding-bottom: 7rem; border: 0; border-left: 1px solid var(--cb-border-subtle); padding: max(1.5rem, env(safe-area-inset-top)) max(1.5rem, env(safe-area-inset-right)) max(1.5rem, env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left)); background: var(--cb-surface-1); color: var(--cb-text-main); }
+.investment-drawer::backdrop { background: rgb(0 0 0 / .55); }
+.investment-drawer[open] { animation: investment-panel-in 180ms ease-out; }
+.investment-drawer-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
+.investment-drawer-heading p { font-size: .875rem; margin-top: .35rem; opacity: .85; }
+.investment-close { width: 44px; }
+.investment-drawer form { margin-top: .5rem; }
+.investment-drawer form > button[type="submit"] { width: 100%; margin-top: .25rem; }
+.investment-drawer [role="alert"] { padding: .75rem; color: var(--cb-text-main); background: var(--cb-surface-2); border: 1px solid var(--cb-border-strong); border-radius: 8px; margin-bottom: 1rem; }
+.investment-drawer [aria-busy="true"] button[type="submit"] { opacity: .5; pointer-events: none; }
+.investment-page [hidden] { display: none !important; }
+
+.investment-fieldset { border: 0; padding: 0; margin: 0 0 1.25rem; min-width: 0; }
+.investment-fieldset:last-of-type { margin-bottom: 0; }
+.investment-fieldset legend { padding: 0; margin-bottom: .7rem; font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--cb-text-muted); }
+.investment-fieldset + .investment-fieldset { padding-top: 1.15rem; border-top: 1px solid var(--cb-border-subtle); }
+.investment-fieldset :is(input, select, textarea) { width: 100%; }
+.investment-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1rem; }
+.investment-field-grid > div, .investment-field-wide { min-width: 0; }
+.investment-field-wide { margin-top: 1rem; }
+.investment-help { font-size: .8125rem; margin-top: .4rem; opacity: .82; }
+.investment-feedback { padding: .75rem; border: 1px solid var(--cb-border-strong); border-radius: 8px; background: var(--cb-surface-2); }
+.investment-confirm-field { display: flex; align-items: center; gap: .65rem; min-height: 44px; font-size: .875rem; cursor: pointer; }
+.investment-confirm-field input { width: 1.25rem; height: 1.25rem; min-height: 0; flex: none; accent-color: var(--cb-accent); }
+
+/* Without JS: the openers cannot work, so the panels stay visible in the flow
+   and the marker disappears from the DOM as soon as a browser runs scripts. */
+.investment-page:has(noscript > .investment-nojs) [data-investment-open],
+.investment-page:has(noscript > .investment-nojs) [data-investment-close] { display: none; }
+.investment-page:has(noscript > .investment-nojs) .investment-drawer { display: block; position: static; inset: auto; margin: 0; width: 100%; max-width: 100%; height: auto; max-height: none; overflow: visible; border: 1px solid var(--cb-border-subtle); border-radius: 14px; padding: 1.25rem; }
+.investment-page:has(noscript > .investment-nojs) .investment-drawer + .investment-drawer { margin-top: .9rem; }
+
+@keyframes investment-panel-in { from { transform: translateX(24px); opacity: .5; } to { transform: translateX(0); opacity: 1; } }
+
+@media (max-width: 1200px) {
+    .investment-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+    .investment-row { grid-template-columns: repeat(3,minmax(0,1fr)); }
+    .investment-identity { grid-column: 1 / -1; }
+    .investment-detail-link { grid-column: 1 / -1; }
+}
+
+@media (max-width: 760px) {
+    .investment-content { padding: 20px 0 8px; gap: 1rem; }
+    .investment-heading { align-items: stretch; flex-direction: column; }
+    .investment-heading-actions { width: 100%; }
+    .investment-heading-actions .cb-button { flex: 1 1 auto; }
+    .investment-page h1 { font-size: 1.5rem; }
+    /* 16px keeps mobile browsers from zooming the page when a field takes focus. */
+    .investment-page .cb-input, .investment-page .cb-input::placeholder { font-size: 1rem; }
+    .investment-metrics { gap: .5rem; }
+    .investment-metrics > div { padding: .8rem .75rem; }
+    .investment-metrics dt { font-size: .75rem; }
+    .investment-metrics dd, .investment-detail-metrics dd { font-size: 1.05rem; }
+    .investment-detail-metrics { grid-template-columns: minmax(0,1fr); }
+    .investment-row { grid-template-columns: repeat(2,minmax(0,1fr)); gap: .85rem; padding: .95rem; }
+    .investment-row dl:last-of-type { grid-column: 1 / -1; }
+    .investment-detail-link { justify-content: flex-start; }
+    .investment-detail-layout { grid-template-columns: minmax(0,1fr); }
+    .investment-toolbar > *, .investment-search { width: 100%; }
+    .investment-filter > div { flex: 1; min-width: 0; }
+    .investment-filter select { min-width: 0; }
+    .investment-actions { flex-direction: column; align-items: stretch; }
+    .investment-action-admin { margin-left: 0; }
+    .investment-field-grid { grid-template-columns: minmax(0,1fr); }
+    .investment-drawer { padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); }
+}
+
+@media (max-width: 380px) {
+    /* Narrow phones drop to one column so no indicator label has to wrap. */
+    .investment-metrics { grid-template-columns: minmax(0,1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .investment-drawer[open] { animation: none; }
+    .investment-page .cb-button { transition: none; }
+}
+
+.investment-withdrawal-option { padding: 1rem 0; border-bottom: 1px solid var(--cb-border-subtle); min-width: 0; }
+.investment-withdrawal-option .investment-field-grid { margin-top: .75rem; }
+.investment-withdrawal-option label, .investment-withdrawal-allocations { overflow-wrap: anywhere; }
+.investment-withdrawal-allocations { margin-top: .75rem; padding-left: 1.25rem; font-size: .875rem; }
+.investment-withdrawal-allocations li + li { margin-top: .75rem; }
+
+/* === Privacidade ===
+   Reusa o estado global (sessionStorage contabasePrivacy + body
+   .privacy-enabled gerido por privacy.js), no mesmo padrão de Faturas,
+   Lançamentos e Metas: o valor mantém a caixa, então o layout não pula.
+   O escopo cobre a lista e o detalhe (.investment-page). Inputs editáveis
+   não são mascarados: o modo atua sobre a apresentação dos valores. */
+.privacy-enabled .investment-page [data-sensitive]:not(input):not(textarea):not(select) {
+  visibility: hidden;
+  user-select: none;
+}
+
+.privacy-enabled .investment-page :is(strong, span, p, small, div, dd, b, td)[data-sensitive] {
+  position: relative;
+}
+
+.privacy-enabled .investment-page :is(strong, span, p, small, div, dd, b, td)[data-sensitive]::after {
+  content: "••••";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  visibility: visible;
+  color: var(--cb-text-muted);
+  font-variant-numeric: normal;
+  letter-spacing: .12em;
+}
+
+/* Valores que fecham a linha ou a coluna à direita mascaram alinhados à direita. */
+.privacy-enabled .investment-page .investment-purchase-heading strong[data-sensitive]::after,
+.privacy-enabled .investment-page .investment-history-table td.text-right[data-sensitive]::after {
+  justify-content: flex-end;
+}

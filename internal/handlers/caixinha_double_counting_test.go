@@ -11,7 +11,7 @@ func TestCaixinhaBalanceUsesOnlyLedgerNoDoubleCounting(t *testing.T) {
 	defer db.Close()
 	seedDoubleCountingScenario(t, db)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-dc", UserID: "user-dc"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-dc", UserID: "user-dc"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -48,7 +48,7 @@ func TestCaixinhaDoubleCountingWithBothLedgerAndTransaction(t *testing.T) {
 		VALUES ('tx-decoracao-1', 'ws-dc', 'user-dc', 'acc-dc', 'cat-decoracao', 'EXPENSE', 1000, ?, 'Item decoracao A', 'paid', ?, ?)
 	`, now, now, now)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-dc", UserID: "user-dc"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-dc", UserID: "user-dc"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -66,7 +66,7 @@ func TestCaixinhaBalanceWithSubcategoryConsumption(t *testing.T) {
 	defer db.Close()
 	seedDoubleCountingSubcategoryScenario(t, db)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-sc", UserID: "user-sc"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-sc", UserID: "user-sc"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -90,7 +90,7 @@ func TestCaixinhaReleaseReducesOnce(t *testing.T) {
 		VALUES ('lv-release', 'box-decoracao', -10000, 'RELEASE', 'Liberacao parcial', ?, ?)
 	`, now, now)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-dc", UserID: "user-dc"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-dc", UserID: "user-dc"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -114,7 +114,7 @@ func TestCaixinhaReversalRecomposesOnce(t *testing.T) {
 		VALUES ('lv-reversal', 'box-decoracao', 1000, 'REVERSAL', 'Estorno do consumo', 'lv-consume', ?, ?)
 	`, now, now)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-dc", UserID: "user-dc"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-dc", UserID: "user-dc"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -132,7 +132,7 @@ func TestCaixinhaWorkspaceIsolationBalance(t *testing.T) {
 	defer db.Close()
 	seedDoubleCountingScenario(t, db)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-other", UserID: "user-other"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-other", UserID: "user-other"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)

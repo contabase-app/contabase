@@ -35,7 +35,7 @@ func TestHandleExportarContabilPDF_Business(t *testing.T) {
 	defer db.Close()
 	seedContabilPDFScenario(t, db)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
 
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/contabil.pdf?mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
@@ -70,7 +70,7 @@ func TestHandleExportarContabilPDF_PersonalForbidden(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO workspaces (id, name, type, created_at, updated_at) VALUES ('ws-cpers', 'WS Pers', 'personal', ?, ?)`, now, now)
 	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-cpers', 'u-cpers', 'ADMIN', ?)`, now)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-cpers", UserID: "u-cpers"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-cpers", UserID: "u-cpers"}
 
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/contabil.pdf?mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
@@ -86,7 +86,7 @@ func TestHandleExportarContabilPDF_ContentContainsKeyElements(t *testing.T) {
 	defer db.Close()
 	seedContabilPDFScenario(t, db)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
 
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/contabil.pdf?mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
@@ -147,7 +147,7 @@ func TestHandleExportarContabilPDF_WorkspaceIsolation(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO workspaces (id, name, type, company_name, created_at, updated_at) VALUES ('ws-other-cpdf', 'Other PDF', 'business', 'Other Ltda', ?, ?)`, now, now)
 	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-other-cpdf', 'ws-other-cpdf', 'Other Acc', 'CHECKING', 999999, 999999, ?, ?)`, now, now)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
 
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/contabil.pdf?mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
@@ -172,7 +172,7 @@ func TestHandleExportarContabilPDF_PeriodoInvalido(t *testing.T) {
 	defer db.Close()
 	seedContabilPDFScenario(t, db)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
 
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/contabil.pdf?mes=13&ano=2026", nil)
 	rr := httptest.NewRecorder()
@@ -188,7 +188,7 @@ func TestHandleExportarContabilPDF_DefaultPeriod(t *testing.T) {
 	defer db.Close()
 	seedContabilPDFScenario(t, db)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
 
 	// No mes/ano params — uses current UTC month
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/contabil.pdf", nil)
@@ -217,7 +217,7 @@ func TestHandleExportarContabilPDF_ExistingExportsUnaffected(t *testing.T) {
 	defer db.Close()
 	seedContabilPDFScenario(t, db)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
 
 	// DRE PDF still works
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/dre.pdf?mes=8&ano=2026", nil)
@@ -252,7 +252,7 @@ func TestHandleExportarContabilPDF_MethodNotAllowed(t *testing.T) {
 	defer db.Close()
 	seedContabilPDFScenario(t, db)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-cpdf", UserID: "u-cpdf"}
 
 	// POST should not work (route only handles GET via main.go, but handler itself is callable)
 	// The route registration handles method check, but we test the handler directly

@@ -50,7 +50,7 @@ func TestSQLiteDeferredReadThenWriteReturnsBusySnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "deferred-busy-snapshot.db")
 	dbs := openLockingRuntimeDBsAt(t, path, "")
 
-	if _, err := dbs.DB.Exec(`
+	if _, err := fixtureHandlerExec(t, dbs.DB, `
 		CREATE TABLE snapshot_probe (id INTEGER PRIMARY KEY, value TEXT NOT NULL);
 		INSERT INTO snapshot_probe (id, value) VALUES (1, 'initial')
 	`); err != nil {

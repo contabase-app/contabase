@@ -1,0 +1,765 @@
+/* Carteira ContaBase — Dashboard premium.
+   Escopo exclusivo do Dashboard: tokens, shell e componentes carregados apenas
+   nesta página. Nenhum estilo daqui alcança Faturas ou outras páginas. */
+
+/* --- Tokens do tema (Dashboard) -------------------------------------------- */
+
+/* A base estrutural, o acento e a semântica vêm de ui-tokens.css/app-shell.css.
+   O Dashboard declara aqui apenas o que é exclusivo da sua identidade Premium:
+   paleta determinística de categorias e o tom neutro dos seus medidores. */
+
+html[data-theme="dark"] .cb-v2-body,
+html[data-theme="dark"] .cb-v2 {
+    /* Paleta controlada e determinística para categorias sem cor própria. */
+    --wallet-cat-0: #8b90a4;
+    --wallet-cat-1: #a78bfa;
+    --wallet-cat-2: #2dd4bf;
+    --wallet-cat-3: #fbbf24;
+    --wallet-cat-4: #f472b6;
+    --wallet-cat-5: #60a5fa;
+    --v2-tone-soft: var(--v2-surface-raised);
+}
+
+html[data-theme="light"] .cb-v2-body,
+html[data-theme="light"] .cb-v2 {
+    --wallet-cat-0: #667086;
+    --wallet-cat-1: #6d4de0;
+    --wallet-cat-2: #0f766e;
+    --wallet-cat-3: #b45309;
+    --wallet-cat-4: #be185d;
+    --wallet-cat-5: #1d4ed8;
+    --v2-tone-soft: var(--v2-surface-raised);
+    color-scheme: light;
+}
+
+/* Fundo do Dashboard: gradiente mínimo na cor de identidade para separar
+   canvas, header e superfícies sem criar uma região preta uniforme. */
+html[data-theme="dark"] .cb-v2-body,
+html[data-theme="dark"] .cb-v2 {
+    background:
+        radial-gradient(125% 62% at 50% -12%, color-mix(in srgb, var(--v2-accent) 15%, transparent) 0%, transparent 62%),
+        var(--v2-canvas);
+}
+html[data-theme="light"] .cb-v2-body,
+html[data-theme="light"] .cb-v2 {
+    background:
+        radial-gradient(125% 62% at 50% -12%, color-mix(in srgb, var(--v2-accent) 7%, transparent) 0%, transparent 58%),
+        var(--v2-canvas);
+}
+
+/* --- Base ------------------------------------------------------------------- */
+
+.wallet {
+    /* O painel do Dashboard é o mesmo painel canônico (.ui-panel): mesmos
+       tokens de padding, raio e sombra. Os nomes --wallet-* permanecem como
+       aliases de composição, nunca como uma segunda geometria. */
+    --wallet-pad: var(--ui-panel-pad);
+    --wallet-radius: var(--ui-radius-panel);
+    --wallet-shadow: var(--ui-shadow-panel);
+    max-width: 1680px;
+    margin: 0 auto;
+    padding-top: 30px;
+    font-variant-numeric: tabular-nums;
+}
+.wallet [hidden] { display: none !important; }
+.privacy-enabled .wallet [data-sensitive] { visibility: hidden; user-select: none; }
+.privacy-enabled .wallet :is(strong, span, p, dd, small)[data-sensitive] { position: relative; }
+.privacy-enabled .wallet :is(strong, span, p, dd, small)[data-sensitive]::after { content: "••••"; visibility: visible; position: absolute; inset: 0; color: var(--v2-muted); letter-spacing: .12em; }
+.privacy-enabled .wallet-card :is(strong, span, small)[data-sensitive]::after { color: #ffffffcc; }
+.wallet h1, .wallet h2, .wallet p, .wallet dl, .wallet dd { margin: 0; }
+.wallet button, .wallet a { -webkit-tap-highlight-color: transparent; }
+.wallet button { cursor: pointer; }
+.wallet :is(a, button):focus-visible { outline: 2px solid var(--v2-accent-strong); outline-offset: 3px; }
+.wallet .is-positive { color: var(--v2-positive); }
+.wallet .is-negative { color: var(--v2-danger); }
+
+/* --- Cabeçalho da página ----------------------------------------------------- */
+
+.wallet-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 20px; }
+/* O título do Dashboard é um heading de identidade (saudação), um degrau
+   abaixo do page title canônico. A escala vem de ui-tokens.css; não há
+   font-size solto. */
+.wallet-heading h1 { color: var(--ui-text); font-size: var(--ui-fs-display); font-weight: var(--ui-fw-display); letter-spacing: -.03em; }
+.wallet-heading p { color: var(--ui-text-muted); font-size: var(--ui-fs-md); margin-top: 7px; }
+.wallet-shortcuts { display: flex; align-items: center; gap: 8px; }
+.wallet-shortcuts a { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 14px; border: 1px solid var(--v2-border); border-radius: 999px; background: var(--v2-surface); color: var(--v2-muted); font-size: 12px; font-weight: 550; box-shadow: var(--wallet-shadow); transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease; }
+.wallet-shortcuts svg { width: 14px; height: 14px; }
+.wallet-shortcuts a:hover { color: var(--v2-text); border-color: color-mix(in srgb, var(--v2-accent) 45%, var(--v2-border)); background: var(--v2-surface-hover); }
+
+/* --- Região 1: posição financeira -------------------------------------------
+   Saldo total dominante; reservado e disponível em superfície secundária. */
+
+.wallet-position { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; margin-bottom: 18px; }
+.wallet-kpi { position: relative; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 4px; padding: 18px 20px; border: 1px solid var(--v2-border); border-radius: var(--wallet-radius); background: var(--v2-surface); box-shadow: var(--wallet-shadow); }
+.wallet-kpi-total { background: linear-gradient(135deg, color-mix(in srgb, var(--v2-accent) 13%, var(--v2-surface)) 0%, var(--v2-surface) 62%); }
+.wallet-total-label { color: var(--v2-muted); font-size: 13px; font-weight: 550; }
+.wallet .cb-v2-balance { font-size: 34px; font-weight: 650; letter-spacing: -.035em; line-height: 1.15; padding-right: 44px; }
+.wallet-trend { display: flex; align-items: center; gap: 8px; margin-top: 9px; color: var(--v2-muted); font-size: 12px; }
+.wallet-trend-chip { padding: 2px 9px; border-radius: 999px; background: color-mix(in srgb, var(--v2-positive) 15%, transparent); color: var(--v2-positive); font-size: 11.5px; font-weight: 650; }
+.wallet-trend-chip.is-negative { background: color-mix(in srgb, var(--v2-danger) 15%, transparent); color: var(--v2-danger); }
+.wallet-privacy { position: absolute; top: 14px; right: 14px; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--v2-border); border-radius: 10px; background: var(--v2-surface-raised); color: var(--v2-muted); }
+/* Área acionável de 44px sem aumentar o botão visual nem deslocar o saldo. */
+.wallet-privacy::after { content: ""; position: absolute; inset: -5px; }
+.wallet-privacy:hover { color: var(--v2-text); background: var(--v2-surface-hover); }
+.wallet-privacy svg { width: 15px; height: 15px; }
+.wallet-kpi-secondary { gap: 0; padding: 4px 20px; }
+.wallet-kpi-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 3px 10px; padding: 11px 0; border-bottom: 1px solid var(--v2-border); }
+.wallet-kpi-row:last-child { border-bottom: 0; }
+.wallet-kpi-row small { grid-column: 1 / -1; padding-left: 16px; color: var(--v2-subtle); font-size: 11.5px; }
+.wallet-kpi-dot { width: 6px; height: 6px; border-radius: 50%; transform: translateY(-1px); }
+.wallet-kpi-dot.is-reserved { background: var(--v2-accent); }
+.wallet-kpi-dot.is-free { background: var(--v2-info); }
+.wallet-kpi-label { color: var(--v2-muted); font-size: 12.5px; font-weight: 550; }
+.wallet-kpi-value { color: var(--v2-text); font-size: 19px; font-weight: 630; letter-spacing: -.02em; text-align: right; overflow-wrap: anywhere; }
+.wallet-trend-row { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin-top: 9px; }
+.wallet-trend { margin-top: 0; }
+.wallet-evolution-toggle { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; margin-right: -8px; margin-left: auto; padding: 0 8px; border: 0; border-radius: 8px; background: transparent; color: var(--v2-accent-strong); font-size: 11.5px; font-weight: 620; }
+.wallet-evolution-toggle:hover { background: color-mix(in srgb, var(--v2-accent) 10%, transparent); }
+.wallet-evolution-toggle svg { width: 13px; height: 13px; }
+.wallet-evolution-toggle .wallet-evolution-chevron { transition: transform 160ms ease; }
+.wallet-evolution-toggle[aria-expanded="true"] .wallet-evolution-chevron { transform: rotate(180deg); }
+
+/* --- Evolução do saldo (painel expansível no KPI de saldo total) ------------ */
+
+.wallet-evolution { margin-bottom: 18px; padding-bottom: 16px; }
+.wallet-evolution.is-entering { animation: wallet-evolution-enter 180ms ease both; }
+@keyframes wallet-evolution-enter {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.wallet-evolution-heading { align-items: flex-start; margin-bottom: 14px; }
+.wallet-evolution-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; min-width: 0; }
+.wallet-evolution-status { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--v2-accent) 12%, transparent); color: var(--v2-accent-strong); font-size: 10px; font-weight: 650; letter-spacing: .02em; white-space: nowrap; }
+.wallet-evolution-status.is-partial { background: color-mix(in srgb, var(--v2-warning) 14%, transparent); color: var(--v2-warning); }
+.wallet-evolution-status.is-unavailable { background: color-mix(in srgb, var(--v2-danger) 14%, transparent); color: var(--v2-danger); }
+.wallet-evolution-composition { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--v2-info) 13%, transparent); color: var(--v2-info); font-size: 10px; font-weight: 650; letter-spacing: .02em; white-space: nowrap; }
+.wallet-period { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: var(--ui-border-width) solid var(--ui-border); border-radius: var(--ui-radius-tab); background: var(--ui-tab-bg); }
+.wallet-period button { min-height: 30px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--ui-radius-tab-item); background: transparent; color: var(--ui-text-muted); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.wallet-period button:hover { background: var(--ui-surface-hover); color: var(--ui-text); }
+.wallet-period button:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+.wallet-period button[aria-pressed="true"] { border-color: var(--ui-tab-active-border); background: var(--ui-tab-active-bg); color: var(--ui-tab-active-fg); box-shadow: inset 0 1px 0 #ffffff14; }
+.wallet-period-label-short { display: none; }
+.wallet-evolution-close { display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 auto; border: 1px solid var(--v2-border); border-radius: 50%; background: var(--v2-surface-raised); color: var(--v2-muted); }
+.wallet-evolution-close:hover { background: var(--v2-surface-hover); color: var(--v2-text); }
+.wallet-evolution-close svg { width: 15px; height: 15px; }
+.wallet-evolution-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 24px; margin: 0 0 4px; }
+.wallet-evolution-stat { display: flex; align-items: baseline; gap: 8px; margin: 0; }
+.wallet-evolution-stat > span { color: var(--v2-subtle); font-size: 11px; }
+.wallet-evolution-stat > strong { color: var(--v2-text); font-size: 13px; font-weight: 650; letter-spacing: -.01em; }
+.wallet-evolution-stat > strong.is-positive { color: var(--v2-positive); }
+.wallet-evolution-stat > strong.is-negative { color: var(--v2-danger); }
+.wallet-evolution-plot { position: relative; min-height: 292px; margin-top: 4px; }
+.wallet-evolution-frame { position: relative; border-radius: 12px; }
+.wallet-evolution-frame:focus-visible { outline: 2px solid var(--v2-accent-strong); outline-offset: 4px; }
+.wallet-evolution-svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; }
+.wallet-evolution-loading,
+.wallet-evolution-message { display: flex; min-height: 292px; padding: 24px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border: 1px dashed var(--v2-border); border-radius: 14px; background: var(--v2-surface-raised); color: var(--v2-muted); font-size: 12.5px; text-align: center; }
+.wallet-evolution-message p { max-width: 54ch; line-height: 1.55; }
+.wallet-evolution-spinner { width: 22px; height: 22px; border: 2px solid var(--v2-border); border-top-color: var(--v2-accent); border-radius: 50%; animation: wallet-evolution-spin .8s linear infinite; }
+@keyframes wallet-evolution-spin { to { transform: rotate(360deg); } }
+.wallet-evolution-tooltip { pointer-events: none; filter: drop-shadow(0 10px 18px #00000080); }
+.wallet-evolution-tooltip-bg { fill: var(--v2-surface-raised); stroke: var(--v2-border-strong); stroke-width: 1; }
+.wallet-evolution-tooltip-date { fill: var(--v2-subtle); font-family: inherit; font-size: 10.5px; font-weight: 600; }
+.wallet-evolution-tooltip-value { fill: var(--v2-text); font-family: inherit; font-size: 13px; font-weight: 650; letter-spacing: -.01em; }
+.wallet-evolution-grid { stroke: var(--v2-border); stroke-width: 1; }
+.wallet-evolution-zero { stroke: var(--v2-border-strong); stroke-width: 1; stroke-dasharray: 3 4; }
+.wallet-evolution-axis { fill: var(--v2-subtle); font-family: inherit; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.wallet-evolution-axis-x { text-anchor: middle; }
+.wallet-evolution-axis-y { text-anchor: end; }
+.wallet-evolution-area { fill: url(#wallet-balance-gradient); }
+.wallet-evolution-area-start { stop-color: var(--v2-accent); stop-opacity: .30; }
+.wallet-evolution-area-mid { stop-color: var(--v2-accent); stop-opacity: .10; }
+.wallet-evolution-area-end { stop-color: var(--v2-accent); stop-opacity: 0; }
+html[data-theme="light"] .wallet-evolution-area-start { stop-opacity: .18; }
+html[data-theme="light"] .wallet-evolution-area-mid { stop-opacity: .06; }
+.wallet-evolution-line { fill: none; stroke: var(--v2-accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.wallet-evolution-dot { fill: var(--v2-surface); stroke: var(--v2-accent); stroke-width: 1.6; }
+.wallet-evolution-active-dot { fill: var(--v2-accent); stroke: var(--v2-surface); stroke-width: 2.5; }
+.wallet-evolution-crosshair { stroke: color-mix(in srgb, var(--v2-accent) 42%, transparent); stroke-width: 1; stroke-dasharray: 3 4; }
+.wallet-evolution-table { margin-top: 14px; border-top: 1px solid var(--v2-border); }
+.wallet-evolution-table summary,
+.wallet-evolution-footnote summary { display: flex; align-items: center; min-height: 38px; color: var(--v2-accent-strong); font-size: 11.5px; font-weight: 600; cursor: pointer; list-style: none; }
+.wallet-evolution-table summary::-webkit-details-marker,
+.wallet-evolution-footnote summary::-webkit-details-marker { display: none; }
+.wallet-evolution-table summary::after,
+.wallet-evolution-footnote summary::after { content: ""; width: 6px; height: 6px; margin-left: 8px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); transition: transform 140ms ease; }
+.wallet-evolution-table[open] > summary::after,
+.wallet-evolution-footnote details[open] > summary::after { transform: rotate(-135deg); }
+.wallet-evolution-table-scroll { max-height: 240px; overflow: auto; border: 1px solid var(--v2-border); border-radius: 10px; }
+.wallet-evolution-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.wallet-evolution-table th { position: sticky; top: 0; z-index: 1; padding: 8px 10px; background: var(--v2-surface-raised); color: var(--v2-subtle); font-size: 10.5px; font-weight: 650; text-align: left; }
+.wallet-evolution-table td { padding: 7px 10px; border-top: 1px solid var(--v2-border); color: var(--v2-muted); }
+.wallet-evolution-table td:last-child { text-align: right; color: var(--v2-text); font-variant-numeric: tabular-nums; }
+.wallet-evolution-footnote { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--v2-border); color: var(--v2-subtle); font-size: 11px; }
+.wallet-evolution-footnote > p { display: flex; align-items: flex-start; gap: 6px; line-height: 1.5; }
+.wallet-evolution-footnote > p svg { width: 13px; height: 13px; flex: 0 0 auto; margin-top: 1px; }
+.wallet-evolution-footnote .wallet-evolution-caveat { margin-top: 6px; color: var(--v2-warning); font-size: 11px; }
+.wallet-evolution-footnote details { margin-top: 2px; }
+.wallet-evolution-footnote ul { display: grid; gap: 5px; margin: 4px 0 0; padding-left: 16px; line-height: 1.5; }
+
+/* --- Malha ------------------------------------------------------------------
+   Desktop: duas colunas de fluxo vertical independente. Esquerda com contas e
+   compromissos; direita com cartões, limites e metas. Nenhuma linha do grid é
+   compartilhada, então a coluna mais curta termina sem vazio artificial.
+   Tablet/mobile: uma coluna na ordem aprovada (contas → compromissos →
+   cartões → limites → metas), preservada pela ordem real do DOM. */
+
+.wallet-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.26fr) minmax(0, 1fr);
+    align-items: start;
+    gap: 18px;
+}
+.wallet-column {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-width: 0;
+}
+.wallet-section {
+    min-width: 0;
+    padding: var(--wallet-pad);
+    border: 1px solid var(--v2-border);
+    border-radius: var(--wallet-radius);
+    background: var(--v2-surface);
+    box-shadow: var(--wallet-shadow);
+}
+
+/* --- Cabeçalho de painel ------------------------------------------------------ */
+
+.wallet-section-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
+.wallet-section-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.wallet-section-icon { display: grid; place-items: center; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 11px; background: color-mix(in srgb, var(--v2-accent) 14%, transparent); color: var(--v2-accent-strong); }
+.wallet-section-icon svg { width: 16px; height: 16px; }
+.wallet-cards .wallet-section-icon { background: color-mix(in srgb, var(--v2-info) 14%, transparent); color: var(--v2-info); }
+.wallet-commitments .wallet-section-icon { background: color-mix(in srgb, var(--v2-warning) 14%, transparent); color: var(--v2-warning); }
+.wallet-limits .wallet-section-icon { background: var(--v2-surface-raised); color: var(--v2-muted); }
+.wallet-goals .wallet-section-icon { background: color-mix(in srgb, var(--v2-positive) 13%, transparent); color: var(--v2-positive); }
+.wallet-section-heading h2, .wallet .cb-v2-panel-header h2 { color: var(--v2-text); font-size: 17px; font-weight: 620; letter-spacing: -.015em; }
+.wallet-section-heading p, .wallet .cb-v2-panel-header p { color: var(--v2-subtle); font-size: 12.5px; margin-top: 3px; }
+.wallet-count { color: var(--v2-subtle); font-size: 12.5px; font-weight: 500; padding-left: 6px; }
+.wallet .wallet-link, .wallet .cb-v2-text-link { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 999px; background: var(--v2-surface-raised); color: var(--v2-muted); font-size: 12px; font-weight: 550; white-space: nowrap; transition: color 160ms ease, border-color 160ms ease; }
+.wallet-link svg { width: 13px; height: 13px; }
+.wallet-link:hover, .wallet .cb-v2-text-link:hover { color: var(--v2-accent-strong); border-color: color-mix(in srgb, var(--v2-accent) 45%, var(--v2-border)); }
+
+/* --- Região 2: contas -------------------------------------------------------- */
+
+.wallet-accounts .wallet-section-heading h2 { font-size: 18px; }
+.wallet .cb-v2-account-list { grid-template-columns: minmax(0, 1fr); margin: 0; }
+@media (min-width: 1760px) {
+    .wallet-accounts .cb-v2-account-list { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 40px; }
+}
+.wallet .cb-v2-account-row {
+    position: relative;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 14px;
+    padding: 13px 10px;
+    margin-inline: -10px;
+    border-bottom: 0;
+    border-radius: 10px;
+    -webkit-tap-highlight-color: rgba(139, 92, 246, .14);
+    transition: background-color 160ms ease;
+}
+/* O separador é independente do raio do hover: permanece reto e alinhado,
+   sem curvar nas pontas nem criar uma borda "de card" em cada linha. */
+.wallet .cb-v2-account-row::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 1px;
+    background: var(--v2-border);
+    pointer-events: none;
+}
+.wallet .cb-v2-account-row:last-child::after { display: none; }
+@media (min-width: 1760px) {
+    .wallet-accounts .cb-v2-account-row:nth-last-child(-n+2)::after { display: none; }
+}
+@media (hover: hover) and (pointer: fine) {
+    .wallet .cb-v2-account-row:hover { background: color-mix(in srgb, var(--v2-accent) 6%, transparent); }
+    .wallet .cb-v2-account-row:hover .cb-v2-account-copy strong,
+    .wallet .cb-v2-account-row:hover .cb-v2-account-amount strong { color: var(--v2-text); }
+}
+@media (hover: none) {
+    /* Em toque não existe hover persistente: o feedback fica no :active. */
+    .wallet .cb-v2-account-row:hover { background: transparent; }
+    .wallet .cb-v2-account-row:hover .cb-v2-account-copy strong,
+    .wallet .cb-v2-account-row:hover .cb-v2-account-amount strong { color: var(--v2-text); }
+}
+.wallet .cb-v2-account-row:active { background: color-mix(in srgb, var(--v2-accent) 9%, transparent); }
+.wallet .cb-v2-account-row:focus-visible {
+    background: color-mix(in srgb, var(--v2-accent) 8%, transparent);
+    outline: 2px solid var(--v2-accent);
+    outline-offset: -2px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .wallet .cb-v2-account-row { transition: none; }
+}
+.wallet .cb-v2-provider-mark { width: 38px; height: 38px; border-radius: 11px; }
+.wallet .cb-v2-provider-mark img { width: 100%; height: 100%; object-fit: contain; }
+.wallet .cb-v2-account-copy strong { font-size: 14px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
+.wallet .cb-v2-account-copy small { color: var(--v2-subtle); font-size: 12px; margin-top: 3px; }
+.wallet .cb-v2-account-amount { text-align: right; }
+.wallet .cb-v2-account-amount strong { font-size: 16px; font-weight: 640; letter-spacing: -.012em; white-space: normal; overflow-wrap: anywhere; }
+.wallet .cb-v2-account-amount small { font-size: 12px; margin-top: 3px; }
+.wallet-expand { display: none; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; margin-top: 12px; padding: 0 16px; border: 1px solid var(--v2-border); border-radius: 999px; background: var(--v2-surface-raised); color: var(--v2-accent-strong); font-size: 12.5px; font-weight: 600; }
+.wallet .wallet-expand[hidden] { display: none; }
+.wallet-expand:hover { background: var(--v2-surface-hover); }
+.wallet-expand svg { width: 16px; height: 16px; }
+.wallet-expand[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+/* --- Região 3: principais categorias ---------------------------------------- */
+
+.wallet-categories { --wallet-cat-color: var(--wallet-cat-1); }
+.wallet-categories[data-tone="0"] { --wallet-cat-color: var(--wallet-cat-0); }
+.wallet-categories[data-tone="1"] { --wallet-cat-color: var(--wallet-cat-1); }
+.wallet-categories[data-tone="2"] { --wallet-cat-color: var(--wallet-cat-2); }
+.wallet-categories[data-tone="3"] { --wallet-cat-color: var(--wallet-cat-3); }
+.wallet-categories[data-tone="4"] { --wallet-cat-color: var(--wallet-cat-4); }
+.wallet-categories[data-tone="5"] { --wallet-cat-color: var(--wallet-cat-5); }
+.wallet-category-row { --wallet-cat-color: var(--wallet-cat-1); }
+.wallet-category-row[data-tone="0"] { --wallet-cat-color: var(--wallet-cat-0); }
+.wallet-category-row[data-tone="1"] { --wallet-cat-color: var(--wallet-cat-1); }
+.wallet-category-row[data-tone="2"] { --wallet-cat-color: var(--wallet-cat-2); }
+.wallet-category-row[data-tone="3"] { --wallet-cat-color: var(--wallet-cat-3); }
+.wallet-category-row[data-tone="4"] { --wallet-cat-color: var(--wallet-cat-4); }
+.wallet-category-row[data-tone="5"] { --wallet-cat-color: var(--wallet-cat-5); }
+.wallet-categories .wallet-section-icon { background: color-mix(in srgb, var(--v2-accent) 14%, transparent); color: var(--v2-accent-strong); }
+.wallet-categories-period { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: -4px 0 12px; color: var(--v2-subtle); font-size: 11.5px; }
+.wallet-categories-period-current { color: var(--v2-muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.wallet-categories-period-vs { color: var(--v2-subtle); font-variant-numeric: tabular-nums; }
+.wallet-category-list { display: flex; flex-direction: column; }
+.wallet-category-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+    padding: 12px 8px;
+    margin-inline: -8px;
+    border-radius: 10px;
+    transition: background-color 160ms ease;
+}
+.wallet-category-row::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 1px;
+    background: var(--v2-border);
+    pointer-events: none;
+}
+.wallet-category-row:last-child::after { display: none; }
+@media (hover: hover) and (pointer: fine) {
+    .wallet-category-row:hover { background: color-mix(in srgb, var(--v2-accent) 5%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .wallet-category-row { transition: none; }
+}
+.wallet-category-icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--wallet-cat-color) 16%, transparent);
+    color: color-mix(in srgb, var(--wallet-cat-color) 82%, var(--v2-text));
+}
+.wallet-category-icon svg { width: 15px; height: 15px; }
+.wallet-category-copy { display: grid; gap: 5px; min-width: 0; }
+.wallet-category-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
+.wallet-category-head strong { min-width: 0; color: var(--v2-text); font-size: 13px; font-weight: 600; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
+.wallet-category-amount { flex: 0 0 auto; color: var(--v2-text); font-size: 13.5px; font-weight: 640; letter-spacing: -.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wallet-category-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+.wallet-category-variation { display: inline-flex; align-items: center; gap: 3px; color: var(--v2-subtle); font-size: 11.5px; font-weight: 570; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Redução de gasto não é automaticamente sucesso: fica neutra, com o sinal −.
+   Só o aumento relevante recebe destaque de atenção. */
+.wallet-category-variation.is-down { color: var(--v2-subtle); }
+.wallet-category-variation.is-up.is-alert { color: var(--v2-warning); }
+.wallet-category-variation.is-new { color: var(--v2-muted); font-weight: 550; }
+.wallet-category-share { color: var(--v2-subtle); font-size: 10.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wallet-category-meter {
+    display: block;
+    width: 100%;
+    height: 5px;
+    appearance: none;
+    -webkit-appearance: none;
+    overflow: hidden;
+    border: 0;
+    border-radius: 999px;
+    background: var(--v2-progress-track);
+}
+.wallet-category-meter::-webkit-progress-bar { background: var(--v2-progress-track); border-radius: 999px; }
+.wallet-category-meter::-webkit-progress-value { background: color-mix(in srgb, var(--wallet-cat-color) 82%, var(--v2-text)); border-radius: 999px; }
+.wallet-category-meter::-moz-progress-bar { background: color-mix(in srgb, var(--wallet-cat-color) 82%, var(--v2-text)); border-radius: 999px; }
+.wallet-categories-note { display: flex; align-items: flex-start; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--v2-border); color: var(--v2-subtle); font-size: 10.5px; line-height: 1.4; }
+.wallet-categories-note svg { flex: 0 0 auto; width: 12px; height: 12px; margin-top: 1px; }
+.wallet-categories-empty { margin-top: 2px; }
+
+/* --- Região 4: compromissos (abas segmentadas) ------------------------------- */
+
+.wallet .cb-v2-tabs { display: inline-flex; margin: 0 0 4px; }
+.wallet .cb-v2-tabs button { min-height: 32px; padding-inline: 12px; font-size: 12px; }
+.wallet .cb-v2-tabs button > span { min-width: 0; height: auto; padding: 0 0 0 2px; background: transparent; color: var(--ui-text-subtle); font-size: 11px; }
+.wallet .cb-v2-action-total { margin: 14px 0 2px; color: var(--v2-subtle); font-size: 12px; }
+.wallet .cb-v2-action-total strong { color: var(--v2-text); font-weight: 650; }
+.wallet .cb-v2-action-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 11px 8px; margin-inline: -8px; border-bottom: 1px solid var(--v2-border); border-radius: 10px; transition: background-color 140ms ease; }
+.wallet .cb-v2-action-row:hover { background: color-mix(in srgb, var(--v2-accent) 7%, transparent); }
+.wallet .cb-v2-action-row:last-child { border-bottom: 0; }
+.wallet .cb-v2-action-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--v2-warning); }
+.wallet .cb-v2-action-receivable .cb-v2-action-dot { background: var(--v2-positive); }
+.wallet .cb-v2-action-row.is-overdue .cb-v2-action-dot { background: var(--v2-danger); }
+.wallet-action-main { display: grid; gap: 3px; min-width: 0; }
+.wallet .cb-v2-action-row strong { font-size: 13px; font-weight: 570; white-space: normal; overflow-wrap: anywhere; }
+.wallet .cb-v2-action-row small { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--v2-subtle); font-size: 11.5px; }
+.wallet-action-date { color: inherit; }
+.wallet .cb-v2-action-row.is-overdue .wallet-action-date { color: color-mix(in srgb, var(--v2-danger) 72%, var(--v2-muted)); }
+.wallet-action-flag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--v2-warning) 14%, transparent); color: var(--v2-warning); font-size: 10.5px; font-weight: 600; white-space: nowrap; }
+.wallet .cb-v2-action-row.is-overdue .wallet-action-flag { background: color-mix(in srgb, var(--v2-danger) 15%, transparent); color: var(--v2-danger); }
+/* No tema claro o texto de perigo sobre o fundo suave do badge precisa de mais
+   peso para manter 4,5:1; a semântica de perigo não muda. */
+html[data-theme="light"] .wallet .cb-v2-action-row.is-overdue .wallet-action-flag {
+    color: color-mix(in srgb, var(--v2-danger) 90%, #000);
+}
+.wallet .cb-v2-action-receivable .wallet-action-flag { background: color-mix(in srgb, var(--v2-positive) 14%, transparent); color: var(--v2-positive); }
+.wallet .cb-v2-action-row b { font-size: 13px; font-weight: 640; white-space: nowrap; }
+.wallet .cb-v2-action-row.is-overdue:not(.cb-v2-action-receivable) b { color: var(--v2-text); }
+.wallet .cb-v2-action-receivable b { color: var(--v2-positive); }
+.wallet-commitments .cb-v2-action-list .cb-v2-action-row:nth-child(n+5) { display: none; }
+
+/* --- Região 4: cartões ------------------------------------------------------- */
+
+.wallet-cards {
+    /* O trilho é dimensionado pelo espaço real da coluna, não pela viewport:
+       a sidebar pode recolher e a coluna muda de largura sem resize. */
+    padding-bottom: 14px;
+    container-type: inline-size;
+    container-name: wallet-cards;
+}
+.wallet-card-rail { display: flex; gap: 16px; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none; padding: 4px var(--wallet-pad) 16px; margin: 0 calc(var(--wallet-pad) * -1) -8px; scroll-padding-inline: var(--wallet-pad); }
+.wallet-card-rail::-webkit-scrollbar { display: none; }
+.wallet-card {
+    /* Surface, adaptive scheme tokens, shadow and contrast live in
+       credit-cards.css (.cb-card-face). This block keeps only geometry and
+       interactions that belong to the Dashboard composition. */
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    flex: 0 0 clamp(300px, 68%, 480px);
+    min-width: 0;
+    padding: 16px 18px;
+    scroll-snap-align: start;
+    border: 0;
+    border-radius: 16px;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    transition: box-shadow 180ms ease, transform 180ms ease;
+}
+/* O shell aplica "color: inherit" a links; o cartão fixa o próprio foreground. */
+.wallet .wallet-card { color: var(--card-fg); }
+@media (hover: hover) {
+    .wallet-card:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px var(--card-hover-ring), 0 20px 38px -18px #000000a6; }
+}
+.wallet .wallet-card:focus-visible { outline: 2px solid var(--card-fg); outline-offset: -6px; }
+.wallet-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; width: 100%; min-width: 0; }
+.wallet-card-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.wallet-card-status-block { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: 0 0 auto; text-align: right; }
+.wallet-card-brand { display: grid; place-items: center; flex: 0 0 auto; }
+.wallet-card-brand img { width: 34px; height: 34px; border-radius: 9px; object-fit: contain; }
+.wallet-card-monogram { font-size: 17px; font-weight: 650; overflow-wrap: anywhere; }
+.wallet-card-name { font-size: 15px; font-weight: 600; line-height: 1.3; min-width: 0; max-width: 100%; overflow-wrap: anywhere; letter-spacing: -.012em; }
+.wallet-card-invoice { display: grid; gap: 3px; margin-top: auto; padding-top: 12px; }
+.wallet-card-invoice-label { color: var(--card-fg-muted); font-size: 11px; font-weight: 550; letter-spacing: .03em; }
+.wallet-card-invoice-value { font-size: 22px; font-weight: 640; letter-spacing: -.02em; line-height: 1.25; max-width: 100%; overflow-wrap: anywhere; }
+.wallet-card .cb-v2-credit-card-dot { width: 5px; height: 5px; }
+.wallet-card-due { color: var(--card-fg-soft); font-size: 11px; font-weight: 500; white-space: nowrap; }
+.wallet-card-closing { color: var(--card-fg-muted); font-size: 10.5px; white-space: nowrap; }
+.wallet-card-limit { display: grid; gap: 6px; width: 100%; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--card-line); }
+.wallet-card-limit-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 11px; }
+.wallet-card-limit-head > span:first-child { color: var(--card-fg-muted); }
+.wallet-card-limit-head > strong { color: var(--card-fg-soft); font-size: 12px; font-weight: 600; letter-spacing: -.01em; }
+.wallet-card-limit-head > small { color: var(--card-fg-muted); font-size: 11px; margin-left: auto; }
+.wallet-card-limit .cb-card-progress { width: 100%; }
+.wallet-card-footer { display: flex; align-items: center; justify-content: space-between; align-self: stretch; margin-top: 7px; padding-top: 5px; font-size: 11.5px; color: var(--card-fg-muted); }
+.wallet-card-footer svg { width: 17px; height: 17px; stroke-width: 1.5; color: var(--card-fg-muted); }
+.wallet-card-navigation { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; padding-inline: 2px; }
+.wallet-card-navigation p { color: var(--v2-muted); font-size: 12px; }
+.wallet-card-navigation > div:last-child { display: flex; gap: 8px; }
+.wallet-control { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--v2-border); border-radius: 50%; background: var(--v2-surface-raised); color: var(--v2-text); transition: background-color 140ms ease, border-color 140ms ease; }
+.wallet-control:hover:not(:disabled) { background: var(--v2-surface-hover); border-color: var(--v2-border-strong); }
+.wallet-control:disabled { opacity: .35; cursor: default; }
+.wallet-control svg { width: 18px; height: 18px; }
+.wallet .cb-v2-all-invoices-slide { display: inline-flex; margin-top: 12px; color: var(--v2-accent-strong); min-height: 40px; align-items: center; font-size: 12.5px; font-weight: 550; }
+
+/* --- Região 5: limites -------------------------------------------------------- */
+
+.wallet .cb-v2-progress-list { display: grid; gap: 18px; margin-top: 4px; }
+.wallet .cb-v2-progress-item { min-width: 0; }
+/* O padrão neutro vem de dashboard.css (0,1,0). Não o repetimos aqui com
+   .wallet (0,2,0), pois isso exigiria duplicar cada tom semântico e faria
+   qualquer tom novo herdado de ui_tones.go virar neutro. Os seletores abaixo
+   mantêm a especificidade necessária para os tons já existentes. */
+.wallet .cb-v2-progress-item.cb-v2-meter--ok { --meter-tone: var(--v2-tone-ok); }
+.wallet .cb-v2-progress-item.cb-v2-meter--attention { --meter-tone: var(--v2-tone-attention); }
+.wallet .cb-v2-progress-item.cb-v2-meter--near { --meter-tone: var(--v2-tone-near); }
+.wallet .cb-v2-progress-item.cb-v2-meter--exceeded { --meter-tone: var(--v2-tone-exceeded); }
+.wallet .cb-v2-progress-item.cb-v2-meter--danger { --meter-tone: var(--v2-tone-danger); }
+.wallet .cb-v2-progress-item.cb-v2-meter--info { --meter-tone: var(--v2-tone-info); }
+.wallet .cb-v2-progress-item.cb-v2-meter--neutral,
+.wallet .cb-v2-progress-item.is-no-limit { --meter-tone: var(--v2-tone-neutral); }
+.wallet .cb-v2-progress-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wallet .cb-v2-progress-item-head > strong { font-size: 13px; font-weight: 580; white-space: normal; }
+.wallet .cb-v2-progress-item-head > span:last-child { flex-basis: 100%; padding-left: 21px; color: var(--v2-subtle); font-size: 12px; text-align: left; white-space: normal; }
+.wallet .cb-v2-progress-icon { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 7px; background: color-mix(in srgb, var(--meter-tone) 14%, transparent); color: var(--meter-tone); }
+.wallet .cb-v2-progress-icon svg { width: 12px; height: 12px; }
+.wallet .cb-v2-progress-icon .sr-only { position: absolute; }
+.wallet .cb-v2-progress-bar { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.wallet .cb-v2-meter-track { flex: 1 1 auto; height: 7px; appearance: none; -webkit-appearance: none; border: 0; border-radius: 999px; background: var(--v2-progress-track); overflow: hidden; }
+.wallet .cb-v2-meter-track::-webkit-progress-bar { background: var(--v2-progress-track); border-radius: 999px; }
+.wallet .cb-v2-meter-track::-webkit-progress-value { background: var(--meter-tone); border-radius: 999px; }
+.wallet .cb-v2-meter-track::-moz-progress-bar { background: var(--meter-tone); border-radius: 999px; }
+.wallet .cb-v2-progress-label { flex: 0 0 auto; min-width: 34px; color: var(--meter-tone); font-size: 11.5px; font-weight: 650; text-align: right; }
+.wallet .cb-v2-progress-sep { color: var(--v2-subtle); font-size: 11px; }
+.wallet .cb-v2-progress-note { color: var(--v2-subtle); font-size: 11.5px; }
+.wallet-limits .cb-v2-progress-item:nth-child(n+4) { display: none; }
+.wallet .cb-v2-progress-item.is-no-limit .cb-v2-progress-icon { color: var(--v2-muted); }
+
+/* --- Região 6: metas com anéis ------------------------------------------------ */
+
+.wallet .cb-v2-goals-panel .cb-v2-progress-list { grid-template-columns: 1fr; gap: 0; }
+/* Metas são avanço, não consumo: violeta é o progresso padrão; verde marca
+   alvo próximo/concluído, vermelho reserva negativa, neutro sem objetivo. */
+.wallet .wallet-goal.cb-v2-meter--initial,
+.wallet .wallet-goal.cb-v2-meter--progress,
+.wallet .wallet-goal.cb-v2-meter--info { --meter-tone: var(--v2-tone-progress); }
+.wallet .wallet-goal.cb-v2-meter--ok,
+.wallet .wallet-goal.cb-v2-meter--complete { --meter-tone: var(--v2-tone-complete); }
+.wallet .wallet-goal.cb-v2-meter--exceeded,
+.wallet .wallet-goal.cb-v2-meter--danger { --meter-tone: var(--v2-tone-exceeded); }
+.wallet .wallet-goal.is-no-target { --meter-tone: var(--v2-tone-neutral); }
+.wallet-goal { display: flex; align-items: center; gap: 14px; padding: 11px 0; border-bottom: 1px solid var(--v2-border); }
+.wallet-goal:last-child { border-bottom: 0; }
+.wallet-goal-ring { position: relative; display: grid; place-items: center; flex: 0 0 auto; width: 44px; height: 44px; }
+.wallet-goal-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.wallet-ring-track, .wallet-ring-value { fill: none; stroke-width: 3; }
+.wallet-ring-track { stroke: var(--v2-progress-track); }
+.wallet-ring-value { stroke: var(--meter-tone); stroke-linecap: round; }
+.wallet-goal-ring-label { color: var(--meter-tone); font-size: 10.5px; font-weight: 650; }
+.wallet-goal.is-no-target .wallet-goal-ring-label { color: var(--v2-subtle); }
+.wallet-goal-copy { display: grid; gap: 3px; min-width: 0; }
+.wallet-goal-copy strong { font-size: 13px; font-weight: 590; white-space: normal; overflow-wrap: anywhere; }
+.wallet-goal-copy small { color: var(--v2-subtle); font-size: 11.5px; white-space: normal; overflow-wrap: anywhere; }
+
+/* --- Estados vazios ------------------------------------------------------------ */
+
+.wallet .cb-v2-empty-state { display: grid; justify-items: start; gap: 8px; padding: 14px 0; border: 0; }
+.wallet .cb-v2-empty-state > svg { width: 18px; height: 18px; color: var(--v2-subtle); }
+.wallet .cb-v2-empty-state p { color: var(--v2-muted); font-size: 13px; line-height: 1.55; }
+.wallet .cb-v2-empty-state a { display: inline-flex; align-items: center; min-height: 40px; color: var(--v2-accent-strong); font-size: 13px; font-weight: 550; }
+.wallet .cb-v2-empty-card { display: flex; align-items: center; gap: 14px; padding: 20px; border: 1px dashed var(--v2-border-strong); border-radius: 14px; }
+.wallet .cb-v2-empty-card small { color: var(--v2-subtle); font-size: 12.5px; }
+
+/* --- Notebook (1024-1279) ------------------------------------------------------ */
+
+@media (max-width: 1279px) and (min-width: 1024px) {
+    .wallet-shortcuts { gap: 6px; }
+    .wallet-shortcuts svg { display: none; }
+    .wallet .cb-v2-balance { font-size: 31px; }
+    .wallet-kpi-value { font-size: 17px; }
+}
+
+/* --- Tablet e mobile (≤1023): uma coluna, até 10 contas + expansão ------------- */
+
+@media (max-width: 1023px) {
+    .wallet { padding-top: 24px; }
+    .wallet-heading { align-items: center; }
+    .wallet-evolution-heading { flex-wrap: wrap; }
+    .wallet-shortcuts { display: none; }
+    /* KPIs: Saldo total em largura integral; Reservado e Disponível em duas
+       superfícies compactas, menores que o saldo e sem sobreposição. */
+    .wallet-position { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+    .wallet-kpi-total { padding: 20px 18px 18px; }
+    .wallet .cb-v2-balance { font-size: clamp(25px, 7vw, 33px); padding-right: 42px; white-space: nowrap; overflow-wrap: normal; }
+    .wallet-privacy { top: 10px; right: 10px; width: 32px; height: 32px; }
+    .wallet .wallet-kpi-secondary {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+    .wallet-kpi-secondary .wallet-kpi-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        align-content: center;
+        gap: 2px 7px;
+        min-width: 0;
+        padding: 11px 13px;
+        border: 1px solid var(--v2-border);
+        border-radius: 14px;
+        background: var(--v2-surface);
+    }
+    .wallet-kpi-label { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .wallet-kpi-value { grid-column: 1 / -1; margin-top: 1px; text-align: left; font-size: clamp(12px, 3.9vw, 16.5px); line-height: 1.2; white-space: nowrap; overflow-wrap: normal; }
+    .wallet-kpi-row small { display: none; }
+    .wallet-layout { display: flex; flex-direction: column; align-items: stretch; gap: 14px; }
+    /* As duas colunas do desktop viram uma sequência única no tablet/mobile.
+       display:contents permite posicionar Principais categorias depois de
+       Limites sem duplicar o painel nem alterar a ordem do desktop. */
+    .wallet-column { display: contents; }
+    .wallet-accounts { order: 1; }
+    .wallet-commitments { order: 2; }
+    .wallet-cards { order: 3; }
+    .wallet-limits { order: 4; }
+    .wallet-categories { order: 5; }
+    .wallet-goals { order: 6; }
+    .wallet .cb-v2-account-list { grid-template-columns: 1fr; }
+    .wallet-expand { display: flex; }
+    .wallet-accounts[data-wallet-collapsed="true"] .cb-v2-account-row:nth-child(n+11) { display: none; }
+    .wallet-categories[data-wallet-categories-collapsed="true"] .wallet-category-row:nth-child(n+4) { display: none; }
+    .wallet-card { flex-basis: max(300px, 45%); padding: 20px; }
+    .wallet-card-head { gap: 10px; }
+    .wallet-card-brand img { width: 42px; height: 42px; border-radius: 11px; }
+    .wallet-card-monogram { font-size: 21px; }
+    .wallet-card-name { font-size: 16px; }
+    .wallet-card-invoice { gap: 4px; padding-top: 14px; }
+    .wallet-card-invoice-value { font-size: 24px; }
+    .wallet-card .cb-v2-credit-card-status { font-size: 11px; }
+    .wallet-card .cb-v2-credit-card-status > strong { font-size: 11px; }
+    .wallet-card-due { font-size: 11.5px; }
+    .wallet-card-closing { font-size: 11px; }
+    .wallet-card-limit { gap: 7px; margin-top: 12px; padding-top: 12px; }
+    .wallet-card-limit .cb-card-progress { height: 5px; }
+    .wallet-card-footer { margin-top: 11px; padding-top: 8px; font-size: 12px; }
+    .wallet-card-footer svg { width: 19px; height: 19px; }
+    .wallet-section-heading h2, .wallet .cb-v2-panel-header h2 { font-size: 16px; }
+    .wallet-accounts .wallet-section-heading h2 { font-size: 17px; }
+    .wallet .cb-v2-progress-item-head > strong { font-size: 12.5px; }
+}
+
+/* --- Mobile (699): resumo → contas → compromissos → cartões → limites → metas -- */
+
+@media (max-width: 699px) {
+    .wallet { padding-top: 16px; }
+    .wallet-heading p { display: none; }
+    .wallet-position { gap: 10px; margin-bottom: 14px; }
+    .wallet-kpi { padding: 14px; border-radius: 16px; }
+    .wallet-kpi-total { padding: 18px 15px; }
+    .wallet .cb-v2-balance { font-size: clamp(24px, 7.6vw, 30px); padding-right: 38px; }
+    .wallet-privacy { top: 10px; right: 10px; width: 30px; height: 30px; }
+    .wallet-privacy::after { inset: -7px; }
+    .wallet-kpi-secondary { gap: 8px; }
+    .wallet-kpi-secondary .wallet-kpi-row { padding: 10px; gap: 2px 6px; }
+    .wallet-kpi-label { font-size: 11px; }
+    .wallet-kpi-value { font-size: clamp(12px, 3.9vw, 16px); }
+    .wallet-layout { gap: 14px; }
+    .wallet-section-heading { margin-bottom: 14px; }
+    .wallet-section-heading h2, .wallet .cb-v2-panel-header h2 { font-size: 16px; }
+    .wallet-accounts .wallet-section-heading h2 { font-size: 17px; }
+    .wallet-section-icon { width: 30px; height: 30px; border-radius: 9px; }
+    .wallet-card { flex-basis: 92%; padding: 18px; }
+    .wallet-card-head { gap: 8px; }
+    .wallet-card-brand img { width: 40px; height: 40px; }
+    .wallet-card-name { font-size: 15.5px; }
+    .wallet-card-invoice-value { font-size: 23px; }
+    .wallet-card-navigation { flex-wrap: wrap; }
+    .wallet .cb-v2-account-row { padding-block: 13px; }
+    .wallet .cb-v2-account-amount strong { font-size: 15.5px; }
+    .wallet-category-row { padding-block: 12px; }
+    .wallet-category-head strong { font-size: 12.5px; }
+    .wallet-category-amount { font-size: 13px; }
+    .wallet-categories-period { font-size: 11px; }
+    .wallet .cb-v2-progress-label { font-size: 11px; }
+    .wallet-goal { padding: 10px 0; }
+    .wallet .cb-v2-tabs { display: flex; width: 100%; }
+    .wallet .cb-v2-tabs button { flex: 1 1 0; justify-content: center; min-height: 38px; }
+}
+
+@media (max-width: 389px) {
+    .wallet-section-heading { gap: 10px; }
+    .wallet .wallet-link { padding-inline: 10px; }
+    .wallet-accounts .wallet-section-heading h2 { font-size: 16px; }
+    .wallet-count { font-size: 11.5px; white-space: nowrap; }
+    .wallet .cb-v2-account-row { grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; padding-inline: 8px; margin-inline: -8px; }
+    .wallet .cb-v2-provider-mark { width: 34px; height: 34px; border-radius: 10px; }
+    .wallet .cb-v2-account-copy strong { font-size: 13px; overflow-wrap: break-word; }
+    .wallet .cb-v2-account-copy small { font-size: 11px; }
+    .wallet .cb-v2-account-amount strong { font-size: 14.5px; }
+    .wallet-category-row { grid-template-columns: 28px minmax(0, 1fr); gap: 9px; padding-inline: 6px; margin-inline: -6px; }
+    .wallet-category-icon { width: 28px; height: 28px; border-radius: 9px; }
+    .wallet-category-icon svg { width: 14px; height: 14px; }
+    .wallet-category-head { gap: 8px; }
+    .wallet-category-head strong { font-size: 12px; }
+    .wallet-category-amount { font-size: 12.5px; }
+    .wallet-category-meta { gap: 6px; }
+    .wallet-category-variation, .wallet-category-share { font-size: 10.5px; }
+}
+
+@media (max-width: 699px) {
+    .wallet-evolution { margin-bottom: 14px; padding-bottom: 14px; }
+    .wallet-evolution-heading { flex-wrap: wrap; gap: 10px; }
+    .wallet-evolution-actions { width: 100%; justify-content: space-between; }
+    .wallet-period { flex: 1 1 auto; justify-content: space-between; }
+    .wallet-period button { flex: 1 1 0; padding-inline: 6px; }
+    .wallet-evolution-plot,
+    .wallet-evolution-loading,
+    .wallet-evolution-message { min-height: 232px; }
+    .wallet-evolution-loading,
+    .wallet-evolution-message { padding: 18px; }
+    .wallet-evolution-meta { gap: 3px 14px; }
+    .wallet-evolution-toggle { margin-right: 0; }
+    .wallet-evolution-table-scroll { max-height: 200px; }
+}
+
+@media (max-width: 389px) {
+    .wallet-period-label-full { display: none; }
+    .wallet-period-label-short { display: inline; }
+}
+
+/* --- Cartões: largura derivada do trilho ------------------------------------
+   1 cartão + preview quando o trilho é estreito; 2 cartões + preview quando
+   há espaço real para dois cartões de 280px e 56px do terceiro. O cálculo usa
+   a largura do próprio trilho (container query), então acompanha sidebar
+   recolhida, zoom e qualquer viewport intermediária. */
+@container wallet-cards (max-width: 360px) {
+    .wallet-card { flex-basis: 92%; padding: 18px; }
+}
+@container wallet-cards (min-width: 648px) {
+    .wallet-card {
+        flex-basis: min(340px, calc((100% - 88px) / 2));
+        padding: 15px 16px;
+    }
+    .wallet-card-head { gap: 10px; }
+    .wallet-card-name { font-size: 14px; }
+    .wallet-card-invoice { padding-top: 10px; }
+    .wallet-card-invoice-value { font-size: 20px; }
+    .wallet-card .cb-v2-credit-card-status { padding: 2px 7px 2px 6px; }
+    .wallet-card .cb-v2-credit-card-status > strong { font-size: 10px; }
+    .wallet-card-due { font-size: 10.5px; }
+    .wallet-card-closing { font-size: 10px; }
+    .wallet-card-limit { margin-top: 8px; padding-top: 8px; }
+    .wallet-card-footer { margin-top: 6px; }
+}
+
+/* --- Alvos de toque (mobile e tablet) ---------------------------------------
+   Os controles compactos mantêm a geometria desktop; em telas de toque a área
+   acionável cresce para 44px sem sobrepor ações vizinhas. */
+@media (max-width: 1023px) {
+    .wallet .cb-v2-tabs button { min-height: 44px; }
+    .wallet-evolution-toggle { min-height: 44px; }
+    .wallet-evolution-close { width: 44px; height: 44px; }
+    .wallet-period button { min-height: 44px; }
+    .wallet-evolution-footnote summary { min-height: 44px; }
+    .wallet-shortcuts a,
+    .wallet .wallet-link,
+    .wallet .cb-v2-text-link { min-height: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) { .wallet *, .wallet *::before, .wallet *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; } .wallet-card:hover { transform: none; } }

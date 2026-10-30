@@ -1,118 +1,164 @@
 {{define "configuracoes-admin_auditoria-page"}}
-{{template "configuracoes-v2-section-start" .}}
+{{template "configuracoes-admin-section-start" .}}
 {{template "configuracoes-admin_auditoria-content" .}}
-{{template "configuracoes-v2-section-end" .}}
+{{template "configuracoes-admin-section-end" .}}
 {{end}}
 
 {{define "configuracoes-admin_auditoria-content"}}
 <div id="settings-dynamic-payload" class="w-full">
-    <!-- Header Mobile Only -->
-    <header class="sticky top-14 z-20 bg-[var(--cb-surface-overlay)] backdrop-blur-xl border-b border-[var(--cb-border-subtle)] transition-colors md:hidden w-full">
-        <div class="mx-auto flex max-w-7xl items-center gap-4 px-4 pt-4 pb-3">
-            <button type="button" hx-get="/configuracoes" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] btn-tactile">
-                <i data-lucide="arrow-left" class="h-4 w-4"></i>
-            </button>
-            <div class="min-w-0 flex-1">
-                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
-                <h1 class="mt-0.5 text-lg font-bold text-[var(--cb-text-main)] md:text-xl capitalize">auditoria</h1>
+    <div class="admin-page">
+        {{if .FlashError}}<div class="admin-flash cb-flash-danger" role="alert"><i data-lucide="circle-alert" aria-hidden="true"></i><span>{{.FlashError}}</span></div>{{end}}
+        {{if .FlashSuccess}}<div class="admin-flash cb-flash-success" role="status"><i data-lucide="circle-check" aria-hidden="true"></i><span>{{.FlashSuccess}}</span></div>{{end}}
+
+        <header class="ui-page-header admin-page-header">
+            <div class="admin-page-header__copy">
+                <p class="ui-eyebrow">Administração · Segurança</p>
+                <h1 class="ui-page-title">Auditoria e alertas</h1>
+                <p class="ui-page-description">Configure o envio de alertas por e-mail e acompanhe os eventos de segurança dos últimos 14 dias.</p>
+                <div class="admin-page-header__meta">
+                    <span class="ui-badge ui-badge--info"><i data-lucide="layers" aria-hidden="true"></i>Escopo do workspace ativo</span>
+                    <span class="ui-badge ui-badge--neutral">{{len .SecurityLogs}} {{if eq (len .SecurityLogs) 1}}evento{{else}}eventos{{end}}</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="admin-scope-note" role="note">
+            <span class="admin-scope-note__icon" aria-hidden="true"><i data-lucide="info"></i></span>
+            <div class="admin-scope-note__copy">
+                <strong>Configuração por workspace</strong>
+                <p>As configurações SMTP e as preferências de alerta valem para o workspace ativo. A lista de eventos reúne registros desse workspace e eventos globais sem workspace associado. Troque de workspace no seletor do shell para administrar outro contexto.</p>
             </div>
         </div>
-    </header>
 
-    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
-        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-danger">{{.FlashError}}</div>{{end}}
-        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-success">{{.FlashSuccess}}</div>{{end}}
+        <div class="admin-audit-stack">
+            <section class="ui-panel admin-panel" aria-labelledby="adminSmtpTitle">
+                <header class="admin-panel__head">
+                    <div class="admin-panel__heading">
+                        <span class="ui-section-icon" aria-hidden="true"><i data-lucide="mail"></i></span>
+                        <div>
+                            <h2 id="adminSmtpTitle" class="admin-panel__title">Servidor SMTP</h2>
+                            <p class="admin-panel__desc">Usado para enviar os alertas de segurança do workspace ativo.</p>
+                        </div>
+                    </div>
+                    <span class="ui-badge ui-badge--neutral">Workspace ativo</span>
+                </header>
+                <div class="admin-panel__body">
+                    <form class="admin-form admin-form--flush" hx-post="/admin/auditoria/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
+                        <div class="admin-form-grid admin-form-grid--2">
+                            <div class="admin-field">
+                                <label class="ui-label" for="smtpHost">Host SMTP</label>
+                                <input id="smtpHost" type="text" name="smtp_host" value="{{.SMTPHost}}" placeholder="smtp.seudominio.com" autocomplete="off" class="ui-input">
+                            </div>
+                            <div class="admin-field">
+                                <label class="ui-label" for="smtpPort">Porta SMTP</label>
+                                <input id="smtpPort" type="number" min="1" max="65535" name="smtp_port" value="{{.SMTPPort}}" class="ui-input">
+                            </div>
+                            <div class="admin-field">
+                                <label class="ui-label" for="smtpUser">Usuário SMTP</label>
+                                <input id="smtpUser" type="text" name="smtp_user" value="{{.SMTPUser}}" placeholder="alertas@seudominio.com" autocomplete="username" class="ui-input">
+                            </div>
+                            <div class="admin-field">
+                                <label class="ui-label" for="smtpPass">Senha SMTP</label>
+                                <div class="admin-credential-state">
+                                    {{if .SMTPPassConfigured}}<span class="ui-badge ui-badge--success"><i data-lucide="shield-check" aria-hidden="true"></i>Credencial configurada</span>{{else}}<span class="ui-badge ui-badge--neutral"><i data-lucide="shield-off" aria-hidden="true"></i>Sem credencial</span>{{end}}
+                                </div>
+                                <input id="smtpPass" type="password" name="smtp_pass" value="" placeholder="Deixe em branco para manter a atual" autocomplete="new-password" class="ui-input">
+                                <p class="admin-help">Preencha para substituir a credencial atual; deixe em branco para mantê-la.</p>
+                            </div>
+                        </div>
 
-        <!-- Section header -->
-        <div class="mb-6">
-            <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Logs de Auditoria &amp; Alertas</h1>
-            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Configure SMTP, preferências de alerta e monitore os eventos dos últimos 14 dias.</p>
-        </div>
+                        <div class="admin-field">
+                            <label class="ui-label" for="smtpNotificationEmail">E-mail destino das notificações</label>
+                            <input id="smtpNotificationEmail" type="email" name="notification_email" value="{{.NotificationEmail}}" placeholder="soc@seudominio.com" autocomplete="email" inputmode="email" class="ui-input">
+                        </div>
 
-        <div class="space-y-4">
-            <form class="cb-card-dense p-4 md:p-5 space-y-4" hx-post="/admin/auditoria/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
-                <p class="text-sm font-semibold text-[var(--cb-text-main)]">Servidor SMTP</p>
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label class="space-y-1">
-                        <span class="cb-label">Host SMTP</span>
-                        <input type="text" name="smtp_host" value="{{.SMTPHost}}" placeholder="smtp.seudominio.com" class="cb-input">
-                    </label>
-                    <label class="space-y-1">
-                        <span class="cb-label">Porta SMTP</span>
-                        <input type="number" min="1" max="65535" name="smtp_port" value="{{.SMTPPort}}" class="cb-input">
-                    </label>
+                        <fieldset class="admin-audit-preferences">
+                            <legend class="ui-label">Preferências de alerta por e-mail</legend>
+                            <label class="admin-pref-row">
+                                <span>Tentativas de login inválidas</span>
+                                <input type="checkbox" name="email_preferences" value="auth.failed" {{if .EmailPrefAuth}}checked{{end}}>
+                            </label>
+                            <label class="admin-pref-row">
+                                <span>Exportação de backups</span>
+                                <input type="checkbox" name="email_preferences" value="backup.export" {{if .EmailPrefBackup}}checked{{end}}>
+                            </label>
+                            <label class="admin-pref-row">
+                                <span>Alterações de membros</span>
+                                <input type="checkbox" name="email_preferences" value="workspace.edit" {{if .EmailPrefWorkspace}}checked{{end}}>
+                            </label>
+                        </fieldset>
+
+                        <div class="admin-form-actions">
+                            <button type="submit" class="ui-btn ui-btn--primary">Salvar configurações de auditoria</button>
+                        </div>
+
+                        {{if .SMTPPassConfigured}}
+                        <div class="admin-credential-danger">
+                            <div class="admin-credential-danger__copy">
+                                <p class="admin-credential-danger__title">Remover credencial SMTP</p>
+                                <p class="admin-credential-danger__text">Os alertas por e-mail param de ser enviados até uma nova senha ser configurada. A remoção é explícita e registrada em auditoria.</p>
+                            </div>
+                            <button type="submit" name="smtp_pass_remove" value="1" hx-confirm="Remover a credencial SMTP salva? Os alertas por e-mail param de ser enviados até uma nova senha ser configurada." class="ui-btn admin-danger-btn">Remover credencial SMTP</button>
+                        </div>
+                        {{end}}
+                    </form>
                 </div>
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label class="space-y-1">
-                        <span class="cb-label">Usuário SMTP</span>
-                        <input type="text" name="smtp_user" value="{{.SMTPUser}}" placeholder="alertas@seudominio.com" class="cb-input">
-                    </label>
-                    <label class="space-y-1">
-                        <span class="cb-label">Senha SMTP</span>
-                        <input type="password" name="smtp_pass" value="{{.SMTPPass}}" placeholder="********" class="cb-input">
-                    </label>
-                </div>
-                <label class="space-y-1 block">
-                    <span class="cb-label">E-mail destino das notificações</span>
-                    <input type="email" name="notification_email" value="{{.NotificationEmail}}" placeholder="soc@seudominio.com" class="cb-input">
-                </label>
+            </section>
 
-                <div class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-3 md:p-4 space-y-3">
-                    <p class="text-sm font-semibold text-[var(--cb-text-main)]">Preferências de alerta por e-mail</p>
-                    <label class="flex items-center justify-between gap-3">
-                        <span class="text-sm text-zinc-600 dark:text-zinc-300">Tentativas de Login Inválidas</span>
-                        <input type="checkbox" name="email_preferences" value="auth.failed" {{if .EmailPrefAuth}}checked{{end}} class="h-5 w-5 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 dark:border-zinc-600 dark:bg-zinc-900">
-                    </label>
-                    <label class="flex items-center justify-between gap-3">
-                        <span class="text-sm text-zinc-600 dark:text-zinc-300">Exportação de Backups</span>
-                        <input type="checkbox" name="email_preferences" value="backup.export" {{if .EmailPrefBackup}}checked{{end}} class="h-5 w-5 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 dark:border-zinc-600 dark:bg-zinc-900">
-                    </label>
-                    <label class="flex items-center justify-between gap-3">
-                        <span class="text-sm text-zinc-600 dark:text-zinc-300">Alterações de Membros</span>
-                        <input type="checkbox" name="email_preferences" value="workspace.edit" {{if .EmailPrefWorkspace}}checked{{end}} class="h-5 w-5 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 dark:border-zinc-600 dark:bg-zinc-900">
-                    </label>
-                </div>
+            <section class="ui-panel admin-panel" aria-labelledby="adminAuditEventsTitle">
+                <header class="admin-panel__head">
+                    <div class="admin-panel__heading">
+                        <span class="ui-section-icon" aria-hidden="true"><i data-lucide="scroll-text"></i></span>
+                        <div>
+                            <h2 id="adminAuditEventsTitle" class="admin-panel__title">Eventos de segurança</h2>
+                            <p class="admin-panel__desc">Últimos 14 dias · registros do workspace ativo e eventos globais sem workspace associado.</p>
+                        </div>
+                    </div>
+                    <span class="ui-badge ui-badge--neutral">Ordenação: mais recentes</span>
+                </header>
+                <div class="admin-panel__body">
+                    <div class="admin-audit-toolbar">
+                        <label class="admin-filter">
+                            <span class="sr-only">Tipo de evento</span>
+                            <select id="auditEventFilter" name="event_type" hx-get="/admin/auditoria" hx-trigger="change" hx-include="closest div" hx-target="#auditoria-table-body" class="ui-select">
+                                <option value="" {{if eq .AuditEventFilter ""}}selected{{end}}>Todos os eventos</option>
+                                <option value="auth.failed" {{if eq .AuditEventFilter "auth.failed"}}selected{{end}}>Falhas de senha (auth.failed)</option>
+                                <option value="auth.invalid_user" {{if eq .AuditEventFilter "auth.invalid_user"}}selected{{end}}>Usuários inexistentes (auth.invalid_user)</option>
+                                <option value="auth.2fa_failed" {{if eq .AuditEventFilter "auth.2fa_failed"}}selected{{end}}>Falhas de 2FA (auth.2fa_failed)</option>
+                                <option value="security.tampering" {{if eq .AuditEventFilter "security.tampering"}}selected{{end}}>Violação de escopo (security.tampering)</option>
+                            </select>
+                        </label>
+                        <label class="admin-filter">
+                            <span class="sr-only">Severidade</span>
+                            <select id="auditSeverityFilter" name="severity" hx-get="/admin/auditoria" hx-trigger="change" hx-include="closest div" hx-target="#auditoria-table-body" class="ui-select">
+                                <option value="" {{if eq .AuditSeverityFilter ""}}selected{{end}}>Todas as severidades</option>
+                                <option value="INFO" {{if eq .AuditSeverityFilter "INFO"}}selected{{end}}>INFO</option>
+                                <option value="WARNING" {{if eq .AuditSeverityFilter "WARNING"}}selected{{end}}>WARNING</option>
+                                <option value="HIGH" {{if eq .AuditSeverityFilter "HIGH"}}selected{{end}}>HIGH</option>
+                                <option value="CRITICAL" {{if eq .AuditSeverityFilter "CRITICAL"}}selected{{end}}>CRITICAL</option>
+                            </select>
+                        </label>
+                    </div>
 
-                <button class="cb-button cb-button-primary h-10 px-4 text-xs">Salvar Configurações de Auditoria</button>
-            </form>
-
-            <article class="cb-card-dense p-4 md:p-5">
-                <p class="text-sm font-semibold text-[var(--cb-text-main)]">Eventos de segurança (últimos 14 dias)</p>
-                <div class="mt-3 flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
-                    <select name="event_type" hx-get="/admin/auditoria" hx-trigger="change" hx-include="closest div" hx-target="#auditoria-table-body"
-                        class="cb-input h-9 text-xs">
-                        <option value="" {{if eq .AuditEventFilter ""}}selected{{end}}>Todos os Eventos</option>
-                        <option value="auth.failed" {{if eq .AuditEventFilter "auth.failed"}}selected{{end}}>Falhas de Senha (auth.failed)</option>
-                        <option value="auth.invalid_user" {{if eq .AuditEventFilter "auth.invalid_user"}}selected{{end}}>Usuários Inexistentes (auth.invalid_user)</option>
-                        <option value="auth.2fa_failed" {{if eq .AuditEventFilter "auth.2fa_failed"}}selected{{end}}>Falhas de 2FA (auth.2fa_failed)</option>
-                        <option value="security.tampering" {{if eq .AuditEventFilter "security.tampering"}}selected{{end}}>Violação de Escopo (security.tampering)</option>
-                    </select>
-                    <select name="severity" hx-get="/admin/auditoria" hx-trigger="change" hx-include="closest div" hx-target="#auditoria-table-body"
-                        class="cb-input h-9 text-xs">
-                        <option value="" {{if eq .AuditSeverityFilter ""}}selected{{end}}>Todas as Severidades</option>
-                        <option value="INFO" {{if eq .AuditSeverityFilter "INFO"}}selected{{end}}>INFO</option>
-                        <option value="WARNING" {{if eq .AuditSeverityFilter "WARNING"}}selected{{end}}>WARNING</option>
-                        <option value="HIGH" {{if eq .AuditSeverityFilter "HIGH"}}selected{{end}}>HIGH</option>
-                        <option value="CRITICAL" {{if eq .AuditSeverityFilter "CRITICAL"}}selected{{end}}>CRITICAL</option>
-                    </select>
+                    <div class="admin-table-wrap" role="region" aria-labelledby="adminAuditEventsTitle" tabindex="0">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Data</th>
+                                    <th scope="col">Evento</th>
+                                    <th scope="col">Severidade</th>
+                                    <th scope="col">IP</th>
+                                    <th scope="col">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="auditoria-table-body">
+                                {{template "admin-auditoria-table-rows" .}}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="admin-scroll-hint"><i data-lucide="move-horizontal" aria-hidden="true"></i>Role horizontalmente para ver todas as colunas.</p>
                 </div>
-                <div class="mt-3 overflow-x-auto scrollbar-hide">
-                    <table class="min-w-full text-left text-xs text-[var(--cb-text-main)]">
-                        <thead class="text-[0.65rem] uppercase tracking-wide text-[var(--cb-text-muted)]">
-                            <tr>
-                                <th class="px-2 py-2">Data</th>
-                                <th class="px-2 py-2">Evento</th>
-                                <th class="px-2 py-2">Severidade</th>
-                                <th class="px-2 py-2">IP</th>
-                                <th class="px-2 py-2">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="auditoria-table-body">
-                            {{template "admin-auditoria-table-rows" .}}
-                        </tbody>
-                    </table>
-                </div>
-            </article>
+            </section>
         </div>
     </div>
 </div>

@@ -14,7 +14,6 @@ import (
 
 	"github.com/contabase-app/contabase/internal/admincli"
 	"github.com/contabase-app/contabase/internal/auth"
-	"github.com/contabase-app/contabase/internal/database"
 
 	"github.com/google/uuid"
 	"github.com/pquerna/otp/totp"
@@ -42,7 +41,7 @@ func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
 
 func setupTestDB(t *testing.T) (*sql.DB, *auth.Service, string) {
 	t.Helper()
-	db, err := database.Open(":memory:")
+	db, err := openRawServerFixture(t)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

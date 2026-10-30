@@ -390,12 +390,46 @@ func TestF10FreshCurrentAndHistoricalDamage(t *testing.T) {
 	for _, query := range []string{
 		`SELECT name,type,"notnull",dflt_value,pk FROM pragma_table_info('categories') ORDER BY name`,
 		`SELECT "table","from","to",on_update,on_delete,match FROM pragma_foreign_key_list('categories') ORDER BY "from"`,
-		`SELECT name,"unique",origin,partial FROM pragma_index_list('categories') ORDER BY name`,
 		`SELECT name,sql FROM sqlite_schema WHERE type='trigger' AND tbl_name='categories' ORDER BY name`,
 	} {
 		if !reflect.DeepEqual(f10Rows(t, historical, query), f10Rows(t, fresh, query)) {
 			t.Fatal("category schema differs", query)
 		}
+	}
+	// The isolated fixture runs only v12. Compare its complete index contract
+	// with the current schema, accounting explicitly for the index added by v76.
+	// Any other extra, missing or changed index still fails this comparison.
+	indexQuery := `SELECT name,"unique",origin,partial FROM pragma_index_list('categories')`
+	wantHistoricalIndexes := [][]any{
+		{"idx_categories_parent", int64(0), "c", int64(0)},
+		{"idx_categories_workspace", int64(0), "c", int64(0)},
+		{"sqlite_autoindex_categories_1", int64(1), "pk", int64(0)},
+	}
+	for _, check := range []struct {
+		db    *sql.DB
+		query string
+	}{
+		{historical, indexQuery + ` ORDER BY name`},
+		{fresh, indexQuery + ` WHERE name!='idx_c2b_category_tenant' ORDER BY name`},
+	} {
+		if got := f10Rows(t, check.db, check.query); !reflect.DeepEqual(got, wantHistoricalIndexes) {
+			t.Fatalf("v12 category index inventory differs: got %v want %v", got, wantHistoricalIndexes)
+		}
+	}
+	for _, index := range wantHistoricalIndexes {
+		query := fmt.Sprintf(`SELECT seqno,name,desc,coll,key FROM pragma_index_xinfo('%s') ORDER BY seqno`, index[0])
+		if !reflect.DeepEqual(f10Rows(t, historical, query), f10Rows(t, fresh, query)) {
+			t.Fatalf("v12 category index definition differs: %s", index[0])
+		}
+	}
+	// Do not merely ignore the later index: require its unique, non-partial,
+	// tenant-scoped definition in the fully migrated current database.
+	if got := f10Rows(t, fresh, indexQuery+` WHERE name='idx_c2b_category_tenant'`); !reflect.DeepEqual(got, [][]any{{"idx_c2b_category_tenant", int64(1), "c", int64(0)}}) {
+		t.Fatalf("v76 category index inventory differs: %v", got)
+	}
+	wantTenantIndex := [][]any{{int64(0), "id", int64(0), "BINARY", int64(1)}, {int64(1), "workspace_id", int64(0), "BINARY", int64(1)}, {int64(2), nil, int64(0), "BINARY", int64(0)}}
+	if got := f10Rows(t, fresh, `SELECT seqno,name,desc,coll,key FROM pragma_index_xinfo('idx_c2b_category_tenant') ORDER BY seqno`); !reflect.DeepEqual(got, wantTenantIndex) {
+		t.Fatalf("v76 category index definition differs: %v", got)
 	}
 	for _, db := range []*sql.DB{historical, fresh} {
 		f10Exec(t, db, `UPDATE categories SET macro_group=NULL WHERE id='personal77'; UPDATE categories SET macro_group='Free group' WHERE id='business77'`)

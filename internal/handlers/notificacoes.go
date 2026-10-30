@@ -250,7 +250,7 @@ func (h *NotificacoesHandler) exceededCostLimits(isBusiness bool) []Notification
 	rows, err := h.DB.Query(`
 		SELECT cl.id, c.name, cl.max_amount_monthly, COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) AS spent, COALESCE(MAX(t.updated_at), 0) AS latest_tx
 		FROM cost_limits cl
-		JOIN categories c ON c.id = cl.category_id
+		JOIN categories c ON c.id = cl.category_id AND c.workspace_id = cl.workspace_id
 		LEFT JOIN transactions t ON t.category_id = cl.category_id
 			AND t.workspace_id = cl.workspace_id
 				AND t.type = ?

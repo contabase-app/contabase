@@ -177,10 +177,14 @@ func ReconcileWorkspaceBoxLedger(db *sql.DB, workspaceID string) (BoxLedgerRecon
 		LEFT JOIN box_virtual_ledger r
 			ON r.reversal_of_ledger_id = l.id
 		   AND r.type = 'REVERSAL'
+		   AND EXISTS (
+			SELECT 1 FROM boxes reversal_owner
+			WHERE reversal_owner.id = r.box_id AND reversal_owner.workspace_id = ?
+		   )
 		WHERE b.workspace_id = ?
 		  AND l.type = 'CONSUME'
 		GROUP BY l.id, l.box_id, l.amount, l.source_transaction_id
-	`, report.WorkspaceID)
+	`, report.WorkspaceID, report.WorkspaceID)
 	if err != nil {
 		return report, err
 	}
@@ -281,9 +285,13 @@ func ReconcileWorkspaceBoxLedger(db *sql.DB, workspaceID string) (BoxLedgerRecon
 		FROM box_virtual_ledger r
 		JOIN boxes b ON b.id = r.box_id
 		LEFT JOIN box_virtual_ledger c ON c.id = r.reversal_of_ledger_id
+		   AND EXISTS (
+			SELECT 1 FROM boxes consume_owner
+			WHERE consume_owner.id = c.box_id AND consume_owner.workspace_id = ?
+		   )
 		WHERE b.workspace_id = ?
 		  AND r.type = 'REVERSAL'
-	`, report.WorkspaceID)
+	`, report.WorkspaceID, report.WorkspaceID)
 	if err != nil {
 		return report, err
 	}
@@ -424,9 +432,10 @@ func ReconcileWorkspaceBoxLedger(db *sql.DB, workspaceID string) (BoxLedgerRecon
 		query := `
 			SELECT id, workspace_id, type, amount, COALESCE(category_id, '')
 			FROM transactions
-			WHERE id IN (` + placeholders(len(uniqueSourceIDs)) + `)
+			WHERE workspace_id = ? AND id IN (` + placeholders(len(uniqueSourceIDs)) + `)
 		`
-		args := make([]interface{}, 0, len(uniqueSourceIDs))
+		args := make([]interface{}, 0, len(uniqueSourceIDs)+1)
+		args = append(args, report.WorkspaceID)
 		for _, id := range uniqueSourceIDs {
 			args = append(args, id)
 		}

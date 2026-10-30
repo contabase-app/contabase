@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/contabase-app/contabase/internal/auth"
-	"github.com/contabase-app/contabase/internal/database"
 	"github.com/contabase-app/contabase/internal/models"
 )
 
@@ -139,7 +138,7 @@ func newAdminUsersRBACRouteTestHandler(authService *auth.Service, signer *csrfSi
 
 func openAdminUsersRBACTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := database.Open(":memory:")
+	db, err := openRawServerFixture(t)
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}

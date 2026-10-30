@@ -329,7 +329,7 @@ func TestHandleHistoricoLimiteOtherWorkspaceCategoryDoesNotLeak(t *testing.T) {
 		VALUES ('limit-a', 'ws-a', 'a-cat', 100000)
 	`)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testHistoryTemplates(t),
 		WorkspaceID: "ws-a",
@@ -384,7 +384,7 @@ func TestHandleHistoricoCaixinhaOtherWorkspaceAccountDoesNotLeakLabel(t *testing
 		VALUES ('h-isolation', 'box-isolation', -5000, 'CONSUME', 'Consumo', 'tx-isolation', ?, ?)
 	`, now, now)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testHistoryTemplates(t),
 		WorkspaceID: "ws-a",
@@ -424,7 +424,7 @@ func TestMetasCardOpensHistoryNotMenuOnBodyClick(t *testing.T) {
 		VALUES ('limit-test', 'ws-a', 'a-cat', 50000)
 	`)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasPageTemplates(t),
 		WorkspaceID: "ws-a",

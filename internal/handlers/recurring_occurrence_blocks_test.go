@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -83,12 +84,25 @@ func resolveBlockFixture(t *testing.T, db *sql.DB, expected recurringOccurrenceB
 	return resolved, err
 }
 
+func recurringBlockStateSnapshot(t *testing.T, db *sql.DB, workspaceID string) map[string][][]any {
+	t.Helper()
+	state := map[string][][]any{
+		"workspaces": tenantScopeRows(t, db, `SELECT * FROM workspaces WHERE id = ?`, workspaceID),
+		"invoices":   tenantScopeRows(t, db, `SELECT i.* FROM invoices i JOIN accounts a ON a.id = i.account_id WHERE a.workspace_id = ? ORDER BY i.id`, workspaceID),
+	}
+	for _, table := range []string{"workspace_members", "accounts", "transactions", "invoice_payments", "recurring_series", "recurring_rules", "recurring_occurrence_blocks", "recurring_occurrence_skips"} {
+		state[table] = tenantScopeRows(t, db, `SELECT * FROM `+quoteSQLiteIdentifier(table)+` WHERE workspace_id = ? ORDER BY rowid`, workspaceID)
+	}
+	return state
+}
+
 func TestRecurringOccurrenceBlockResolutionValidatesHistoricalIdentity(t *testing.T) {
 	t.Run("compatible is terminal without writes", func(t *testing.T) {
 		db := openTestDB(t)
 		defer db.Close()
 		expected := seedRecurringOccurrenceBlockFixture(t, db, "CLOSED")
 		insertBlockFixture(t, db, expected, expected.RecurringRuleID, expected.OccurrenceDate.Civil(), "invoice-block-r", "2026-07")
+		before := recurringBlockStateSnapshot(t, db, expected.WorkspaceID)
 
 		resolved, err := resolveBlockFixture(t, db, expected)
 		if err != nil || !resolved {
@@ -104,6 +118,9 @@ func TestRecurringOccurrenceBlockResolutionValidatesHistoricalIdentity(t *testin
 		if blocks != 1 || transactions != 0 {
 			t.Fatalf("resolution wrote state: blocks=%d transactions=%d", blocks, transactions)
 		}
+		if !reflect.DeepEqual(before, recurringBlockStateSnapshot(t, db, expected.WorkspaceID)) {
+			t.Fatal("valid resolution changed persisted state")
+		}
 	})
 
 	tests := []struct {
@@ -117,6 +134,7 @@ func TestRecurringOccurrenceBlockResolutionValidatesHistoricalIdentity(t *testin
 		{"civil date mismatch", "rule-block", "2026-07-16", "invoice-block-r", "2026-07"},
 		{"invoice reference mismatch", "rule-block", "2026-07-15", "invoice-block-r", "2026-08"},
 		{"invoice id mismatch", "rule-block", "2026-07-15", "invoice-2026-08", "2026-07"},
+		{"invoice never existed", "rule-block", "2026-07-15", "invoice-never-existed", "2026-07"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -124,6 +142,7 @@ func TestRecurringOccurrenceBlockResolutionValidatesHistoricalIdentity(t *testin
 			defer db.Close()
 			expected := seedRecurringOccurrenceBlockFixture(t, db, "CLOSED")
 			insertBlockFixture(t, db, expected, tc.ruleID, tc.civilDate, tc.invoiceID, tc.reference)
+			before := recurringBlockStateSnapshot(t, db, expected.WorkspaceID)
 
 			resolved, err := resolveBlockFixture(t, db, expected)
 			if resolved || !errors.Is(err, errInvoiceStateStructural) {
@@ -139,6 +158,9 @@ func TestRecurringOccurrenceBlockResolutionValidatesHistoricalIdentity(t *testin
 			if transactions != 0 {
 				t.Fatalf("divergent block suppressed/changed legitimate write state: transactions=%d", transactions)
 			}
+			if !reflect.DeepEqual(before, recurringBlockStateSnapshot(t, db, expected.WorkspaceID)) {
+				t.Fatal("structural failure changed persisted state")
+			}
 		})
 	}
 
@@ -151,10 +173,61 @@ func TestRecurringOccurrenceBlockResolutionValidatesHistoricalIdentity(t *testin
 		execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, created_at, updated_at) VALUES ('card-block-other', 'ws-block-other', 'Other card', 'CREDIT_CARD', ?, ?)`, now, now)
 		execTestSQL(t, db, `INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, created_at) VALUES ('invoice-block-other', 'card-block-other', '2026-07', ?, ?, 'CLOSED', ?)`, testUnixDate("2026-07-20"), testUnixDate("2026-08-10"), now)
 		insertBlockFixture(t, db, expected, expected.RecurringRuleID, expected.OccurrenceDate.Civil(), "invoice-block-other", "2026-07")
+		beforeOwn := recurringBlockStateSnapshot(t, db, expected.WorkspaceID)
+		beforeForeign := recurringBlockStateSnapshot(t, db, "ws-block-other")
+
+		query := tenantScopeStatement(t, "recurring_occurrence_blocks.go", "resolveRecurringOccurrenceBlockTx", "SELECT i.reference, i.status", "block.InvoiceID", "expected.WorkspaceID")
+		if got := tenantScopeRows(t, db, query, "invoice-block-other", expected.WorkspaceID); len(got) != 0 {
+			t.Fatal("production lookup read a foreign invoice")
+		}
+		if got := tenantScopeRows(t, db, query, "invoice-block-other", "ws-block-other"); len(got) != 1 {
+			t.Fatal("production lookup rejected the invoice's own workspace")
+		}
+		// Removing only the tenant predicate must expose this fixture, proving
+		// that the production statement enforces the boundary.
+		unscoped := strings.Replace(query, " AND a.workspace_id = ?", "", 1)
+		if got := tenantScopeRows(t, db, unscoped, "invoice-block-other"); len(got) != 1 {
+			t.Fatal("tenant predicate control did not expose the foreign fixture")
+		}
 
 		resolved, err := resolveBlockFixture(t, db, expected)
 		if resolved || !errors.Is(err, errInvoiceStateStructural) {
 			t.Fatalf("cross-workspace invoice resolved=%v err=%v, want structural", resolved, err)
+		}
+		if err.Error() != errInvoiceStateStructural.Error()+": recurring occurrence block invoice unavailable" {
+			t.Fatalf("foreign invoice error exposed unexpected detail: %v", err)
+		}
+		if err := EnsureRecurringMaterialized(db, expected.WorkspaceID, expected.OccurrenceDate); !errors.Is(err, errInvoiceStateStructural) {
+			t.Fatalf("foreign materialization error = %v, want structural", err)
+		}
+		if !reflect.DeepEqual(beforeOwn, recurringBlockStateSnapshot(t, db, expected.WorkspaceID)) ||
+			!reflect.DeepEqual(beforeForeign, recurringBlockStateSnapshot(t, db, "ws-block-other")) {
+			t.Fatal("foreign rejection changed either workspace")
+		}
+	})
+
+	t.Run("own invoice on unexpected card", func(t *testing.T) {
+		db := openTestDB(t)
+		defer db.Close()
+		expected := seedRecurringOccurrenceBlockFixture(t, db, "CLOSED")
+		execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type) VALUES ('card-block-own-other', 'ws-test', 'Other own card', 'CREDIT_CARD')`)
+		execTestSQL(t, db, `INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status) VALUES ('invoice-block-own-other', 'card-block-own-other', '2026-07', ?, ?, 'CLOSED')`, testUnixDate("2026-07-20"), testUnixDate("2026-08-10"))
+		insertBlockFixture(t, db, expected, expected.RecurringRuleID, expected.OccurrenceDate.Civil(), "invoice-block-own-other", "2026-07")
+		query := tenantScopeStatement(t, "recurring_occurrence_blocks.go", "resolveRecurringOccurrenceBlockTx", "SELECT i.reference, i.status", "block.InvoiceID", "expected.WorkspaceID")
+		want := [][]any{{"2026-07", "CLOSED", "card-block-own-other", expected.WorkspaceID, "CREDIT_CARD"}}
+		if got := tenantScopeRows(t, db, query, "invoice-block-own-other", expected.WorkspaceID); !reflect.DeepEqual(got, want) {
+			t.Fatalf("card mismatch fixture lookup = %v, want %v", got, want)
+		}
+		before := recurringBlockStateSnapshot(t, db, expected.WorkspaceID)
+		resolved, err := resolveBlockFixture(t, db, expected)
+		if resolved || !errors.Is(err, errInvoiceStateStructural) {
+			t.Fatalf("unexpected own card resolved=%v err=%v, want structural", resolved, err)
+		}
+		if err.Error() != errInvoiceStateStructural.Error()+": recurring occurrence block live invoice mismatch" {
+			t.Fatalf("card mismatch rejected before live invoice validation: %v", err)
+		}
+		if !reflect.DeepEqual(before, recurringBlockStateSnapshot(t, db, expected.WorkspaceID)) {
+			t.Fatal("card mismatch changed persisted state")
 		}
 	})
 

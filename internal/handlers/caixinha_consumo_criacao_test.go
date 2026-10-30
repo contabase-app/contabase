@@ -436,7 +436,7 @@ func TestInsertConsumeLedgerEventTxDoesNotDuplicateBySourceTransaction(t *testin
 	if err != nil {
 		t.Fatalf("begin tx for anti-dup: %v", err)
 	}
-	if err := insertConsumeLedgerEventTx(tx, "box-direct", txID, 1300, now, now); err != nil {
+	if err := insertConsumeLedgerEventTx(tx, "ws-test", "box-direct", txID, 1300, now, now); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("reinsert consume event should be no-op: %v", err)
 	}

@@ -10,9 +10,9 @@
 <html lang="pt-BR" class="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="csrf-token" content="">
-    <meta name="theme-color" content="#0d121a">
+    <meta name="theme-color" content="#161a20">
     <meta name="mobile-web-app-capable" content="yes">
     <title>{{if .Title}}{{.Title}} | ContaBase{{else}}ContaBase{{end}}</title>
     <meta name="description" content="Sua base financeira privada, self-hosted e sem telemetria.">
@@ -27,15 +27,16 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
     <link rel="manifest" href="{{assetPath "/assets/manifest.json"}}">
-    <script src="/assets/js/theme-init.js"></script>
-    <link rel="stylesheet" href="/assets/css/style.css">
-    <link rel="stylesheet" href="/assets/css/geist-sans.css">
+    <script src="{{assetPath "/assets/js/theme-init.js"}}"></script>
+    <link rel="stylesheet" href="{{assetPath "/assets/css/style.css"}}">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/geist-sans.css"}}">
     <link rel="stylesheet" href="{{assetPath "/assets/css/design-system.css"}}">
     <link rel="stylesheet" href="/workspace/colors.css" data-workspace-colors>
-    <link rel="stylesheet" href="/assets/css/app-shell.css">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/app-shell.css"}}">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/ui-tokens.css"}}">
     <meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":true,"allowEval":false,"includeIndicatorStyles":false}'>
-    <script src="/assets/js/htmx.min.js"></script>
-    <script src="/assets/js/lucide.min.js"></script>
+    <script src="{{assetPath "/assets/js/htmx.min.js"}}"></script>
+    <script src="{{assetPath "/assets/js/lucide.min.js"}}"></script>
     <script src="{{assetPath "/assets/js/runtime-motion.js"}}"></script>
 {{end}}
 
@@ -226,7 +227,7 @@
 
 {{define "app-v2-shell-after-main"}}
 {{if eq .Title "Contatos"}}
-<button type="button" class="cb-v2-fab" data-contact-create data-onclick-ev="openContatosModal" aria-label="Novo contato"><i data-lucide="user-plus"></i></button>
+<button type="button" class="cb-v2-fab" data-contact-create hx-get="/contatos/novo" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Novo contato"><i data-lucide="user-plus"></i></button>
 {{else}}
 <button type="button" class="cb-v2-fab" hx-get="/transacoes/nova" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Adicionar lançamento"><i data-lucide="plus"></i></button>
 {{end}}
@@ -276,31 +277,34 @@
     <div id="picker-modal-container"></div>
     {{template "app-v2-shared-overlays" .}}
 
-    <script src="/assets/js/modals-global.js"></script>
+    <script src="{{assetPath "/assets/js/modals-global.js"}}"></script>
     <script src="{{assetPath "/assets/js/payment-confirm.js"}}"></script>
     <script src="{{assetPath "/assets/js/faturas.js"}}"></script>
-    <script src="/assets/js/predictive-description.js"></script>
-    <script src="/assets/js/swipe.js"></script>
-    <script src="/assets/js/theme-toggle.js"></script>
-    <script src="/assets/js/core-utils.js"></script>
+    <script src="{{assetPath "/assets/js/predictive-description.js"}}"></script>
+    <script src="{{assetPath "/assets/js/swipe.js"}}"></script>
+    <script src="{{assetPath "/assets/js/theme-toggle.js"}}"></script>
+    <script src="{{assetPath "/assets/js/core-utils.js"}}"></script>
+    <script src="{{assetPath "/assets/js/input-modality.js"}}"></script>
     <script src="{{assetPath "/assets/js/runtime-colors.js"}}"></script>
-    <script src="/assets/js/dashboard-tabs.js"></script>
-    <script src="/assets/js/money-mask.js"></script>
-    <script src="/assets/js/installment-preview.js"></script>
-    <script src="/assets/js/overlay-stack.js"></script>
-    <script src="/assets/js/workspace.js"></script>
-    <script src="/assets/js/picker-modal.js"></script>
-    <script src="/assets/js/modal-interceptor.js"></script>
-    <script src="/assets/js/event-handlers.js"></script>
-    <script src="/assets/js/form-lancamento.js"></script>
-    <script src="/assets/js/hx-events.js"></script>
-    <script src="/assets/js/tooltip.js"></script>
-    <script src="/assets/js/htmx-lifecycle.js"></script>
-    <script src="/assets/js/backup-dropzone.js"></script>
+    <script src="{{assetPath "/assets/js/dashboard-tabs.js"}}"></script>
+    <script src="{{assetPath "/assets/js/money-mask.js"}}"></script>
+    <script src="{{assetPath "/assets/js/installment-preview.js"}}"></script>
+    <script src="{{assetPath "/assets/js/overlay-stack.js"}}"></script>
+    <script src="{{assetPath "/assets/js/workspace.js"}}"></script>
+    <script src="{{assetPath "/assets/js/picker-modal.js"}}"></script>
+    <script src="{{assetPath "/assets/js/modal-interceptor.js"}}"></script>
+    <script src="{{assetPath "/assets/js/event-handlers.js"}}"></script>
+    <script src="{{assetPath "/assets/js/privacy.js"}}"></script>
+    <script src="{{assetPath "/assets/js/show-more.js"}}"></script>
+    <script src="{{assetPath "/assets/js/form-lancamento.js"}}"></script>
+    <script src="{{assetPath "/assets/js/hx-events.js"}}"></script>
+    <script src="{{assetPath "/assets/js/tooltip.js"}}"></script>
+    <script src="{{assetPath "/assets/js/htmx-lifecycle.js"}}"></script>
+    <script src="{{assetPath "/assets/js/backup-dropzone.js"}}"></script>
     <script src="{{assetPath "/assets/js/config-selects.js"}}"></script>
     <script src="{{assetPath "/assets/js/icon-picker.js"}}"></script>
     <script src="{{assetPath "/assets/js/month-selector.js"}}"></script>
-    <script src="/assets/js/app-shell.js"></script>
+    <script src="{{assetPath "/assets/js/app-shell.js"}}"></script>
 </body>
 </html>
 {{end}}

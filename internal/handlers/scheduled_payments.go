@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ type scheduledPaymentDueRow struct {
 	AccountType        string
 	Description        string
 	ScheduledAt        int64
+	CreatedAt          int64
 	ScheduledDateCivil sql.NullString
 	PaidAt             sql.NullInt64
 }
@@ -101,13 +103,63 @@ func runDueScheduledPayments(ctx context.Context, db *sql.DB, now time.Time, exe
 }
 
 func queryDueScheduledPayments(ctx context.Context, db *sql.DB, now time.Time) ([]scheduledPaymentDueRow, error) {
+	// Enumerate only control-plane IDs and materialize every tenant's candidates
+	// in one short snapshot. No financial execution may use this transaction.
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM workspaces ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	var workspaces []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		workspaces = append(workspaces, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	var out []scheduledPaymentDueRow
 	tomorrowStart := appNextDayStartUnix(now)
-	rows, err := db.QueryContext(ctx, `
+	for _, workspaceID := range workspaces {
+		candidates, err := queryWorkspaceDueScheduledPayments(ctx, tx, workspaceID, tomorrowStart)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, candidates...)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	// Keep the global runner's original order, with no new workspace tie-break.
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].ScheduledAt != out[j].ScheduledAt {
+			return out[i].ScheduledAt < out[j].ScheduledAt
+		}
+		return out[i].CreatedAt < out[j].CreatedAt
+	})
+	return out, nil
+}
+
+func queryWorkspaceDueScheduledPayments(ctx context.Context, tx *sql.Tx, workspaceID string, tomorrowStart int64) ([]scheduledPaymentDueRow, error) {
+	rows, err := tx.QueryContext(ctx, `
 		SELECT t.id, t.workspace_id, t.user_id, t.scheduled_payment_created_by, t.type, t.amount,
-		       t.account_id, a.type, t.description, t.scheduled_payment_at, t.scheduled_payment_date_civil, t.paid_at
+		       t.account_id, a.type, t.description, t.scheduled_payment_at, t.scheduled_payment_date_civil, t.paid_at, t.created_at
 		FROM transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
-		WHERE t.status = 'pending'
+		WHERE t.workspace_id = ?
+		  AND t.status = 'pending'
 		  AND t.scheduled_payment_at IS NOT NULL
 		  AND t.scheduled_payment_executed_at IS NULL
 		  AND t.scheduled_payment_at < ?
@@ -122,7 +174,7 @@ func queryDueScheduledPayments(ctx context.Context, db *sql.DB, now time.Time) (
 		        AND ip.workspace_id = t.workspace_id
 		  )
 		ORDER BY t.scheduled_payment_at ASC, t.created_at ASC
-	`, tomorrowStart, models.TransactionTypeIncome, models.TransactionTypeExpense, models.AccountTypeCreditCard)
+	`, workspaceID, tomorrowStart, models.TransactionTypeIncome, models.TransactionTypeExpense, models.AccountTypeCreditCard)
 	if err != nil {
 		return nil, err
 	}
@@ -144,12 +196,16 @@ func queryDueScheduledPayments(ctx context.Context, db *sql.DB, now time.Time) (
 			&row.ScheduledAt,
 			&row.ScheduledDateCivil,
 			&row.PaidAt,
+			&row.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
 	}
 	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
 		return nil, err
 	}
 	return out, nil

@@ -11,6 +11,45 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
+## [v1.0.0-beta.6] — não publicada — investimentos, interface e estabilidade
+
+### Adicionado
+- **Investimentos:** cadastro e novas aplicações com seleção da conta de origem, transferência financeira atômica e histórico vinculado ao lançamento. Repetir a mesma requisição não duplica a compra nem o débito.
+
+### Alterado
+- **Disponibilidade de Investimentos:** a ausência de `CONTABASE_FEATURE_INVESTMENTS` habilita o módulo em instalações novas e atualizadas. Configurações explícitas continuam respeitadas; vazio ou valor desconhecido permanecem desabilitados. Operações financeiras controladas continuam opt-in.
+- **Configuração Docker de Investimentos:** `.env.docker` passa a fornecer a flag sem ser sobrescrito pelo repasse implícito do shell. Desativações feitas somente no shell devem ser registradas no arquivo antes da atualização; overrides explícitos continuam prevalecendo.
+- **Interface Premium:** Relatórios, Contatos, Configurações e Administração receberam componentes, formulários, navegação e estados responsivos alinhados ao design system existente.
+- **Privacidade visual:** Contas, Investimentos, detalhe de investimento e Notificações reutilizam o controle global de ocultação de valores.
+
+### Corrigido
+- **Configurações e Administração:** alinhamento de conteúdo, espaçamento mobile, ações compactas de contas/cartões e detalhes recolhíveis da posição aplicada.
+- **Acessibilidade e leitura:** máscaras financeiras nas superfícies revisadas, nome acessível da ação de Metas no mobile, contraste do badge Vencido no tema claro, áreas de toque e títulos de Notificações em até duas linhas.
+- **Relatórios:** abas do fluxo e barra compacta do extrato alinhadas aos componentes da página.
+- **Pagamentos agendados:** o executor reserva o escritor SQLite antes de recarregar o pagamento, evitando a disputa de upgrade de transação com outros jobs no startup. Débito, histórico e notificação continuam atômicos.
+- **Metas e Reservas:** o menu de ações dos cartões permanece legível e acima dos cartões vizinhos em desktop e mobile, nos temas claro e escuro.
+- **Faturas:** ao entrar sem competência escolhida, a página exibe o mês corrente se houver fatura aberta; caso contrário, seleciona o primeiro mês futuro com fatura aberta. Uma competência escolhida pelo usuário continua prevalecendo.
+- **Contagem de fechamento:** cartões de Faturas e do Dashboard passam a contar os dias restantes por datas civis, em vez de truncar a diferença de segundos. O rótulo do cartão e o resumo do ciclo concordam na virada do dia, do mês e do ano, inclusive em fusos com horário de verão.
+
+### Atualização
+- Caminho de atualização previsto: `v1.0.0-beta.5` → `v1.0.0-beta.6`. Faça backup antes da atualização.
+- Preserve `SECURITY_MASTER_KEY` durante a atualização. Ela não é regenerada e deve corresponder ao segredo SMTP já gravado.
+- O retorno automático de código ou imagem anterior só é permitido para uma cópia verificada da própria Beta 6; não há downgrade automático para a Beta 5. Falha após tentativa de startup bloqueia o retorno e exige reparo compatível com o schema persistido, sem restore automático de banco.
+- Esta candidata é uma prerelease da linha 1.0, ainda sujeita aos gates públicos separados. O upgrade operacional Beta 5 → Beta 6 pelo instalador público ainda não foi comprovado integralmente.
+
+### Segurança
+- **Credenciais legadas:** a identidade de seed histórica não é mais reativada no startup. Hash vazio, inválido ou correspondente à senha pública conhecida é inutilizado; a conta passa a exigir recuperação administrativa explícita. Vínculos, permissões, dados de workspace e fatores 2FA são preservados, e nenhuma senha temporária é emitida automaticamente.
+- **Chave mestra explícita:** `SECURITY_MASTER_KEY` deixa de usar fallback público em desenvolvimento. Senhas SMTP cifradas com a chave antiga não são lidas automaticamente; o ciphertext é preservado e a substituição da senha é uma ação administrativa explícita.
+- **Recuperação de atualização:** os fluxos de install/update só reativam automaticamente um código ou imagem anterior com prova administrativa local, conteúdo exato e ausência de tentativa de startup da candidata. A prova não é assinatura de fornecedor e não cobre banco, configuração ou chaves.
+- **Administração:** autorização de auditoria reforçada; configuração SMTP não devolve credenciais nem apaga a senha ao salvar um campo vazio.
+- **Relatórios:** permissões de leitura e proteções nas exportações reforçadas.
+
+### Limitações conhecidas
+- O upgrade operacional `v1.0.0-beta.5` → `v1.0.0-beta.6` pelo instalador público ainda não foi comprovado integralmente; a validação Docker DEV não substitui o ensaio de atualização em instalação real.
+- A política de recuperação automática reconhece somente `v1.0.0-beta.6`. Versões futuras exigem revisão específica antes de receber a mesma prova.
+- O fluxo financeiro de novas aplicações funciona sobre o schema 77. Adoção histórica e resgates financeiros das novas aplicações permanecem indisponíveis.
+- Registros patrimoniais legados não ganham débito retroativo. Posições manuais continuam distintas do capital aplicado; transferências seguem a política de saldo existente, inclusive saldo negativo permitido.
+
 ## [v1.0.0-beta.5] — 2026-09-24 — Home renovada e identidade visual
 
 ### Adicionado
@@ -26,7 +65,7 @@ Este arquivo organiza as mudanças por versão e por tipo:
 - **Conta:** editar metadados mantém o saldo apenas para leitura no formulário.
 
 ### Limitações conhecidas
-- A publicação da candidata depende de Release Preflight, artifacts, checksums, GHCR e smokes de instalação e atualização. O canal Beta permanece em `v1.0.0-beta.4` até a validação desses gates.
+- A Beta.5 foi publicada como prerelease, com o canal Beta e a imagem GHCR `:beta` promovidos para `v1.0.0-beta.5`.
 
 ## [v1.0.0-beta.4] — 2026-09-13 — remediação pré-produção e correções financeiras
 

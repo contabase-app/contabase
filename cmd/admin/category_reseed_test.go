@@ -14,7 +14,7 @@ import (
 
 func openMemoryDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := database.Open(":memory:")
+	db, err := openRawAdminFixture(t)
 	if err != nil {
 		t.Fatalf("open memory db: %v", err)
 	}

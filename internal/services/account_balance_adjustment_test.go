@@ -85,7 +85,10 @@ func TestAccountAdjustmentRejectsStaleBalanceEvenAfterReturnToSameValue(t *testi
 func TestAccountAdjustmentRollsBackOnEitherWriteFailure(t *testing.T) {
 	for _, table := range []string{"account_balance_adjustments", "accounts"} {
 		t.Run(table, func(t *testing.T) {
-			db := openDB(t)
+			db, err := database.Open(filepath.Join(t.TempDir(), "adjustment.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
 			defer db.Close()
 			input := seedAdjustment(t, db)
 			stmt := `CREATE TRIGGER injected_failure BEFORE INSERT ON account_balance_adjustments BEGIN SELECT RAISE(ABORT,'test failure'); END`

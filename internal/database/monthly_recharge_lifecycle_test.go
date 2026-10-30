@@ -293,7 +293,7 @@ func TestMonthlyRechargeBlockedDoesNotRestrictManualLedger(t *testing.T) {
 func openMonthlyLifecycleMemoryDB(t *testing.T) *sql.DB {
 	t.Helper()
 	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}

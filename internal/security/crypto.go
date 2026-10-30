@@ -12,10 +12,8 @@ import (
 )
 
 const (
-	securityMasterKeyEnv    = "SECURITY_MASTER_KEY"
-	appEnvVar               = "APP_ENV"
-	encryptedPrefix         = "sec:v1:"
-	developmentFallbackSeed = "development_fallback_key_32_bytes!!"
+	securityMasterKeyEnv = "SECURITY_MASTER_KEY"
+	encryptedPrefix      = "sec:v1:"
 )
 
 func Encrypt(plainText string) (string, error) {
@@ -86,17 +84,11 @@ func Decrypt(cipherText string) (string, error) {
 
 func masterKey() ([]byte, error) {
 	configured := strings.TrimSpace(os.Getenv(securityMasterKeyEnv))
-	if configured != "" {
-		if len(configured) != 32 {
-			return nil, fmt.Errorf("%s must have exactly 32 bytes", securityMasterKeyEnv)
-		}
-		return []byte(configured), nil
+	if configured == "" {
+		return nil, fmt.Errorf("%s is required to encrypt or decrypt stored credentials", securityMasterKeyEnv)
 	}
-
-	appEnv := strings.ToLower(strings.TrimSpace(os.Getenv(appEnvVar)))
-	if appEnv == "" || appEnv == "development" {
-		// Requested strict 32-byte development fallback.
-		return []byte(developmentFallbackSeed[:32]), nil
+	if len(configured) != 32 {
+		return nil, fmt.Errorf("%s must have exactly 32 bytes", securityMasterKeyEnv)
 	}
-	return nil, fmt.Errorf("%s is required outside development", securityMasterKeyEnv)
+	return []byte(configured), nil
 }

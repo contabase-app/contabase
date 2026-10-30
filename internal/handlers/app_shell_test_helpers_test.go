@@ -6,6 +6,9 @@ func withAppShellTestFuncs(funcs template.FuncMap) template.FuncMap {
 	if funcs == nil {
 		funcs = template.FuncMap{}
 	}
+	if _, exists := funcs["assetPath"]; !exists {
+		funcs["assetPath"] = func(path string) string { return path }
+	}
 	funcs["SetupTokenStillConfigured"] = func(any) bool { return false }
 	funcs["appCurrentTime"] = func() any { return nil }
 	funcs["appVersion"] = func() string { return "test" }

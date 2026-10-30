@@ -2,6 +2,8 @@ package database
 
 import (
 	"database/sql"
+	"net/url"
+	"path/filepath"
 	"testing"
 )
 
@@ -9,7 +11,19 @@ import (
 
 func openInvestmentsTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", ":memory:")
+	// Retain a fixture-only anchor so the maintenance adapter can discard its
+	// physical connection exactly as on disk, without deleting an in-memory DB.
+	dsn := (&url.URL{Scheme: "file", Path: filepath.Join(t.TempDir(), "investments"), RawQuery: "mode=memory&cache=shared&_pragma=foreign_keys(1)&_pragma=defer_foreign_keys(0)"}).String()
+	anchor, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor.SetMaxOpenConns(1)
+	if err = anchor.Ping(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { anchor.Close() })
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatal(err)
 	}

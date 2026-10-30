@@ -1,8 +1,18 @@
 (function() {
   'use strict';
 
+  if (window.__contabaseAdminRecovery) return;
+  window.__contabaseAdminRecovery = true;
+
   function setRecoveryAction(root, action) {
+    var previousAction = root.dataset.recoveryAction || '';
     root.dataset.recoveryAction = action;
+
+    var actionButtons = root.querySelectorAll('[data-admin-recovery-action]');
+    for (var a = 0; a < actionButtons.length; a++) {
+      var isActive = actionButtons[a].getAttribute('data-admin-recovery-action') === action;
+      actionButtons[a].setAttribute('aria-expanded', isActive ? 'true' : 'false');
+    }
 
     var panel = root.querySelector('[data-admin-recovery-panel]');
     if (panel) {
@@ -32,6 +42,20 @@
         if (emailInput) emailInput.value = '';
       }
     }
+
+    if (action === '') {
+      var previousButton = previousAction
+        ? root.querySelector('[data-admin-recovery-action="' + previousAction + '"]')
+        : null;
+      if (previousButton && typeof previousButton.focus === 'function') previousButton.focus();
+      return;
+    }
+
+    var activeForm = root.querySelector('[data-admin-recovery-form="' + action + '"]');
+    if (activeForm) {
+      var activeInput = activeForm.querySelector('input[name="confirm_email"]');
+      if (activeInput && typeof activeInput.focus === 'function') activeInput.focus();
+    }
   }
 
   function handleClick(e) {
@@ -53,8 +77,27 @@
     }
   }
 
+  function overlayIsOpen() {
+    if (typeof window.hasOpenOverlay === 'function') {
+      try {
+        if (window.hasOpenOverlay()) return true;
+      } catch (e) {
+        // O overlay-stack continua sendo a fonte de verdade; falhas não podem
+        // impedir o fechamento do painel quando não houver camada superior.
+      }
+    }
+
+    if (typeof document.getElementById === 'function') {
+      var modal = document.getElementById('global-confirm-modal');
+      if (modal && !modal.classList.contains('hidden')) return true;
+    }
+
+    return false;
+  }
+
   function handleKeydown(e) {
     if (e.key !== 'Escape') return;
+    if (overlayIsOpen()) return;
     var activePanel = document.querySelector('[data-admin-recovery-panel]:not(.hidden)');
     if (activePanel) {
       var root = activePanel.closest('[data-admin-recovery-root]');

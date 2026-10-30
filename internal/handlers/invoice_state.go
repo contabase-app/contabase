@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/contabase-app/contabase/internal/civildate"
 	"github.com/contabase-app/contabase/internal/models"
 )
 
@@ -93,23 +94,23 @@ END`
 
 // transactionNetAmountTSQL is the effective expense amount for queries that
 // use the fixed transaction alias t. Refunds are contra-expenses, never income.
-const transactionNetAmountTSQL = `t.amount - COALESCE((
-	SELECT SUM(r.amount_cents)
+const transactionNetAmountTSQL = `CASE WHEN t.id IS NULL THEN NULL ELSE contabase_refund_net(t.amount, (
+	SELECT contabase_refund_sum(r.amount_cents)
 	FROM transaction_refunds r
 	WHERE r.workspace_id = t.workspace_id
 	  AND r.transaction_id = t.id
 	  AND r.reversed_at IS NULL
-), 0)`
+)) END`
 
 // transactionNetAmountTxSQL is the equivalent expression for the fixed tx
 // alias used by cash-flow allocation queries.
-const transactionNetAmountTxSQL = `tx.amount - COALESCE((
-	SELECT SUM(r.amount_cents)
+const transactionNetAmountTxSQL = `CASE WHEN tx.id IS NULL THEN NULL ELSE contabase_refund_net(tx.amount, (
+	SELECT contabase_refund_sum(r.amount_cents)
 	FROM transaction_refunds r
 	WHERE r.workspace_id = tx.workspace_id
 	  AND r.transaction_id = tx.id
 	  AND r.reversed_at IS NULL
-), 0)`
+)) END`
 
 // invoiceGeneralRefundTotalIASQL is the active adjustment total for callers
 // with the fixed invoice/account aliases i and a. General refunds settle a
@@ -132,13 +133,7 @@ func loadInvoiceFinancialSnapshotTx(tx *sql.Tx, workspaceID, invoiceID string) (
 			i.closing_date,
 			i.paid_at,
 			COALESCE((
-				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount - COALESCE((
-					SELECT SUM(r.amount_cents)
-					FROM transaction_refunds r
-					WHERE r.workspace_id = t.workspace_id
-					  AND r.transaction_id = t.id
-					  AND r.reversed_at IS NULL
-				), 0) ELSE 0 END)
+				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END)
 				FROM transactions t
 				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
 			), 0) - `+invoiceGeneralRefundTotalIASQL+`,
@@ -195,13 +190,7 @@ func loadInvoiceFinancialSnapshotDB(db *sql.DB, workspaceID, invoiceID string) (
 			i.closing_date,
 			i.paid_at,
 			COALESCE((
-				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount - COALESCE((
-					SELECT SUM(r.amount_cents)
-					FROM transaction_refunds r
-					WHERE r.workspace_id = t.workspace_id
-					  AND r.transaction_id = t.id
-					  AND r.reversed_at IS NULL
-				), 0) ELSE 0 END)
+				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END)
 				FROM transactions t
 				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
 			), 0) - `+invoiceGeneralRefundTotalIASQL+`,
@@ -268,6 +257,17 @@ func sumActiveInvoicePaymentsDB(db *sql.DB, workspaceID, invoiceID string) (int6
 	return total, err
 }
 
+// invoiceClosingCivilDays returns the signed number of civil calendar days
+// between the current application civil date and the invoice closing date.
+// Both sides are reduced to civil dates before the comparison, so the result
+// never depends on the clock time stored in closingUnix or on duration
+// arithmetic across DST boundaries.
+func invoiceClosingCivilDays(closingUnix int64, now time.Time) int {
+	closingDate := civildate.LegacyUnixToCivilDateUTC(closingUnix)
+	today := civildate.CivilDateAt(AppCivilDateUTC(now), time.UTC)
+	return int(civildate.CivilDateDaysBetween(today, closingDate))
+}
+
 func computeInvoiceState(total, paidActive int64, closingUnix int64, now time.Time) InvoiceComputedState {
 	pending := total - paidActive
 	if pending < 0 {
@@ -296,10 +296,7 @@ func computeInvoiceState(total, paidActive int64, closingUnix int64, now time.Ti
 	}
 
 	if closingUnix > 0 {
-		closeAt := time.Unix(closingUnix, 0).UTC()
-		today := AppCivilDateUTC(now)
-		closeDay := time.Date(closeAt.Year(), closeAt.Month(), closeAt.Day(), 0, 0, 0, 0, time.UTC)
-		days := int(closeDay.Sub(today).Hours() / 24)
+		days := invoiceClosingCivilDays(closingUnix, now)
 		switch {
 		case days > invoiceCycleSoonDays:
 			st.Cycle = InvoiceCycleOpen
@@ -333,10 +330,7 @@ func computeCycleBadge(closingUnix int64, now time.Time) string {
 	if closingUnix <= 0 {
 		return ""
 	}
-	closeAt := time.Unix(closingUnix, 0).UTC()
-	today := AppCivilDateUTC(now)
-	closeDay := time.Date(closeAt.Year(), closeAt.Month(), closeAt.Day(), 0, 0, 0, 0, time.UTC)
-	days := int(closeDay.Sub(today).Hours() / 24)
+	days := invoiceClosingCivilDays(closingUnix, now)
 	switch {
 	case days > invoiceCycleSoonDays:
 		return "Aberta"

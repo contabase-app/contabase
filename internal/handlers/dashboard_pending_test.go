@@ -37,6 +37,12 @@ func TestDashboardPendingWindowIncludesOverdueAndNext7Days(t *testing.T) {
 	if !payables[0].IsOverdue {
 		t.Fatalf("first payable should be overdue: %#v", payables[0])
 	}
+	if payables[0].DueDateLabel != "Venceu em 08/08" || payables[0].StatusLabel != "Vencido" {
+		t.Fatalf("overdue payable labels = %q / %q, want Venceu em 08/08 / Vencido", payables[0].DueDateLabel, payables[0].StatusLabel)
+	}
+	if payables[3].DueDateLabel != "Vence em 15/08" || payables[3].StatusLabel != "Pendente" {
+		t.Fatalf("future payable labels = %q / %q, want Vence em 15/08 / Pendente", payables[3].DueDateLabel, payables[3].StatusLabel)
+	}
 
 	payableTotal, payableCount := queryDashboardPayable7dTotal(db, "ws-dashboard", now)
 	assertMoneyDisplay(t, "payable total", payableTotal, "1.500", ",00")
@@ -57,6 +63,12 @@ func TestDashboardPendingWindowIncludesOverdueAndNext7Days(t *testing.T) {
 	)
 	if !receivables[0].IsOverdue {
 		t.Fatalf("first receivable should be overdue: %#v", receivables[0])
+	}
+	if receivables[0].DueDateLabel != "Venceu em 08/08" || receivables[0].StatusLabel != "Vencido" {
+		t.Fatalf("overdue receivable labels = %q / %q, want Venceu em 08/08 / Vencido", receivables[0].DueDateLabel, receivables[0].StatusLabel)
+	}
+	if receivables[2].DueDateLabel != "A receber em 16/08" || receivables[2].StatusLabel != "Pendente" {
+		t.Fatalf("future receivable labels = %q / %q, want A receber em 16/08 / Pendente", receivables[2].DueDateLabel, receivables[2].StatusLabel)
 	}
 
 	receivableTotal, receivableCount := queryDashboardReceivable7dTotal(db, "ws-dashboard", now)

@@ -1,6 +1,9 @@
 (function() {
   'use strict';
 
+  if (window.__contabaseAdminWorkspace) return;
+  window.__contabaseAdminWorkspace = true;
+
   var CARD_EDIT_CLASSES = 'ring-1 ring-violet-400/30 border-violet-400/30 dark:ring-violet-500/30 dark:border-violet-500/35';
 
   function clearBusinessFields(scope) {
@@ -44,11 +47,28 @@
 
     if (!view || !form) return;
 
+    function firstField() {
+      var selectors = ['input', 'select', 'textarea'];
+      for (var s = 0; s < selectors.length; s++) {
+        var fields = form.querySelectorAll(selectors[s]);
+        for (var f = 0; f < fields.length; f++) {
+          var field = fields[f];
+          var type = (field.getAttribute('type') || '').toLowerCase();
+          if (type === 'hidden' || field.disabled) continue;
+          return field;
+        }
+      }
+      return null;
+    }
+
     function showEdit() {
       view.classList.add('hidden');
       form.classList.remove('hidden');
       card.classList.add.apply(card.classList, CARD_EDIT_CLASSES.split(' '));
       if (toggleText) toggleText.textContent = 'Cancelar';
+      if (toggle) toggle.setAttribute('aria-expanded', 'true');
+      var field = firstField();
+      if (field && typeof field.focus === 'function') field.focus();
     }
 
     function showView() {
@@ -56,6 +76,16 @@
       form.classList.add('hidden');
       card.classList.remove.apply(card.classList, CARD_EDIT_CLASSES.split(' '));
       if (toggleText) toggleText.textContent = 'Editar';
+
+      var formEl = form.querySelector('form') || form;
+      if (formEl && typeof formEl.reset === 'function') formEl.reset();
+      var typeSelect = form.querySelector('[data-admin-ws-type]');
+      if (typeSelect) toggleBusinessSections(form, typeSelect.value);
+
+      if (toggle) {
+        toggle.setAttribute('aria-expanded', 'false');
+        if (typeof toggle.focus === 'function') toggle.focus();
+      }
     }
 
     if (toggle) {

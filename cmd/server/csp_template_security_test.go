@@ -73,7 +73,7 @@ func TestRuntimeMotionLoadsBeforeInteractiveConsumers(t *testing.T) {
 	if runtimeIndex < 0 {
 		t.Fatal("app shell must load runtime-motion.js")
 	}
-	for _, consumer := range []string{`src="/assets/js/swipe.js"`, `src="/assets/js/tooltip.js"`} {
+	for _, consumer := range []string{`assetPath "/assets/js/swipe.js"`, `assetPath "/assets/js/tooltip.js"`} {
 		consumerIndex := strings.Index(body, consumer)
 		if consumerIndex < 0 {
 			t.Fatalf("app shell is missing motion consumer %q", consumer)
@@ -315,7 +315,7 @@ func TestWorkspaceThemeScriptDoesNotWriteInlineCSS(t *testing.T) {
 func TestProgressTemplatesUseNativeElementsWithoutInlineWidths(t *testing.T) {
 	templateChecks := map[string][]string{
 		"templates/components/credit_card.html": {
-			`<progress class="cb-v2-progress" value="{{.LimitPercent}}" max="100"`,
+			`<progress class="cb-card-progress" value="{{.LimitPercent}}" max="100"`,
 		},
 		"templates/pages/dashboard.html": {
 			// Medidores de Limites e de Metas usam o mesmo elemento nativo.

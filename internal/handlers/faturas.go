@@ -278,6 +278,14 @@ func (h *FaturasHandler) buildFaturasIndexData(r *http.Request) (FaturasIndexDat
 	if err := autoCloseWorkspaceInvoices(h.DB, h.WorkspaceID); err != nil {
 		log.Printf("auto close workspace invoices on invoice hub error: %v", err)
 	}
+	if r != nil && r.URL.Path == "/faturas" &&
+		strings.TrimSpace(r.URL.Query().Get("mes")) == "" &&
+		strings.TrimSpace(r.URL.Query().Get("ano")) == "" {
+		month, year, err = initialFaturasIndexPeriod(h.DB, h.WorkspaceID, appTime(time.Now()))
+		if err != nil {
+			return FaturasIndexData{}, fmt.Errorf("selecionar competência inicial: %w", err)
+		}
+	}
 
 	cards, err := queryFaturasIndexCards(h.DB, h.WorkspaceID, year, time.Month(month))
 	if err != nil {
@@ -340,6 +348,10 @@ func (h *FaturasHandler) buildFaturasIndexData(r *http.Request) (FaturasIndexDat
 }
 
 func queryFaturasIndexCards(db *sql.DB, workspaceID string, year int, month time.Month) ([]CreditCardCard, error) {
+	return queryFaturasIndexCardsAt(db, workspaceID, year, month, time.Now())
+}
+
+func queryFaturasIndexCardsAt(db *sql.DB, workspaceID string, year int, month time.Month, now time.Time) ([]CreditCardCard, error) {
 	rows, err := db.Query(`
 		SELECT a.id, a.name, COALESCE(cc.closing_day, 0), COALESCE(cc.due_day, 0),
 			COALESCE(cc.credit_limit, 0), COALESCE(NULLIF(a.provider_slug, ''), 'custom'),
@@ -429,7 +441,7 @@ func queryFaturasIndexCards(db *sql.DB, workspaceID string, year int, month time
 		}
 		closingLabel := "período selecionado"
 		if invoiceID != "" && closingUnix > 0 && status != models.InvoiceStatusPaid {
-			days := (closingUnix - appTime(time.Now()).Unix()) / 86400
+			days := invoiceClosingCivilDays(closingUnix, now)
 			switch {
 			case days < 0:
 				closingLabel = "fechada"
@@ -717,10 +729,7 @@ func (h *FaturasHandler) HandleListarFaturasDisponiveis(w http.ResponseWriter, r
 
 	rows, err := h.DB.Query(`
 		SELECT i.id, i.reference, i.status, i.closing_date, i.due_date,
-			COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount - COALESCE((
-				SELECT SUM(r.amount_cents) FROM transaction_refunds r
-				WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
-			), 0) ELSE 0 END), 0) - `+invoiceGeneralRefundTotalIASQL+` as total
+			COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END), 0) - `+invoiceGeneralRefundTotalIASQL+` as total
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id AND a.workspace_id = ?
 		LEFT JOIN transactions t ON t.invoice_id = i.id AND t.workspace_id = ?
@@ -1038,7 +1047,11 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 	if err := autoCloseInvoices(db, workspaceID, data.AccountID); err != nil {
 		return data, err
 	}
-	if err := db.QueryRow(`SELECT status FROM invoices WHERE id = ?`, invoiceID).Scan(&data.Status); err != nil {
+	if err := db.QueryRow(`
+		SELECT i.status FROM invoices i
+		JOIN accounts a ON a.id = i.account_id
+		WHERE i.id = ? AND a.workspace_id = ?
+	`, invoiceID, workspaceID).Scan(&data.Status); err != nil {
 		return data, err
 	}
 	switch data.Status {
@@ -1167,10 +1180,7 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 			a.name,
 			COALESCE(u.name, 'Usuário removido'),
 			CASE WHEN t.total_installments > 1 OR t.recurring_rule_id IS NOT NULL THEN 1 ELSE 0 END,
-			COALESCE((
-				SELECT SUM(r.amount_cents) FROM transaction_refunds r
-				WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
-			), 0),
+			(t.amount - (`+transactionNetAmountTSQL+`)),
 			COALESCE((
 				SELECT GROUP_CONCAT(r.description, ' • ') FROM transaction_refunds r
 				WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
@@ -1187,7 +1197,10 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 	}
 	defer rows.Close()
 
-	data.Transactions = scanInvoiceTransactionRows(rows)
+	data.Transactions, err = scanInvoiceTransactionRows(rows)
+	if err != nil {
+		return data, fmt.Errorf("read fatura txs: %w", err)
+	}
 	if err := rows.Close(); err != nil {
 		return data, fmt.Errorf("close fatura txs: %w", err)
 	}
@@ -1224,7 +1237,12 @@ func projectedRecurringInvoiceRows(db *sql.DB, workspaceID, accountID, reference
 	}
 
 	var closingDay, dueDay int64
-	if err := db.QueryRow(`SELECT closing_day, due_day FROM credit_cards WHERE account_id = ?`, accountID).Scan(&closingDay, &dueDay); err != nil {
+	if err := db.QueryRow(`
+		SELECT cc.closing_day, cc.due_day
+		FROM credit_cards cc
+		JOIN accounts a ON a.id = cc.account_id
+		WHERE cc.account_id = ? AND a.workspace_id = ?
+	`, accountID, workspaceID).Scan(&closingDay, &dueDay); err != nil {
 		return nil
 	}
 
@@ -1238,7 +1256,7 @@ func projectedRecurringInvoiceRows(db *sql.DB, workspaceID, accountID, reference
 		       COALESCE(c.icon, 'repeat'),
 		       COALESCE(c.color, '#6366f1')
 		FROM recurring_rules rr
-		LEFT JOIN categories c ON c.id = rr.category_id
+		LEFT JOIN categories c ON c.id = rr.category_id AND c.workspace_id = rr.workspace_id
 		WHERE rr.workspace_id = ?
 		  AND rr.account_id = ?
 		  AND rr.type = ?
@@ -1316,7 +1334,12 @@ func CalculateVirtualInvoiceTotal(db *sql.DB, workspaceID, accountID, reference 
 	}
 
 	var closingDay, dueDay int64
-	if err := db.QueryRow(`SELECT closing_day, due_day FROM credit_cards WHERE account_id = ?`, accountID).Scan(&closingDay, &dueDay); err != nil {
+	if err := db.QueryRow(`
+		SELECT cc.closing_day, cc.due_day
+		FROM credit_cards cc
+		JOIN accounts a ON a.id = cc.account_id
+		WHERE cc.account_id = ? AND a.workspace_id = ?
+	`, accountID, workspaceID).Scan(&closingDay, &dueDay); err != nil {
 		return 0, 0
 	}
 
@@ -1592,7 +1615,7 @@ func projectedInvoiceTransactionRow(amount int64, occurrence time.Time, descript
 	return row
 }
 
-func scanInvoiceTransactionRows(rows *sql.Rows) []TransactionRow {
+func scanInvoiceTransactionRows(rows *sql.Rows) ([]TransactionRow, error) {
 	var list []TransactionRow
 	months := []string{"Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"}
 
@@ -1624,7 +1647,7 @@ func scanInvoiceTransactionRows(rows *sql.Rows) []TransactionRow {
 			&row.RefundedAmount,
 			&row.RefundDescriptions,
 		); err != nil {
-			continue
+			return nil, err
 		}
 
 		row.Type = trType
@@ -1657,7 +1680,10 @@ func scanInvoiceTransactionRows(rows *sql.Rows) []TransactionRow {
 		list = append(list, row)
 	}
 
-	return list
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 func queryPaymentAccounts(db *sql.DB, workspaceID string) []InvoicePaymentAccountOption {
@@ -1847,10 +1873,7 @@ func autoSettleZeroInvoicesTx(tx *sql.Tx, workspaceID, accountID string, now int
 		        AND a.type = ?
 		  )
 		  AND COALESCE((
-			  SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount - COALESCE((
-			          SELECT SUM(r.amount_cents) FROM transaction_refunds r
-			          WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
-			      ), 0) ELSE 0 END)
+			  SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END)
 		      FROM transactions t
 		      WHERE t.workspace_id = ?
 		        AND t.invoice_id = invoices.id
@@ -2028,10 +2051,7 @@ func queryInvoiceOptionsForAccount(db *sql.DB, workspaceID, accountID string) []
 			i.closing_date,
 			i.due_date,
 			COALESCE((
-				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount - COALESCE((
-					SELECT SUM(r.amount_cents) FROM transaction_refunds r
-					WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
-				), 0) ELSE 0 END)
+				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END)
 				FROM transactions t
 				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
 			), 0) - `+invoiceGeneralRefundTotalIASQL+` AS total,
@@ -2206,6 +2226,40 @@ func faturasIndexPeriodFromRequest(r *http.Request) (int, int, error) {
 		return 0, 0, fmt.Errorf("competência inválida")
 	}
 	return month, year, nil
+}
+
+// Initial selection reads persisted OPEN invoices only. A CLOSED invoice has
+// completed its billing cycle, while PAID is settled; neither is an open month.
+// Invoice ownership is established through the credit card's workspace.
+// The upper bound matches faturasIndexPeriodFromRequest's navigable range.
+func initialFaturasIndexPeriod(db *sql.DB, workspaceID string, now time.Time) (int, int, error) {
+	month, year := int(now.Month()), now.Year()
+	var reference string
+	err := db.QueryRow(`
+		SELECT i.reference
+		FROM invoices i
+		JOIN accounts a ON a.id = i.account_id
+		WHERE a.workspace_id = ?
+		  AND a.type = ?
+		  AND a.archived_at IS NULL
+		  AND i.status = ?
+		  AND i.reference >= ?
+		  AND i.reference <= ?
+		ORDER BY i.reference ASC
+		LIMIT 1
+	`, workspaceID, models.AccountTypeCreditCard, models.InvoiceStatusOpen,
+		fmt.Sprintf("%04d-%02d", year, month), fmt.Sprintf("%04d-12", year+10)).Scan(&reference)
+	if err == sql.ErrNoRows {
+		return month, year, nil
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+	selectedYear, selectedMonth, err := parseInvoiceReference(reference)
+	if err != nil {
+		return 0, 0, err
+	}
+	return int(selectedMonth), selectedYear, nil
 }
 
 func faturasIndexURL(accountID string, mes, ano int, sortOrder string) string {
@@ -2476,10 +2530,7 @@ func sumInvoiceTotal(db *sql.DB, workspaceID, invoiceID string) (int64, error) {
 	}
 	var total int64
 	if err := db.QueryRow(`
-		SELECT COALESCE(SUM(t.amount - COALESCE((
-			SELECT SUM(r.amount_cents) FROM transaction_refunds r
-			WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
-		), 0)), 0) - COALESCE((
+		SELECT COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) - COALESCE((
 			SELECT SUM(ir.amount_cents) FROM invoice_refunds ir
 			WHERE ir.workspace_id = ? AND ir.invoice_id = ? AND ir.reversed_at IS NULL
 		), 0) FROM transactions t
@@ -2493,10 +2544,7 @@ func sumInvoiceTotal(db *sql.DB, workspaceID, invoiceID string) (int64, error) {
 func sumInvoiceTotalTx(tx *sql.Tx, workspaceID, invoiceID string) (int64, error) {
 	var total int64
 	if err := tx.QueryRow(`
-		SELECT COALESCE(SUM(t.amount - COALESCE((
-			SELECT SUM(r.amount_cents) FROM transaction_refunds r
-			WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
-		), 0)), 0) - COALESCE((
+		SELECT COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) - COALESCE((
 			SELECT SUM(ir.amount_cents) FROM invoice_refunds ir
 			WHERE ir.workspace_id = ? AND ir.invoice_id = ? AND ir.reversed_at IS NULL
 		), 0) FROM transactions t
@@ -2518,10 +2566,7 @@ func sumCardOutstandingLimit(db *sql.DB, workspaceID, cardAccountID string) (int
 	rows, err := db.Query(`
 		SELECT i.id, i.closing_date,
 		       COALESCE((
-		           SELECT SUM(t.amount - COALESCE((
-		               SELECT SUM(r.amount_cents) FROM transaction_refunds r
-		               WHERE r.workspace_id = t.workspace_id AND r.transaction_id = t.id AND r.reversed_at IS NULL
-		           ), 0))
+		           SELECT SUM(`+transactionNetAmountTSQL+`)
 		           FROM transactions t
 		           WHERE t.workspace_id = a.workspace_id
 		             AND t.invoice_id = i.id

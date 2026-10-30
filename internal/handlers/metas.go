@@ -30,6 +30,26 @@ type MetasHandler struct {
 	Templates   TemplateEngine
 	WorkspaceID string
 	UserID      string
+	// ActorRole é a revalidação interna dos GETs (defesa em profundidade).
+	// A rota continua sendo a primeira barreira de permissão.
+	ActorRole string
+}
+
+const (
+	metasPermDashboardRead = "dashboard:read"
+	metasPermGoalsWrite    = "goals:write"
+)
+
+func (h *MetasHandler) allowMetas(permission string) bool {
+	return models.HasPermission(&models.WorkspaceMember{Role: h.ActorRole}, permission)
+}
+
+func (h *MetasHandler) requireMetasPermission(w http.ResponseWriter, permission string) bool {
+	if h.allowMetas(permission) {
+		return true
+	}
+	http.Error(w, "forbidden", http.StatusForbidden)
+	return false
 }
 
 func respondMetaFormError(w http.ResponseWriter, idPrefix string, message string) {
@@ -177,6 +197,9 @@ const (
 )
 
 func (h *MetasHandler) HandleListarMetas(w http.ResponseWriter, r *http.Request) {
+	if !h.requireMetasPermission(w, metasPermDashboardRead) {
+		return
+	}
 	aba := normalizeMetasAba(r.URL.Query().Get("aba"))
 	data, err := h.buildMetasData("", aba)
 	if err != nil {
@@ -205,6 +228,9 @@ func (h *MetasHandler) HandleListarMetas(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *MetasHandler) HandleMetasConceito(w http.ResponseWriter, r *http.Request) {
+	if !h.requireMetasPermission(w, metasPermDashboardRead) {
+		return
+	}
 	t0 := time.Now()
 	reqID := perfReqID()
 	dbB := dbSnap(h.DB)
@@ -322,6 +348,9 @@ func (h *MetasHandler) loadMetasRenderMetadata() metasRenderMetadata {
 }
 
 func (h *MetasHandler) HandleNovaMeta(w http.ResponseWriter, r *http.Request) {
+	if !h.requireMetasPermission(w, metasPermGoalsWrite) {
+		return
+	}
 	t0 := time.Now()
 	reqID := perfReqID()
 	dbB := dbSnap(h.DB)
@@ -577,8 +606,10 @@ func (h *MetasHandler) HandleAporteCaixinha(w http.ResponseWriter, r *http.Reque
 		}
 		return execOneTx(tx, `
 			INSERT INTO box_virtual_ledger (id, box_id, reference_date, amount, type, description, created_at)
-			VALUES (?, ?, ?, ?, 'RECHARGE', ?, ?)
-		`, uuid.NewString(), boxID, now, amount, note, now)
+			SELECT ?, owner.id, ?, ?, 'RECHARGE', ?, ?
+			FROM boxes owner
+			WHERE owner.id = ? AND owner.workspace_id = ?
+		`, uuid.NewString(), now, amount, note, now, boxID, h.WorkspaceID)
 	}); err != nil {
 		log.Printf("aporte manual error: %v", err)
 		if r.FormValue("_from_sheet") == "1" {
@@ -638,6 +669,9 @@ func transactionAccountLabel(accountType string) string {
 }
 
 func (h *MetasHandler) HandleHistoricoCaixinha(w http.ResponseWriter, r *http.Request) {
+	if !h.requireMetasPermission(w, metasPermGoalsWrite) {
+		return
+	}
 	boxID := strings.TrimSpace(r.URL.Query().Get("box_id"))
 	if boxID == "" {
 		http.Error(w, "ID inválido", http.StatusBadRequest)
@@ -659,12 +693,13 @@ func (h *MetasHandler) HandleHistoricoCaixinha(w http.ResponseWriter, r *http.Re
 			COALESCE(a.name, ''),
 			COALESCE(a.type, '')
 		FROM box_virtual_ledger l
+		JOIN boxes owner ON owner.id = l.box_id
 		LEFT JOIN transactions t ON l.source_transaction_id = t.id AND t.workspace_id = ?
 		LEFT JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
-		WHERE l.box_id = ?
+		WHERE l.box_id = ? AND owner.workspace_id = ?
 		ORDER BY l.created_at DESC, l.id DESC
 		LIMIT 100
-	`, h.WorkspaceID, boxID)
+	`, h.WorkspaceID, boxID, h.WorkspaceID)
 	if err != nil {
 		log.Printf("query box history error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -716,6 +751,9 @@ func (h *MetasHandler) HandleHistoricoCaixinha(w http.ResponseWriter, r *http.Re
 }
 
 func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Request) {
+	if !h.requireMetasPermission(w, metasPermDashboardRead) {
+		return
+	}
 	limitID := strings.TrimSpace(r.URL.Query().Get("limit_id"))
 	if limitID == "" {
 		http.Error(w, "ID inválido", http.StatusBadRequest)
@@ -908,8 +946,10 @@ func (h *MetasHandler) HandleResgateCaixinha(w http.ResponseWriter, r *http.Requ
 		}
 		return execOneTx(tx, `
 			INSERT INTO box_virtual_ledger (id, box_id, reference_date, amount, type, description, created_at)
-			VALUES (?, ?, ?, ?, 'RELEASE', ?, ?)
-		`, uuid.NewString(), boxID, now, -amount, note, now)
+			SELECT ?, owner.id, ?, ?, 'RELEASE', ?, ?
+			FROM boxes owner
+			WHERE owner.id = ? AND owner.workspace_id = ?
+		`, uuid.NewString(), now, -amount, note, now, boxID, h.WorkspaceID)
 	}); err != nil {
 		log.Printf("resgate manual error: %v", err)
 		if r.FormValue("_from_sheet") == "1" {
@@ -1062,9 +1102,9 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 			COALESCE(cl.icon_key, ''),
 			COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) AS spent
 		FROM cost_limits cl
-		JOIN categories c ON c.id = cl.category_id
+		JOIN categories c ON c.id = cl.category_id AND c.workspace_id = cl.workspace_id
 		LEFT JOIN transactions t ON t.workspace_id = cl.workspace_id
-			AND t.category_id IN (SELECT id FROM categories WHERE id = cl.category_id OR parent_id = cl.category_id)
+			AND t.category_id IN (SELECT id FROM categories WHERE workspace_id = cl.workspace_id AND (id = cl.category_id OR parent_id = cl.category_id))
 			AND t.type = 'EXPENSE'
 			AND date(t.date, 'unixepoch') >= ? AND date(t.date, 'unixepoch') <= ?
 		WHERE cl.workspace_id = ?
@@ -1287,7 +1327,7 @@ func (h *MetasHandler) loadLimitFormData(form *MetaFormData, id string) error {
 	err := h.DB.QueryRow(`
 		SELECT cl.id, cl.category_id, cl.max_amount_monthly, COALESCE(c.name, ''), COALESCE(c.icon, ''), COALESCE(c.color, '#6b7280'), COALESCE(cl.icon_key, '')
 		FROM cost_limits cl
-		JOIN categories c ON c.id = cl.category_id
+		JOIN categories c ON c.id = cl.category_id AND c.workspace_id = cl.workspace_id
 		WHERE cl.id = ? AND cl.workspace_id = ?
 	`, id, h.WorkspaceID).Scan(&form.LimitID, &catID, &maxAmount, &form.CategoryName, &icon, &color, &form.LimitIconKey)
 	if err != nil {
@@ -1318,7 +1358,7 @@ func (h *MetasHandler) loadBoxFormData(form *MetaFormData, id string) error {
 			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS balance,
 			COALESCE(b.icon_key, '')
 		FROM boxes b
-		LEFT JOIN categories c ON c.id = b.category_id
+		LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
 		WHERE b.id = ? AND b.workspace_id = ?
 	`, id, h.WorkspaceID).Scan(&form.BoxID, &catID, &form.Name, &targetAmount, &monthlyRecharge, &targetDate, &form.CategoryName, &icon, &color, &monthlyYieldRate, &balance, &form.BoxIconKey)
 	if err != nil && isMissingColumnError(err, "target_date") {
@@ -1332,7 +1372,7 @@ func (h *MetasHandler) loadBoxFormData(form *MetaFormData, id string) error {
 				COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS balance,
 				''
 			FROM boxes b
-			LEFT JOIN categories c ON c.id = b.category_id
+			LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
 			WHERE b.id = ? AND b.workspace_id = ?
 		`, id, h.WorkspaceID).Scan(&form.BoxID, &catID, &form.Name, &targetAmount, &monthlyRecharge, &form.CategoryName, &icon, &color, &balance, &form.BoxIconKey)
 	}
@@ -1447,7 +1487,7 @@ func (h *MetasHandler) queryBoxesForMetas() (*sql.Rows, error) {
 			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS total_balance,
 			COALESCE(b.icon_key, '')
 		FROM boxes b
-		LEFT JOIN categories c ON c.id = b.category_id
+		LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
 		WHERE b.workspace_id = ?
 		ORDER BY b.name
 	`
@@ -1465,7 +1505,7 @@ func (h *MetasHandler) queryBoxesForMetas() (*sql.Rows, error) {
 			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS total_balance,
 			''
 		FROM boxes b
-		LEFT JOIN categories c ON c.id = b.category_id
+		LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
 		WHERE b.workspace_id = ?
 		ORDER BY b.name
 	`
@@ -1579,7 +1619,7 @@ func (h *MetasHandler) buildBoxSheetData(boxID string) (BoxSheetData, error) {
 			COALESCE(b.icon_key, ''),
 			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0)
 		FROM boxes b
-		LEFT JOIN categories c ON c.id = b.category_id
+		LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
 		WHERE b.id = ? AND b.workspace_id = ?
 	`, boxID, h.WorkspaceID).Scan(&d.BoxName, &categoryID, &targetAmount, &categoryName, &d.CategoryIcon, &color, &d.IconKey, &balanceCents)
 
@@ -1604,6 +1644,9 @@ func (h *MetasHandler) buildBoxSheetData(boxID string) (BoxSheetData, error) {
 }
 
 func (h *MetasHandler) HandleAporteCaixinhaSheet(w http.ResponseWriter, r *http.Request) {
+	if !h.requireMetasPermission(w, metasPermGoalsWrite) {
+		return
+	}
 	boxID := strings.TrimSpace(r.URL.Query().Get("box_id"))
 	if boxID == "" {
 		http.Error(w, "id invalido", http.StatusBadRequest)
@@ -1624,6 +1667,9 @@ func (h *MetasHandler) HandleAporteCaixinhaSheet(w http.ResponseWriter, r *http.
 }
 
 func (h *MetasHandler) HandleResgateCaixinhaSheet(w http.ResponseWriter, r *http.Request) {
+	if !h.requireMetasPermission(w, metasPermGoalsWrite) {
+		return
+	}
 	boxID := strings.TrimSpace(r.URL.Query().Get("box_id"))
 	if boxID == "" {
 		http.Error(w, "id invalido", http.StatusBadRequest)

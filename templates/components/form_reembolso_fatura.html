@@ -1,52 +1,57 @@
 {{define "form-reembolso-fatura"}}
 <link rel="stylesheet" href="{{assetPath "/assets/css/sheet-form.css"}}">
 <div class="fixed inset-0 z-[100]">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation"></div>
-    <div class="absolute inset-x-0 bottom-0 flex justify-center overflow-hidden md:inset-0 md:items-center md:px-4 md:py-8">
-        <section class="sheet-in sheet-shell relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl border md:rounded-xl" aria-labelledby="invoice-refund-title">
+    <div class="absolute inset-0 bg-black/60" role="presentation"></div>
+    <div class="cb-invoice-refund-layer absolute inset-x-0 bottom-0 flex justify-center overflow-hidden md:inset-0">
+        <section class="sheet-in sheet-shell cb-invoice-refund-dialog relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl border md:rounded-xl" role="dialog" aria-modal="true" aria-labelledby="invoice-refund-title" aria-describedby="invoice-refund-description">
             <div class="sheet-drag mx-auto mt-4 h-1 w-10 rounded-full md:hidden"></div>
-            <header class="sheet-topbar flex items-center gap-3 px-4 pb-3 pt-4 sm:px-6 md:pt-5">
-                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-[var(--cb-success)]">
-                    <i data-lucide="undo-2" class="h-5 w-5"></i>
+            <header class="sheet-topbar flex flex-0 items-center gap-3 px-4 pb-3 pt-4 sm:px-6 md:pt-5">
+                <span class="cb-invoice-sheet-icon" aria-hidden="true">
+                    <i data-lucide="undo-2"></i>
                 </span>
                 <div class="min-w-0 flex-1">
-                    <h2 id="invoice-refund-title" class="text-base font-bold text-[var(--cb-text-main)]">{{if .IsEditing}}Editar reembolso geral{{else}}Informar reembolso geral{{end}}</h2>
-                    <p class="truncate text-xs text-[var(--cb-text-muted)]">{{.CardName}} · Fatura {{.Reference}}</p>
+                    <h2 id="invoice-refund-title" class="cb-invoice-sheet-title">{{if .IsEditing}}Editar reembolso geral{{else}}Informar reembolso geral{{end}}</h2>
+                    <p class="cb-invoice-sheet-subtitle">{{.CardName}} · Fatura {{.Reference}}</p>
                 </div>
                 <button type="button" class="sheet-close-btn flex h-11 w-11 items-center justify-center rounded-full border" data-onclick="closeBottomSheet" aria-label="Fechar">
                     <i data-lucide="x" class="h-5 w-5"></i>
                 </button>
             </header>
-            <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-5 pt-2 sm:px-6">
-                <div class="mb-4 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3 text-xs">
-                    <div class="flex items-center justify-between gap-3">
-                        <span class="text-[var(--cb-text-muted)]">Saldo pendente da fatura</span>
-                        <strong class="text-[var(--cb-success)]" data-sensitive>{{.PendingAmount}}</strong>
+            <form hx-post="{{.FormAction}}" hx-swap="none" hx-indicator="#htmx-indicator" class="sheet-form flex min-h-0 flex-1 flex-col">
+                <div class="cb-invoice-sheet-body min-h-0 flex-1 overflow-y-auto">
+                    <div class="cb-invoice-sheet-summary">
+                        <div class="cb-invoice-sheet-summary-row">
+                            <span>Saldo pendente da fatura</span>
+                            <strong class="is-success" data-sensitive>R$ {{.PendingAmount.Reais}}{{.PendingAmount.Cents}}</strong>
+                        </div>
+                        {{if .HasAlreadyRefunded}}
+                        <div class="cb-invoice-sheet-summary-row">
+                            <span>Reembolsos gerais já informados</span>
+                            <strong data-sensitive>R$ {{.AlreadyRefunded.Reais}}{{.AlreadyRefunded.Cents}}</strong>
+                        </div>
+                        {{end}}
                     </div>
-                    {{if .HasAlreadyRefunded}}
-                    <div class="mt-2 flex items-center justify-between gap-3 border-t border-[var(--cb-border-subtle)] pt-2">
-                        <span class="text-[var(--cb-text-muted)]">Reembolsos gerais já informados</span>
-                        <strong class="text-[var(--cb-text-main)]" data-sensitive>{{.AlreadyRefunded}}</strong>
-                    </div>
-                    {{end}}
-                </div>
-                <form hx-post="{{.FormAction}}" hx-swap="none" hx-indicator="#htmx-indicator" class="sheet-form space-y-4">
                     <input type="hidden" name="invoice_id" value="{{.InvoiceID}}">
                     <label class="block">
                         <span class="sheet-label mb-1.5 block">Valor reembolsado</span>
                         <input name="valor" type="text" inputmode="numeric" autocomplete="off" value="{{if .IsEditing}}R$ {{.CurrentAmountInput}}{{end}}" placeholder="R$ 0,00" data-money-mask class="sheet-control h-14 w-full rounded-xl border px-4 text-lg font-bold outline-none" required autofocus>
                     </label>
-                    <label class="block">
+                    <label class="mt-4 block">
                         <span class="sheet-label mb-1.5 block">Descrição</span>
                         <input name="descricao" type="text" maxlength="240" value="{{.Description}}" placeholder="Ex: Estorno de compra em fatura anterior" class="sheet-control h-14 w-full rounded-xl border px-4 text-sm outline-none" required>
                     </label>
-                    <p class="text-xs leading-relaxed text-[var(--cb-text-muted)]">Use quando o crédito pertence a uma compra de outra fatura. O valor reduz apenas o saldo desta fatura e não será contabilizado como receita.</p>
-                    <button type="submit" class="cb-button cb-button-primary btn-tactile flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-bold">
-                        <i data-lucide="check" class="h-4 w-4"></i>
+                    <p id="invoice-refund-description" class="cb-invoice-sheet-note mt-4">Use quando o crédito pertence a uma compra de outra fatura. O valor reduz apenas o saldo desta fatura e não será contabilizado como receita.</p>
+                </div>
+                <div class="cb-invoice-sheet-actions">
+                    <button type="button" class="ui-btn ui-btn--ghost cb-invoice-modal-btn" data-onclick="closeBottomSheet">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="ui-btn ui-btn--primary cb-invoice-modal-btn">
+                        <i data-lucide="check" aria-hidden="true"></i>
                         {{.SubmitLabel}}
                     </button>
-                </form>
-            </div>
+                </div>
+            </form>
         </section>
     </div>
 </div>

@@ -1,171 +1,261 @@
 {{define "dashboard-page"}}
 {{template "app-v2-document-head-start" .}}
-    <link rel="stylesheet" href="/assets/css/dashboard.css">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/dashboard.css"}}">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/credit-cards.css"}}">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/dashboard-wallet.css"}}">
 {{template "app-v2-document-head-end" .}}
         <main id="main-content" class="cb-v2-main" data-dashboard data-page-section="dashboard" data-page-title="Dashboard">
             {{template "app-v2-appbar" .}}
-
             {{template "dashboard-canonical-content" .}}
         </main>
         {{template "app-v2-shell-after-main" .}}
-    <script src="/assets/js/dashboard.js"></script>
+    <script src="{{assetPath "/assets/js/credit-cards.js"}}"></script>
+    <script src="{{assetPath "/assets/js/dashboard.js"}}"></script>
+    <script src="{{assetPath "/assets/js/balance-evolution.js"}}"></script>
 {{template "app-v2-document-end" .}}
 {{end}}
 
 {{define "dashboard-canonical-content"}}
-            <div id="dashboard-content" class="cb-v2-content"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
-                <section class="cb-v2-heading-row" aria-labelledby="dashboard-title">
-                    <div>
-                        <p class="cb-v2-eyebrow">Visão geral</p>
-                        <h1 id="dashboard-title">Olá, {{.UserFirstName}}</h1>
-                        <p>Acompanhe a posição financeira e os compromissos próximos.</p>
-                    </div>
-                    <div class="cb-v2-quick-actions" aria-label="Ações rápidas">
-                        <p class="cb-v2-quick-label">Ações rápidas</p>
-                        <nav class="cb-v2-context-actions">
-                            <a href="/lancamentos"><i data-lucide="arrow-left-right" aria-hidden="true"></i><span>Extrato</span></a>
-                            <a href="/contas"><i data-lucide="receipt-text" aria-hidden="true"></i><span>Obrigações</span></a>
-                            <a href="/metas?aba=reservas"><i data-lucide="goal" aria-hidden="true"></i><span>Reservas</span></a>
-                            <a href="/relatorios"><i data-lucide="chart-column" aria-hidden="true"></i><span>Fechamento</span></a>
-                        </nav>
-                    </div>
-                </section>
-
-                <div class="cb-v2-grid">
-                    <div class="cb-v2-left-column">
-                        <section class="cb-v2-panel cb-v2-financial-panel" aria-labelledby="v2-financial-title">
-                            <header class="cb-v2-panel-header">
-                                <h2 id="v2-financial-title">Posição financeira</h2>
-                                <a href="/metas?aba=reservas" aria-label="Gerenciar reservas"><i data-lucide="arrow-up-right" aria-hidden="true"></i></a>
-                            </header>
-                            <p class="cb-v2-label">Saldo total</p>
-                            <p class="cb-v2-balance {{if .Balance.IsNegative}}is-negative{{end}}" data-sensitive>R$ {{.Balance.Money.Reais}}{{.Balance.Money.Cents}}</p>
-                            <div class="cb-v2-balance-breakdown">
-                                <div><span><i data-lucide="lock-keyhole" aria-hidden="true"></i>Reservado</span><strong data-sensitive>R$ {{.Balance.Reserved.Reais}}{{.Balance.Reserved.Cents}}</strong></div>
-                                <div><span><i data-lucide="wallet" aria-hidden="true"></i>Disponível</span><strong class="{{if .Balance.FreeIsNegative}}is-negative{{end}}" data-sensitive>R$ {{.Balance.Free.Reais}}{{.Balance.Free.Cents}}</strong></div>
-                            </div>
-                            <div class="cb-v2-trend {{if eq .Balance.TrendDirection "up"}}is-positive{{else if eq .Balance.TrendDirection "down"}}is-negative{{end}}">
-                                <span>Evolução nos últimos 30 dias</span>
-                                <strong data-sensitive>{{if eq .Balance.TrendDirection "up"}}↑{{else if eq .Balance.TrendDirection "down"}}↓{{else}}—{{end}} {{.Balance.TrendPercent}}</strong>
-                            </div>
-                        </section>
-
-                        <section class="cb-v2-panel cb-v2-accounts-panel" aria-labelledby="v2-accounts-title">
-                            <header class="cb-v2-panel-header">
-                                <h2 id="v2-accounts-title">Minhas contas</h2>
-                                <a href="/lancamentos" class="cb-v2-text-link">Ver todas</a>
-                            </header>
+<div id="dashboard-content" class="wallet"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
+    <header class="wallet-heading">
+        <div><h1>Olá, {{.UserFirstName}}</h1><p>Sua carteira, em perspectiva.</p></div>
+        <nav class="wallet-shortcuts" aria-label="Ações rápidas">
+            <a href="/lancamentos"><i data-lucide="arrow-left-right" aria-hidden="true"></i>Extrato</a>
+            <a href="/contas"><i data-lucide="receipt-text" aria-hidden="true"></i>Obrigações</a>
+            <a href="/metas?aba=reservas"><i data-lucide="goal" aria-hidden="true"></i>Reservas</a>
+            <a href="/relatorios"><i data-lucide="chart-column" aria-hidden="true"></i>Fechamento</a>
+        </nav>
+    </header>
+    <section class="wallet-position" aria-labelledby="v2-financial-title">
+        <h2 id="v2-financial-title" class="sr-only">Posição financeira</h2>
+        <div class="wallet-kpi wallet-kpi-total">
+            <p class="wallet-total-label">Saldo total</p>
+            <p class="cb-v2-balance {{if .Balance.IsNegative}}is-negative{{end}}" data-sensitive>{{if .Balance.ReserveBalanceAvailable}}R$ {{.Balance.Money.Reais}}{{.Balance.Money.Cents}}{{else}}Indisponível{{end}}</p>
+            <button type="button" class="wallet-privacy" data-privacy-toggle aria-label="Alternar visibilidade dos valores"><i data-privacy-icon data-lucide="eye" aria-hidden="true"></i></button>
+            <div class="wallet-trend-row">
+                <p class="wallet-trend"><span class="wallet-trend-chip {{if eq .Balance.TrendDirection "up"}}is-positive{{else if eq .Balance.TrendDirection "down"}}is-negative{{end}}" data-sensitive>{{if eq .Balance.TrendDirection "up"}}↑{{else if eq .Balance.TrendDirection "down"}}↓{{else}}—{{end}} {{.Balance.TrendPercent}}</span> <span>em 30 dias</span></p>
+                <button type="button" class="wallet-evolution-toggle" data-balance-series-toggle aria-expanded="false" aria-controls="wallet-balance-evolution">
+                    <i data-lucide="chart-no-axes-combined" aria-hidden="true"></i>
+                    <span data-balance-series-toggle-label>Ver evolução</span>
+                    <i data-lucide="chevron-down" class="wallet-evolution-chevron" aria-hidden="true"></i>
+                </button>
+            </div>
+        </div>
+        <div class="wallet-kpi wallet-kpi-secondary">
+            <div class="wallet-kpi-row"><span class="wallet-kpi-dot is-reserved" aria-hidden="true"></span><span class="wallet-kpi-label">Reservado</span><strong class="wallet-kpi-value" data-sensitive>{{if .Balance.ReserveBalanceAvailable}}R$ {{.Balance.Reserved.Reais}}{{.Balance.Reserved.Cents}}{{else}}Indisponível{{end}}</strong><small>Em metas e reservas</small></div>
+            <div class="wallet-kpi-row"><span class="wallet-kpi-dot is-free" aria-hidden="true"></span><span class="wallet-kpi-label">Disponível</span><strong class="wallet-kpi-value {{if .Balance.FreeIsNegative}}is-negative{{end}}" data-sensitive>{{if .Balance.ReserveBalanceAvailable}}R$ {{.Balance.Free.Reais}}{{.Balance.Free.Cents}}{{else}}Indisponível{{end}}</strong><small>Saldo livre de reservas</small></div>
+        </div>
+    </section>
+    <section class="wallet-section wallet-evolution" id="wallet-balance-evolution" data-balance-series hidden aria-labelledby="wallet-evolution-title">
+        <header class="wallet-section-heading wallet-evolution-heading">
+            <div class="wallet-section-title">
+                <span class="wallet-section-icon" aria-hidden="true"><i data-lucide="chart-no-axes-combined"></i></span>
+                <div><h2 id="wallet-evolution-title">Evolução do saldo</h2><p>Saldo consolidado das contas</p></div>
+            </div>
+            <div class="wallet-evolution-actions">
+                <div class="wallet-period" role="group" aria-label="Período da evolução">
+                    <button type="button" data-balance-period="30d" aria-label="30 dias" aria-pressed="true"><span class="wallet-period-label-full">30 dias</span><span class="wallet-period-label-short" aria-hidden="true">30d</span></button>
+                    <button type="button" data-balance-period="90d" aria-label="90 dias" aria-pressed="false"><span class="wallet-period-label-full">90 dias</span><span class="wallet-period-label-short" aria-hidden="true">90d</span></button>
+                    <button type="button" data-balance-period="6m" aria-label="6 meses" aria-pressed="false"><span class="wallet-period-label-full">6 meses</span><span class="wallet-period-label-short" aria-hidden="true">6m</span></button>
+                    <button type="button" data-balance-period="12m" aria-label="12 meses" aria-pressed="false"><span class="wallet-period-label-full">12 meses</span><span class="wallet-period-label-short" aria-hidden="true">12m</span></button>
+                </div>
+                <button type="button" class="wallet-evolution-close" data-balance-close aria-label="Recolher evolução"><i data-lucide="x" aria-hidden="true"></i></button>
+            </div>
+        </header>
+        <div class="wallet-evolution-meta">
+            <span class="wallet-evolution-status" data-balance-status hidden>Reconstruído</span>
+            <span class="wallet-evolution-composition" data-balance-composition hidden>Composição alterada</span>
+            <p class="wallet-evolution-stat"><span>Variação no período</span><strong data-balance-variation>—</strong></p>
+            <p class="wallet-evolution-stat"><span>Cobertura</span><strong data-balance-coverage>—</strong></p>
+        </div>
+        <div class="wallet-evolution-plot" data-balance-plot>
+            <div class="wallet-evolution-loading" data-balance-loading role="status" hidden>
+                <span class="wallet-evolution-spinner" aria-hidden="true"></span>
+                <span>Carregando histórico…</span>
+            </div>
+            <div class="wallet-evolution-message" data-balance-message aria-live="polite" hidden>
+                <p data-balance-message-text></p>
+                <button type="button" class="wallet-link" data-balance-retry hidden>Tentar novamente</button>
+            </div>
+            <div class="wallet-evolution-frame" data-balance-frame tabindex="0" role="group" aria-labelledby="wallet-evolution-title" aria-describedby="wallet-evolution-help wallet-evolution-summary" hidden>
+                <p class="sr-only" id="wallet-evolution-help">Use as setas esquerda e direita para percorrer os pontos, Home e End para ir ao início ou ao fim, e Esc para fechar o detalhe.</p>
+                <p class="sr-only" id="wallet-evolution-summary" data-balance-summary></p>
+                <svg class="wallet-evolution-svg" data-balance-svg aria-hidden="true" focusable="false"></svg>
+            </div>
+            <p class="wallet-evolution-live sr-only" data-balance-live aria-live="polite"></p>
+        </div>
+        <details class="wallet-evolution-table" data-balance-table hidden>
+            <summary>Ver valores do período</summary>
+            <div class="wallet-evolution-table-scroll">
+                <table>
+                    <thead><tr><th scope="col">Data</th><th scope="col">Saldo consolidado</th></tr></thead>
+                    <tbody data-balance-table-body></tbody>
+                </table>
+            </div>
+        </details>
+        <div class="wallet-evolution-footnote">
+            <p><i data-lucide="info" aria-hidden="true"></i> Histórico reconstruído a partir dos registros financeiros disponíveis. Não é um snapshot histórico certificado.</p>
+            <p class="wallet-evolution-caveat" data-balance-caveat hidden></p>
+            <details>
+                <summary>Como este histórico é calculado</summary>
+                <ul data-balance-limitations></ul>
+            </details>
+        </div>
+    </section>
+    <div class="wallet-layout">
+        <div class="wallet-column wallet-column-main">
+        <section class="wallet-section wallet-accounts" aria-labelledby="wallet-accounts-title" data-wallet-collapsed="true">
+            <header class="wallet-section-heading"><div class="wallet-section-title"><span class="wallet-section-icon" aria-hidden="true"><i data-lucide="landmark"></i></span><div><h2 id="wallet-accounts-title">Suas contas <span class="wallet-count">{{len .Accounts}}</span></h2><p>Saldos por instituição</p></div></div><a class="wallet-link" href="/lancamentos">Extrato <i data-lucide="arrow-up-right" aria-hidden="true"></i></a></header>
                             {{if .Accounts}}
-                            <div class="cb-v2-account-list">
+                            <div class="cb-v2-account-list" id="wallet-account-list">
                                 {{range .Accounts}}
                                 <a class="cb-v2-account-row" href="/lancamentos?conta={{.ID}}">
-                                    <span class="cb-v2-provider-mark{{if .ProviderLogoPath}} cb-v2-provider-mark--image{{end}}" data-cb-color="{{.Color}}">{{if .ProviderLogoPath}}<img src="{{assetPath .ProviderLogoPath}}" alt="" class="institution-logo" data-avatar-fallback><span class="hidden" data-avatar-text>{{.ProviderMark}}</span>{{else if .ProviderMark}}{{.ProviderMark}}{{else}}CB{{end}}</span>
+                                    <span class="cb-v2-provider-mark{{if .ProviderLogoPath}} cb-v2-provider-mark--image{{end}}" data-cb-color="{{.Color}}">{{if .ProviderLogoPath}}<img src="{{assetPath .ProviderLogoPath}}" alt="" width="30" height="30" class="institution-logo" data-avatar-fallback><span class="hidden" data-avatar-text>{{.ProviderMark}}</span>{{else if .ProviderMark}}{{.ProviderMark}}{{else}}CB{{end}}</span>
                                     <span class="cb-v2-account-copy"><strong>{{.Name}}</strong><small>{{.TypeLabel}}</small></span>
-                                    <span class="cb-v2-account-amount"><strong data-sensitive>R$ {{.Money.Reais}}{{.Money.Cents}}</strong><small class="{{if eq .TrendDirection "up"}}is-positive{{else if eq .TrendDirection "down"}}is-negative{{end}}" data-sensitive>{{if eq .TrendDirection "up"}}↑{{else if eq .TrendDirection "down"}}↓{{end}} {{.TrendPercent}}</small></span>
+                                    <span class="cb-v2-account-amount">{{if .InvestmentPatrimony}}<small>Saldo financeiro</small>{{end}}<strong data-sensitive>R$ {{.Money.Reais}}{{.Money.Cents}}</strong><small class="{{if eq .TrendDirection "up"}}is-positive{{else if eq .TrendDirection "down"}}is-negative{{end}}" data-sensitive>{{if eq .TrendDirection "up"}}↑{{else if eq .TrendDirection "down"}}↓{{end}} {{.TrendPercent}}</small></span>
                                 </a>
                                 {{end}}
                             </div>
                             {{else}}
                             <div class="cb-v2-empty-state"><i data-lucide="landmark" aria-hidden="true"></i><p>Nenhuma conta cadastrada.</p><a href="/configuracoes/contas">Cadastrar conta</a></div>
                             {{end}}
-                        </section>
-                    </div>
 
-                    <div class="cb-v2-right-column">
-                        <section class="cb-v2-card-section" aria-labelledby="v2-cards-title">
-                            <div class="cb-v2-section-heading">
-                                <h2 id="v2-cards-title">Cartões e faturas</h2>
-                                <div class="cb-v2-section-tools">
-                                    <a href="/faturas" class="cb-v2-text-link">Ver todos</a>
-                                    <div class="cb-v2-carousel-controls" aria-label="Navegar pelos cartões">
-                                        <button type="button" class="cb-v2-carousel-control" data-v2-carousel-prev aria-label="Cartões anteriores" disabled><i data-lucide="chevron-left" aria-hidden="true"></i></button>
-                                        <button type="button" class="cb-v2-carousel-control" data-v2-carousel-next aria-label="Próximos cartões" disabled><i data-lucide="chevron-right" aria-hidden="true"></i></button>
-                                    </div>
-                                </div>
-                            </div>
-                            {{if .Cards}}
-                            <div class="cb-v2-card-carousel" data-v2-card-group>
-                            <div class="cb-v2-card-rail" data-v2-carousel role="region" aria-label="Cartões de crédito">
-                                {{range $index, $card := .Cards}}
-                                {{template "credit-card-tile" $card}}
-                                {{end}}
-                                {{if gt (len .Cards) 6}}<a href="/faturas" class="cb-v2-all-invoices-slide" data-v2-all-invoices-slide><i data-lucide="arrow-up-right" aria-hidden="true"></i><strong>Ver todas Faturas</strong><span>Consulte todos os cartões e faturas</span><span class="cb-v2-all-invoices-arrow" aria-hidden="true">→</span></a>{{end}}
-                            </div>
-                            <div class="cb-v2-carousel-dots" data-v2-carousel-dots aria-hidden="true"></div>
-                            </div>
-                            {{else}}
-                            <a class="cb-v2-empty-card" href="/configuracoes/cartoes"><i data-lucide="credit-card" aria-hidden="true"></i><span><strong>Cadastre seu primeiro cartão</strong><small>Acompanhe faturas, vencimentos e limite disponível.</small></span><i data-lucide="arrow-up-right" aria-hidden="true"></i></a>
-                            {{end}}
-                        </section>
-
-                        <div class="cb-v2-metrics-grid">
-                            <section class="cb-v2-panel" aria-labelledby="v2-limits-title">
-                                <header class="cb-v2-panel-header"><h2 id="v2-limits-title">{{if .IsBusiness}}Controle de custos{{else}}Limites{{end}}</h2><a href="/metas?aba=limites" class="cb-v2-text-link">Ver todos</a></header>
-                                {{if .Limits}}
-                                <div class="cb-v2-progress-list">
-                                    {{range .Limits}}
-                                    <div class="cb-v2-progress-item cb-v2-meter--{{.Tone}}">
-                                        <div class="cb-v2-progress-item-head">
-                                            <span class="cb-v2-progress-icon" title="{{.IconLabel}}">
-                                                <i data-lucide="{{.IconOrDefault}}" aria-hidden="true"></i>
-                                                <span class="sr-only">Ícone: {{.IconLabel}}</span>
-                                            </span>
-                                            <strong>{{.CategoryName}}</strong>
-                                            <span data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}} / R$ {{.Limit.Reais}}{{.Limit.Cents}}</span>
-                                        </div>
-                                        <div class="cb-v2-progress-bar">
-                                            <progress class="cb-v2-meter-track" value="{{.Percent}}" max="100" aria-label="{{.CategoryName}}: {{.ToneLabel}}, {{.PercentExact}}% de R$ {{.Limit.Reais}}{{.Limit.Cents}}">{{.PercentExact}}%</progress>
-                                            <span class="cb-v2-progress-label" aria-hidden="true">{{.PercentExact}}%</span>
-                                        </div>
-                                    </div>
-                                    {{end}}
-                                </div>
-                                {{else}}
-                                <div class="cb-v2-empty-state"><i data-lucide="sliders-horizontal" aria-hidden="true"></i><p>Nenhum limite definido.</p><a href="/metas?aba=limites">Criar limite</a></div>
-                                {{end}}
-                            </section>
-
-                            <section class="cb-v2-panel" aria-labelledby="v2-goals-title">
-                                <header class="cb-v2-panel-header"><h2 id="v2-goals-title">Metas e reservas</h2><a href="/metas?aba=reservas" class="cb-v2-text-link">Explorar</a></header>
-                                {{if .Boxes}}
-                                <div class="cb-v2-progress-list">
-                                    {{range .Boxes}}
-                                    <div class="cb-v2-progress-item cb-v2-meter--{{.ProgressTone}}">
-                                        <div class="cb-v2-progress-item-head">
-                                            <span class="cb-v2-progress-icon" title="{{.IconLabel}}">
-                                                <i data-lucide="{{.IconOrDefault}}" aria-hidden="true"></i>
-                                                <span class="sr-only">Ícone: {{.IconLabel}}</span>
-                                            </span>
-                                            <strong>{{.Name}}</strong>
-                                            <span class="{{if .IsNegative}}is-negative{{end}}" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}} / R$ {{.Target.Reais}}{{.Target.Cents}}</span>
-                                        </div>
-                                        <div class="cb-v2-progress-bar">
-                                            <progress class="cb-v2-meter-track" value="{{.Percent}}" max="100" aria-label="{{.Name}}: {{.ProgressToneLabel}}, {{.Percent}}% de R$ {{.Target.Reais}}{{.Target.Cents}}">{{.Percent}}%</progress>
-                                            <span class="cb-v2-progress-label" aria-hidden="true">{{.Percent}}%</span>
-                                        </div>
-                                    </div>
-                                    {{end}}
-                                </div>
-                                {{else}}
-                                <div class="cb-v2-empty-state"><i data-lucide="goal" aria-hidden="true"></i><p>Crie metas para acompanhar suas reservas.</p><a href="/metas?aba=reservas">Criar reserva</a></div>
-                                {{end}}
-                            </section>
-                        </div>
-
-                        <section class="cb-v2-panel cb-v2-actions-panel" aria-labelledby="v2-actions-title" data-v2-action-tabs>
-                            <header class="cb-v2-panel-header"><h2 id="v2-actions-title">Próximas ações</h2><a href="/contas" class="cb-v2-text-link">Ver todas</a></header>
-                            <div class="cb-v2-tabs" role="tablist" aria-label="Próximas ações">
-                                <button type="button" id="v2-tab-payables" role="tab" aria-selected="true" aria-controls="v2-panel-payables" data-v2-action-tab="payables">A pagar <span>{{.Payable7dCount}}</span></button>
-                                <button type="button" id="v2-tab-receivables" role="tab" aria-selected="false" aria-controls="v2-panel-receivables" data-v2-action-tab="receivables">A receber <span>{{.Receivable7dCount}}</span></button>
-                            </div>
-                            <div id="v2-panel-payables" role="tabpanel" aria-labelledby="v2-tab-payables" data-v2-action-panel="payables">
-                                {{if .PendingPayables}}<p class="cb-v2-action-total">Total <strong data-sensitive>R$ {{.Payable7dTotal.Reais}}{{.Payable7dTotal.Cents}}</strong> · {{.Payable7dCount}} itens</p><div class="cb-v2-action-list">{{range .PendingPayables}}<a class="cb-v2-action-row {{if .IsOverdue}}is-overdue{{end}}" href="/contas"><span class="cb-v2-action-dot" aria-hidden="true"></span><span><strong>{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</strong><small>{{.DueDateLabel}}{{if .IsOverdue}} · Vencido{{end}}</small></span><b data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</b></a>{{end}}</div>{{else}}<div class="cb-v2-empty-state"><i data-lucide="circle-check" aria-hidden="true"></i><p>Nenhuma conta a pagar nos próximos 7 dias.</p></div>{{end}}
-                            </div>
-                            <div id="v2-panel-receivables" role="tabpanel" aria-labelledby="v2-tab-receivables" data-v2-action-panel="receivables" hidden>
-                                {{if .PendingReceivables}}<p class="cb-v2-action-total">Total <strong class="is-positive" data-sensitive>R$ {{.Receivable7dTotal.Reais}}{{.Receivable7dTotal.Cents}}</strong> · {{.Receivable7dCount}} itens</p><div class="cb-v2-action-list">{{range .PendingReceivables}}<a class="cb-v2-action-row cb-v2-action-receivable {{if .IsOverdue}}is-overdue{{end}}" href="/contas"><span class="cb-v2-action-dot" aria-hidden="true"></span><span><strong>{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</strong><small>{{.DueDateLabel}}{{if .IsOverdue}} · Vencido{{end}}</small></span><b data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</b></a>{{end}}</div>{{else}}<div class="cb-v2-empty-state"><i data-lucide="circle-check" aria-hidden="true"></i><p>Nenhum recebimento nos próximos 7 dias.</p></div>{{end}}
-                            </div>
-                        </section>
-                    </div>
-                </div>
+            {{if gt (len .Accounts) 10}}<button type="button" class="wallet-expand" data-wallet-accounts-toggle aria-expanded="false" aria-controls="wallet-account-list" hidden><span>Mostrar mais contas</span><i data-lucide="chevron-down" aria-hidden="true"></i></button>{{end}}
+        </section>
+        <section class="wallet-section wallet-commitments cb-v2-actions-panel" aria-labelledby="v2-actions-title" data-v2-action-tabs data-wallet-commitments>
+            <header class="wallet-section-heading"><div class="wallet-section-title"><span class="wallet-section-icon" aria-hidden="true"><i data-lucide="calendar-clock"></i></span><div><h2 id="v2-actions-title">Próximos compromissos</h2><p>A pagar e a receber no curto prazo</p></div></div><a class="wallet-link" href="/contas">Ver todas <i data-lucide="arrow-up-right" aria-hidden="true"></i></a></header>
+            <div class="cb-v2-tabs" role="tablist" aria-label="Próximos compromissos">
+                <button type="button" id="v2-tab-payables" role="tab" aria-selected="true" aria-controls="v2-panel-payables" data-v2-action-tab="payables">A pagar <span>{{.Payable7dCount}}</span></button>
+                <button type="button" id="v2-tab-receivables" role="tab" aria-selected="false" aria-controls="v2-panel-receivables" data-v2-action-tab="receivables">A receber <span>{{.Receivable7dCount}}</span></button>
             </div>
+            <div id="v2-panel-payables" role="tabpanel" aria-labelledby="v2-tab-payables" data-v2-action-panel="payables">
+                {{if .PendingPayables}}<p class="cb-v2-action-total">Total <strong data-sensitive>R$ {{.Payable7dTotal.Reais}}{{.Payable7dTotal.Cents}}</strong> · {{.Payable7dCount}} {{if eq .Payable7dCount 1}}item{{else}}itens{{end}}</p><div class="cb-v2-action-list">{{range .PendingPayables}}<a class="cb-v2-action-row {{if .IsOverdue}}is-overdue{{end}}" href="/contas"><span class="cb-v2-action-dot" aria-hidden="true"></span><span class="wallet-action-main"><strong>{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</strong><small><span class="wallet-action-date">{{.DueDateLabel}}</span><span class="wallet-action-flag">{{if .IsOverdue}}Vencido{{else}}{{.StatusLabel}}{{end}}</span></small></span><b data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</b></a>{{end}}</div>{{else}}<div class="cb-v2-empty-state"><i data-lucide="circle-check" aria-hidden="true"></i><p>Nenhuma conta a pagar no curto prazo.</p></div>{{end}}
+            </div>
+            <div id="v2-panel-receivables" role="tabpanel" aria-labelledby="v2-tab-receivables" data-v2-action-panel="receivables" hidden>
+                {{if .PendingReceivables}}<p class="cb-v2-action-total">Total <strong class="is-positive" data-sensitive>R$ {{.Receivable7dTotal.Reais}}{{.Receivable7dTotal.Cents}}</strong> · {{.Receivable7dCount}} {{if eq .Receivable7dCount 1}}item{{else}}itens{{end}}</p><div class="cb-v2-action-list">{{range .PendingReceivables}}<a class="cb-v2-action-row cb-v2-action-receivable {{if .IsOverdue}}is-overdue{{end}}" href="/contas"><span class="cb-v2-action-dot" aria-hidden="true"></span><span class="wallet-action-main"><strong>{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</strong><small><span class="wallet-action-date">{{.DueDateLabel}}</span><span class="wallet-action-flag">{{if .IsOverdue}}Vencido{{else}}{{.StatusLabel}}{{end}}</span></small></span><b data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</b></a>{{end}}</div>{{else}}<div class="cb-v2-empty-state"><i data-lucide="circle-check" aria-hidden="true"></i><p>Nenhum recebimento no curto prazo.</p></div>{{end}}
+            </div>
+        </section>
+        <section class="wallet-section wallet-categories" aria-labelledby="wallet-categories-title" data-wallet-categories data-wallet-categories-collapsed="true">
+            <header class="wallet-section-heading"><div class="wallet-section-title"><span class="wallet-section-icon" aria-hidden="true"><i data-lucide="chart-pie"></i></span><div><h2 id="wallet-categories-title">Principais categorias</h2><p>Maiores despesas do mês</p></div></div><a class="wallet-link" href="/relatorios">Relatórios <i data-lucide="arrow-up-right" aria-hidden="true"></i></a></header>
+            {{if .Categories.Items}}
+            <p class="wallet-categories-period"><span class="wallet-categories-period-current">{{.Categories.CurrentLabel}}</span><span class="wallet-categories-period-vs">comparado com {{.Categories.PreviousLabel}}</span></p>
+            <div class="wallet-category-list" id="wallet-category-list">
+                {{range .Categories.Items}}
+                <div class="wallet-category-row" data-tone="{{.Tone}}">
+                    <span class="wallet-category-icon" aria-hidden="true"><i data-lucide="{{if .Icon}}{{.Icon}}{{else}}tag{{end}}"></i></span>
+                    <span class="wallet-category-copy">
+                        <span class="wallet-category-head"><strong>{{.Name}}</strong><span class="wallet-category-amount" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span></span>
+                        <span class="wallet-category-meta">
+                            <span class="wallet-category-variation {{.VariationClass}}" data-sensitive><span aria-hidden="true">{{.VariationLabel}}</span><span class="sr-only">{{.VariationDescription}}</span></span>
+                            {{if .HasShare}}<span class="wallet-category-share">{{.ShareLabel}} do total</span>{{end}}
+                        </span>
+                        {{if .HasShare}}<progress class="wallet-category-meter" value="{{.BarPercent}}" max="100" aria-hidden="true" tabindex="-1">{{.SharePercent}}%</progress>{{end}}
+                    </span>
+                </div>
+                {{end}}
+            </div>
+            {{if gt (len .Categories.Items) 3}}<button type="button" class="wallet-expand wallet-categories-toggle" data-wallet-categories-toggle aria-expanded="false" aria-controls="wallet-category-list" hidden><span>Ver as 5 principais</span><i data-lucide="chevron-down" aria-hidden="true"></i></button>{{end}}
+            <p class="wallet-categories-note"><i data-lucide="info" aria-hidden="true"></i> Por competência, incluindo lançamentos pendentes. Barras mostram a participação no total de despesas do período.</p>
+            {{else}}
+            <div class="cb-v2-empty-state wallet-categories-empty"><i data-lucide="chart-pie" aria-hidden="true"></i><p>Nenhuma despesa registrada neste período.</p><a href="/relatorios">Ver relatórios</a></div>
+            {{end}}
+        </section>
+        </div>
+        <div class="wallet-column wallet-column-side">
+        <section class="wallet-section wallet-cards" aria-labelledby="wallet-cards-title" data-v2-card-group>
+            <header class="wallet-section-heading"><div class="wallet-section-title"><span class="wallet-section-icon" aria-hidden="true"><i data-lucide="credit-card"></i></span><div><h2 id="wallet-cards-title">Cartões de crédito</h2><p>Faturas, vencimentos e limite disponível</p></div></div><a class="wallet-link" href="/faturas">Ver faturas <i data-lucide="arrow-up-right" aria-hidden="true"></i></a></header>
+            {{if .Cards}}
+            <div class="wallet-card-rail" data-v2-carousel role="group" aria-label="Cartões de crédito">
+                {{range $index, $card := .Cards}}
+                <a class="wallet-card cb-card-face cb-v2-credit-card--physical cb-v2-credit-card--tonal" data-v2-card-item data-card-visual="physical" data-wallet-card="{{$index}}" data-cb-color="{{.Color}}" href="{{.Href}}">
+                    <span class="wallet-card-head">
+                        <span class="wallet-card-identity">
+                            <span class="wallet-card-brand">{{if .ProviderLogoPath}}<img src="{{assetPath .ProviderLogoPath}}" alt="" width="48" height="48" data-avatar-fallback><span class="hidden" data-avatar-text>{{.ProviderMark}}</span>{{else}}<span class="wallet-card-monogram">{{if .ProviderMark}}{{.ProviderMark}}{{else}}CB{{end}}</span>{{end}}</span>
+                            <span class="wallet-card-name">{{.Name}}</span>
+                        </span>
+                        <span class="wallet-card-status-block">
+                            <span class="cb-v2-credit-card-status{{if eq .StatusLabel "Vencido"}} is-overdue{{else if eq .Status "PAID"}} is-paid{{else if eq .Status "CLOSED"}} is-closed{{else}} is-open{{end}}"><span class="cb-v2-credit-card-dot" aria-hidden="true"></span><strong>{{.StatusLabel}}</strong></span>
+                            {{if .ClosingDaysLabel}}<span class="wallet-card-closing">{{.ClosingDaysLabel}}</span>{{end}}
+                            <span class="wallet-card-due">{{if .InvoiceID}}Vencimento · {{.DueDateCompact}}{{else}}Sem vencimento{{end}}</span>
+                        </span>
+                    </span>
+                    <span class="wallet-card-invoice">
+                        <span class="wallet-card-invoice-label">{{if .InvoiceID}}Fatura atual{{else}}Sem fatura{{end}}</span>
+                        <strong class="wallet-card-invoice-value" data-sensitive>{{if .InvoiceID}}R$ {{.Money.Reais}}{{.Money.Cents}}{{else}}—{{end}}</strong>
+                    </span>
+                    <span class="wallet-card-limit">
+                        <span class="wallet-card-limit-head"><span>Limite disponível</span><strong data-sensitive>R$ {{.LimitMoney.Reais}}{{.LimitMoney.Cents}}</strong><small data-sensitive>{{.LimitPercent}}% disponível</small></span>
+                        <progress class="cb-card-progress" value="{{.LimitPercent}}" max="100" aria-label="Limite disponível de {{.Name}}" data-sensitive>{{.LimitPercent}}%</progress>
+                    </span>
+                    <span class="wallet-card-footer"><span>Crédito</span><i data-lucide="credit-card" aria-hidden="true"></i></span>
+                </a>
+                {{end}}
+            </div>
+            <div class="wallet-card-navigation">
+                <p data-wallet-position aria-live="polite">Cartão 1 de {{len .Cards}}</p>
+                <div><button type="button" class="wallet-control" data-v2-carousel-prev aria-label="Cartão anterior"><i data-lucide="chevron-left" aria-hidden="true"></i></button><button type="button" class="wallet-control" data-v2-carousel-next aria-label="Próximo cartão"><i data-lucide="chevron-right" aria-hidden="true"></i></button></div>
+            </div>
+            {{if gt (len .Cards) 6}}<a href="/faturas" class="cb-v2-all-invoices-slide" data-v2-all-invoices-slide>Ver todas as faturas</a>{{end}}
+            {{else}}
+            <a class="cb-v2-empty-card" href="/configuracoes/cartoes"><i data-lucide="credit-card" aria-hidden="true"></i><span><strong>Cadastre seu primeiro cartão</strong><small>Acompanhe faturas, vencimentos e limite disponível.</small></span><i data-lucide="arrow-up-right" aria-hidden="true"></i></a>
+            {{end}}
+        </section>
+        <section class="wallet-section wallet-limits cb-v2-limits-panel" aria-labelledby="v2-limits-title">
+            <header class="wallet-section-heading"><div class="wallet-section-title"><span class="wallet-section-icon" aria-hidden="true"><i data-lucide="gauge"></i></span><div><h2 id="v2-limits-title">{{if .IsBusiness}}Controle de custos{{else}}Limites{{end}}</h2><p>Consumo do mês por categoria</p></div></div><a class="wallet-link" href="/metas?aba=limites">Ver todos <i data-lucide="arrow-up-right" aria-hidden="true"></i></a></header>
+            {{if .Limits}}
+            <div class="cb-v2-progress-list">
+                {{range .Limits}}
+                {{$noLimit := and (eq .Limit.Reais "0") (eq .Limit.Cents ",00")}}
+                <div class="cb-v2-progress-item cb-v2-meter--{{.Tone}}{{if $noLimit}} is-no-limit{{end}}">
+                    <div class="cb-v2-progress-item-head">
+                        <span class="cb-v2-progress-icon" title="{{.IconLabel}}">
+                            <i data-lucide="{{.IconOrDefault}}" aria-hidden="true"></i>
+                            <span class="sr-only">Ícone: {{.IconLabel}}</span>
+                        </span>
+                        <strong>{{.CategoryName}}</strong>
+                        <span data-sensitive>{{if $noLimit}}R$ {{.Spent.Reais}}{{.Spent.Cents}} gastos{{else}}R$ {{.Spent.Reais}}{{.Spent.Cents}} <span class="cb-v2-progress-sep">de</span> R$ {{.Limit.Reais}}{{.Limit.Cents}}{{end}}</span>
+                    </div>
+                    {{if $noLimit}}
+                    <div class="cb-v2-progress-bar"><span class="cb-v2-progress-note">Sem limite definido</span></div>
+                    {{else}}
+                    <div class="cb-v2-progress-bar">
+                        <progress class="cb-v2-meter-track" value="{{.Percent}}" max="100" aria-label="{{.CategoryName}}: {{.ToneLabel}}, {{.PercentExact}}% de R$ {{.Limit.Reais}}{{.Limit.Cents}}">{{.PercentExact}}%</progress>
+                        <span class="cb-v2-progress-label" aria-hidden="true">{{.PercentExact}}%</span>
+                    </div>
+                    {{end}}
+                </div>
+                {{end}}
+            </div>
+            {{else}}
+            <div class="cb-v2-empty-state"><i data-lucide="sliders-horizontal" aria-hidden="true"></i><p>Nenhum limite definido.</p><a href="/metas?aba=limites">Criar limite</a></div>
+            {{end}}
+        </section>
+        <section class="wallet-section wallet-goals cb-v2-goals-panel" aria-labelledby="v2-goals-title">
+            <header class="wallet-section-heading"><div class="wallet-section-title"><span class="wallet-section-icon" aria-hidden="true"><i data-lucide="target"></i></span><div><h2 id="v2-goals-title">Metas e reservas</h2><p>Evolução das reservas</p></div></div><a class="wallet-link" href="/metas?aba=reservas">Explorar <i data-lucide="arrow-up-right" aria-hidden="true"></i></a></header>
+            {{if .Boxes}}
+            <div class="cb-v2-progress-list">
+                {{range .Boxes}}
+                {{$noTarget := and (eq .Target.Reais "0") (eq .Target.Cents ",00")}}
+                <div class="cb-v2-progress-item cb-v2-meter--{{.ProgressTone}} wallet-goal{{if $noTarget}} is-no-target{{end}}">
+                    <span class="wallet-goal-ring" aria-hidden="true">
+                        <svg viewBox="0 0 36 36" focusable="false">
+                            <circle class="wallet-ring-track" cx="18" cy="18" r="15.5" pathLength="100"></circle>
+                            {{if and (not $noTarget) (gt .Percent 0)}}<circle class="wallet-ring-value" cx="18" cy="18" r="15.5" pathLength="100" stroke-dasharray="{{.Percent}} 100"></circle>{{end}}
+                        </svg>
+                        <span class="wallet-goal-ring-label">{{if $noTarget}}—{{else}}{{.Percent}}%{{end}}</span>
+                    </span>
+                    <span class="wallet-goal-copy">
+                        <strong>{{.Name}}</strong>
+                        <small class="{{if .IsNegative}}is-negative{{end}}" data-sensitive>{{if $noTarget}}R$ {{.Balance.Reais}}{{.Balance.Cents}} acumulados · Sem objetivo definido{{else}}R$ {{.Balance.Reais}}{{.Balance.Cents}} <span class="cb-v2-progress-sep">de</span> R$ {{.Target.Reais}}{{.Target.Cents}}{{end}}</small>
+                    </span>
+                </div>
+                {{end}}
+            </div>
+            {{else}}
+            <div class="cb-v2-empty-state"><i data-lucide="goal" aria-hidden="true"></i><p>Crie metas para acompanhar suas reservas.</p><a href="/metas?aba=reservas">Criar reserva</a></div>
+            {{end}}
+        </section>
+        </div>
+    </div>
+</div>
 {{end}}

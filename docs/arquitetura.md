@@ -1,6 +1,6 @@
 # ContaBase - Arquitetura
 
-ContaBase e uma aplicacao web em Go com HTML renderizado no servidor, SQLite para persistencia e HTMX para deixar a interface mais dinamica sem depender de um SPA pesado. O desenho favorece instalacao self-hosted, dados locais e uma superficie operacional menor.
+ContaBase e uma aplicacao web em Go (`net/http`, `html/template`) com HTML renderizado no servidor, SQLite para persistencia e HTMX para deixar a interface mais dinamica sem depender de um SPA pesado. O desenho favorece instalacao self-hosted, dados locais e uma superficie operacional menor.
 
 ## Visao geral
 
@@ -28,6 +28,7 @@ internal/
   auth/              # autenticacao, sessao e CSRF
   database/          # SQLite, migracoes e seeds
   handlers/          # handlers HTTP
+  features/          # disponibilidade de funcionalidades por ambiente
   models/            # modelos de dados
   repository/        # acesso a dados
   security/          # rate limit e fronteiras de seguranca
@@ -44,6 +45,8 @@ scripts/             # scripts publicos de operacao
 - O uso de HTTPS, proxy reverso e hosts permitidos faz parte da operacao segura da instancia.
 
 ## Camadas de seguranca
+
+A disponibilidade de Investimentos é resolvida em `internal/features.FromEnv`: na candidata Beta 6, somente a flag principal ausente habilita o módulo por padrão. As flags de operações financeiras controladas continuam opt-in. Não há registro persistido de ativação nem migration para alterar esse padrão. As permissões e o filtro `workspace_id` continuam aplicados no servidor; veja [Investimentos](investimentos.md).
 
 - HTTPS deve ser usado quando a instancia sair da rede local.
 - `ALLOWED_HOSTS` reduz risco de host inesperado.

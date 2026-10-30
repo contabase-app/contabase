@@ -1,24 +1,28 @@
 {{define "lancamentos-page"}}
 {{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/lancamentos.css"}}">
 {{template "app-v2-document-head-end" .}}
-<main id="main-content" class="cb-v2-main cb-v2-transactions-main" data-page-section="transactions" data-page-title="{{.Title}}">
+<main id="main-content" class="cb-v2-main cb-v2-transactions-main" data-page-section="transactions" data-page-title="{{.Title}}" data-ui="premium">
     {{template "app-v2-appbar" .}}
     <div class="cb-v2-content cb-v2-lancamentos-content">
-        <header class="cb-v2-lancamentos-header">
-            <div>
-                <p class="cb-v2-eyebrow">Movimentações</p>
-                <h1>{{.Title}}</h1>
-                <p>Consulte, filtre e acompanhe os lançamentos do período.</p>
+        <header class="cb-v2-lancamentos-header ui-page-header">
+            <div class="lancamentos-header-copy">
+                <p class="ui-eyebrow">Movimentações</p>
+                <h1 class="ui-page-title">{{.Title}}</h1>
+                <p class="ui-page-description">Consulte, filtre e acompanhe os lançamentos do período.</p>
             </div>
-            <button type="button" class="cb-v2-lancamentos-new" hx-get="/transacoes/nova" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false"><i data-lucide="plus"></i><span>Novo lançamento</span></button>
+            <div class="lancamentos-header-actions">
+                <button type="button" class="ui-btn ui-btn--secondary lancamentos-icon-btn" data-privacy-toggle aria-pressed="false" aria-label="Ocultar valores financeiros" data-tooltip-hover data-tooltip-text="Ocultar valores financeiros"><i data-lucide="eye" data-privacy-icon aria-hidden="true"></i></button>
+                <button type="button" class="ui-btn ui-btn--primary lancamentos-new" hx-get="/transacoes/nova" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false"><i data-lucide="plus"></i><span>Novo lançamento</span></button>
+            </div>
         </header>
 {{template "lancamentos-content" .}}
     </div>
 </main>
 {{template "app-v2-shell-after-main" .}}
-<script src="/assets/js/lancamentos-filters.js"></script>
-<script src="/assets/js/lancamentos-selection.js"></script>
+<script src="{{assetPath "/assets/js/lancamentos-filters.js"}}"></script>
+<script src="{{assetPath "/assets/js/lancamentos-selection.js"}}"></script>
 {{template "app-v2-document-end" .}}
 {{end}}
 
@@ -43,11 +47,12 @@
         <input type="hidden" name="partial" value="lista">
         {{if .FilterAccountID}}<input type="hidden" name="conta" value="{{.FilterAccountID}}">{{end}}
 
-    <div class="flex items-center gap-2 mb-3 mt-2">
+    <div class="lancamentos-toolbar ui-toolbar">
         <!-- Busca -->
-        <div class="relative flex-1">
-            <i data-lucide="search" class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--cb-text-muted)] z-10"></i>
-            <input type="search" name="q" value="{{.Filters.Busca}}" placeholder="Buscar descrição ou categoria..."
+        <div class="ui-search">
+            <i data-lucide="search" class="ui-search__icon" aria-hidden="true"></i>
+            <input type="search" name="q" value="{{.Filters.Busca}}" placeholder="Buscar descrição..."
+                aria-label="Buscar lançamentos"
                 hx-get="/lancamentos"
                 hx-target="#lancamentos-list-wrapper"
                 hx-select="#lancamentos-list-wrapper"
@@ -55,25 +60,26 @@
                 hx-replace-url="true"
                 hx-trigger="keyup delay:400ms, search"
                 hx-include="#lancamentosFilters"
-                class="search-input">
+                class="ui-input ui-input--search">
         </div>
         <!-- Botão Filtros -->
-        <button type="button" data-onclick="toggleLancamentosFilters" class="shrink-0 h-10 px-3 flex items-center justify-center gap-1.5 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-xs font-semibold text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)] transition-all btn-tactile">
-            <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i>
-            <span class="hidden sm:inline">Filtros</span>
+        <button type="button" id="lancamentosFilterTrigger" data-onclick="toggleLancamentosFilters" aria-haspopup="dialog" aria-controls="lancamentosFilterPanel" aria-expanded="false" aria-label="Abrir filtros{{if .HasActiveFilters}}, filtros ativos{{end}}" data-has-active-filters="{{if .HasActiveFilters}}true{{else}}false{{end}}" data-tooltip-hover data-tooltip-text="Filtros" class="ui-btn ui-btn--secondary lancamentos-filter-trigger{{if .HasActiveFilters}} is-active{{end}}">
+            <i data-lucide="sliders-horizontal" aria-hidden="true"></i>
+            <span class="lancamentos-filter-label">Filtros</span>
+            <span class="lancamentos-filter-indicator" data-filter-indicator aria-hidden="true"></span>
         </button>
     </div>
 
     <!-- Painel de Filtros -->
-    <section id="lancamentosFilterPanel" data-contabase-overlay data-overlay-priority="120" data-overlay-close-method="hidden" class="hidden fixed inset-0 z-[120] bg-zinc-950/60 p-0 sm:p-4 flex items-end sm:items-center justify-center" data-onclick-self="closeLancamentosFilters">
+    <section id="lancamentosFilterPanel" data-contabase-overlay data-overlay-priority="120" data-overlay-close-method="hidden" class="hidden fixed inset-0 z-[120] bg-zinc-950/60 p-0 sm:p-4 flex items-end sm:items-center justify-center" data-onclick-self="closeLancamentosFilters" role="dialog" aria-modal="true" aria-labelledby="lancamentosFilterTitle">
         <div class="sheet-in w-full sm:max-w-lg rounded-t-xl sm:rounded-xl border-t sm:border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-overlay)] shadow-xl max-h-[90vh] sm:max-h-[85vh] flex flex-col filter-panel">
             <div class="sticky top-0 bg-[var(--cb-surface-overlay)] backdrop-blur p-5 border-b border-[var(--cb-border-subtle)] flex items-center justify-between z-10 shrink-0">
                 <div>
-                    <p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--cb-text-muted)]">Mais Opções</p>
-                    <h2 class="text-base font-bold text-[var(--cb-text-main)]">Filtros Avançados</h2>
+                    <p class="ui-eyebrow">Mais Opções</p>
+                    <h2 id="lancamentosFilterTitle" class="text-base font-bold text-[var(--cb-text-main)]">Filtros Avançados</h2>
                 </div>
-                <button type="button" class="w-9 h-9 flex items-center justify-center rounded-full bg-[var(--cb-surface-2)] hover:bg-[var(--cb-surface-3)]" data-onclick="toggleLancamentosFilters">
-                    <i data-lucide="x" class="w-4 h-4 text-[var(--cb-text-muted)]"></i>
+                <button type="button" class="ui-btn ui-btn--ghost lancamentos-panel-close" data-onclick="toggleLancamentosFilters" aria-label="Fechar filtros">
+                    <i data-lucide="x" aria-hidden="true"></i>
                 </button>
             </div>
             <div class="flex-1 overflow-y-auto p-5 space-y-3 scrollbar-hide">
@@ -92,28 +98,28 @@
                             {{if .StatusPendenteOn}}border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-400/50 dark:bg-amber-500/20 dark:text-amber-200
                             {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-amber-300{{end}}">
                             <i data-lucide="clock" class="w-3 h-3"></i>
-                            <input class="hidden" type="checkbox" name="situacao" value="pendente" {{if .StatusPendenteOn}}checked{{end}}>
+                            <input class="sr-only" type="checkbox" name="situacao" value="pendente" {{if .StatusPendenteOn}}checked{{end}}>
                             Pendente
                         </label>
                         <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
                             {{if .StatusVencidoOn}}border-red-500/30 bg-red-500/10 text-red-500 dark:border-red-400/50 dark:bg-red-500/20 dark:text-red-300
                             {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-red-300{{end}}">
                             <i data-lucide="alert-triangle" class="w-3 h-3"></i>
-                            <input class="hidden" type="checkbox" name="situacao" value="vencido" {{if .StatusVencidoOn}}checked{{end}}>
+                            <input class="sr-only" type="checkbox" name="situacao" value="vencido" {{if .StatusVencidoOn}}checked{{end}}>
                             Vencido
                         </label>
                         <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
                             {{if .StatusAgendadoOn}}border-violet-500/30 bg-violet-500/10 text-violet-600 dark:border-violet-400/50 dark:bg-violet-500/20 dark:text-violet-200
                             {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-violet-300{{end}}">
                             <i data-lucide="timer" class="w-3 h-3"></i>
-                            <input class="hidden" type="checkbox" name="situacao" value="agendado" {{if .StatusAgendadoOn}}checked{{end}}>
+                            <input class="sr-only" type="checkbox" name="situacao" value="agendado" {{if .StatusAgendadoOn}}checked{{end}}>
                             Agendado
                         </label>
                         <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
                             {{if .StatusPagoOn}}border-emerald-600/30 bg-emerald-600/10 text-emerald-600 dark:border-emerald-400/50 dark:bg-emerald-500/20 dark:text-emerald-200
                             {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-emerald-300{{end}}">
                             <i data-lucide="check-circle-2" class="w-3 h-3"></i>
-                            <input class="hidden" type="checkbox" name="situacao" value="pago" {{if .StatusPagoOn}}checked{{end}}>
+                            <input class="sr-only" type="checkbox" name="situacao" value="pago" {{if .StatusPagoOn}}checked{{end}}>
                             Pago
                         </label>
                         </div>
@@ -135,21 +141,21 @@
                             {{if hasString .Filters.Tipos "receita"}}border-emerald-600/30 bg-emerald-600/10 text-emerald-600 dark:border-emerald-400/50 dark:bg-emerald-500/20 dark:text-emerald-200
                             {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-emerald-300{{end}}">
                             <i data-lucide="arrow-down-left" class="w-3 h-3"></i>
-                            <input class="hidden" type="checkbox" name="tipo" value="receita" {{if hasString .Filters.Tipos "receita"}}checked{{end}}>
+                            <input class="sr-only" type="checkbox" name="tipo" value="receita" {{if hasString .Filters.Tipos "receita"}}checked{{end}}>
                             Receita
                         </label>
                         <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
                             {{if hasString .Filters.Tipos "despesa"}}border-red-500/30 bg-red-500/10 text-red-500 dark:border-red-400/50 dark:bg-red-500/20 dark:text-red-300
                             {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-red-300{{end}}">
                             <i data-lucide="arrow-up-right" class="w-3 h-3"></i>
-                            <input class="hidden" type="checkbox" name="tipo" value="despesa" {{if hasString .Filters.Tipos "despesa"}}checked{{end}}>
+                            <input class="sr-only" type="checkbox" name="tipo" value="despesa" {{if hasString .Filters.Tipos "despesa"}}checked{{end}}>
                             Despesa
                         </label>
                         <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
                             {{if hasString .Filters.Tipos "transferencia"}}border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-400/40 dark:bg-blue-500/20 dark:text-blue-200
                             {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-blue-300{{end}}">
                             <i data-lucide="arrow-left-right" class="w-3 h-3"></i>
-                            <input class="hidden" type="checkbox" name="tipo" value="transferencia" {{if hasString .Filters.Tipos "transferencia"}}checked{{end}}>
+                            <input class="sr-only" type="checkbox" name="tipo" value="transferencia" {{if hasString .Filters.Tipos "transferencia"}}checked{{end}}>
                             Transf.
                         </label>
                         </div>
@@ -167,7 +173,7 @@
                         <i data-lucide="chevron-down" class="w-4 h-4 text-[var(--cb-text-muted)] transition-transform group-open:rotate-180"></i>
                     </summary>
                     <div class="flex flex-wrap gap-1.5 border-t border-[var(--cb-border-subtle)] px-4 py-3">
-                        {{range .FilterAccounts}}<label data-filter-chip class="inline-flex cursor-pointer items-center rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold {{if hasString $.Filters.OrigemIDs .ID}}border-violet-500 bg-violet-500/10 text-violet-700 dark:border-violet-400/50 dark:bg-violet-500/15 dark:text-violet-200{{else}}border-[var(--cb-border-strong)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)]{{end}}"><input class="hidden" type="checkbox" name="origem" value="{{.ID}}" {{if hasString $.Filters.OrigemIDs .ID}}checked{{end}}>{{.Name}}</label>{{end}}
+                        {{range .FilterAccounts}}<label data-filter-chip class="inline-flex cursor-pointer items-center rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold {{if hasString $.Filters.OrigemIDs .ID}}border-violet-500 bg-violet-500/10 text-violet-700 dark:border-violet-400/50 dark:bg-violet-500/15 dark:text-violet-200{{else}}border-[var(--cb-border-strong)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)]{{end}}"><input class="sr-only" type="checkbox" name="origem" value="{{.ID}}" {{if hasString $.Filters.OrigemIDs .ID}}checked{{end}}>{{.Name}}</label>{{end}}
                     </div>
                 </details>
                 {{end}}
@@ -180,14 +186,14 @@
                             {{if eq .SortOrder "asc"}}border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200
                             {{else}}border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:border-[var(--cb-border-strong)] dark:text-[var(--cb-text-muted)]{{end}}">
                             <i data-lucide="arrow-down-narrow-wide" class="w-3.5 h-3.5"></i>
-                            <input class="hidden" type="radio" name="ordem" value="asc" {{if eq .SortOrder "asc"}}checked{{end}}>
+                            <input class="sr-only" type="radio" name="ordem" value="asc" {{if eq .SortOrder "asc"}}checked{{end}}>
                             Vencimentos
                         </label>
                         <label class="flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border-2 px-3 py-2.5 text-xs font-semibold transition-all
                             {{if eq .SortOrder "desc"}}border-violet-500 bg-violet-50 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300
                             {{else}}border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:border-[var(--cb-border-strong)] dark:text-[var(--cb-text-muted)]{{end}}">
                             <i data-lucide="arrow-up-narrow-wide" class="w-3.5 h-3.5"></i>
-                            <input class="hidden" type="radio" name="ordem" value="desc" {{if eq .SortOrder "desc"}}checked{{end}}>
+                            <input class="sr-only" type="radio" name="ordem" value="desc" {{if eq .SortOrder "desc"}}checked{{end}}>
                             Recentes
                         </label>
                     </div>
@@ -221,10 +227,10 @@
                 {{end}}
             </div>
             <div class="sticky bottom-0 bg-[var(--cb-surface-overlay)] backdrop-blur p-5 border-t border-[var(--cb-border-subtle)] grid grid-cols-2 gap-2.5 shrink-0">
-                <button type="button" class="h-11 rounded-xl border-2 border-red-200 bg-red-50 text-xs font-bold text-red-600 active:scale-95 transition-all dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300" data-onclick="resetLancamentosFiltersFromForm">
+                <button type="button" class="ui-btn ui-btn--secondary lancamentos-filter-reset" data-onclick="resetLancamentosFiltersFromForm">
                     Redefinir
                 </button>
-                <button type="button" class="h-11 rounded-xl bg-[var(--cb-accent-solid)] text-white text-xs font-bold active:scale-95 transition-all border border-transparent" data-onclick="toggleLancamentosFilters">
+                <button type="button" class="ui-btn ui-btn--primary lancamentos-filter-apply" data-onclick="toggleLancamentosFilters">
                     Aplicar
                 </button>
             </div>
@@ -247,69 +253,65 @@
 {{end}}
 
 {{define "lancamentos-resumo"}}
-<section id="lancamentosResumo" class="cb-resumo" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} aria-labelledby="lancamentosResumoTitulo">
-    <div class="cb-resumo-head">
-        <div class="cb-resumo-head-copy">
-            <span class="cb-resumo-head-icon" aria-hidden="true"><i data-lucide="chart-column"></i></span>
-            <div class="cb-resumo-head-text">
-                <p class="cb-resumo-head-title" id="lancamentosResumoTitulo">Resumo do filtro aplicado</p>
-                <p class="cb-resumo-head-subtitle">Totais dos itens visíveis em {{.MonthLabel}}</p>
+<section id="lancamentosResumo" class="ui-panel lancamentos-summary" {{if .OOB}}hx-swap-oob="outerHTML"{{end}} aria-labelledby="lancamentosResumoTitulo">
+    <header class="lancamentos-summary__head">
+        <div class="ui-section-title lancamentos-summary__identity">
+            <span class="ui-section-icon" aria-hidden="true"><i data-lucide="chart-column"></i></span>
+            <div class="lancamentos-summary__copy">
+                <h2 id="lancamentosResumoTitulo">Resumo do filtro aplicado</h2>
+                <p>Totais dos itens visíveis em {{.MonthLabel}}</p>
             </div>
         </div>
-        <div class="cb-resumo-head-meta">
-            <span class="cb-resumo-total-chip"><span class="sr-only">Itens visíveis no filtro: </span>{{.ResumoTotalItensLabel}}</span>
+        <div class="lancamentos-summary__meta">
+            <span class="lancamentos-summary__total"><span class="sr-only">Itens visíveis no filtro: </span>{{.ResumoTotalItensLabel}}</span>
             {{if .ResumoLiquidoTemDados}}
-            <div class="cb-resumo-liquido {{if .ResumoLiquidoNegativo}}is-negative{{end}}">
-                <span class="cb-resumo-liquido-label">Resultado líquido</span>
-                <span class="cb-resumo-liquido-value" data-len="{{.ResumoLiquidoLen}}" data-sensitive>{{.ResumoLiquido}}</span>
+            <div class="lancamentos-summary__net {{if .ResumoLiquidoNegativo}}is-negative{{end}}">
+                <span class="lancamentos-summary__net-label">Resultado líquido</span>
+                <strong class="lancamentos-summary__net-value" data-len="{{.ResumoLiquidoLen}}" data-sensitive>{{.ResumoLiquido}}</strong>
             </div>
             {{end}}
         </div>
-    </div>
-    <div class="cb-resumo-grid">
-        {{range .ResumoStatus}}{{if .Primary}}
-        <div class="cb-resumo-metric cb-resumo-tone-{{.Tone}} is-primary">
-            <span class="cb-resumo-metric-icon" aria-hidden="true"><i data-lucide="{{.Icon}}"></i></span>
-            <span class="cb-resumo-metric-copy">
-                <span class="cb-resumo-metric-label{{if .LabelShort}} has-short-label{{end}}"><span class="cb-resumo-label-full">{{.Label}}</span>{{if .LabelShort}}<span class="cb-resumo-label-short">{{.LabelShort}}</span>{{end}}</span>
-                <span class="cb-resumo-metric-value" data-len="{{.AmountLen}}" data-sensitive>{{.Amount}}</span>
-                <span class="cb-resumo-metric-count">{{.CountLabel}}</span>
+    </header>
+    <ul class="lancamentos-summary__metrics" aria-label="Indicadores do resumo">
+        {{range .ResumoStatus}}
+        <li class="lancamentos-summary__metric is-{{.Tone}}{{if .Primary}} is-primary{{end}}{{if eq .Count 0}} is-empty{{end}}" data-metric="{{.Key}}">
+            <span class="lancamentos-summary__metric-label{{if .LabelShort}} has-short-label{{end}}">
+                <i data-lucide="{{.Icon}}" aria-hidden="true"></i>
+                <span class="lancamentos-summary__label-full">{{.Label}}</span>
+                {{if .LabelShort}}<span class="lancamentos-summary__label-short">{{.LabelShort}}</span>{{end}}
             </span>
-        </div>
-        {{end}}{{end}}
-        <div class="cb-resumo-lifecycle">
-            <div class="cb-resumo-lifecycle-grid">
-                {{range .ResumoStatus}}{{if not .Primary}}
-                <div class="cb-resumo-metric cb-resumo-tone-{{.Tone}} is-secondary">
-                    <span class="cb-resumo-metric-icon" aria-hidden="true"><i data-lucide="{{.Icon}}"></i></span>
-                    <span class="cb-resumo-metric-copy">
-                        <span class="cb-resumo-metric-label">{{.Label}}</span>
-                        <span class="cb-resumo-metric-value" data-len="{{.AmountLen}}" data-sensitive>{{.Amount}}</span>
-                        <span class="cb-resumo-metric-count">{{.CountLabel}}</span>
-                    </span>
-                </div>
-                {{end}}{{end}}
-            </div>
-        </div>
-    </div>
+            <strong class="lancamentos-summary__metric-value" data-len="{{.AmountLen}}" data-sensitive>{{.Amount}}</strong>
+            <span class="lancamentos-summary__metric-count">{{.CountLabel}}</span>
+        </li>
+        {{end}}
+    </ul>
 </section>
 {{end}}
 
 {{define "lancamentos-invoices"}}
     {{if .Invoices}}
-        <div class="mb-4 space-y-2">{{range .Invoices}}{{template "invoice-row" .}}{{end}}</div>
+    <section id="lancamentos-invoices" class="lancamentos-invoices" aria-labelledby="lancamentosInvoicesTitle">
+        <div class="ui-panel ui-list-panel">
+            <div class="ui-list-panel__head lancamentos-invoices-head">
+                <h2 id="lancamentosInvoicesTitle" class="lancamentos-invoices-title"><i data-lucide="credit-card" aria-hidden="true"></i><span>Faturas dos cartões</span></h2>
+            </div>
+            <div class="lancamentos-invoices-list">
+                {{range .Invoices}}{{template "invoice-row" .}}{{end}}
+            </div>
+        </div>
+    </section>
     {{end}}
 {{end}}
 
 {{define "lancamentos-list"}}
-<div id="lancamentos-list-wrapper">
+<div id="lancamentos-list-wrapper" data-has-active-filters="{{if .HasActiveFilters}}true{{else}}false{{end}}">
     {{if .HasActiveFilters}}
     <div class="flex flex-wrap items-center gap-1.5 mb-3 -mt-1">
         <span class="text-[10px] font-semibold uppercase tracking-wider text-[var(--cb-text-muted)]">Filtros:</span>
         {{range .FilterLabels}}
         <span class="inline-flex items-center gap-0.5 rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">{{.Label}}</span>
         {{end}}
-        <a href="{{$.ClearFiltersURL}}" hx-get="{{$.ClearFiltersURL}}" hx-target="#lancamentos-list-wrapper" hx-select="#lancamentos-list-wrapper" hx-swap="outerHTML" hx-vals='{"partial":"lista"}' hx-push-url="{{$.ClearFiltersURL}}" id="clearFiltersBtn" class="inline-flex items-center gap-0.5 rounded-full bg-[var(--cb-surface-2)] px-2 py-0.5 text-[10px] font-semibold text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] transition-colors">
+        <a href="{{$.ClearFiltersURL}}" data-onclick-ev="handleClearLancamentosFilters" data-clear-filters-url="{{$.ClearFiltersURL}}" id="clearFiltersBtn" class="inline-flex items-center gap-0.5 rounded-full bg-[var(--cb-surface-2)] px-2 py-0.5 text-[10px] font-semibold text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] transition-colors">
             <i data-lucide="x" class="w-2.5 h-2.5"></i>Limpar
         </a>
     </div>
@@ -319,17 +321,20 @@
 
     <div id="transactions-list" class="group" data-bulk-select>
         {{if .Transactions}}
-            <div class="mb-3 flex items-center justify-between rounded-lg border border-[var(--cb-border-subtle)] px-3 py-2 text-xs text-[var(--cb-text-muted)] transition-all group-[.bulk-mode]:border-violet-500/25 group-[.bulk-mode]:bg-violet-500/[0.05] dark:group-[.bulk-mode]:border-violet-500/30 dark:group-[.bulk-mode]:bg-violet-500/[0.08]">
-                <label class="bulk-mode-label items-center gap-2 text-[var(--cb-text-muted)] font-medium cursor-pointer">
-                    <input type="checkbox" class="w-4 h-4 rounded border-2 border-zinc-300 text-violet-600 focus:ring-violet-500 cursor-pointer" data-bulk-toggle-all>
-                    <span>Selecionar todos</span>
-                </label>
-                <button type="button" class="text-violet-600 hover:text-violet-700 dark:text-violet-300 dark:hover:text-violet-200 font-medium" data-bulk-toggle-mode>Selecionar</button>
-                <span class="text-[var(--cb-text-muted)] font-medium" data-bulk-count></span>
-            </div>
-        {{end}}
-        {{template "lancamentos-table-body" .}}
-        {{if .Transactions}}
+            <section class="ui-panel ui-list-panel" aria-label="Lançamentos do período">
+                <div class="ui-list-panel__head lancamentos-list-head">
+                    <span class="lancamentos-list-head__label">Ordenado por vencimento</span>
+                    <div class="lancamentos-list-head__actions">
+                        <label class="bulk-mode-label">
+                            <input type="checkbox" class="lancamentos-bulk-check" data-bulk-toggle-all>
+                            <span>Selecionar todos</span>
+                        </label>
+                        <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm lancamentos-bulk-toggle" data-bulk-toggle-mode>Selecionar</button>
+                        <span class="lancamentos-bulk-count" data-bulk-count aria-live="polite"></span>
+                    </div>
+                </div>
+                {{template "lancamentos-table-body" .}}
+            </section>
             <div class="bulk-action-bar" data-bulk-bar>
                 <div class="flex items-center justify-between gap-2">
                     <span class="text-xs font-bold text-[var(--cb-text-main)]">
@@ -383,11 +388,13 @@
                     </div>
                 </div>
             </div>
+        {{else}}
+            {{template "lancamentos-table-body" .}}
         {{end}}
     </div>
 </div>
-<script src="/assets/js/filter-chips.js"></script>
-<script src="/assets/js/bulk-select.js"></script>
+<script src="{{assetPath "/assets/js/filter-chips.js"}}"></script>
+<script src="{{assetPath "/assets/js/bulk-select.js"}}"></script>
 {{end}}
 
 {{define "lancamentos-table-body"}}
@@ -398,30 +405,51 @@
             {{range .Transactions}}
                 {{if ne .DateLabel $currentDate}}
                     {{$currentDate = .DateLabel}}
-                    <div class="flex items-center gap-3 mb-3 mt-6 first:mt-0">
-                        <h3 class="text-[10px] font-semibold text-[var(--cb-text-muted)] uppercase tracking-wider whitespace-nowrap">{{.DateLabel}}</h3>
-                        <div class="flex-1 h-px bg-[var(--cb-border-subtle)]"></div>
+                    <div class="lancamentos-day">
+                        <h3 class="lancamentos-day__label">{{.DateLabel}}</h3>
+                        <span class="lancamentos-day__line" aria-hidden="true"></span>
                     </div>
                 {{end}}
                 {{template "lancamento-row" .}}
             {{end}}
         {{end}}
     {{else if .Invoices}}
-        <div class="sr-only">Faturas exibidas acima</div>
+        <div class="ui-empty lancamentos-empty lancamentos-empty--compact" role="status">
+            <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="receipt-text"></i></span>
+            <p class="ui-empty__title">Nenhuma movimentação individual</p>
+            <p class="ui-empty__text">As faturas consolidadas do período estão exibidas acima.</p>
+        </div>
+    {{else if .Filters.Busca}}
+        <div class="ui-empty lancamentos-empty" role="status">
+            <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="search-x"></i></span>
+            <p class="ui-empty__title">Nenhum resultado para “{{.Filters.Busca}}”</p>
+            {{if eq (len .FilterLabels) 1}}
+            <p class="ui-empty__text">A busca não encontrou lançamentos neste período. Tente outro termo ou limpe a busca.</p>
+            <a href="{{.ClearFiltersURL}}" data-onclick-ev="handleClearLancamentosFilters" class="ui-btn ui-btn--secondary lancamentos-empty__action">Limpar busca</a>
+            {{else}}
+            <p class="ui-empty__text">A busca combinada com os filtros atuais não retornou lançamentos.</p>
+            <a href="{{.ClearFiltersURL}}" data-onclick-ev="handleClearLancamentosFilters" class="ui-btn ui-btn--secondary lancamentos-empty__action">Limpar busca e filtros</a>
+            {{end}}
+        </div>
+    {{else if .HasActiveFilters}}
+        <div class="ui-empty lancamentos-empty" role="status">
+            <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="sliders-horizontal"></i></span>
+            <p class="ui-empty__title">Nenhum resultado com os filtros atuais</p>
+            <p class="ui-empty__text">Os filtros aplicados não retornaram lançamentos neste período. Ajuste ou redefina os critérios.</p>
+            <a href="{{.ClearFiltersURL}}" data-onclick-ev="handleClearLancamentosFilters" class="ui-btn ui-btn--secondary lancamentos-empty__action">Limpar filtros</a>
+        </div>
     {{else}}
-        <div class="cb-empty-state py-10">
-            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)] border border-[var(--cb-border-subtle)]">
-                <i data-lucide="inbox" class="w-5 h-5"></i>
-            </div>
-            <p class="text-sm font-bold text-[var(--cb-text-main)]">Nenhum lançamento</p>
-            <p class="cb-text-micro text-[var(--cb-text-muted)] mt-1">Tente ajustar os filtros ou adicione um novo</p>
+        <div class="ui-empty lancamentos-empty" role="status">
+            <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="inbox"></i></span>
+            <p class="ui-empty__title">Nenhuma movimentação neste período</p>
+            <p class="ui-empty__text">Quando houver lançamentos, eles aparecerão aqui.</p>
         </div>
     {{end}}
 </div>
 {{end}}
 
 {{define "lancamento-row"}}
-<article id="tx-{{.ID}}" class="tx-row relative mb-1.5 overflow-hidden rounded-xl {{if .IsScheduled}}scheduled{{else if .IsOverdue}}overdue{{else if .IsPending}}pending{{end}}"
+<article id="tx-{{.ID}}" class="tx-row{{if .IsScheduled}} scheduled{{else if .IsOverdue}} overdue{{else if .IsPending}} pending{{end}}"
     data-tx-id="{{.ID}}"
     data-payment-id="{{.ID}}"
     data-payment-context="lancamentos"
@@ -446,10 +474,10 @@
     {{else}}
     data-swipe-right-payment-confirm="true"
     {{end}}>
-    <div data-swipe-bg-left><i data-lucide="trash-2" class="swipe-icon"></i></div>
-    <div data-swipe-bg-right class="{{if or .IsOverdue .IsPending}}bg-emerald-500{{else}}bg-red-500{{end}}"><i data-lucide="{{if or .IsOverdue .IsPending}}check-circle-2{{else}}clock{{end}}" class="swipe-icon"></i></div>
-    <div data-swipe-content class="tx-content {{if .IsBusiness}}max-md:items-start{{end}}">
-        <input type="checkbox" class="bulk-checkbox h-4 w-4 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 shrink-0" data-tx-checkbox data-ignore-select value="{{.ID}}">
+    <div data-swipe-bg-left class="lancamentos-swipe-bg is-delete"><i data-lucide="trash-2" class="swipe-icon" aria-hidden="true"></i></div>
+    <div data-swipe-bg-right class="lancamentos-swipe-bg {{if or .IsOverdue .IsPending}}is-pay{{else}}is-reverse{{end}}"><i data-lucide="{{if or .IsOverdue .IsPending}}check-circle-2{{else}}clock{{end}}" class="swipe-icon" aria-hidden="true"></i></div>
+    <div data-swipe-content class="ui-row ui-row--transaction">
+        <input type="checkbox" class="bulk-checkbox lancamentos-row-check" data-tx-checkbox data-ignore-select value="{{.ID}}" aria-label="Selecionar {{.Description}}">
         <button type="button" data-ignore-select data-stop-propagation
             {{if eq .PaymentStatus "paid"}}
             hx-post="/transacoes/{{.ID}}/status-pagamento"
@@ -458,63 +486,66 @@
             {{else}}
             data-payment-confirm
             {{end}}
-            class="tx-status tx-status-{{.PaymentTone}}" title="{{.PaymentTitle}}" aria-label="{{.PaymentTitle}}">
-            <i data-lucide="{{.PaymentIcon}}" class="w-4 h-4"></i>
+            class="tx-status tx-status-{{.PaymentTone}} ui-row__status" title="{{.PaymentTitle}} — {{.Description}}" aria-label="{{.PaymentTitle}} — {{.Description}}">
+            <i data-lucide="{{.PaymentIcon}}" aria-hidden="true"></i>
         </button>
-        <button type="button" data-ignore-select class="tx-edit-trigger flex flex-1 min-w-0 items-center gap-3 text-left" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Editar {{.Description}}">
-            <span class="flex-1 min-w-0">
-                <span class="flex items-center gap-1.5 mb-0.5 min-w-0 max-md:flex-col max-md:items-start max-md:gap-0">
-                    <h4 class="min-w-0 max-md:w-full max-md:line-clamp-2 md:flex-1 md:truncate text-sm font-semibold text-[var(--cb-text-main)]">{{.Description}}</h4>
-                    {{if .UsesDueDate}}<span class="cb-text-micro text-[var(--cb-text-muted)] shrink-0 max-md:mt-0.5">Comp. {{.CompetenciaDateLabel}}</span>{{end}}
-                </span>
-                <p class="cb-text-micro text-[var(--cb-text-muted)] whitespace-normal break-words leading-snug">
-                    {{if eq .Type "TRANSFER"}}
-                        {{if .DestinationAccountName}}
-                        <span class="inline-flex max-w-full min-w-0 items-center gap-1.5">
-                            <span class="min-w-0 truncate">{{.AccountName}}</span>
-                            <span class="shrink-0 text-[var(--cb-text-subtle)]" aria-hidden="true">&rarr;</span>
-                            <span class="sr-only">para</span>
-                            <span class="min-w-0 truncate">{{.DestinationAccountName}}</span>
-                        </span>
-                        {{else}}
-                        {{.AccountName}}
-                        {{end}}
-                    {{else if .IsBusiness}}
-                        {{if .ContactName}}<span class="max-md:inline-block max-md:max-w-[50%] max-md:truncate max-md:align-bottom">{{.ContactName}}</span><span class="max-md:inline"> · </span>{{end}}
-                        <span class="max-md:inline-block max-md:max-w-[50%] max-md:truncate max-md:align-bottom">{{.AccountName}}</span>
-                        {{if .CategoryName}}<span class="max-md:hidden"> · {{.CategoryName}}</span>{{end}}
+        <button type="button" data-ignore-select class="tx-edit-trigger ui-row__main ui-row__main--button" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false">
+            <span class="sr-only">Editar lançamento: </span>
+            <span class="ui-row__title" title="{{.Description}}">{{.Description}}</span>
+            <span class="ui-row__meta">
+                {{if eq .Type "TRANSFER"}}
+                    {{if .DestinationAccountName}}
+                    <span class="lancamentos-row-transfer">
+                        <span class="lancamentos-row-transfer__account" title="{{.AccountName}}">{{.AccountName}}</span>
+                        <span class="shrink-0" aria-hidden="true">&rarr;</span>
+                        <span class="sr-only">para</span>
+                        <span class="lancamentos-row-transfer__account" title="{{.DestinationAccountName}}">{{.DestinationAccountName}}</span>
+                    </span>
                     {{else}}
-                        {{.AccountName}}{{if .CategoryName}} · {{.CategoryName}}{{end}}
+                    {{.AccountName}}
                     {{end}}
-                </p>
-                {{if and (eq .PaymentStatus "paid") .PaidAt}}<p class="cb-text-micro text-emerald-600 dark:text-emerald-400 mt-0.5">Pago em {{.PaidAtDisplay}}</p>{{end}}
-                {{if .IsScheduled}}<p class="cb-text-micro text-violet-600 dark:text-violet-300 mt-0.5">Agendado para {{.ScheduledPaymentAtDisplay}}</p>{{end}}
+                {{else if .IsBusiness}}
+                    {{if .ContactName}}<span>{{.ContactName}}</span><span aria-hidden="true">·</span>{{end}}
+                    <span>{{.AccountName}}</span>
+                    {{if .CategoryName}}<span aria-hidden="true">·</span><span class="lancamentos-row-category" data-cb-color="{{.CategoryColor}}" title="{{.CategoryName}}"><i data-lucide="{{.CategoryIcon}}" class="icon-colored" aria-hidden="true"></i><span>{{.CategoryName}}</span></span>{{end}}
+                {{else}}
+                    <span>{{.AccountName}}</span>
+                    {{if .CategoryName}}<span aria-hidden="true">·</span><span class="lancamentos-row-category" data-cb-color="{{.CategoryColor}}" title="{{.CategoryName}}"><i data-lucide="{{.CategoryIcon}}" class="icon-colored" aria-hidden="true"></i><span>{{.CategoryName}}</span></span>{{end}}
+                {{end}}
+                {{if .UsesDueDate}}<span class="lancamentos-row-competence">Comp. {{.CompetenciaDateLabel}}</span>{{end}}
+            </span>
+            {{if and (eq .PaymentStatus "paid") .PaidAt}}<span class="ui-row__note is-paid">Pago em {{.PaidAtDisplay}}</span>{{end}}
+            {{if .IsScheduled}}<span class="ui-row__note is-scheduled">Agendado para {{.ScheduledPaymentAtDisplay}}</span>{{end}}
+            {{if or .IsPending .IsOverdue .IsScheduled .HasInstallmentInfo}}
+            <span class="lancamentos-row-badges">
+                {{if .IsOverdue}}<span class="ui-badge ui-badge--danger">Vencido</span>
+                {{else if .IsScheduled}}<span class="ui-badge ui-badge--accent">Agendado</span>
+                {{else if .IsPending}}<span class="ui-badge ui-badge--warning">Pendente</span>{{end}}
                 {{if .HasInstallmentInfo}}
-                    <p class="mt-1.5">
-                        {{if and .IsSeries (le .TotalInstallments 1)}}
-                        <span class="cb-status-chip cb-status-chip-info">Recorrente</span>
-                        {{else}}
-                        <span class="cb-status-chip cb-status-chip-neutral">{{.InstallmentNumber}}/{{.TotalInstallments}}</span>
-                        {{end}}
-                    </p>
+                    {{if and .IsSeries (le .TotalInstallments 1)}}
+                    <span class="ui-badge ui-badge--accent">Recorrente</span>
+                    {{else}}
+                    <span class="ui-badge ui-badge--neutral">{{.InstallmentNumber}}/{{.TotalInstallments}}</span>
+                    {{end}}
                 {{end}}
             </span>
-            <span class="flex flex-col items-end shrink-0 gap-0.5 min-w-[110px]">
-                <span class="text-sm font-bold whitespace-nowrap {{if eq .Type "INCOME"}}text-emerald-600 dark:text-emerald-400{{else if eq .Type "EXPENSE"}}text-red-600 dark:text-red-400{{else}}text-sky-600 dark:text-sky-400{{end}}" data-sensitive>{{.AmountDisplay}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-muted)] whitespace-nowrap">{{.DateLabel}}</span>
-            </span>
+            {{end}}
         </button>
+        <span class="lancamentos-row-amount">
+            <span class="ui-row__amount {{if eq .Type "INCOME"}}is-income{{else if eq .Type "EXPENSE"}}is-expense{{else}}is-transfer{{end}}" data-sensitive>{{.AmountDisplay}}</span>
+            <span class="lancamentos-row-date">{{.DateLabel}}</span>
+        </span>
         <span class="tx-desktop-actions">
-            <button type="button" data-ignore-select class="tx-action-btn" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Editar">
-                <i data-lucide="pencil" class="h-3.5 w-3.5"></i>
+            <button type="button" data-ignore-select class="ui-row__action" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Editar {{.Description}}">
+                <i data-lucide="pencil" aria-hidden="true"></i>
             </button>
             {{if .CanGenerateReceipt}}
-            <a href="/transacoes/{{.ID}}/recibo" target="_blank" rel="noopener" class="tx-action-btn" aria-label="Recibo">
-                <i data-lucide="receipt" class="h-3.5 w-3.5"></i>
+            <a href="/transacoes/{{.ID}}/recibo" target="_blank" rel="noopener" class="ui-row__action" aria-label="Recibo de {{.Description}}">
+                <i data-lucide="receipt" aria-hidden="true"></i>
             </a>
             {{end}}
-            <button type="button" data-ignore-select class="tx-action-btn tx-action-btn-danger" data-row-delete="{{.ID}}"{{if .IsSeries}} data-row-is-series="true"{{end}} aria-label="Excluir">
-                <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+            <button type="button" data-ignore-select class="ui-row__action lancamentos-action-danger" data-row-delete="{{.ID}}"{{if .IsSeries}} data-row-is-series="true"{{end}} aria-label="Excluir {{.Description}}">
+                <i data-lucide="trash-2" aria-hidden="true"></i>
             </button>
         </span>
     </div>
@@ -522,36 +553,45 @@
 {{end}}
 
 {{define "invoice-row"}}
-<article id="invoice-{{.ID}}" class="invoice-row relative mb-1.5 overflow-hidden rounded-xl"
+<article id="invoice-{{.ID}}" class="invoice-row"
     data-invoice-id="{{.ID}}"
     data-swipe-row="true"
-    data-swipe-left-url="/transacoes/bulk/delete"
-    data-swipe-left-method="POST"
-    data-swipe-left-target="#invoice-{{.ID}}"
-    data-swipe-left-swap="delete"
-    data-swipe-left-confirm="Remover esta fatura?"
     data-swipe-right-url="{{.FaturaURL}}"
     data-swipe-right-method="GET"
     data-swipe-right-target="#main-content"
     data-swipe-right-swap="innerHTML">
-    <div data-swipe-bg-left><i data-lucide="trash-2" class="swipe-icon"></i></div>
-    <div data-swipe-bg-right class="bg-[var(--cb-accent)]"><i data-lucide="external-link" class="swipe-icon"></i></div>
-    <div data-swipe-content hx-get="{{.FaturaURL}}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
-        class="invoice-content relative z-10 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] p-3 cursor-pointer hover:bg-[var(--cb-surface-2)]">
-        <span class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border border-black/5 dark:border-white/10 emblem-wrap-solid select-none" data-cb-color="{{.CardColor}}">
-            {{if .CardProviderLogoPath}}<img src="{{assetPath .CardProviderLogoPath}}" alt="" class="institution-logo" data-avatar-fallback><span class="hidden font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .CardProviderMark}}" data-avatar-text>{{.CardProviderMark}}</span>{{else if .CardProviderMark}}<span class="font-bold uppercase tracking-wider select-none emblem-text emblem-len-{{len .CardProviderMark}} cb-runtime-color-text" data-cb-color="{{.CardColor}}">{{.CardProviderMark}}</span>{{else}}<i data-lucide="{{if .CardIcon}}{{.CardIcon}}{{else}}credit-card{{end}}" class="w-4 h-4 icon-colored" data-cb-color="{{.CardColor}}"></i>{{end}}
+    <div data-swipe-bg-right class="bg-[var(--cb-accent)]"><i data-lucide="external-link" class="swipe-icon" aria-hidden="true"></i></div>
+    <a href="{{.FaturaURL}}" data-swipe-content hx-get="{{.FaturaURL}}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
+        class="ui-row ui-row--invoice-summary ui-row--link{{if gt (len .AccountName) 24}} is-long-name{{end}}" title="Fatura {{.AccountName}} — {{.ReferenceLabel}}">
+        <span class="ui-avatar" data-cb-color="{{.CardColor}}" aria-hidden="true">
+            {{if .CardProviderLogoPath}}
+            <img src="{{assetPath .CardProviderLogoPath}}" alt="" class="institution-logo" data-avatar-fallback>
+            <span class="hidden lancamentos-invoice-mark" data-avatar-text>{{.CardProviderMark}}</span>
+            {{else if .CardProviderMark}}
+            <span class="lancamentos-invoice-mark">{{.CardProviderMark}}</span>
+            {{else}}
+            <i data-lucide="{{if .CardIcon}}{{.CardIcon}}{{else}}credit-card{{end}}" aria-hidden="true"></i>
+            {{end}}
         </span>
-        <span class="invoice-copy min-w-0">
-            <h4 class="text-sm font-semibold text-[var(--cb-text-main)] truncate">Fatura {{.AccountName}} - {{.ReferenceLabel}}</h4>
-            <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">Vence em {{.DateLabel}} · {{.ItemCount}} {{if eq .ItemCount 1}}item{{else}}itens{{end}}</p>
-        </span>
-        <div class="invoice-summary flex flex-col items-end gap-0.5">
-            <p class="invoice-summary-primary text-sm font-bold {{if .IsOverdue}}text-red-600 dark:text-red-400{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.PendingMoney.Reais}}{{.PendingMoney.Cents}}</p>
-            {{if .HasPartialPayment}}<span class="invoice-summary-detail cb-text-micro text-[var(--cb-text-muted)]" data-sensitive><span>Total R$ {{.TotalMoney.Reais}}{{.TotalMoney.Cents}}</span><span>Pago R$ {{.PaidMoney.Reais}}{{.PaidMoney.Cents}}</span></span>{{end}}
-            <span class="cb-status-chip {{if eq .BadgeLabel "Paga"}}cb-status-chip-success{{else if eq .BadgeLabel "Parcial"}}cb-status-chip-info{{else if eq .BadgeLabel "Fechada"}}cb-status-chip-danger{{else}}cb-status-chip-warning{{end}}">
-                {{.BadgeLabel}}
+        <span class="ui-row__main">
+            <span class="sr-only">Fatura </span>
+            <span class="ui-row__title lancamentos-invoice-title">{{.AccountName}}<span class="lancamentos-invoice-reference"> — {{.ReferenceLabel}}</span></span>
+            <span class="ui-row__meta">
+                <span>Vence em {{.DateLabel}}</span>
+                <span aria-hidden="true">·</span>
+                <span>{{.ItemCount}} {{if eq .ItemCount 1}}item{{else}}itens{{end}}</span>
             </span>
-        </div>
-    </div>
+            {{if .HasPartialPayment}}
+            <span class="lancamentos-invoice-detail" data-sensitive>Total R$ {{.TotalMoney.Reais}}{{.TotalMoney.Cents}} <span aria-hidden="true">·</span> Pago R$ {{.PaidMoney.Reais}}{{.PaidMoney.Cents}}</span>
+            {{end}}
+        </span>
+        <span class="lancamentos-invoice-summary">
+            <span class="ui-row__amount{{if .IsOverdue}} is-overdue{{end}}" data-sensitive>R$ {{.PendingMoney.Reais}}{{.PendingMoney.Cents}}</span>
+            <span class="lancamentos-invoice-badges">
+                <span class="ui-badge {{if eq .BadgeLabel "Paga"}}ui-badge--success{{else if eq .BadgeLabel "Parcial"}}ui-badge--info{{else if eq .BadgeLabel "Fechada"}}ui-badge--neutral{{else}}ui-badge--accent{{end}}">{{.BadgeLabel}}</span>
+                {{if .IsOverdue}}<span class="ui-badge ui-badge--danger">Vencida</span>{{end}}
+            </span>
+        </span>
+    </a>
 </article>
 {{end}}

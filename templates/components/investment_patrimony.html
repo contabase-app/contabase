@@ -1,0 +1,31 @@
+{{define "investment-patrimony"}}
+<div class="cb-investment-patrimony" data-investment-patrimony>
+    {{if .WithoutValidPosition}}<p class="cb-investment-patrimony-warning">{{.WithoutValidPosition}} aplicação(ões) sem posição válida, fora do subtotal.</p>{{end}}
+    {{range .Accounts}}{{if .ArchivedMaintained}}<p class="cb-investment-patrimony-warning">{{.Name}}: conta arquivada com aplicações mantidas. As posições elegíveis continuam incluídas.</p>{{end}}{{end}}
+    <details class="cb-investment-patrimony-details">
+        <summary class="cb-investment-patrimony-summary">
+            <span class="cb-investment-patrimony-label">Posição aplicada</span>
+            <strong class="cb-investment-patrimony-value{{if not .Available}} is-warning{{end}}" data-sensitive>{{if .Available}}{{.Value}}{{else}}Indisponível{{end}}</strong>
+            {{if .Available}}<span class="cb-investment-patrimony-state">Cobertura parcial</span>{{end}}
+            <span class="cb-investment-patrimony-more">Detalhes<i data-lucide="chevron-down" aria-hidden="true"></i></span>
+        </summary>
+        <div class="cb-investment-patrimony-body">
+            <p class="cb-investment-patrimony-title">{{.Title}}</p>
+            <p class="cb-investment-patrimony-note">Cobertura: {{.Coverage}}.</p>
+            <p class="cb-investment-patrimony-note">Valores independentes do saldo financeiro. Não representam patrimônio total nem dinheiro livre comprovado.</p>
+            {{range .Accounts}}
+            <div class="cb-investment-patrimony-account">
+                <p class="cb-investment-patrimony-label">{{.Name}}</p>
+                {{range .Positions}}
+                <div class="cb-investment-patrimony-position">
+                    <p class="cb-investment-patrimony-label">{{.Name}}</p>
+                    {{if .DateISO}}<p><span data-sensitive>{{.Value}}</span> · <time datetime="{{.DateISO}}">{{.Date}}</time></p>{{end}}
+                    <p class="cb-investment-patrimony-note">{{if .Eligible}}Incluída no subtotal{{else}}{{.Reason}}{{end}}</p>
+                </div>
+                {{else}}<p class="cb-investment-patrimony-note">Nenhuma aplicação vinculada.</p>{{end}}
+            </div>
+            {{end}}
+        </div>
+    </details>
+</div>
+{{end}}

@@ -30,7 +30,7 @@ func TestRelatoriosContabilSmokeBusinessAllMacrosJuly2026(t *testing.T) {
 	defer db.Close()
 
 	want := seedRelatoriosContabilSmokeBusinessJuly2026(t, db)
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-contabil-smoke", UserID: "u-contabil-smoke"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-contabil-smoke", UserID: "u-contabil-smoke"}
 
 	data, err := handler.buildRelatoriosDataWithModo("", "contabil", "movimentos", "realizado", 7, 2026)
 	if err != nil {
@@ -387,14 +387,14 @@ func testRelatoriosContabilTemplate(t *testing.T) *template.Template {
 	if err != nil {
 		t.Fatalf("ReadFile relatorios.html: %v", err)
 	}
-	funcs := template.FuncMap{
+	funcs := withAppShellTestFuncs(template.FuncMap{
 		"sub":             func(a, b int) int { return a - b },
 		"colorStyle":      func(_, _ string) template.CSS { return "" },
 		"dreMacroClass":   func(_ []DREMacroGroupAmount, _ string) string { return "" },
 		"dreMacroValue":   dreMacroValue,
 		"caixaMacroClass": func(_ []CaixaMacroGroupAmount, _ string) string { return "" },
 		"caixaMacroValue": caixaMacroValue,
-	}
+	})
 	tpl := template.Must(template.New("relatorios-contabil-smoke").Funcs(funcs).Parse(string(raw)))
 	addAppShellTestStubs(tpl)
 	template.Must(tpl.New("seletor_meses").Parse("<nav>meses</nav>"))

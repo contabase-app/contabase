@@ -54,8 +54,14 @@ docker compose up -d --build
 | `DATA_DIR` | Pasta principal de dados | `DATA_DIR=/app/data` |
 | `UPLOADS_DIR` | Pasta de uploads | `UPLOADS_DIR=/app/data/uploads` |
 | `AUTH_ENCRYPTION_KEY` | Chave secreta de autenticação | gerada pelo instalador |
-| `SECURITY_MASTER_KEY` | Chave mestra de segurança | gerada pelo instalador |
+| `SECURITY_MASTER_KEY` | Chave de 32 bytes para senha SMTP, exigida tambem em desenvolvimento quando usada | gerada pelo instalador |
 | `CONTABASE_SETUP_TOKEN` | Token one-time para criar o primeiro admin | gerado pelo instalador |
+
+## Disponibilidade de Investimentos
+
+Na candidata `v1.0.0-beta.6`, `CONTABASE_FEATURE_INVESTMENTS` ausente habilita o módulo em instalações novas e atualizadas. Não é preciso acrescentar configuração. Valores explícitos mantêm o contrato anterior: somente `true` ou `1` habilitam; `false`, `0`, vazio ou valor desconhecido desabilitam. As três flags de operações financeiras controladas continuam opt-in. Consulte [Investimentos](investimentos.md) para hierarquia e limites.
+
+No Compose do projeto, configure essa flag em `.env.docker`; ela deixa de ser repassada implicitamente pelo shell. Se antes a desativação existia somente no shell, transfira `CONTABASE_FEATURE_INVESTMENTS=false` para o arquivo antes de atualizar. Um `environment` explícito no override local continua tendo precedência. Sem a flag no arquivo ou no override, vale o padrão habilitado do app.
 
 ## APP_BASE_URL
 
@@ -226,6 +232,14 @@ Regras:
 - remova ou comente `CONTABASE_SETUP_TOKEN` depois do setup inicial.
 
 O instalador gera esses valores automaticamente em instalações novas.
+
+### `SECURITY_MASTER_KEY` e senha SMTP
+
+`SECURITY_MASTER_KEY` deve ter exatamente 32 bytes e ser configurada explicitamente em qualquer ambiente, inclusive desenvolvimento. Não existe fallback público. A chave não é derivada de `AUTH_ENCRYPTION_KEY`, não é gerada no startup e não é trocada automaticamente por instaladores ou updaters.
+
+Com a chave válida, a senha SMTP é cifrada com AES-256-GCM. Sem chave, uma nova senha SMTP não pode ser gravada; com chave ausente ou incorreta, alertas que dependam de senha cifrada não são enviados, mas o ciphertext e o restante da aplicação são preservados. Senhas cifradas com a antiga chave pública de desenvolvimento não são lidas automaticamente. Nesse caso, preserve o banco e as chaves, configure uma chave forte persistente e informe novamente a senha em `Administração`; a remoção da credencial também é uma ação administrativa explícita.
+
+Ao restaurar um banco em outro ambiente, use a chave que corresponde aos dados cifrados. Restaurar apenas o banco não recupera a chave, e gerar outra não descriptografa o segredo existente.
 
 ## Gerar secrets manualmente
 

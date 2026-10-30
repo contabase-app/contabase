@@ -40,7 +40,7 @@ func TestCompetenciaReceitaDateJulhoDueDateAgostoEntraEmJulho(t *testing.T) {
 		VALUES ('inc-comp', 'ws-comp', 'u-comp', 'chk-comp', 'cat-salary-comp', 'INCOME', 100000, ?, ?, 'Receita julho', 'pending', 1, 1, ?, ?)
 	`, julhoDate, agostoDue, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-comp", UserID: "u-comp"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-comp", UserID: "u-comp"}
 
 	julhoData, err := handler.buildRelatoriosData("", "competencia", "movimentos", 7, 2026)
 	if err != nil {
@@ -73,7 +73,7 @@ func TestCompetenciaDespesaDateJulhoDueDateAgostoEntraEmJulho(t *testing.T) {
 		VALUES ('exp-comp', 'ws-comp', 'u-comp', 'chk-comp', 'cat-food-comp', 'EXPENSE', 50000, ?, ?, 'Despesa julho', 'pending', 1, 1, ?, ?)
 	`, julhoDate, agostoDue, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-comp", UserID: "u-comp"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-comp", UserID: "u-comp"}
 
 	julhoData, err := handler.buildRelatoriosData("", "competencia", "movimentos", 7, 2026)
 	if err != nil {
@@ -111,7 +111,7 @@ func TestCompetenciaCompraCartaoEntraPorTransactionDate(t *testing.T) {
 		VALUES ('card-comp-tx', 'ws-comp', 'u-comp', 'card-comp', 'cat-card-comp', 'inv-comp', 'EXPENSE', 30000, ?, 'Compra cartao', 'paid', 1, 1, ?, ?)
 	`, purchaseDate, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-comp", UserID: "u-comp"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-comp", UserID: "u-comp"}
 
 	agostoData, err := handler.buildRelatoriosData("", "competencia", "movimentos", 8, 2026)
 	if err != nil {
@@ -159,7 +159,7 @@ func TestCompetenciaPagamentoFaturaNaoEntra(t *testing.T) {
 		VALUES ('ip-comp', 'ws-comp', 'inv-pay-comp', 'chk-comp', 'pay-comp-tx', 30000, ?, 'manual', 'u-comp', ?)
 	`, paymentDate, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-comp", UserID: "u-comp"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-comp", UserID: "u-comp"}
 
 	setembroData, err := handler.buildRelatoriosData("", "competencia", "movimentos", 9, 2026)
 	if err != nil {
@@ -184,7 +184,7 @@ func TestCompetenciaTransferenciaNaoEntra(t *testing.T) {
 		VALUES ('transfer-comp', 'ws-comp', 'u-comp', 'chk-comp', 'sav-comp', 'TRANSFER', 50000, ?, 'Transferencia interna', 'paid', ?, 1, 1, ?, ?)
 	`, transferDate, transferDate, now, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-comp", UserID: "u-comp"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-comp", UserID: "u-comp"}
 
 	agostoData, err := handler.buildRelatoriosData("", "competencia", "movimentos", 8, 2026)
 	if err != nil {

@@ -33,6 +33,7 @@ var accountProviderCatalog = []AccountProviderOption{
 	{Slug: "c6", Name: "C6 Bank", Color: "#111111", Icon: "credit-card", Mark: "C6", LogoPath: "institutions/c6.png"},
 	{Slug: "xp", Name: "XP Investimentos", Color: "#000000", Icon: "building-2", Mark: "XP", LogoPath: "institutions/xp.png"},
 	{Slug: "pagbank", Name: "PagBank", Color: "#FFE72D", Icon: "building-2", Mark: "Pag", LogoPath: "institutions/pagbank.png"},
+	{Slug: "stripe", Name: "Stripe", Color: "#635BFF", Icon: "wallet-cards", Mark: "Stripe", LogoPath: "institutions/stripe.png"},
 }
 
 var (
@@ -54,6 +55,43 @@ func accountProviderOptions() []AccountProviderOption {
 	out := make([]AccountProviderOption, len(accountProviderCatalog))
 	copy(out, accountProviderCatalog)
 	return out
+}
+
+// AccountProviderPickerData é o estado inicial do seletor canônico de
+// instituições. A criação usa o estado vazio; a edição entrega a instituição já
+// gravada para o formulário abrir com a seleção e o logo aplicados.
+type AccountProviderPickerData struct {
+	AccountProviders []AccountProviderOption
+	SelectedSlug     string
+	SelectedName     string
+	SelectedMark     string
+	SelectedColor    string
+	SelectedLogoPath string
+}
+
+// newAccountProviderPickerData monta o seletor para a conta informada. Slugs
+// desconhecidos ou vazios caem no comportamento atual: nenhuma instituição
+// pré-selecionada, sem obrigar escolha na edição.
+func newAccountProviderPickerData(selectedSlug, accountName, rowColor string) AccountProviderPickerData {
+	view := AccountProviderPickerData{AccountProviders: accountProviderOptions()}
+	raw := strings.TrimSpace(selectedSlug)
+	if raw == "" {
+		return view
+	}
+
+	slug := normalizeAccountProviderSlug(raw)
+	view.SelectedSlug = slug
+	view.SelectedName = accountProviderName(slug)
+	if view.SelectedName == "" {
+		view.SelectedName = strings.TrimSpace(accountName)
+	}
+	view.SelectedMark = accountProviderMark(slug, accountName)
+	view.SelectedLogoPath = accountProviderLogoPathForAccount(slug, accountName)
+	view.SelectedColor = normalizeHexColor(rowColor, "#6B7280")
+	if provider, ok := accountProviderBySlugOrCustom(slug); ok {
+		view.SelectedColor = provider.Color
+	}
+	return view
 }
 
 // AccountProviderColors returns a copy of the built-in institution palette so
@@ -114,6 +152,9 @@ func identifyAlias(name string) string {
 	}
 	if strings.Contains(lower, "c6") {
 		return "c6"
+	}
+	if strings.Contains(lower, "stripe") {
+		return "stripe"
 	}
 	return ""
 }

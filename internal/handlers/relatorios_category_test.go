@@ -14,7 +14,7 @@ func TestRelatoriosGastosPorCategoriaIncluiSubcategoriaSemLancamentoNoPai(t *tes
 
 	seedRelatoriosChildOnlyCategoryScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-cat", UserID: "user-cat"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-cat", UserID: "user-cat"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -52,7 +52,7 @@ func TestRelatoriosGastosPorCategoriaOrdemHierarquiaPaisEFilhos(t *testing.T) {
 
 	seedRelatoriosMultiParentCategoryScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-hierarchy", UserID: "user-hierarchy"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-hierarchy", UserID: "user-hierarchy"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -162,7 +162,7 @@ func TestRelatoriosGastosPorCategoriaFilhoSemLancamentoNoPaiGanhaGrupo(t *testin
 
 	seedRelatoriosOrphanChildScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-orphan", UserID: "user-orphan"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-orphan", UserID: "user-orphan"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -204,7 +204,7 @@ func TestRelatoriosGastosPorCategoriaPaiDiretoDoisFilhosRaizSemFilhosEOutroWorks
 
 	seedRelatoriosParentDirectChildrenStandaloneScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-parent-direct", UserID: "user-parent-direct"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-parent-direct", UserID: "user-parent-direct"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)

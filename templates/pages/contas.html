@@ -1,15 +1,19 @@
 {{define "contas-page"}}
 {{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/contas.css"}}">
 {{template "app-v2-document-head-end" .}}
-<main id="main-content" class="cb-v2-main cb-v2-contas-main" data-page-section="accounts" data-page-title="{{.Title}}">
+<main id="main-content" class="cb-v2-main cb-v2-contas-main" data-page-section="accounts" data-page-title="{{.Title}}" data-ui="premium">
     {{template "app-v2-appbar" .}}
     <div class="cb-v2-content cb-v2-contas-content">
-        <header class="cb-v2-contas-header">
-            <div>
-                <p class="cb-v2-eyebrow">Compromissos</p>
-                <h1>Contas</h1>
-                <p>Acompanhe o que vence e o que você tem a receber no período.</p>
+        <header class="cb-v2-contas-header ui-page-header">
+            <div class="min-w-0">
+                <p class="ui-eyebrow">Compromissos</p>
+                <h1 class="ui-page-title">Contas</h1>
+                <p class="ui-page-description">Acompanhe o que vence e o que você tem a receber no período.</p>
+            </div>
+            <div class="cb-v2-contas-header-actions">
+                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-privacy-toggle aria-pressed="false" aria-label="Ocultar valores financeiros" data-tooltip-hover data-tooltip-text="Ocultar valores financeiros"><i data-lucide="eye" data-privacy-icon aria-hidden="true"></i></button>
             </div>
         </header>
         {{template "contas-content" .}}
@@ -39,54 +43,59 @@
 
     {{template "seletor_meses" .}}
 
-    <div class="mt-5 mb-4">
-        <h2 class="text-sm font-bold text-[var(--cb-text-main)]">Obrigações do período</h2>
-        <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">Visão operacional de compromissos a pagar, a receber e vencidos no período.</p>
+    <div class="ui-section-heading cb-v2-contas-section-heading">
+        <div class="ui-section-title">
+            <span class="ui-section-icon" aria-hidden="true"><i data-lucide="receipt-text"></i></span>
+            <div>
+                <h2>Obrigações do período</h2>
+                <p>Visão operacional de compromissos a pagar, a receber e vencidos no período.</p>
+            </div>
+        </div>
     </div>
 
-    <section class="mt-4 mb-5 grid grid-cols-2 sm:grid-cols-3 gap-2">
-        <div class="cb-card-dense flex flex-col gap-1.5 min-w-0">
-            <div class="flex items-center justify-between gap-1">
-                <span class="cb-section-title truncate">A Pagar</span>
-                <span class="flex h-5 w-5 items-center justify-center rounded-md shrink-0 cb-tone-danger cb-tone-icon">
-                    <i data-lucide="arrow-up-right" class="w-3 h-3 text-[var(--cb-danger)]"></i>
-                </span>
+    <section class="ui-kpi-grid" aria-label="Resumo do período">
+        <div class="ui-kpi ui-kpi--danger">
+            <div class="ui-kpi__head">
+                <span class="ui-kpi__label">A Pagar</span>
+                <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="arrow-up-right"></i></span>
             </div>
-            <span class="text-base sm:text-lg font-black text-[var(--cb-danger)] leading-tight tracking-tight whitespace-nowrap block" data-sensitive>R$ {{.TotalPayables.Reais}}{{.TotalPayables.Cents}}</span>
+            <strong class="ui-kpi__value" data-sensitive>R$ {{.TotalPayables.Reais}}{{.TotalPayables.Cents}}</strong>
+            <span class="ui-kpi__meta">Pendente no período</span>
         </div>
-        <div class="cb-card-dense flex flex-col gap-1.5 min-w-0">
-            <div class="flex items-center justify-between gap-1">
-                <span class="cb-section-title truncate">A Receber</span>
-                <span class="flex h-5 w-5 items-center justify-center rounded-md shrink-0 cb-tone-success cb-tone-icon">
-                    <i data-lucide="arrow-down-left" class="w-3 h-3 text-[var(--cb-success)]"></i>
-                </span>
+        <div class="ui-kpi ui-kpi--success">
+            <div class="ui-kpi__head">
+                <span class="ui-kpi__label">A Receber</span>
+                <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="arrow-down-left"></i></span>
             </div>
-            <span class="text-base sm:text-lg font-black text-[var(--cb-success)] leading-tight tracking-tight whitespace-nowrap block" data-sensitive>R$ {{.TotalReceivables.Reais}}{{.TotalReceivables.Cents}}</span>
+            <strong class="ui-kpi__value" data-sensitive>R$ {{.TotalReceivables.Reais}}{{.TotalReceivables.Cents}}</strong>
+            <span class="ui-kpi__meta">Previsto no período</span>
         </div>
-        <div class="col-span-2 sm:col-span-1 cb-card-dense flex flex-col gap-1.5 min-w-0">
-            <div class="flex items-center justify-between gap-1">
-                <span class="cb-section-title truncate">Inadimplência</span>
-                <span class="flex h-5 w-5 items-center justify-center rounded-md shrink-0 cb-tone-warning cb-tone-icon">
-                    <i data-lucide="alert-triangle" class="w-3 h-3 text-[var(--cb-warning)]"></i>
-                </span>
+        <div class="ui-kpi ui-kpi--warning">
+            <div class="ui-kpi__head">
+                <span class="ui-kpi__label">Inadimplência</span>
+                <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="alert-triangle"></i></span>
             </div>
-            <span class="text-base sm:text-lg font-black text-[var(--cb-warning)] leading-tight tracking-tight whitespace-nowrap block" data-sensitive>R$ {{.TotalOverdueReceivabs.Reais}}{{.TotalOverdueReceivabs.Cents}}</span>
+            <strong class="ui-kpi__value" data-sensitive>R$ {{.TotalOverdueReceivabs.Reais}}{{.TotalOverdueReceivabs.Cents}}</strong>
+            <span class="ui-kpi__meta">A receber vencido</span>
         </div>
     </section>
 
     <div id="contasFilters" class="contents">
         <input type="hidden" name="periodo" value="{{.PeriodoRef}}">
-        <div class="relative mb-4">
-            <i data-lucide="search" class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--cb-text-subtle)] z-10"></i>
-            <input type="search" name="q" value="{{.Busca}}" placeholder="Buscar descrição, contato ou conta..."
-                hx-get="/contas"
-                hx-target="#contas-list"
-                hx-select="#contas-list"
-                hx-swap="outerHTML"
-                hx-trigger="keyup delay:400ms, search"
-                hx-include="#contasFilters, #contas-list"
-                hx-vals='{"partial":"lista"}'
-                class="cb-input cb-input-search">
+        <div class="ui-toolbar">
+            <div class="ui-search">
+                <i data-lucide="search" class="ui-search__icon" aria-hidden="true"></i>
+                <input type="search" name="q" value="{{.Busca}}" placeholder="Buscar descrição, contato ou conta..."
+                    aria-label="Buscar compromissos"
+                    hx-get="/contas"
+                    hx-target="#contas-list"
+                    hx-select="#contas-list"
+                    hx-swap="outerHTML"
+                    hx-trigger="keyup delay:400ms, search"
+                    hx-include="#contasFilters, #contas-list"
+                    hx-vals='{"partial":"lista"}'
+                    class="ui-input ui-input--search">
+            </div>
         </div>
     </div>
 
@@ -98,23 +107,20 @@
 <div id="contas-list">
     <input type="hidden" name="aba" value="{{.Aba}}">
 
-    <!-- Tabs -->
-    <nav class="cb-tabs mb-4 w-full">
-        <button type="button"
+    <nav class="ui-tabs" aria-label="Filtrar contas">
+        <button type="button" aria-pressed="{{if eq .Aba "pagar"}}true{{else}}false{{end}}"
             hx-get="/contas?aba=pagar&partial=lista"
             hx-target="#contas-list" hx-swap="outerHTML"
             hx-include="#contasFilters"
-            class="btn-tactile cb-tab h-10
-                {{if eq .Aba "pagar"}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
-            <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>A Pagar
+            class="ui-tab {{if eq .Aba "pagar"}}is-active{{end}}">
+            <i data-lucide="arrow-up-right" aria-hidden="true"></i>A Pagar
         </button>
-        <button type="button"
+        <button type="button" aria-pressed="{{if eq .Aba "receber"}}true{{else}}false{{end}}"
             hx-get="/contas?aba=receber&partial=lista"
             hx-target="#contas-list" hx-swap="outerHTML"
             hx-include="#contasFilters"
-            class="btn-tactile cb-tab h-10
-                {{if eq .Aba "receber"}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
-            <i data-lucide="arrow-down-left" class="w-3.5 h-3.5"></i>A Receber
+            class="ui-tab {{if eq .Aba "receber"}}is-active{{end}}">
+            <i data-lucide="arrow-down-left" aria-hidden="true"></i>A Receber
         </button>
     </nav>
 
@@ -122,32 +128,36 @@
     {{$items := .Payables}}
     {{if not $isPagar}}{{$items = .Receivables}}{{end}}
 
+<div id="contas-panel">
 {{if $items}}
-    <div class="space-y-2">
+    <section class="ui-panel ui-list-panel" aria-label="{{if $isPagar}}Contas a pagar{{else}}Contas a receber{{end}}">
+        <div class="ui-list-panel__head">
+            <strong>{{if $isPagar}}A pagar{{else}}A receber{{end}}</strong>
+            <span>{{len $items}} {{if eq (len $items) 1}}item{{else}}itens{{end}} · ordenado por vencimento</span>
+        </div>
+        <div class="ui-list">
         {{range $items}}
         {{if .IsInvoice}}
-        <article id="invoice-{{.ID}}" class="relative mb-1.5 overflow-hidden rounded-xl {{if .IsOverdue}}overdue{{end}}">
-            <a href="/cartoes/faturas/{{.ID}}"
-               class="cb-row-dense flex items-center gap-3 text-left{{if .IsOverdue}}{{if $isPagar}} overdue-payable cb-overdue-payable{{else}} overdue-receivable cb-overdue-receivable{{end}}{{end}}">
-                <span class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 {{if $isPagar}}cb-invoice-payable-icon{{else}}cb-invoice-receivable-icon{{end}}"
-                      title="Fatura de cartão">
-                    <i data-lucide="credit-card" class="w-4 h-4"></i>
+        <a id="invoice-{{.ID}}" href="/cartoes/faturas/{{.ID}}" class="ui-row ui-row--link{{if .IsOverdue}} is-overdue{{end}}">
+            <span class="ui-avatar{{if and (not .ProviderLogoPath) (not .ProviderMark)}} ui-avatar--warning{{end}}" data-cb-color="{{.AccountColor}}">
+                {{if .ProviderLogoPath}}<img src="{{assetPath .ProviderLogoPath}}" alt="" width="34" height="34" data-avatar-fallback><span class="hidden" data-avatar-text>{{if .ProviderMark}}{{.ProviderMark}}{{else}}CB{{end}}</span>{{else if .ProviderMark}}{{.ProviderMark}}{{else}}<i data-lucide="credit-card" aria-hidden="true"></i>{{end}}
+            </span>
+            <span class="ui-row__main">
+                <span class="ui-row__title">{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</span>
+                <span class="ui-row__meta">
+                    <span class="ui-row__account">{{.AccountName}}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{{.DueDate}}</span>
+                    <span class="ui-badge {{if .IsOverdue}}ui-badge--danger{{else}}ui-badge--warning{{end}}">{{if .IsOverdue}}Vencido{{else}}Fatura{{end}}</span>
                 </span>
-                <span class="flex-1 min-w-0">
-                    <span class="text-sm font-semibold text-[var(--cb-text-main)] truncate block">{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</span>
-                    <span class="cb-text-micro text-[var(--cb-text-subtle)] mt-0.5 truncate block">{{.AccountName}} · {{.DueDate}}</span>
-                </span>
-                <span class="flex items-center gap-2 shrink-0">
-                    <span class="text-sm font-bold {{if $isPagar}}text-[var(--cb-danger)]{{else}}text-[var(--cb-success)]{{end}}" data-sensitive>R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}</span>
-                    <span class="hidden md:flex btn-tactile h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-text-subtle)] hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]"
-                          aria-label="Ver fatura">
-                        <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
-                    </span>
-                </span>
-            </a>
-        </article>
+            </span>
+            <span class="ui-row__actions">
+                <span class="ui-row__amount is-expense" data-sensitive>R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}</span>
+                <span class="ui-row__chevron" aria-hidden="true"><i data-lucide="chevron-right"></i></span>
+            </span>
+        </a>
         {{else}}
-        <article id="tx-{{.ID}}" class="relative mb-1.5 overflow-hidden rounded-xl {{if .IsScheduled}}scheduled{{else if .IsOverdue}}overdue{{end}}"
+        <article id="tx-{{.ID}}" class="ui-swipe"
             data-payment-id="{{.ID}}"
             data-payment-context="contas"
             data-payment-post-url="/transacoes/{{.ID}}/status-pagamento"
@@ -167,53 +177,64 @@
             data-swipe-left-swap="delete"
             data-swipe-left-confirm="Remover este lançamento?"
             data-swipe-right-payment-confirm="true">
-            <div data-swipe-bg-left class="absolute inset-y-0 left-0 flex w-28 origin-left items-center justify-start rounded-l-xl bg-[var(--cb-danger)] px-6 opacity-0 pointer-events-none">
-                <i data-lucide="trash-2" class="w-5 h-5 text-white"></i>
+            <div data-swipe-bg-left class="ui-swipe__bg ui-swipe__bg--left">
+                <i data-lucide="trash-2" aria-hidden="true"></i>
             </div>
-            <div data-swipe-bg-right class="absolute inset-y-0 right-0 flex w-28 origin-right items-center justify-end rounded-r-xl bg-[var(--cb-success)] px-6 opacity-0 pointer-events-none">
-                <i data-lucide="check-circle-2" class="w-5 h-5 text-white"></i>
+            <div data-swipe-bg-right class="ui-swipe__bg ui-swipe__bg--right">
+                <i data-lucide="check-circle-2" aria-hidden="true"></i>
             </div>
-            <div data-swipe-content class="cb-row-dense flex items-center gap-3{{if .IsOverdue}}{{if $isPagar}} cb-overdue-payable{{else}} cb-overdue-receivable{{end}}{{end}}">
+            <div data-swipe-content class="ui-row{{if .IsOverdue}} is-overdue{{end}}">
                 <button type="button"
                     data-payment-confirm
-                    class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all hover:opacity-80 tx-status-{{.StatusTone}}"
-                    title="{{.StatusTitle}}">
-                    <i data-lucide="{{.StatusIcon}}" class="w-4 h-4"></i>
+                    class="ui-row__status tx-status-{{.StatusTone}}"
+                    title="{{.StatusTitle}}"
+                    aria-label="{{.StatusTitle}}">
+                    <i data-lucide="{{.StatusIcon}}" aria-hidden="true"></i>
                 </button>
                 <button type="button"
-                    class="flex flex-1 min-w-0 items-center gap-3 text-left"
+                    class="ui-row__main ui-row__main--button"
                     hx-get="/transacoes/{{.ID}}"
                     hx-target="#bottom-sheet-container"
                     hx-swap="innerHTML"
                     hx-push-url="false">
-                    <span class="flex-1 min-w-0">
-                        <span class="text-sm font-semibold text-[var(--cb-text-main)] truncate block">{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</span>
-                        <span class="cb-text-micro text-[var(--cb-text-subtle)] mt-0.5 truncate block">{{if .ContactName}}{{.ContactName}} · {{end}}{{.AccountName}} · {{.DueDate}}</span>
-                        {{if .IsScheduled}}<span class="cb-text-micro text-violet-600 dark:text-violet-300 mt-0.5 truncate block">Agendado para {{.ScheduledPaymentAtDisplay}}</span>{{end}}
+                    <span class="ui-row__title">{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</span>
+                    <span class="ui-row__meta">
+                        {{if .ContactName}}<span>{{.ContactName}}</span><span aria-hidden="true">·</span>{{end}}
+                        <span class="ui-row__account">
+                            {{if .ProviderLogoPath}}<img class="ui-row__account-logo" src="{{assetPath .ProviderLogoPath}}" alt="" width="16" height="16" data-avatar-fallback><span class="ui-row__account-mark hidden" data-avatar-text data-cb-color="{{.AccountColor}}">{{if .ProviderMark}}{{.ProviderMark}}{{else}}•{{end}}</span>{{else}}<span class="ui-row__account-mark" data-cb-color="{{.AccountColor}}">{{if .ProviderMark}}{{.ProviderMark}}{{else}}•{{end}}</span>{{end}}
+                            <span>{{.AccountName}}</span>
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{{.DueDate}}</span>
+                        <span class="ui-badge {{if .IsScheduled}}ui-badge--accent{{else if .IsOverdue}}ui-badge--danger{{else}}ui-badge--neutral{{end}}">{{if .IsScheduled}}Agendado{{else if .IsOverdue}}Vencido{{else}}Pendente{{end}}</span>
                     </span>
+                    {{if .IsScheduled}}<span class="ui-row__note is-scheduled">Agendado para {{.ScheduledPaymentAtDisplay}}</span>{{end}}
                 </button>
-                <div class="flex items-center gap-2 shrink-0">
-                    <span class="text-sm font-bold {{if $isPagar}}text-[var(--cb-danger)]{{else}}text-[var(--cb-success)]{{end}}" data-sensitive>R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}</span>
+                <span class="ui-row__actions">
+                    <span class="ui-row__amount {{if $isPagar}}is-expense{{else}}is-income{{end}}" data-sensitive>R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}</span>
                     <button type="button"
-                        class="hidden md:flex btn-tactile h-7 w-7 items-center justify-center rounded-lg text-[var(--cb-text-subtle)] hover:text-[var(--cb-text-main)] hover:bg-[var(--cb-surface-3)]"
+                        class="ui-row__action ui-row__action--desktop"
                         hx-get="/transacoes/{{.ID}}"
                         hx-target="#bottom-sheet-container"
                         hx-swap="innerHTML"
                         hx-push-url="false"
                         aria-label="Editar">
-                        <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                        <i data-lucide="pencil" aria-hidden="true"></i>
                     </button>
-                </div>
+                </span>
             </div>
         </article>
         {{end}}
         {{end}}
+        </div>
+    </section>
+{{else}}
+    <div class="ui-empty">
+        <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="check-circle"></i></span>
+        <p class="ui-empty__title">{{if .Busca}}Nenhum resultado{{else if $isPagar}}Sem contas pendentes{{else}}Sem recebíveis pendentes{{end}}</p>
+        <p class="ui-empty__text">{{if .Busca}}Nenhum resultado para “{{.Busca}}”. Ajuste a busca ou troque o mês.{{else}}Nenhum compromisso {{if $isPagar}}a pagar{{else}}a receber{{end}} neste período.{{end}}</p>
     </div>
-    {{else}}
-    <div class="cb-empty-state py-8">
-        <i data-lucide="check-circle" class="w-8 h-8 text-[var(--cb-text-subtle)] mb-3"></i>
-        <p class="text-sm font-medium text-[var(--cb-text-subtle)]">{{if $isPagar}}Sem contas pendentes{{else}}Sem recebiveis pendentes{{end}}</p>
-    </div>
-    {{end}}
+{{end}}
+</div>
 </div>
 {{end}}

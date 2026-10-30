@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -280,36 +282,13 @@ type RepairOrphanCardsResult struct {
 
 func (r *ConfigRepository) RepairOrphanCreditCards(dryRun bool) (RepairOrphanCardsResult, error) {
 	var result RepairOrphanCardsResult
-
-	rows, err := r.db.Query(`
-		SELECT a.id, a.name, a.workspace_id
-		FROM accounts a
-		LEFT JOIN credit_cards cc ON cc.account_id = a.id
-		WHERE a.type = 'CREDIT_CARD' AND cc.account_id IS NULL
-		ORDER BY a.workspace_id, a.name
-	`)
+	orphans, err := r.diagnoseOrphanCreditCards()
 	if err != nil {
-		return result, fmt.Errorf("diagnóstico de cartões órfãos: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var item OrphanCardInfo
-		if err := rows.Scan(&item.AccountID, &item.Name, &item.WorkspaceID); err != nil {
-			return result, fmt.Errorf("leitura de cartão órfão: %w", err)
-		}
-		result.Orphans = append(result.Orphans, item)
-	}
-	if err := rows.Err(); err != nil {
 		return result, err
 	}
-
-	result.Diagnosed = len(result.Orphans)
-	if result.Diagnosed == 0 {
-		return result, nil
-	}
-
-	if dryRun {
+	result.Orphans = orphans
+	result.Diagnosed = len(orphans)
+	if dryRun || result.Diagnosed == 0 {
 		return result, nil
 	}
 
@@ -320,20 +299,104 @@ func (r *ConfigRepository) RepairOrphanCreditCards(dryRun bool) (RepairOrphanCar
 	defer tx.Rollback()
 
 	for _, item := range result.Orphans {
-		cardID := uuid.NewString()
-		_, err := tx.Exec(`
+		res, err := tx.Exec(`
 			INSERT INTO credit_cards (id, account_id, closing_day, due_day, credit_limit)
-			VALUES (?, ?, 20, 10, 0)
-		`, cardID, item.AccountID)
+			SELECT ?, owner.id, 20, 10, 0
+			FROM accounts owner
+			WHERE owner.id = ? AND owner.workspace_id = ? AND owner.type = 'CREDIT_CARD'
+		`, uuid.NewString(), item.AccountID, item.WorkspaceID)
 		if err != nil {
 			return result, fmt.Errorf("reparar cartão %s (%s): %w", item.Name, item.AccountID, err)
 		}
-		result.Repaired++
+		affected, err := res.RowsAffected()
+		if err != nil {
+			return result, fmt.Errorf("cardinalidade do reparo %s: %w", item.AccountID, err)
+		}
+		if affected != 1 {
+			return result, fmt.Errorf("reparar cartão %s (%s): esperado 1 registro, obtidos %d", item.Name, item.AccountID, affected)
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
 		return result, fmt.Errorf("commit reparo: %w", err)
 	}
-
+	result.Repaired = result.Diagnosed
 	return result, nil
+}
+
+func (r *ConfigRepository) diagnoseOrphanCreditCards() ([]OrphanCardInfo, error) {
+	tx, err := r.db.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("diagnóstico de cartões órfãos: %w", err)
+	}
+	defer tx.Rollback()
+	// CONTROL-PLANE GLOBAL: IDs only, never discovery from financial data.
+	rows, err := tx.Query(`SELECT id FROM workspaces ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("diagnóstico de cartões órfãos: %w", err)
+	}
+	var workspaceIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("leitura de workspace: %w", err)
+		}
+		workspaceIDs = append(workspaceIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	var orphans []OrphanCardInfo
+	for _, workspaceID := range workspaceIDs {
+		items, err := diagnoseWorkspaceOrphanCreditCards(tx, workspaceID)
+		if err != nil {
+			return nil, err
+		}
+		orphans = append(orphans, items...)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("diagnóstico de cartões órfãos: %w", err)
+	}
+	// SQLite's existing BINARY order, without an additional functional tie-break.
+	sort.SliceStable(orphans, func(i, j int) bool {
+		if orphans[i].WorkspaceID != orphans[j].WorkspaceID {
+			return orphans[i].WorkspaceID < orphans[j].WorkspaceID
+		}
+		return orphans[i].Name < orphans[j].Name
+	})
+	return orphans, nil
+}
+
+func diagnoseWorkspaceOrphanCreditCards(tx *sql.Tx, workspaceID string) ([]OrphanCardInfo, error) {
+	rows, err := tx.Query(`
+		SELECT a.id, a.name, a.workspace_id
+		FROM accounts a
+		LEFT JOIN credit_cards cc ON cc.account_id = a.id
+		WHERE a.workspace_id = ? AND a.type = 'CREDIT_CARD' AND cc.account_id IS NULL
+		ORDER BY a.workspace_id, a.name
+	`, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("diagnóstico de cartões órfãos: %w", err)
+	}
+	defer rows.Close()
+	var out []OrphanCardInfo
+	for rows.Next() {
+		var item OrphanCardInfo
+		if err := rows.Scan(&item.AccountID, &item.Name, &item.WorkspaceID); err != nil {
+			return nil, fmt.Errorf("leitura de cartão órfão: %w", err)
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

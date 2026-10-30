@@ -177,7 +177,6 @@ func TestLancamentosMonthSelectorDoesNotInheritListPartial(t *testing.T) {
 	}).ParseFiles(
 		resolveTemplatePath(t, "templates/pages/lancamentos.html"),
 		resolveTemplatePath(t, "templates/components/seletor_meses.html"),
-		resolveTemplatePath(t, "templates/components/invoice-row.html"),
 	))
 
 	var out bytes.Buffer
@@ -224,7 +223,6 @@ func TestLancamentosPageUsesGlobalAppShell(t *testing.T) {
 		resolveTemplatePath(t, "templates/pages/lancamentos.html"),
 		resolveTemplatePath(t, "templates/components/app_shell.html"),
 		resolveTemplatePath(t, "templates/components/seletor_meses.html"),
-		resolveTemplatePath(t, "templates/components/invoice-row.html"),
 	))
 
 	data := LancamentosData{
@@ -339,11 +337,20 @@ func testLancamentosBranchTemplates(t *testing.T) *template.Template {
 }
 
 func TestVisualRegressionInvoiceAndFormEmblems(t *testing.T) {
-	// Test invoice-row.html rendering
+	// F8: the legacy invoice-row component was removed; the emblem contract
+	// now lives in the invoice-row define of lancamentos.html (ui-row family).
 	tplInvoice := template.Must(template.New("invoice-test").Funcs(template.FuncMap{
 		"assetPath": func(path string) string { return path + "?v=test" },
+		"hasString": func(items []string, target string) bool {
+			for _, item := range items {
+				if item == target {
+					return true
+				}
+			}
+			return false
+		},
 	}).ParseFiles(
-		resolveTemplatePath(t, "templates/components/invoice-row.html"),
+		resolveTemplatePath(t, "templates/pages/lancamentos.html"),
 	))
 
 	t.Run("invoice-row with ProviderMark MP", func(t *testing.T) {
@@ -354,13 +361,13 @@ func TestVisualRegressionInvoiceAndFormEmblems(t *testing.T) {
 			CardProviderMark: "MP",
 			CardIcon:         "credit-card",
 		}
-		if err := tplInvoice.ExecuteTemplate(&buf, "invoice-row-legacy", data); err != nil {
+		if err := tplInvoice.ExecuteTemplate(&buf, "invoice-row", data); err != nil {
 			t.Fatalf("failed to execute invoice-row: %v", err)
 		}
 		html := buf.String()
 		assertContains(t, html, "MP")
-		assertContains(t, html, "emblem-len-2")
-		assertContains(t, html, "emblem-text")
+		assertContains(t, html, "lancamentos-invoice-mark")
+		assertContains(t, html, `data-cb-color="#009EE3"`)
 	})
 
 	t.Run("invoice-row with provider logo", func(t *testing.T) {
@@ -371,7 +378,7 @@ func TestVisualRegressionInvoiceAndFormEmblems(t *testing.T) {
 			CardProviderLogoPath: "institutions/itau.png",
 			CardIcon:             "credit-card",
 		}
-		if err := tplInvoice.ExecuteTemplate(&buf, "invoice-row-legacy", data); err != nil {
+		if err := tplInvoice.ExecuteTemplate(&buf, "invoice-row", data); err != nil {
 			t.Fatalf("failed to execute invoice-row: %v", err)
 		}
 		html := buf.String()
@@ -387,13 +394,12 @@ func TestVisualRegressionInvoiceAndFormEmblems(t *testing.T) {
 			CardProviderMark: "INTER",
 			CardIcon:         "credit-card",
 		}
-		if err := tplInvoice.ExecuteTemplate(&buf, "invoice-row-legacy", data); err != nil {
+		if err := tplInvoice.ExecuteTemplate(&buf, "invoice-row", data); err != nil {
 			t.Fatalf("failed to execute invoice-row: %v", err)
 		}
 		html := buf.String()
 		assertContains(t, html, "INTER")
-		assertContains(t, html, "emblem-len-5")
-		assertContains(t, html, "emblem-text")
+		assertContains(t, html, "lancamentos-invoice-mark")
 	})
 
 	t.Run("invoice-row with empty ProviderMark fallback", func(t *testing.T) {
@@ -404,12 +410,12 @@ func TestVisualRegressionInvoiceAndFormEmblems(t *testing.T) {
 			CardProviderMark: "",
 			CardIcon:         "credit-card",
 		}
-		if err := tplInvoice.ExecuteTemplate(&buf, "invoice-row-legacy", data); err != nil {
+		if err := tplInvoice.ExecuteTemplate(&buf, "invoice-row", data); err != nil {
 			t.Fatalf("failed to execute invoice-row: %v", err)
 		}
 		html := buf.String()
-		if strings.Contains(html, "emblem-text") {
-			t.Errorf("expected no emblem-text for empty ProviderMark, got: %s", html)
+		if strings.Contains(html, "lancamentos-invoice-mark") {
+			t.Errorf("expected no invoice mark for empty ProviderMark, got: %s", html)
 		}
 		assertContains(t, html, "data-lucide=\"credit-card\"")
 	})
@@ -709,7 +715,7 @@ func TestTransactionRowConfirmTexts(t *testing.T) {
 		}
 		html := buf.String()
 		assertContains(t, html, `class="tx-edit-trigger`)
-		assertContains(t, html, `aria-label="Editar `)
+		assertContains(t, html, `<span class="sr-only">Editar lançamento: </span>`)
 		assertContains(t, html, `data-payment-confirm`)
 		assertContains(t, html, `data-swipe-right-payment-confirm="true"`)
 		assertContains(t, html, `data-payment-post-url="/transacoes/tx-123/status-pagamento"`)
@@ -736,15 +742,42 @@ func TestTransactionRowConfirmTexts(t *testing.T) {
 			PaidMoney:         MoneyDisplay{Reais: "765", Cents: ",44"},
 			HasPartialPayment: true,
 			BadgeLabel:        "Parcial",
+			CardColor:         "#009EE3",
+			CardProviderMark:  "MP",
 		}
 		if err := tplRow.ExecuteTemplate(&buf, "invoice-row", data); err != nil {
 			t.Fatalf("failed to execute invoice-row: %v", err)
 		}
 		html := buf.String()
-		assertContains(t, html, `class="invoice-content`)
-		assertContains(t, html, `class="invoice-copy`)
-		assertContains(t, html, `class="invoice-summary`)
-		assertContains(t, html, `<span>Total R$ 2.000,00</span><span>Pago R$ 765,44</span>`)
+		for _, want := range []string{
+			`class="ui-row ui-row--invoice-summary ui-row--link`,
+			`href="/cartoes/faturas/invoice-mobile"`,
+			`hx-get="/cartoes/faturas/invoice-mobile"`,
+			`hx-target="#main-content"`,
+			`hx-select="#main-content"`,
+			`hx-push-url="true"`,
+			`data-swipe-row="true"`,
+			`data-swipe-right-url="/cartoes/faturas/invoice-mobile"`,
+			`class="ui-avatar" data-cb-color="#009EE3" aria-hidden="true"`,
+			`lancamentos-invoice-mark">MP</span>`,
+			`class="ui-row__title lancamentos-invoice-title"`,
+			`Cartão com nome muito extenso`,
+			`— Agosto de 2026`,
+			`Vence em 25/08/2026`,
+			`12 itens`,
+			`Total R$ 2.000,00`,
+			`Pago R$ 765,44`,
+			`class="ui-row__amount" data-sensitive>R$ 1.234,56</span>`,
+			`ui-badge--info">Parcial</span>`,
+		} {
+			assertContains(t, html, want)
+		}
+		if strings.Contains(html, `class="invoice-content`) || strings.Contains(html, `class="invoice-copy`) || strings.Contains(html, `class="invoice-summary`) {
+			t.Fatal("Legacy invoice card classes must not return to /lancamentos")
+		}
+		if got := strings.Count(html, `data-sensitive`); got != 2 {
+			t.Fatalf("invoice privacy values = %d, want 2 (pending + partial detail)", got)
+		}
 	})
 
 	t.Run("renders transfer origin and destination without category", func(t *testing.T) {
@@ -764,10 +797,10 @@ func TestTransactionRowConfirmTexts(t *testing.T) {
 			t.Fatalf("failed to execute transfer row: %v", err)
 		}
 		html := buf.String()
-		assertContains(t, html, `<span class="min-w-0 truncate">Inter</span>`)
+		assertContains(t, html, `<span class="lancamentos-row-transfer__account" title="Inter">Inter</span>`)
 		assertContains(t, html, `&rarr;`)
-		assertContains(t, html, `<span class="min-w-0 truncate">Nubank</span>`)
-		assertContains(t, html, `class="tx-status tx-status-success"`)
+		assertContains(t, html, `<span class="lancamentos-row-transfer__account" title="Nubank">Nubank</span>`)
+		assertContains(t, html, `class="tx-status tx-status-success ui-row__status"`)
 		assertContains(t, html, `data-lucide="arrow-left-right"`)
 		if strings.Contains(html, data.CategoryName) {
 			t.Fatalf("transfer row must not render category: %s", html)

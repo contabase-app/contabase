@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"sort"
 	"time"
 
@@ -121,7 +122,7 @@ func QueryRealizedCashEvents(db *sql.DB, workspaceID string, period ReportPeriod
 			COALESCE(a.type, '') AS account_type,
 			t.category_id,
 			COALESCE(c.macro_group, p.macro_group, '') AS macro_group
-		FROM transactions t
+		FROM financial_transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -195,7 +196,7 @@ func QueryProjectedCashEvents(db *sql.DB, workspaceID string, period ReportPerio
 			COALESCE(a.type, '') AS account_type,
 			t.category_id,
 			COALESCE(c.macro_group, p.macro_group, '') AS macro_group
-		FROM transactions t
+		FROM financial_transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -317,55 +318,25 @@ func QueryInvoiceCashEvents(db *sql.DB, workspaceID string, period ReportPeriod)
 }
 
 func QueryInvoiceProjectedCashEvents(db *sql.DB, workspaceID string, period ReportPeriod) ([]CashEvent, error) {
-	rows, err := db.Query(`
-		SELECT
-			i.id,
-			i.due_date,
-			COALESCE(a.name, '') AS card_name,
-			i.reference AS invoice_ref,
-			i.status,
-			COALESCE((
-				SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END)
-				FROM transactions t
-				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
-			), 0) - `+invoiceGeneralRefundTotalIASQL+` AS total,
-			`+invoiceEffectivePaidSQLExpr+` AS paid
-		FROM invoices i
-		JOIN accounts a ON a.id = i.account_id
-		WHERE a.workspace_id = ?
-			AND i.status IN ('OPEN', 'CLOSED')
-			AND i.due_date >= ? AND i.due_date <= ?
-		ORDER BY i.due_date ASC
-	`, workspaceID, period.Start, period.End)
+	invoices, err := queryReportPendingInvoices(context.Background(), db, workspaceID, period.Start, period.End, true, false)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
 	var events []CashEvent
-	for rows.Next() {
-		var id, cardName, invoiceRef, status sql.NullString
-		var dueDate, total, paid int64
-		if err := rows.Scan(&id, &dueDate, &cardName, &invoiceRef, &status, &total, &paid); err != nil {
-			return nil, err
-		}
-		pending := total - paid
-		if pending <= 0 {
+	for _, invoice := range invoices {
+		if invoice.pending <= 0 {
 			continue
 		}
 		ev := CashEvent{
-			DateUnix:    dueDate,
-			AmountCents: pending,
+			DateUnix:    invoice.dueDate,
+			AmountCents: invoice.pending,
 			Source:      CashSourceInvoiceProjected,
 			AccountID:   "",
-			Description: "Fatura prevista " + cardName.String + " - " + invoiceRef.String,
+			Description: "Fatura prevista " + invoice.cardName + " - " + invoice.reference,
 			IsRealized:  false,
 			IsIncome:    false,
 		}
 		events = append(events, ev)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	if events == nil {
 		events = []CashEvent{}
@@ -464,7 +435,7 @@ func BuildRealizadoCashFlowData(db *sql.DB, workspaceID string, period ReportPer
 			t.category_id,
 			COALESCE(c.macro_group, p.macro_group, CASE WHEN ip.id IS NOT NULL THEN 'Fatura de cartão' ELSE 'Sem grupo macro' END) AS macro_group,
 			ip.id IS NOT NULL AS is_invoice_payment
-		FROM transactions t
+		FROM financial_transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -534,7 +505,7 @@ func QueryRealizedCashEventsByDueDate(db *sql.DB, workspaceID string, period Rep
 			COALESCE(a.type, '') AS account_type,
 			t.category_id,
 			COALESCE(c.macro_group, p.macro_group, '') AS macro_group
-		FROM transactions t
+		FROM financial_transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -600,7 +571,7 @@ func QueryProjectedCashEventsByDueDate(db *sql.DB, workspaceID string, period Re
 			COALESCE(a.type, '') AS account_type,
 			t.category_id,
 			COALESCE(c.macro_group, p.macro_group, '') AS macro_group
-		FROM transactions t
+		FROM financial_transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -655,55 +626,25 @@ func QueryProjectedCashEventsByDueDate(db *sql.DB, workspaceID string, period Re
 }
 
 func QueryInvoiceCashEventsByDueDate(db *sql.DB, workspaceID string, period ReportPeriod) ([]CashEvent, error) {
-	rows, err := db.Query(`
-		SELECT
-			i.id,
-			i.due_date,
-			COALESCE(a.name, '') AS card_name,
-			i.reference AS invoice_ref,
-			i.status,
-				COALESCE((
-					SELECT SUM(`+transactionNetAmountTSQL+`)
-					FROM transactions t
-					WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
-				), 0) - `+invoiceGeneralRefundTotalIASQL+` AS total,
-				`+invoiceEffectivePaidSQLExpr+` AS paid
-			FROM invoices i
-			JOIN accounts a ON a.id = i.account_id
-			WHERE a.workspace_id = ?
-				AND i.status IN ('OPEN', 'CLOSED')
-				AND i.due_date >= ? AND i.due_date <= ?
-		ORDER BY i.due_date ASC
-	`, workspaceID, period.Start, period.End)
+	invoices, err := queryReportPendingInvoices(context.Background(), db, workspaceID, period.Start, period.End, true, true)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
 	var events []CashEvent
-	for rows.Next() {
-		var id, cardName, invoiceRef, status sql.NullString
-		var dueDate, total, paid int64
-		if err := rows.Scan(&id, &dueDate, &cardName, &invoiceRef, &status, &total, &paid); err != nil {
-			return nil, err
-		}
-		pending := total - paid
-		if pending <= 0 {
+	for _, invoice := range invoices {
+		if invoice.pending <= 0 {
 			continue
 		}
 		ev := CashEvent{
-			DateUnix:    dueDate,
-			AmountCents: pending,
+			DateUnix:    invoice.dueDate,
+			AmountCents: invoice.pending,
 			Source:      CashSourceInvoiceProjected,
 			AccountID:   "",
-			Description: "Fatura " + cardName.String + " - " + invoiceRef.String,
+			Description: "Fatura " + invoice.cardName + " - " + invoice.reference,
 			IsRealized:  false,
 			IsIncome:    false,
 		}
 		events = append(events, ev)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	if events == nil {
 		events = []CashEvent{}
@@ -712,6 +653,289 @@ func QueryInvoiceCashEventsByDueDate(db *sql.DB, workspaceID string, period Repo
 }
 
 var errReportAggregateOverflow = errors.New("report aggregate exceeds int64 range")
+
+// reportExactAmount keeps intermediate cents outside int64 until the complete
+// mathematical result for one public report field is known.
+type reportExactAmount struct{ value big.Int }
+
+func (a *reportExactAmount) add(cents int64) {
+	a.value.Add(&a.value, big.NewInt(cents))
+}
+
+func (a *reportExactAmount) sub(cents int64) {
+	a.value.Sub(&a.value, big.NewInt(cents))
+}
+
+func (a *reportExactAmount) addExact(other *reportExactAmount) {
+	a.value.Add(&a.value, &other.value)
+}
+
+func (a *reportExactAmount) int64(component string) (int64, error) {
+	if !a.value.IsInt64() {
+		return 0, fmt.Errorf("%s: %w", component, errReportAggregateOverflow)
+	}
+	return a.value.Int64(), nil
+}
+
+// queryReportExactSum streams one monetary column; an empty result is zero.
+func queryReportExactSum(ctx context.Context, db *sql.DB, component, query string, args ...any) (int64, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var sum reportExactAmount
+	for rows.Next() {
+		var cents int64
+		if err := rows.Scan(&cents); err != nil {
+			return 0, err
+		}
+		sum.add(cents)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return sum.int64(component)
+}
+
+func queryReportIncomeExpense(ctx context.Context, db *sql.DB, query string, args ...any) (int64, int64, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer rows.Close()
+	var income, expense reportExactAmount
+	for rows.Next() {
+		var kind string
+		var cents int64
+		if err := rows.Scan(&kind, &cents); err != nil {
+			return 0, 0, err
+		}
+		switch kind {
+		case "INCOME":
+			income.add(cents)
+		case "EXPENSE":
+			expense.add(cents)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, 0, err
+	}
+	incomeCents, err := income.int64("report income")
+	if err != nil {
+		return 0, 0, err
+	}
+	expenseCents, err := expense.int64("report expense")
+	if err != nil {
+		return 0, 0, err
+	}
+	return incomeCents, expenseCents, nil
+}
+
+type reportMonthlyAmount struct {
+	month string
+	group string
+	cents int64
+}
+
+type reportMonthlyKey struct{ month, group string }
+
+type reportGroupedAmount struct {
+	name  string
+	cents int64
+}
+
+type reportPendingInvoice struct {
+	id, cardName, reference string
+	dueDate                 int64
+	pending                 int64
+}
+
+// queryReportPendingInvoices reads all invoice components in one tenant-scoped
+// statement. The pending amount is checked only after items, general refunds,
+// and effective payments have all been applied.
+func queryReportPendingInvoices(ctx context.Context, db *sql.DB, workspaceID string, start, end int64, inclusiveEnd, includeAllItems bool) ([]reportPendingInvoice, error) {
+	endOp := "<"
+	if inclusiveEnd {
+		endOp = "<="
+	}
+	rows, err := db.QueryContext(ctx, `
+		WITH selected AS (
+			SELECT i.id, i.due_date, COALESCE(a.name, '') AS card_name,
+			       COALESCE(i.reference, '') AS reference, COALESCE(i.paid_amount, 0) AS legacy_paid,
+			       a.workspace_id
+			FROM invoices i
+			JOIN accounts a ON a.id = i.account_id
+			WHERE a.workspace_id = ? AND i.status IN ('OPEN', 'CLOSED')
+			  AND i.due_date >= ? AND i.due_date `+endOp+` ?
+		)
+		SELECT id, due_date, card_name, reference, legacy_paid, 'base', 0 FROM selected
+		UNION ALL
+		SELECT s.id, s.due_date, s.card_name, s.reference, s.legacy_paid, 'item', `+transactionNetAmountTSQL+`
+		FROM selected s JOIN financial_transactions t ON t.workspace_id = s.workspace_id AND t.invoice_id = s.id
+		WHERE (? = 1 OR t.type = 'EXPENSE')
+		UNION ALL
+		SELECT s.id, s.due_date, s.card_name, s.reference, s.legacy_paid, 'refund', ir.amount_cents
+		FROM selected s JOIN invoice_refunds ir ON ir.workspace_id = s.workspace_id AND ir.invoice_id = s.id AND ir.reversed_at IS NULL
+		UNION ALL
+		SELECT s.id, s.due_date, s.card_name, s.reference, s.legacy_paid, 'payment', ip.amount_cents
+		FROM selected s JOIN invoice_payments ip ON ip.workspace_id = s.workspace_id AND ip.invoice_id = s.id AND ip.reversed_at IS NULL
+		UNION ALL
+		SELECT s.id, s.due_date, s.card_name, s.reference, s.legacy_paid, 'lineage', 0
+		FROM selected s JOIN invoice_payments ip ON ip.workspace_id = s.workspace_id AND ip.invoice_id = s.id
+	`, workspaceID, start, end, includeAllItems)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type aggregate struct {
+		invoice                  reportPendingInvoice
+		legacy                   int64
+		items, refunds, payments reportExactAmount
+		lineage                  bool
+	}
+	byID := make(map[string]*aggregate)
+	for rows.Next() {
+		var id, cardName, reference, kind string
+		var dueDate, legacy, cents int64
+		if err := rows.Scan(&id, &dueDate, &cardName, &reference, &legacy, &kind, &cents); err != nil {
+			return nil, err
+		}
+		acc := byID[id]
+		if acc == nil {
+			acc = &aggregate{invoice: reportPendingInvoice{id: id, cardName: cardName, reference: reference, dueDate: dueDate}, legacy: legacy}
+			byID[id] = acc
+		}
+		switch kind {
+		case "item":
+			acc.items.add(cents)
+		case "refund":
+			acc.refunds.add(cents)
+		case "payment":
+			acc.payments.add(cents)
+		case "lineage":
+			acc.lineage = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]reportPendingInvoice, 0, len(byID))
+	for _, acc := range byID {
+		var pending reportExactAmount
+		pending.addExact(&acc.items)
+		pending.value.Sub(&pending.value, &acc.refunds.value)
+		if acc.lineage {
+			pending.value.Sub(&pending.value, &acc.payments.value)
+		} else {
+			pending.sub(acc.legacy)
+		}
+		var err error
+		acc.invoice.pending, err = pending.int64("invoice pending amount")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, acc.invoice)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].dueDate != out[j].dueDate {
+			return out[i].dueDate < out[j].dueDate
+		}
+		return out[i].id < out[j].id
+	})
+	return out, nil
+}
+
+func queryReportGroupedAmounts(ctx context.Context, db *sql.DB, component, query string, args ...any) ([]reportGroupedAmount, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	amounts := make(map[string]*reportExactAmount)
+	for rows.Next() {
+		var name string
+		var cents int64
+		if err := rows.Scan(&name, &cents); err != nil {
+			return nil, err
+		}
+		if amounts[name] == nil {
+			amounts[name] = &reportExactAmount{}
+		}
+		amounts[name].add(cents)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]reportGroupedAmount, 0, len(amounts))
+	for name, amount := range amounts {
+		cents, err := amount.int64(component)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, reportGroupedAmount{name, cents})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].cents != out[j].cents {
+			return out[i].cents > out[j].cents
+		}
+		return out[i].name < out[j].name
+	})
+	return out, nil
+}
+
+// queryReportMonthlyAmounts preserves one SQL read and accumulates by the
+// displayed month and canonical macro group before checking int64 bounds.
+func queryReportMonthlyExact(ctx context.Context, db *sql.DB, query string, args ...any) (map[reportMonthlyKey]*reportExactAmount, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	amounts := make(map[reportMonthlyKey]*reportExactAmount)
+	for rows.Next() {
+		var month, group string
+		var cents int64
+		if err := rows.Scan(&month, &group, &cents); err != nil {
+			return nil, err
+		}
+		k := reportMonthlyKey{month, canonicalMacroGroup(group)}
+		if amounts[k] == nil {
+			amounts[k] = &reportExactAmount{}
+		}
+		amounts[k].add(cents)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return amounts, nil
+}
+
+func reportMonthlyAmountsFromExact(amounts map[reportMonthlyKey]*reportExactAmount) ([]reportMonthlyAmount, error) {
+	out := make([]reportMonthlyAmount, 0, len(amounts))
+	for k, amount := range amounts {
+		cents, err := amount.int64("monthly macro group")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, reportMonthlyAmount{k.month, k.group, cents})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].month != out[j].month {
+			return out[i].month < out[j].month
+		}
+		return out[i].group < out[j].group
+	})
+	return out, nil
+}
+
+func queryReportMonthlyAmounts(ctx context.Context, db *sql.DB, query string, args ...any) ([]reportMonthlyAmount, error) {
+	amounts, err := queryReportMonthlyExact(ctx, db, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	return reportMonthlyAmountsFromExact(amounts)
+}
 
 // addReportInt64Checked reaproveita addInt64Checked e traduz o overflow para o
 // sentinel de relatórios, mantendo um único erro identificável nesta cadeia.
@@ -737,47 +961,161 @@ func subInt64Checked(a, b int64) (int64, error) {
 }
 
 func SumCashEvents(events []CashEvent) (int64, error) {
-	var total int64
+	var total reportExactAmount
 	for _, ev := range events {
-		var err error
 		if ev.IsIncome {
-			total, err = addReportInt64Checked(total, ev.AmountCents)
+			total.add(ev.AmountCents)
 		} else {
-			total, err = subInt64Checked(total, ev.AmountCents)
-		}
-		if err != nil {
-			return 0, err
+			total.sub(ev.AmountCents)
 		}
 	}
-	return total, nil
+	return total.int64("cash events")
 }
 
 func SumCashIncome(events []CashEvent) (int64, error) {
-	var total int64
+	var total reportExactAmount
+	for _, ev := range events {
+		if ev.IsIncome {
+			total.add(ev.AmountCents)
+		}
+	}
+	return total.int64("cash income")
+}
+
+func SumCashExpense(events []CashEvent) (int64, error) {
+	var total reportExactAmount
 	for _, ev := range events {
 		if !ev.IsIncome {
-			continue
+			total.add(ev.AmountCents)
 		}
-		next, err := addReportInt64Checked(total, ev.AmountCents)
-		if err != nil {
-			return 0, err
+	}
+	return total.int64("cash expense")
+}
+
+// queryProjectionExactSum leaves the monetary result unbounded for the final
+// projected-balance calculation.
+func queryProjectionExactSum(db *sql.DB, query string, args ...any) (*reportExactAmount, error) {
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	total := &reportExactAmount{}
+	for rows.Next() {
+		var amount int64
+		if err := rows.Scan(&amount); err != nil {
+			return nil, err
 		}
-		total = next
+		total.add(amount)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return total, nil
 }
 
-func SumCashExpense(events []CashEvent) (int64, error) {
-	var total int64
-	for _, ev := range events {
-		if ev.IsIncome {
-			continue
+// queryProjectionSignedFlow applies the existing income/expense signs while
+// keeping cancellation possible across every row in one projection point.
+func queryProjectionSignedFlow(db *sql.DB, query string, args ...any) (*reportExactAmount, error) {
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	total := &reportExactAmount{}
+	for rows.Next() {
+		var kind string
+		var amount int64
+		if err := rows.Scan(&kind, &amount); err != nil {
+			return nil, err
 		}
-		next, err := addReportInt64Checked(total, ev.AmountCents)
-		if err != nil {
-			return 0, err
+		switch kind {
+		case "INCOME":
+			total.add(amount)
+		case "EXPENSE":
+			total.sub(amount)
 		}
-		total = next
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return total, nil
+}
+
+// queryProjectionPendingInvoices keeps each invoice's positive-part test exact.
+// The UNION branches avoid multiplying items by refunds or payment rows.
+func queryProjectionPendingInvoices(db *sql.DB, workspaceID string, start, end int64) (*reportExactAmount, error) {
+	rows, err := db.Query(`
+		WITH selected AS (
+			SELECT i.id, COALESCE(i.paid_amount, 0) AS legacy_paid, a.workspace_id
+			FROM invoices i
+			JOIN accounts a ON a.id = i.account_id
+			WHERE a.workspace_id = ? AND i.status IN ('OPEN', 'CLOSED')
+			  AND i.due_date >= ? AND i.due_date <= ?
+		)
+		SELECT id, legacy_paid, 'base', 0 FROM selected
+		UNION ALL
+		SELECT s.id, s.legacy_paid, 'item', `+transactionNetAmountTSQL+`
+		FROM selected s JOIN financial_transactions t ON t.workspace_id = s.workspace_id AND t.invoice_id = s.id
+		WHERE t.type = 'EXPENSE'
+		UNION ALL
+		SELECT s.id, s.legacy_paid, 'refund', ir.amount_cents
+		FROM selected s JOIN invoice_refunds ir ON ir.workspace_id = s.workspace_id AND ir.invoice_id = s.id AND ir.reversed_at IS NULL
+		UNION ALL
+		SELECT s.id, s.legacy_paid, 'payment', ip.amount_cents
+		FROM selected s JOIN invoice_payments ip ON ip.workspace_id = s.workspace_id AND ip.invoice_id = s.id AND ip.reversed_at IS NULL
+		UNION ALL
+		SELECT s.id, s.legacy_paid, 'lineage', 0
+		FROM selected s JOIN invoice_payments ip ON ip.workspace_id = s.workspace_id AND ip.invoice_id = s.id
+	`, workspaceID, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type invoiceParts struct {
+		legacy                   int64
+		items, refunds, payments reportExactAmount
+		lineage                  bool
+	}
+	byID := make(map[string]*invoiceParts)
+	for rows.Next() {
+		var id, kind string
+		var legacy, amount int64
+		if err := rows.Scan(&id, &legacy, &kind, &amount); err != nil {
+			return nil, err
+		}
+		parts := byID[id]
+		if parts == nil {
+			parts = &invoiceParts{legacy: legacy}
+			byID[id] = parts
+		}
+		switch kind {
+		case "item":
+			parts.items.add(amount)
+		case "refund":
+			parts.refunds.add(amount)
+		case "payment":
+			parts.payments.add(amount)
+		case "lineage":
+			parts.lineage = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	total := &reportExactAmount{}
+	for _, parts := range byID {
+		var pending reportExactAmount
+		pending.addExact(&parts.items)
+		pending.value.Sub(&pending.value, &parts.refunds.value)
+		if parts.lineage {
+			pending.value.Sub(&pending.value, &parts.payments.value)
+		} else {
+			pending.sub(parts.legacy)
+		}
+		if pending.value.Sign() > 0 {
+			total.addExact(&pending)
+		}
 	}
 	return total, nil
 }
@@ -788,23 +1126,20 @@ func BuildProjectedBalanceUntilPeriodEnd(db *sql.DB, workspaceID string, periodE
 		return 0, false, nil
 	}
 
-	var currentBalance int64
-	if err := db.QueryRow(`
-		SELECT COALESCE(SUM(current_balance), 0)
+	currentBalance, err := queryProjectionExactSum(db, `
+		SELECT current_balance
 		FROM accounts
 		WHERE workspace_id = ?
 			AND type != 'CREDIT_CARD'
 			AND archived_at IS NULL
-	`, workspaceID).Scan(&currentBalance); err != nil {
+	`, workspaceID)
+	if err != nil {
 		return 0, false, err
 	}
 
-	var pendingIncome, pendingExpense int64
-	if err := db.QueryRow(`
-		SELECT
-			COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END), 0)
-		FROM transactions t
+	pendingFlow, err := queryProjectionSignedFlow(db, `
+		SELECT t.type, CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE t.amount END
+		FROM financial_transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		WHERE t.workspace_id = ?
 			AND t.status = 'pending'
@@ -813,44 +1148,35 @@ func BuildProjectedBalanceUntilPeriodEnd(db *sql.DB, workspaceID string, periodE
 			AND COALESCE(t.description, '') NOT LIKE ?
 			AND COALESCE(NULLIF(t.due_date, 0), t.date) >= ?
 			AND COALESCE(NULLIF(t.due_date, 0), t.date) <= ?
-	`, workspaceID, invoicePaymentDescriptionPrefix+"%", todayStart, periodEnd).Scan(&pendingIncome, &pendingExpense); err != nil {
+	`, workspaceID, invoicePaymentDescriptionPrefix+"%", todayStart, periodEnd)
+	if err != nil {
 		return 0, false, err
 	}
 
-	var pendingInvoices int64
-	if err := db.QueryRow(`
-		SELECT COALESCE(SUM(CASE WHEN pending_amount > 0 THEN pending_amount ELSE 0 END), 0)
-		FROM (
-			SELECT
-				COALESCE((
-					SELECT SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END)
-					FROM transactions t
-					WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id
-				), 0) - `+invoiceGeneralRefundTotalIASQL+` -
-				`+invoiceEffectivePaidSQLExpr+` AS pending_amount
-			FROM invoices i
-			JOIN accounts a ON a.id = i.account_id
-			WHERE a.workspace_id = ?
-				AND i.status IN ('OPEN', 'CLOSED')
-				AND i.due_date >= ?
-				AND i.due_date <= ?
-		)
-	`, workspaceID, todayStart, periodEnd).Scan(&pendingInvoices); err != nil {
+	pendingInvoices, err := queryProjectionPendingInvoices(db, workspaceID, todayStart, periodEnd)
+	if err != nil {
 		return 0, false, err
 	}
-
-	return currentBalance + pendingIncome - pendingExpense - pendingInvoices, true, nil
+	var projected reportExactAmount
+	projected.addExact(currentBalance)
+	projected.addExact(pendingFlow)
+	projected.value.Sub(&projected.value, &pendingInvoices.value)
+	result, err := projected.int64("projected period ending balance")
+	if err != nil {
+		return 0, false, err
+	}
+	return result, true, nil
 }
 
 func BuildDREData(db *sql.DB, workspaceID string, year int) ([]DRERowView, error) {
 	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
 	end := time.Date(year+1, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
 
-	rows, err := db.Query(`
+	monthly, err := queryReportMonthlyAmounts(context.Background(), db, `
 		SELECT
 			strftime('%Y-%m', datetime(t.date, 'unixepoch')) AS competencia,
 			COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro') AS macro_group,
-			COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE -t.amount END), 0) AS total
+			CASE WHEN t.type = 'INCOME' THEN t.amount ELSE -t.amount END AS total
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -858,36 +1184,17 @@ func BuildDREData(db *sql.DB, workspaceID string, year int) ([]DRERowView, error
 			AND t.type IN ('INCOME', 'EXPENSE')
 			AND t.date >= ? AND t.date < ?
 			AND `+excludeInvoicePaymentCompetenceClause("t")+`
-		GROUP BY
-			strftime('%Y-%m', datetime(t.date, 'unixepoch')),
-			COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro')
-		ORDER BY
-			strftime('%Y-%m', datetime(t.date, 'unixepoch')) ASC,
-			COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro') ASC
 	`, workspaceID, start, end)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []DRERowView
-	for rows.Next() {
-		var competencia, macroGroup string
-		var amount int64
-		if err := rows.Scan(&competencia, &macroGroup, &amount); err != nil {
-			return nil, err
-		}
+	out := make([]DRERowView, 0, len(monthly))
+	for _, item := range monthly {
 		out = append(out, DRERowView{
-			Competencia: competencia,
-			MacroGroup:  canonicalMacroGroup(macroGroup),
-			AmountCents: amount,
+			Competencia: item.month,
+			MacroGroup:  item.group,
+			AmountCents: item.cents,
 		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if out == nil {
-		out = []DRERowView{}
 	}
 	return out, nil
 }
@@ -907,14 +1214,14 @@ func BuildCaixaData(db *sql.DB, workspaceID string, year, month int) ([]CaixaRow
 	start := windowStart.Unix()
 	end := windowStart.AddDate(1, 1, 0).Unix()
 
-	rows, err := db.Query(`
-		SELECT vencimento, macro_group, COALESCE(SUM(amount), 0) AS total
+	monthlyExact, err := queryReportMonthlyExact(context.Background(), db, `
+		SELECT vencimento, macro_group, amount
 		FROM (
 			SELECT
 				strftime('%Y-%m', datetime(COALESCE(NULLIF(t.paid_at, 0), t.date), 'unixepoch')) AS vencimento,
 				COALESCE(c.macro_group, p.macro_group, CASE WHEN ip.id IS NOT NULL THEN 'Fatura de cartão' ELSE 'Sem grupo macro' END) AS macro_group,
 				CASE WHEN t.type = 'INCOME' THEN t.amount ELSE -t.amount END AS amount
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 			LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -932,7 +1239,7 @@ func BuildCaixaData(db *sql.DB, workspaceID string, year, month int) ([]CaixaRow
 					strftime('%Y-%m', datetime(COALESCE(NULLIF(t.due_date, 0), t.date), 'unixepoch')) AS vencimento,
 					COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro') AS macro_group,
 					CASE WHEN t.type = 'INCOME' THEN t.amount ELSE -t.amount END AS amount
-				FROM transactions t
+				FROM financial_transactions t
 				JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 				LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 				LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -945,39 +1252,28 @@ func BuildCaixaData(db *sql.DB, workspaceID string, year, month int) ([]CaixaRow
 					AND COALESCE(t.description, '') NOT LIKE ?
 					AND `+excludeInvoicePaymentCompetenceClause("t")+`
 			)
-		GROUP BY vencimento, macro_group
-		ORDER BY vencimento ASC, macro_group ASC
 		`, workspaceID, start, end, workspaceID, start, end, invoicePaymentDescriptionPrefix+"%")
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []CaixaRowView
-	for rows.Next() {
-		var vencimento, macroGroup string
-		var amount int64
-		if err := rows.Scan(&vencimento, &macroGroup, &amount); err != nil {
-			return nil, err
-		}
-		out = append(out, CaixaRowView{
-			Vencimento:  vencimento,
-			MacroGroup:  canonicalMacroGroup(macroGroup),
-			AmountCents: amount,
-		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
 	pendingInvoiceRows, err := buildPendingInvoiceCaixaRows(db, workspaceID, start, end)
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, pendingInvoiceRows...)
-
-	if out == nil {
-		out = []CaixaRowView{}
+	for _, row := range pendingInvoiceRows {
+		k := reportMonthlyKey{row.Vencimento, canonicalMacroGroup(row.MacroGroup)}
+		if monthlyExact[k] == nil {
+			monthlyExact[k] = &reportExactAmount{}
+		}
+		monthlyExact[k].add(row.AmountCents)
+	}
+	monthly, err := reportMonthlyAmountsFromExact(monthlyExact)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CaixaRowView, 0, len(monthly))
+	for _, item := range monthly {
+		out = append(out, CaixaRowView{Vencimento: item.month, MacroGroup: item.group, AmountCents: item.cents})
 	}
 	sortCaixaRowViews(out)
 	return out, nil
@@ -985,63 +1281,27 @@ func BuildCaixaData(db *sql.DB, workspaceID string, year, month int) ([]CaixaRow
 
 func buildPendingInvoiceCaixaRows(db *sql.DB, workspaceID string, start, end int64) ([]CaixaRowView, error) {
 	ctx := context.Background()
-	rows, err := db.QueryContext(ctx, `
-		SELECT
-			i.id,
-			i.due_date,
-			COALESCE((
-				SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN `+transactionNetAmountTxSQL+` ELSE 0 END)
-				FROM transactions tx
-				WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
-			), 0) - `+invoiceGeneralRefundTotalIASQL+` -
-			`+invoiceEffectivePaidSQLExpr+` AS pending_amount
-		FROM invoices i
-		JOIN accounts a ON a.id = i.account_id
-		WHERE a.workspace_id = ?
-			AND i.status IN ('OPEN', 'CLOSED')
-			AND i.due_date >= ? AND i.due_date < ?
-		ORDER BY i.due_date ASC, i.id ASC
-	`, workspaceID, start, end)
+	invoices, err := queryReportPendingInvoices(ctx, db, workspaceID, start, end, false, false)
 	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	type pendingInvoiceTarget struct {
-		invoiceID     string
-		dueDate       int64
-		pendingAmount int64
-	}
-	targets := make([]pendingInvoiceTarget, 0)
-	for rows.Next() {
-		var target pendingInvoiceTarget
-		if err := rows.Scan(&target.invoiceID, &target.dueDate, &target.pendingAmount); err != nil {
-			return nil, err
-		}
-		if target.pendingAmount > 0 {
-			targets = append(targets, target)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if err := rows.Close(); err != nil {
 		return nil, err
 	}
 
 	handler := RelatoriosHandler{DB: db, WorkspaceID: workspaceID}
 	out := make([]CaixaRowView, 0)
-	for _, target := range targets {
-		items, total, err := handler.queryInvoiceAllocationItems(ctx, target.invoiceID)
+	for _, invoice := range invoices {
+		if invoice.pending <= 0 {
+			continue
+		}
+		items, total, err := handler.queryInvoiceAllocationItems(ctx, invoice.id)
 		if err != nil {
 			return nil, err
 		}
-		for _, share := range allocateInvoiceItemShares(items, total, target.pendingAmount) {
+		for _, share := range allocateInvoiceItemShares(items, total, invoice.pending) {
 			if share.Amount <= 0 {
 				continue
 			}
 			out = append(out, CaixaRowView{
-				Vencimento:  time.Unix(target.dueDate, 0).UTC().Format("2006-01"),
+				Vencimento:  time.Unix(invoice.dueDate, 0).UTC().Format("2006-01"),
 				MacroGroup:  canonicalMacroGroup(share.MacroGroup),
 				AmountCents: -share.Amount,
 			})
@@ -1066,18 +1326,18 @@ func BuildCaixaRealizadoData(db *sql.DB, workspaceID string, year int) ([]CaixaR
 	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
 	end := time.Date(year+1, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
 
-	rows, err := db.Query(`
+	monthly, err := queryReportMonthlyAmounts(context.Background(), db, `
 		SELECT
 			strftime('%Y-%m', datetime(effective_date, 'unixepoch')) AS vencimento,
 			macro_group,
-			COALESCE(SUM(CASE WHEN type = 'INCOME' THEN amount ELSE -amount END), 0) AS total
+			CASE WHEN type = 'INCOME' THEN amount ELSE -amount END AS total
 		FROM (
 			SELECT
 				COALESCE(NULLIF(t.paid_at, 0), t.date) AS effective_date,
 				COALESCE(c.macro_group, p.macro_group, CASE WHEN ip.id IS NOT NULL THEN 'Fatura de cartão' ELSE 'Sem grupo macro' END) AS macro_group,
 				t.type,
 				t.amount
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 			LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -1089,74 +1349,59 @@ func BuildCaixaRealizadoData(db *sql.DB, workspaceID string, year int) ([]CaixaR
 				AND COALESCE(NULLIF(t.paid_at, 0), t.date) >= ?
 				AND COALESCE(NULLIF(t.paid_at, 0), t.date) < ?
 		)
-		GROUP BY vencimento, macro_group
-		ORDER BY vencimento ASC, macro_group ASC
 	`, workspaceID, start, end)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []CaixaRowView
-	for rows.Next() {
-		var vencimento, macroGroup string
-		var amount int64
-		if err := rows.Scan(&vencimento, &macroGroup, &amount); err != nil {
-			return nil, err
-		}
+	out := make([]CaixaRowView, 0, len(monthly))
+	for _, item := range monthly {
 		out = append(out, CaixaRowView{
-			Vencimento:  vencimento,
-			MacroGroup:  canonicalMacroGroup(macroGroup),
-			AmountCents: amount,
+			Vencimento:  item.month,
+			MacroGroup:  item.group,
+			AmountCents: item.cents,
 		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if out == nil {
-		out = []CaixaRowView{}
 	}
 	return out, nil
 }
 
-func SumCaixaByMacroGroup(rows []CaixaRowView, macroGroup string) int64 {
-	var total int64
+func SumCaixaByMacroGroup(rows []CaixaRowView, macroGroup string) (int64, error) {
+	var total reportExactAmount
 	for _, row := range rows {
 		if row.MacroGroup == macroGroup {
-			total += row.AmountCents
+			total.add(row.AmountCents)
 		}
 	}
-	return total
+	return total.int64("cash macro group")
 }
 
-func SumCaixaVencimento(rows []CaixaRowView, vencimento string) int64 {
-	var total int64
+func SumCaixaVencimento(rows []CaixaRowView, vencimento string) (int64, error) {
+	var total reportExactAmount
 	for _, row := range rows {
 		if row.Vencimento == vencimento {
-			total += row.AmountCents
+			total.add(row.AmountCents)
 		}
 	}
-	return total
+	return total.int64("cash month")
 }
 
-func SumDREByMacroGroup(rows []DRERowView, macroGroup string) int64 {
-	var total int64
+func SumDREByMacroGroup(rows []DRERowView, macroGroup string) (int64, error) {
+	var total reportExactAmount
 	for _, row := range rows {
 		if row.MacroGroup == macroGroup {
-			total += row.AmountCents
+			total.add(row.AmountCents)
 		}
 	}
-	return total
+	return total.int64("DRE macro group")
 }
 
-func SumDRECompetencia(rows []DRERowView, competencia string) int64 {
-	var total int64
+func SumDRECompetencia(rows []DRERowView, competencia string) (int64, error) {
+	var total reportExactAmount
 	for _, row := range rows {
 		if row.Competencia == competencia {
-			total += row.AmountCents
+			total.add(row.AmountCents)
 		}
 	}
-	return total
+	return total.int64("DRE month")
 }
 
 func BuildStatementData(db *sql.DB, workspaceID string, accountID string, period ReportPeriod) ([]StatementRow, error) {
@@ -1170,7 +1415,7 @@ func BuildStatementData(db *sql.DB, workspaceID string, accountID string, period
 				COALESCE(a.name, '') AS account_name,
 				t.status,
 				t.paid_at
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			WHERE t.workspace_id = ?
 				AND t.account_id = ?
@@ -1186,7 +1431,7 @@ func BuildStatementData(db *sql.DB, workspaceID string, accountID string, period
 				COALESCE(dest.name, '') AS account_name,
 				t.status,
 				t.paid_at
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts dest ON dest.id = t.destination_account_id AND dest.workspace_id = t.workspace_id
 			WHERE t.workspace_id = ?
 				AND t.type = 'TRANSFER'
@@ -1244,7 +1489,7 @@ func BuildExtratoData(db *sql.DB, workspaceID string, period ReportPeriod) ([]St
 				COALESCE(c.macro_group, p.macro_group, '') AS macro_group,
 				t.status,
 				'' AS transfer_side
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN contacts ct ON ct.id = t.contact_id AND ct.workspace_id = t.workspace_id
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
@@ -1268,7 +1513,7 @@ func BuildExtratoData(db *sql.DB, workspaceID string, period ReportPeriod) ([]St
 				'' AS macro_group,
 				t.status,
 				'source' AS transfer_side
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN contacts ct ON ct.id = t.contact_id AND ct.workspace_id = t.workspace_id
 			WHERE t.workspace_id = ?
@@ -1290,7 +1535,7 @@ func BuildExtratoData(db *sql.DB, workspaceID string, period ReportPeriod) ([]St
 				'' AS macro_group,
 				t.status,
 				'dest' AS transfer_side
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts dest ON dest.id = t.destination_account_id AND dest.workspace_id = t.workspace_id
 			LEFT JOIN contacts ct ON ct.id = t.contact_id AND ct.workspace_id = t.workspace_id
 			WHERE t.workspace_id = ?
@@ -1361,28 +1606,34 @@ func BuildAccountingCloseData(db *sql.DB, workspaceID string, period ReportPerio
 		return AccountingCloseData{}, err
 	}
 
-	var totalIncomeRealized, totalExpenseRealized int64
+	var incomeExact, expenseExact reportExactAmount
 	for _, ev := range realized {
 		if ev.IsIncome {
-			totalIncomeRealized += ev.AmountCents
+			incomeExact.add(ev.AmountCents)
 		} else {
-			totalExpenseRealized += ev.AmountCents
+			expenseExact.add(ev.AmountCents)
 		}
 	}
 	for _, ev := range invoiceRealized {
 		if ev.IsIncome {
-			totalIncomeRealized += ev.AmountCents
+			incomeExact.add(ev.AmountCents)
 		} else {
-			totalExpenseRealized += ev.AmountCents
+			expenseExact.add(ev.AmountCents)
 		}
 	}
-
-	var openingBalanceReal int64
-	err = db.QueryRow(`
-		SELECT COALESCE(SUM(current_balance), 0)
+	totalIncomeRealized, err := incomeExact.int64("accounting realized income")
+	if err != nil {
+		return AccountingCloseData{}, err
+	}
+	totalExpenseRealized, err := expenseExact.int64("accounting realized expense")
+	if err != nil {
+		return AccountingCloseData{}, err
+	}
+	openingBalanceReal, err := queryReportExactSum(context.Background(), db, "accounting opening balance", `
+		SELECT current_balance
 		FROM accounts
 		WHERE workspace_id = ? AND type != 'CREDIT_CARD' AND archived_at IS NULL
-	`, workspaceID).Scan(&openingBalanceReal)
+	`, workspaceID)
 	if err != nil {
 		return AccountingCloseData{}, err
 	}
@@ -1396,25 +1647,43 @@ func BuildAccountingCloseData(db *sql.DB, workspaceID string, period ReportPerio
 		return AccountingCloseData{}, err
 	}
 
-	var projectedNet int64
+	var projectedNetExact reportExactAmount
 	for _, ev := range projected {
 		if ev.IsIncome {
-			projectedNet += ev.AmountCents
+			projectedNetExact.add(ev.AmountCents)
 		} else {
-			projectedNet -= ev.AmountCents
+			projectedNetExact.sub(ev.AmountCents)
 		}
 	}
 	for _, ev := range invoiceProjected {
-		projectedNet -= ev.AmountCents
+		projectedNetExact.sub(ev.AmountCents)
+	}
+	projectedNet, err := projectedNetExact.int64("accounting projected net")
+	if err != nil {
+		return AccountingCloseData{}, err
+	}
+	var netExact reportExactAmount
+	netExact.addExact(&incomeExact)
+	netExact.value.Sub(&netExact.value, &expenseExact.value)
+	realizedNet, err := netExact.int64("accounting realized net")
+	if err != nil {
+		return AccountingCloseData{}, err
+	}
+	var closeExact reportExactAmount
+	closeExact.add(openingBalanceReal)
+	closeExact.addExact(&netExact)
+	closingBalance, err := closeExact.int64("accounting closing balance")
+	if err != nil {
+		return AccountingCloseData{}, err
 	}
 
 	return AccountingCloseData{
 		OpeningBalance:       openingBalanceReal,
 		TotalIncomeRealized:  totalIncomeRealized,
 		TotalExpenseRealized: totalExpenseRealized,
-		NetResult:            totalIncomeRealized - totalExpenseRealized,
-		ClosingBalance:       openingBalanceReal + (totalIncomeRealized - totalExpenseRealized),
-		RealizedNetCashflow:  totalIncomeRealized - totalExpenseRealized,
+		NetResult:            realizedNet,
+		ClosingBalance:       closingBalance,
+		RealizedNetCashflow:  realizedNet,
 		ProjectedNetCashflow: projectedNet,
 	}, nil
 }

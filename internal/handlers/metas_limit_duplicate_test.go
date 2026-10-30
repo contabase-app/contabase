@@ -15,7 +15,7 @@ func TestCriarLimiteDuplicadoRetornaErroAmigavel(t *testing.T) {
 	defer db.Close()
 	seedLimitDuplicateScenario(t, db)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-a",
@@ -42,7 +42,7 @@ func TestEditarLimiteMesmaCategoriaPassa(t *testing.T) {
 	defer db.Close()
 	seedLimitDuplicateScenario(t, db)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-a",
@@ -73,7 +73,7 @@ func TestEditarLimiteParaCategoriaDeOutroLimiteBloqueado(t *testing.T) {
 	defer db.Close()
 	seedLimitDuplicateScenario(t, db)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-a",
@@ -101,7 +101,7 @@ func TestCriarLimiteOutroWorkspaceNaoBloqueado(t *testing.T) {
 	defer db.Close()
 	seedLimitDuplicateScenario(t, db)
 
-	h := MetasHandler{
+	h := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-b",

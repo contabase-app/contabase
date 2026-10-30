@@ -1,17 +1,21 @@
 {{define "metas-page"}}
 {{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/metas.css"}}">
 {{template "app-v2-document-head-end" .}}
-<main id="main-content" class="cb-v2-main cb-v2-metas-main" data-page-section="goals" data-page-title="{{.Title}}">
+<main id="main-content" class="cb-v2-main cb-v2-metas-main" data-page-section="goals" data-page-title="{{.Title}}" data-ui="premium">
     {{template "app-v2-appbar" .}}
     <div class="cb-v2-content cb-v2-metas-content">
-        <header class="cb-v2-metas-header">
-            <div>
-                <p class="cb-v2-eyebrow">Planejamento</p>
-                <h1>Metas e Reservas</h1>
-                <p>Defina limites de gastos e acompanhe suas reservas em um só lugar.</p>
+        <header class="cb-v2-metas-header ui-page-header">
+            <div class="min-w-0">
+                <p class="ui-eyebrow">Planejamento</p>
+                <h1 class="ui-page-title">Metas e Reservas</h1>
+                <p class="ui-page-description">Defina limites de gastos e acompanhe suas reservas em um só lugar.</p>
             </div>
-            {{template "metas-header-action" .}}
+            <div class="flex items-center gap-2 shrink-0">
+                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-privacy-toggle aria-pressed="false" aria-label="Ocultar valores financeiros" data-tooltip-hover data-tooltip-text="Ocultar valores financeiros"><i data-lucide="eye" data-privacy-icon aria-hidden="true"></i></button>
+                {{template "metas-header-action" .}}
+            </div>
         </header>
         {{template "metas-content" .}}
     </div>
@@ -23,13 +27,13 @@
 {{end}}
 
 {{define "metas-header-action"}}
-<button id="metas-primary-action" type="button" class="cb-v2-metas-new"
+<button id="metas-primary-action" type="button" class="cb-v2-metas-new ui-btn ui-btn--primary"
     hx-get="/metas/novo?aba={{if eq .Aba "caixinhas"}}reserva{{else}}limite{{end}}"
     hx-target="#bottom-sheet-container"
     hx-swap="innerHTML"
     hx-push-url="false"
     {{if .HeaderActionOOB}}hx-swap-oob="outerHTML"{{end}}>
-    <i data-lucide="plus"></i><span>{{if eq .Aba "caixinhas"}}Nova reserva{{else if .IsBusiness}}Nova meta{{else}}Novo limite{{end}}</span>
+    <i data-lucide="plus" aria-hidden="true"></i><span>{{if eq .Aba "caixinhas"}}Nova reserva{{else if .IsBusiness}}Nova meta{{else}}Novo limite{{end}}</span>
 </button>
 {{end}}
 
@@ -41,30 +45,42 @@
 
 {{define "metas-tabs"}}
 <div id="metas-tabs" data-active-tab="{{.Aba}}" {{if .ContentOOB}}hx-swap-oob="outerHTML"{{end}}>
-    <nav class="cb-tabs mb-5 w-full">
-        <button type="button"
+    <div class="cb-tabs mb-5 w-full" role="tablist" aria-label="Limites e reservas" aria-orientation="horizontal">
+        <button type="button" id="metas-tab-limites"
+            role="tab"
+            aria-selected="{{if eq .Aba "limites"}}true{{else}}false{{end}}"
+            aria-controls="metas-panel-limites"
+            tabindex="{{if eq .Aba "limites"}}0{{else}}-1{{end}}"
             hx-get="/metas?aba=limites&partial=conteudo"
             hx-target="#metas-tabs" hx-swap="outerHTML"
             hx-push-url="/metas?aba=limites"
             class="cb-tab {{if eq .Aba "limites"}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
-            <i data-lucide="gauge" class="w-3.5 h-3.5"></i>Limites
+            <i data-lucide="gauge" class="w-3.5 h-3.5" aria-hidden="true"></i>Limites
         </button>
-        <button type="button"
+        <button type="button" id="metas-tab-reservas"
+            role="tab"
+            aria-selected="{{if eq .Aba "caixinhas"}}true{{else}}false{{end}}"
+            aria-controls="metas-panel-reservas"
+            tabindex="{{if eq .Aba "caixinhas"}}0{{else}}-1{{end}}"
             hx-get="/metas?aba=reservas&partial=conteudo"
             hx-target="#metas-tabs" hx-swap="outerHTML"
             hx-push-url="/metas?aba=reservas"
             class="cb-tab {{if eq .Aba "caixinhas"}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
-            <i data-lucide="piggy-bank" class="w-3.5 h-3.5"></i>Reservas
+            <i data-lucide="piggy-bank" class="w-3.5 h-3.5" aria-hidden="true"></i>Reservas
         </button>
-    </nav>
+    </div>
 
     <div id="aporte-form-error" class="hidden mb-4"></div>
     <div id="resgate-form-error" class="hidden mb-4"></div>
 
 {{if eq .Aba "limites"}}
-    {{template "metas-limites-panel" .}}
+    <div id="metas-panel-limites" role="tabpanel" aria-labelledby="metas-tab-limites">
+        {{template "metas-limites-panel" .}}
+    </div>
 {{else}}
-    {{template "metas-caixinhas-panel" .}}
+    <div id="metas-panel-reservas" role="tabpanel" aria-labelledby="metas-tab-reservas">
+        {{template "metas-caixinhas-panel" .}}
+    </div>
 {{end}}
 </div>
 {{if .HeaderActionOOB}}
@@ -73,20 +89,22 @@
 {{end}}
 
 {{define "metas-limites-panel"}}
-<section class="metas-summary-card" aria-label="Resumo dos limites">
-    <div class="metas-summary-head">
-        <div class="metas-summary-title">
-            <span class="metas-summary-icon">
-                <i data-lucide="gauge" class="w-3.5 h-3.5"></i>
-            </span>
-            Limites
+<section class="ui-panel metas-overview" aria-labelledby="metas-limites-overview-title">
+    <header class="ui-section-heading metas-overview__head">
+        <div class="ui-section-title">
+            <span class="ui-section-icon" aria-hidden="true"><i data-lucide="gauge"></i></span>
+            <div>
+                <h2 id="metas-limites-overview-title">Limites</h2>
+            </div>
         </div>
-        <span class="metas-summary-chip">{{.LimitesCount}} {{if eq .LimitesCount 1}}limite ativo{{else}}limites ativos{{end}}</span>
-    </div>
-    <div class="metas-summary-metrics">
-        <div class="metas-summary-metric">
-            <span class="metas-summary-label">Gastos este mês</span>
-            <span class="metas-summary-value" data-sensitive>R$ {{.TotalLimits.Reais}}{{.TotalLimits.Cents}}</span>
+        <span class="ui-pill">{{.LimitesCount}} {{if eq .LimitesCount 1}}limite ativo{{else}}limites ativos{{end}}</span>
+    </header>
+    <div class="ui-kpi-grid metas-overview__grid metas-overview__grid--1">
+        <div class="ui-kpi metas-overview__metric metas-overview__metric--primary">
+            <div class="ui-kpi__head">
+                <span class="ui-kpi__label">Gastos este mês</span>
+            </div>
+            <strong class="ui-kpi__value" data-sensitive>R$ {{.TotalLimits.Reais}}{{.TotalLimits.Cents}}</strong>
         </div>
     </div>
 </section>
@@ -98,18 +116,16 @@
     {{end}}
 </div>
 {{else}}
-<div class="cb-empty-state py-10">
-    <div class="metas-empty-icon mb-3">
-        <i data-lucide="gauge" class="w-5 h-5"></i>
-    </div>
-    <p class="text-sm font-medium cb-text-main">Nenhum limite definido</p>
-    <p class="cb-text-micro cb-text-subtle mt-1">Use o botão + para criar seu primeiro limite.</p>
+<div class="ui-empty" role="status">
+    <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="gauge"></i></span>
+    <p class="ui-empty__title">Nenhum limite definido</p>
+    <p class="ui-empty__text">Use o botão + para criar seu primeiro limite.</p>
 </div>
 {{end}}
 {{end}}
 
 {{define "metas-limit-card"}}
-<article data-meta-card class="cb-card-dense relative flex flex-col">
+<article data-meta-card class="metas-card metas-card--limit relative flex flex-col">
     <a data-meta-card-link
         href="/metas/limite/historico?limit_id={{.ID}}"
         hx-get="/metas/limite/historico?limit_id={{.ID}}"
@@ -117,24 +133,25 @@
         hx-swap="innerHTML"
         hx-push-url="false"
         aria-label="Abrir histórico do limite {{.CategoryName}}"
-        class="absolute inset-0 z-0 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cb-border-focus)] focus-visible:ring-inset"></a>
+        class="metas-card__link absolute inset-0 z-0 rounded-[inherit]"></a>
 
-    <header class="relative z-10 flex items-start justify-between gap-3 pointer-events-none">
-        <div class="flex items-center gap-3 min-w-0">
-            <span class="cb-icon-choice-mark" title="{{.IconLabel}}">
+    <header class="metas-card__head relative z-10 pointer-events-none">
+        <div class="metas-card__identity">
+            <span class="cb-icon-choice-mark metas-card__icon" title="{{.IconLabel}}">
                 <i data-lucide="{{.IconOrDefault}}" aria-hidden="true"></i>
                 <span class="sr-only">Ícone: {{.IconLabel}}</span>
             </span>
-            <div class="min-w-0">
-                <p class="metas-card-title truncate">{{.CategoryName}}</p>
+            <div class="metas-card__copy">
+                <p class="metas-card-title">{{.CategoryName}}</p>
                 <p class="metas-card-subtitle">Limite mensal</p>
             </div>
         </div>
-        <div class="cb-meta-menu relative z-20 pointer-events-auto" data-caixinha-dropdown data-ck-mode="menu">
-            <button type="button" data-ck-toggle class="cb-meta-menu-toggle" aria-label="Ações do limite" aria-expanded="false">
-                <i data-lucide="ellipsis-vertical" class="w-4 h-4"></i>
+        <div class="cb-meta-menu metas-card__menu relative z-20 pointer-events-auto" data-caixinha-dropdown data-ck-mode="menu">
+            <button type="button" data-ck-toggle class="cb-meta-menu-toggle metas-card__menu-toggle"
+                aria-label="Ações do limite" aria-expanded="false" aria-controls="metas-limite-menu-{{.ID}}">
+                <i data-lucide="ellipsis-vertical" aria-hidden="true"></i>
             </button>
-            <div data-ck-panel class="metas-menu-panel hidden">
+            <div id="metas-limite-menu-{{.ID}}" data-ck-panel class="metas-menu-panel hidden">
                 <div data-ck-mode-panel="menu">
                     <button type="button" data-ck-close
                         hx-get="/metas/novo?aba=limite&id={{.ID}}"
@@ -142,65 +159,77 @@
                         hx-swap="innerHTML"
                         hx-push-url="false"
                         class="cb-meta-menu-item">
-                        <i data-lucide="pencil" class="w-3.5 h-3.5 cb-text-muted"></i>Editar
+                        <i data-lucide="pencil" class="w-3.5 h-3.5 cb-text-muted" aria-hidden="true"></i>Editar
                     </button>
                     <a href="/lancamentos?categoria={{.CategoryID}}" data-ck-close class="cb-meta-menu-item">
-                        <i data-lucide="list" class="w-3.5 h-3.5 cb-text-muted"></i>Lançamentos
+                        <i data-lucide="list" class="w-3.5 h-3.5 cb-text-muted" aria-hidden="true"></i>Lançamentos
                     </a>
                 </div>
             </div>
         </div>
     </header>
 
-    <div class="relative z-10 flex items-end justify-between gap-3 metas-box-balance">
-        <div class="min-w-0">
+    <div class="metas-card__amount relative z-10 pointer-events-none">
+        <div class="metas-card__balance min-w-0">
             <p class="metas-box-label">Disponível</p>
             <p class="metas-box-value metas-box-value-{{.Tone}}" data-sensitive>R$ {{.Remaining.Reais}}{{.Remaining.Cents}}</p>
         </div>
     </div>
 
-    <div class="relative z-10 metas-progress-wrap metas-progress-tone-{{.Tone}}" data-metas-p="{{if ge .Percent 100}}0{{else}}{{sub 100 .Percent}}{{end}}">
-        <progress class="metas-progress" {{if ge .Percent 100}}value="0"{{else}}value="{{sub 100 .Percent}}"{{end}} max="100" aria-label="{{.CategoryName}}: R$ {{.Remaining.Reais}}{{.Remaining.Cents}} disponíveis de R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}">{{if ge .Percent 100}}0{{else}}{{sub 100 .Percent}}{{end}}%</progress>
-        <span class="metas-progress-chip" aria-hidden="true">{{if ge .Percent 100}}Excedido{{else}}{{sub 100 .Percent}}%{{end}}</span>
+    <div class="metas-card__progress metas-progress-wrap metas-progress-tone-{{.Tone}}" data-metas-p="{{if ge .Percent 100}}0{{else}}{{sub 100 .Percent}}{{end}}">
+        <progress class="metas-progress" {{if ge .Percent 100}}value="0"{{else}}value="{{sub 100 .Percent}}"{{end}} max="100" aria-label="{{.CategoryName}}: {{if ge .Percent 100}}limite excedido{{else}}{{sub 100 .Percent}}% do limite disponível{{end}}">{{if ge .Percent 100}}0{{else}}{{sub 100 .Percent}}{{end}}%</progress>
+        <span class="metas-progress-chip" aria-hidden="true">{{if ge .Percent 100}}Excedido{{else}}{{sub 100 .Percent}}% disponível{{end}}</span>
     </div>
 
-    <div class="relative z-10 metas-metrics pointer-events-none">
-        <span>Utilizado: <span class="metas-value" data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}}</span></span>
-        <span>Limite: <span class="metas-value" data-sensitive>R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}</span></span>
+    <div class="metas-card__facts relative z-10 pointer-events-none">
+        <span class="metas-card__fact">
+            <span class="metas-card__fact-label">Utilizado</span>
+            <span class="metas-card__fact-value" data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}}</span>
+        </span>
+        <span class="metas-card__fact">
+            <span class="metas-card__fact-label">Limite</span>
+            <span class="metas-card__fact-value" data-sensitive>R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}</span>
+        </span>
     </div>
 </article>
 {{end}}
 
 {{define "metas-caixinhas-panel"}}
-<section class="metas-summary-card" aria-label="Resumo das reservas">
-    <div class="metas-summary-head">
-        <div class="metas-summary-title">
-            <span class="metas-summary-icon">
-                <i data-lucide="piggy-bank" class="w-3.5 h-3.5"></i>
-            </span>
-            Reservas
+<section class="ui-panel metas-overview" aria-labelledby="metas-reservas-overview-title">
+    <header class="ui-section-heading metas-overview__head">
+        <div class="ui-section-title">
+            <span class="ui-section-icon" aria-hidden="true"><i data-lucide="piggy-bank"></i></span>
+            <div>
+                <h2 id="metas-reservas-overview-title">Reservas</h2>
+            </div>
         </div>
-        <span class="metas-summary-chip">{{.CaixinhasCount}} {{if eq .CaixinhasCount 1}}reserva{{else}}reservas{{end}}</span>
-    </div>
-    <div class="metas-summary-metrics">
-        <div class="metas-summary-metric">
-            <span class="metas-summary-label">Reservado</span>
-            <span class="metas-summary-value" data-sensitive>R$ {{.ReservedBalance.Reais}}{{.ReservedBalance.Cents}}</span>
+        <span class="ui-pill">{{.CaixinhasCount}} {{if eq .CaixinhasCount 1}}reserva{{else}}reservas{{end}}</span>
+    </header>
+    <div class="ui-kpi-grid metas-overview__grid metas-overview__grid--{{if .HasMonthlyPlanning}}3{{else}}2{{end}}">
+        <div class="ui-kpi metas-overview__metric metas-overview__metric--primary">
+            <div class="ui-kpi__head">
+                <span class="ui-kpi__label">Reservado</span>
+            </div>
+            <strong class="ui-kpi__value" data-sensitive>R$ {{.ReservedBalance.Reais}}{{.ReservedBalance.Cents}}</strong>
         </div>
-        <div class="metas-summary-metric">
-            <span class="metas-summary-label">Disponível</span>
-            <span class="metas-summary-value {{if .FreeBalanceNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-success)]{{end}}" data-sensitive>R$ {{.FreeBalance.Reais}}{{.FreeBalance.Cents}}</span>
+        <div class="ui-kpi metas-overview__metric{{if .FreeBalanceNegative}} ui-kpi--danger{{end}}">
+            <div class="ui-kpi__head">
+                <span class="ui-kpi__label">Disponível</span>
+            </div>
+            <strong class="ui-kpi__value" data-sensitive>R$ {{.FreeBalance.Reais}}{{.FreeBalance.Cents}}</strong>
             {{if .HasCoverage}}
-            <span class="metas-summary-aux">{{.CoverageText}}</span>
-            <span class="metas-summary-source">{{.CoverageSourceText}}</span>
+            <span class="ui-kpi__meta">{{.CoverageText}}</span>
+            <span class="ui-kpi__meta metas-overview__source">{{.CoverageSourceText}}</span>
             {{end}}
         </div>
         {{if .HasMonthlyPlanning}}
-        <div class="metas-summary-metric">
-            <span class="metas-summary-label">Aportes programados</span>
-            <span class="metas-summary-value" data-sensitive>R$ {{.ProgrammedContributions.Reais}}{{.ProgrammedContributions.Cents}}/mês</span>
+        <div class="ui-kpi metas-overview__metric">
+            <div class="ui-kpi__head">
+                <span class="ui-kpi__label">Aportes programados</span>
+            </div>
+            <strong class="ui-kpi__value" data-sensitive>R$ {{.ProgrammedContributions.Reais}}{{.ProgrammedContributions.Cents}}/mês</strong>
             {{if .HasMargin}}
-            <span class="metas-summary-aux">Margem mensal estimada: R$ {{.Margin.Reais}}{{.Margin.Cents}}</span>
+            <span class="ui-kpi__meta">Margem mensal estimada: <span data-sensitive>R$ {{.Margin.Reais}}{{.Margin.Cents}}</span></span>
             {{end}}
         </div>
         {{end}}
@@ -214,42 +243,40 @@
     {{end}}
 </div>
 {{else}}
-<div class="cb-empty-state py-10">
-    <div class="metas-empty-icon mb-3">
-        <i data-lucide="piggy-bank" class="w-5 h-5"></i>
-    </div>
-    <p class="text-sm font-medium cb-text-main">Nenhuma reserva criada</p>
-    <p class="cb-text-micro cb-text-subtle mt-1">Use o botão + para criar sua primeira reserva.</p>
+<div class="ui-empty" role="status">
+    <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="piggy-bank"></i></span>
+    <p class="ui-empty__title">Nenhuma reserva criada</p>
+    <p class="ui-empty__text">Use o botão + para criar sua primeira reserva.</p>
 </div>
 {{end}}
 {{end}}
 
 {{define "metas-caixinha-card"}}
-{{$status := "info"}}
-{{$statusLabel := "Em andamento"}}
+{{$badge := "accent"}}
+{{$badgeLabel := "Em andamento"}}
 {{if .IsNegative}}
-    {{$status = "danger"}}{{$statusLabel = "excedente"}}
+    {{$badge = "danger"}}{{$badgeLabel = "excedente"}}
 {{else if ge .Percent 100}}
-    {{$status = "success"}}{{$statusLabel = "Concluída"}}
+    {{$badge = "success"}}{{$badgeLabel = "Concluída"}}
 {{else if eq .RequiredState "completed"}}
-    {{$status = "success"}}{{$statusLabel = "Concluída"}}
+    {{$badge = "success"}}{{$badgeLabel = "Concluída"}}
 {{else if eq .RequiredState "value"}}
     {{if .DeadlineLabel}}
-        {{$status = "success"}}{{$statusLabel = .DeadlineLabel}}
+        {{$badge = "success"}}{{$badgeLabel = .DeadlineLabel}}
     {{else}}
-        {{$status = "warning"}}{{$statusLabel = "Atenção"}}
+        {{$badge = "warning"}}{{$badgeLabel = "Atenção"}}
     {{end}}
 {{else if eq .RequiredState "no_deadline"}}
-    {{$status = "neutral"}}{{$statusLabel = "Sem prazo"}}
+    {{$badge = "neutral"}}{{$badgeLabel = "Sem prazo"}}
 {{else if .DeadlineLabel}}
     {{if eq .DeadlineLabel "Sem prazo"}}
-        {{$status = "neutral"}}{{$statusLabel = .DeadlineLabel}}
+        {{$badge = "neutral"}}{{$badgeLabel = .DeadlineLabel}}
     {{else}}
-        {{$status = "info"}}{{$statusLabel = .DeadlineLabel}}
+        {{$badge = "accent"}}{{$badgeLabel = .DeadlineLabel}}
     {{end}}
 {{end}}
 
-<article data-meta-card class="cb-card-dense relative flex flex-col">
+<article data-meta-card class="metas-card metas-card--reserve relative flex flex-col">
     <a data-meta-card-link
         href="/metas/caixinha/historico?box_id={{.ID}}"
         hx-get="/metas/caixinha/historico?box_id={{.ID}}"
@@ -257,70 +284,72 @@
         hx-swap="innerHTML"
         hx-push-url="false"
         aria-label="Abrir histórico da reserva {{.Name}}"
-        class="absolute inset-0 z-0 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cb-border-focus)] focus-visible:ring-inset"></a>
+        class="metas-card__link absolute inset-0 z-0 rounded-[inherit]"></a>
 
-    <header class="relative z-10 flex items-start justify-between gap-3 pointer-events-none">
-        <div class="flex items-center gap-3 min-w-0">
-            <span class="cb-icon-choice-mark" title="{{.IconLabel}}">
-                <i data-lucide="{{.IconOrDefault}}" aria-hidden="true"></i><span class="sr-only">Ícone: {{.IconLabel}}</span>
+    <header class="metas-card__head relative z-10 pointer-events-none">
+        <div class="metas-card__identity">
+            <span class="cb-icon-choice-mark metas-card__icon" title="{{.IconLabel}}">
+                <i data-lucide="{{.IconOrDefault}}" aria-hidden="true"></i>
+                <span class="sr-only">Ícone: {{.IconLabel}}</span>
             </span>
-            <div class="min-w-0">
-                <p class="metas-card-title truncate">{{.Name}}</p>
-                <p class="metas-card-subtitle truncate">{{.CategoryName}}</p>
+            <div class="metas-card__copy">
+                <p class="metas-card-title">{{.Name}}</p>
+                <div class="metas-card__meta">
+                    <p class="metas-card-subtitle metas-card__category">{{.CategoryName}}</p>
+                    <span class="ui-badge ui-badge--{{$badge}} metas-card__badge">{{$badgeLabel}}</span>
+                </div>
             </div>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
-            <span class="cb-status-chip cb-status-chip-{{$status}}">{{$statusLabel}}</span>
-            <div class="cb-meta-menu relative z-20 pointer-events-auto" data-caixinha-dropdown data-ck-mode="menu">
-                <button type="button" data-ck-toggle class="cb-meta-menu-toggle" aria-label="Ações da reserva" aria-expanded="false">
-                    <i data-lucide="ellipsis-vertical" class="w-4 h-4"></i>
-                    <span class="sr-only">Mais</span>
-                </button>
-                <div data-ck-panel class="metas-menu-panel hidden">
-                    <div data-ck-mode-panel="menu">
-                        <button type="button" data-ck-close
-                            hx-get="/metas/caixinha/aporte/sheet?box_id={{.ID}}"
-                            hx-target="#bottom-sheet-container"
-                            hx-swap="innerHTML"
-                            class="cb-meta-menu-item">
-                            <i data-lucide="plus-circle" class="w-3.5 h-3.5 text-[var(--cb-accent)]"></i>Aportar
-                        </button>
-                        <button type="button" data-ck-close
-                            hx-get="/metas/caixinha/resgate/sheet?box_id={{.ID}}"
-                            hx-target="#bottom-sheet-container"
-                            hx-swap="innerHTML"
-                            class="cb-meta-menu-item">
-                            <i data-lucide="arrow-up-from-line" class="w-3.5 h-3.5 text-[var(--cb-warning)]"></i>Liberar
-                        </button>
-                        <button type="button" data-ck-close
-                            hx-get="/metas/novo?aba=caixinha&id={{.ID}}"
-                            hx-target="#bottom-sheet-container"
-                            hx-swap="innerHTML"
-                            hx-push-url="false"
-                            class="cb-meta-menu-item">
-                            <i data-lucide="pencil" class="w-3.5 h-3.5 cb-text-muted"></i>Editar
-                        </button>
-                        {{if .CategoryID}}
-                        <a href="/lancamentos?categoria={{.CategoryID}}" data-ck-close class="cb-meta-menu-item">
-                            <i data-lucide="list" class="w-3.5 h-3.5 cb-text-muted"></i>Lançamentos
-                        </a>
-                        {{else}}
-                        <button type="button" disabled class="cb-meta-menu-item opacity-50 cursor-not-allowed">
-                            <i data-lucide="list" class="w-3.5 h-3.5 cb-text-subtle"></i>Lançamentos
-                        </button>
-                        {{end}}
-                    </div>
+        <div class="cb-meta-menu metas-card__menu relative z-20 pointer-events-auto" data-caixinha-dropdown data-ck-mode="menu">
+            <button type="button" data-ck-toggle class="cb-meta-menu-toggle metas-card__menu-toggle"
+                aria-label="Ações da reserva" aria-expanded="false" aria-controls="metas-caixinha-menu-{{.ID}}">
+                <i data-lucide="ellipsis-vertical" aria-hidden="true"></i>
+                <span class="sr-only">Mais</span>
+            </button>
+            <div id="metas-caixinha-menu-{{.ID}}" data-ck-panel class="metas-menu-panel hidden">
+                <div data-ck-mode-panel="menu">
+                    <button type="button" data-ck-close
+                        hx-get="/metas/caixinha/aporte/sheet?box_id={{.ID}}"
+                        hx-target="#bottom-sheet-container"
+                        hx-swap="innerHTML"
+                        class="cb-meta-menu-item">
+                        <i data-lucide="plus-circle" class="w-3.5 h-3.5 text-[var(--ui-accent)]" aria-hidden="true"></i>Aportar
+                    </button>
+                    <button type="button" data-ck-close
+                        hx-get="/metas/caixinha/resgate/sheet?box_id={{.ID}}"
+                        hx-target="#bottom-sheet-container"
+                        hx-swap="innerHTML"
+                        class="cb-meta-menu-item">
+                        <i data-lucide="arrow-up-from-line" class="w-3.5 h-3.5 text-[var(--ui-warning)]" aria-hidden="true"></i>Liberar
+                    </button>
+                    <button type="button" data-ck-close
+                        hx-get="/metas/novo?aba=caixinha&id={{.ID}}"
+                        hx-target="#bottom-sheet-container"
+                        hx-swap="innerHTML"
+                        hx-push-url="false"
+                        class="cb-meta-menu-item">
+                        <i data-lucide="pencil" class="w-3.5 h-3.5 cb-text-muted" aria-hidden="true"></i>Editar
+                    </button>
+                    {{if .CategoryID}}
+                    <a href="/lancamentos?categoria={{.CategoryID}}" data-ck-close class="cb-meta-menu-item">
+                        <i data-lucide="list" class="w-3.5 h-3.5 cb-text-muted" aria-hidden="true"></i>Lançamentos
+                    </a>
+                    {{else}}
+                    <button type="button" disabled class="cb-meta-menu-item">
+                        <i data-lucide="list" class="w-3.5 h-3.5 cb-text-subtle" aria-hidden="true"></i>Lançamentos
+                    </button>
+                    {{end}}
                 </div>
             </div>
         </div>
     </header>
 
-    <div class="relative z-10 flex items-end justify-between gap-3 metas-box-balance pointer-events-none">
-        <div class="min-w-0">
+    <div class="metas-card__amount relative z-10 pointer-events-none">
+        <div class="metas-card__balance min-w-0">
             <p class="metas-box-label">Saldo</p>
             <p class="metas-box-value metas-box-value-{{.ProgressTone}}" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</p>
         </div>
-        <div class="text-right shrink-0">
+        <div class="metas-card__target min-w-0">
             <p class="metas-box-label">Alvo</p>
             {{if ne .Target.Reais "0"}}
             <p class="metas-box-target" data-sensitive>R$ {{.Target.Reais}}{{.Target.Cents}}</p>
@@ -331,78 +360,104 @@
     </div>
 
     {{if ne .Target.Reais "0"}}
-    <div class="relative z-10 metas-progress-wrap metas-progress-tone-{{.ProgressTone}}" data-metas-p="{{.Percent}}">
+    <div class="metas-card__progress metas-progress-wrap metas-progress-tone-{{.ProgressTone}}" data-metas-p="{{.Percent}}">
         <progress class="metas-progress" value="{{.Percent}}" max="100" aria-label="{{.Name}}: {{.ProgressToneLabel}}, {{.Percent}}% atingido">{{.Percent}}%</progress>
-        <span class="metas-progress-chip" aria-hidden="true">{{.Percent}}%</span>
+        <span class="metas-progress-chip" aria-hidden="true">{{.Percent}}% do alvo</span>
     </div>
     {{end}}
 
-    <div class="relative z-10 metas-box-foot pointer-events-none">
+    {{if or (ne .MonthlyRecharge.Reais "0") .ForecastLabel}}
+    <div class="metas-card__footer relative z-10 pointer-events-none">
         {{if ne .MonthlyRecharge.Reais "0"}}
-        <span class="metas-box-foot-item">
+        <span class="metas-card__footer-item">
             <i data-lucide="repeat" aria-hidden="true"></i>
             <span>Aporte <b class="metas-box-foot-value" data-sensitive>R$ {{.MonthlyRecharge.Reais}}{{.MonthlyRecharge.Cents}}/mês</b></span>
         </span>
         {{end}}
         {{if .ForecastLabel}}
-        <span class="metas-box-foot-item">
+        <span class="metas-card__footer-item">
             <i data-lucide="calendar-clock" aria-hidden="true"></i>
             <span>{{.ForecastLabel}}</span>
         </span>
         {{end}}
     </div>
+    {{end}}
 </article>
 {{end}}
 
 {{define "box-history"}}
-<div class="fixed inset-0 z-[100]">
+<div class="fixed inset-0 z-[100]" data-metas-sheet data-metas-history="box">
     <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation"></div>
     <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto">
-        <article class="sheet-in cb-modal relative flex h-auto max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl shadow-2xl md:mx-auto md:my-8 md:h-auto md:max-h-[calc(100vh-6rem)] md:max-w-md md:rounded-2xl">
-        <div class="absolute right-4 top-4 z-[110]">
-            <button type="button" class="cb-button cb-button-secondary h-8 w-8 flex items-center justify-center rounded-full p-0" data-onclick="closeBottomSheet">
-                <i data-lucide="x" class="h-4 w-4"></i>
-            </button>
-        </div>
-        <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-[var(--cb-border-strong)] md:hidden"></div>
-        <div class="pt-4 md:pt-5 pb-1 flex items-center gap-3 px-6">
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]">
-                <i data-lucide="piggy-bank" class="w-4 h-4"></i>
-            </span>
-            <div class="pr-8 min-w-0">
-                <h2 class="text-sm font-semibold cb-text-main truncate">{{.BoxName}}</h2>
-                <p class="mt-0.5 text-xs cb-text-subtle">Histórico de eventos</p>
-            </div>
-        </div>
+        <article class="sheet-in cb-modal metas-history__sheet relative flex h-auto max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl shadow-2xl md:mx-auto md:my-8 md:h-auto md:max-h-[calc(100vh-6rem)] md:max-w-md md:rounded-2xl"
+            data-metas-history-panel
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="box-history-title"
+            aria-describedby="box-history-description">
+            <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-[var(--ui-border-strong)] md:hidden" aria-hidden="true"></div>
+            <header class="metas-history__head">
+                <span class="metas-history__tile metas-history__tile--accent" aria-hidden="true">
+                    <i data-lucide="piggy-bank"></i>
+                </span>
+                <div class="metas-history__copy">
+                    <p class="metas-history__eyebrow">Reserva</p>
+                    <h2 id="box-history-title" class="metas-history__title">{{.BoxName}}</h2>
+                    <p id="box-history-description" class="metas-history__subtitle">Histórico de eventos</p>
+                </div>
+                <button type="button"
+                    class="ui-btn ui-btn--ghost metas-history__close"
+                    data-metas-history-close
+                    data-onclick="closeBottomSheet"
+                    aria-label="Fechar histórico da reserva {{.BoxName}}">
+                    <i data-lucide="x" aria-hidden="true"></i>
+                </button>
+            </header>
 
-        <div class="flex-1 overflow-y-auto px-6 py-4 pb-8">
-            {{if .HasEvents}}
-            <div class="space-y-2">
-                {{range .Events}}
-                <div class="cb-card-muted flex items-center justify-between px-4 py-3">
-                    <div class="min-w-0 flex-1 mr-3">
-                        <span class="text-xs font-semibold cb-text-main truncate block">{{.Description}}</span>
-                        <p class="mt-0.5 text-[11px] cb-text-subtle">{{.TypeLabel}} &middot; {{.DateLabel}}</p>
-                        {{if .AccountName}}
-                        <p class="mt-0.5 text-[11px] cb-text-subtle truncate">{{.AccountLabel}} · {{.AccountName}}</p>
+            <div class="metas-history__body" role="region" aria-label="Eventos da reserva {{.BoxName}}"{{if .HasEvents}} tabindex="0"{{end}}>
+                {{if .HasEvents}}
+                <div class="ui-panel ui-list-panel metas-history__panel">
+                    <div class="ui-list-panel__head metas-history__panel-head">
+                        <h3 class="metas-history__panel-title">Eventos registrados</h3>
+                    </div>
+                    <div class="ui-list">
+                        {{range .Events}}
+                        {{$tone := "neutral"}}{{$icon := "circle-dot"}}
+                        {{if eq .Type "RECHARGE"}}{{$tone = "accent"}}{{$icon = "plus"}}
+                        {{else if eq .Type "BONUS"}}{{$tone = "info"}}{{$icon = "sparkles"}}
+                        {{else if eq .Type "RELEASE"}}{{$tone = "warning"}}{{$icon = "arrow-up-from-line"}}
+                        {{else if eq .Type "CONSUME"}}{{$icon = "shopping-bag"}}
+                        {{else if eq .Type "REVERSAL"}}{{$tone = "success"}}{{$icon = "rotate-ccw"}}
+                        {{end}}
+                        <div class="ui-row metas-history__row">
+                            <span class="ui-row__status metas-history__mark metas-history__mark--{{$tone}}" aria-hidden="true">
+                                <i data-lucide="{{$icon}}"></i>
+                            </span>
+                            <div class="ui-row__main">
+                                <span class="ui-row__title metas-history__description">{{if .Description}}{{.Description}}{{else if .TypeLabel}}{{.TypeLabel}}{{else}}Evento sem descrição{{end}}</span>
+                                <span class="ui-row__meta metas-history__meta">
+                                    {{if .TypeLabel}}<span class="ui-badge ui-badge--neutral metas-history__type">{{.TypeLabel}}</span>{{end}}
+                                    <span class="metas-history__date">{{.DateLabel}}</span>
+                                    {{if .AccountName}}
+                                    <span class="metas-history__account">{{if .AccountLabel}}{{.AccountLabel}} · {{end}}{{.AccountName}}</span>
+                                    {{end}}
+                                </span>
+                            </div>
+                            <span class="ui-row__amount metas-history__amount metas-history__amount--{{if .IsCredit}}credit{{else}}debit{{end}}" data-sensitive>
+                                <span class="sr-only">Valor do evento: </span>{{if .IsCredit}}+{{end}}R$ {{.Money.Reais}}{{.Money.Cents}}
+                            </span>
+                        </div>
                         {{end}}
                     </div>
-                    <span class="text-sm font-bold {{if .IsCredit}}text-[var(--cb-success)]{{else}}text-[var(--cb-danger)]{{end}} tabular-nums shrink-0">
-                        {{if .IsCredit}}+{{end}}R$ {{.Money.Reais}}{{.Money.Cents}}
-                    </span>
+                </div>
+                {{else}}
+                <div class="ui-empty metas-history__empty" role="status">
+                    <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="history"></i></span>
+                    <p class="ui-empty__title">Nenhum evento registrado</p>
+                    <p class="ui-empty__text">Aportes, ajustes, liberações e consumos aparecem aqui</p>
                 </div>
                 {{end}}
             </div>
-            {{else}}
-            <div class="flex flex-col items-center justify-center py-16 text-center">
-                <div class="w-14 h-14 rounded-2xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-4">
-                    <i data-lucide="history" class="w-7 h-7 cb-text-muted"></i>
-                </div>
-                <p class="text-sm font-semibold cb-text-main">Nenhum evento registrado</p>
-                <p class="text-xs cb-text-subtle mt-1">Os aportes, liberações e consumos aparecem aqui</p>
-            </div>
-            {{end}}
-        </div>
         </article>
     </div>
 </div>
@@ -410,72 +465,83 @@
 
 
 {{define "caixinha-aporte-sheet"}}
-<div class="fixed inset-0 z-[100]">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation" data-onclick="closeBottomSheet"></div>
-    <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto">
-        <article class="sheet-in cb-modal relative flex flex-col w-full max-w-md rounded-t-xl shadow-2xl shadow-black/80 md:mx-auto md:my-8 md:rounded-2xl md:shadow-2xl">
-            <div class="absolute right-4 top-4 z-[110]">
-                <button type="button" class="cb-button cb-button-secondary h-8 w-8 flex items-center justify-center rounded-full p-0" data-onclick="closeBottomSheet">
-                    <i data-lucide="x" class="h-4 w-4"></i>
+<div class="fixed inset-0 z-[100] metas-sheet" data-metas-sheet data-metas-money-sheet="aporte">
+    <div class="metas-sheet__backdrop" role="presentation" data-onclick="closeBottomSheet"></div>
+    <div class="metas-sheet__layer">
+        <article class="metas-sheet__dialog metas-form__dialog"
+            data-metas-form-panel
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="aporte-sheet-title"
+            aria-describedby="aporte-sheet-description"
+            tabindex="-1">
+            <div class="metas-sheet__handle md:hidden" aria-hidden="true"></div>
+            <header class="metas-sheet__head">
+                <span class="metas-sheet__tile metas-sheet__tile--accent" aria-hidden="true">
+                    <i data-lucide="{{.IconOrDefault}}" class="icon-colored" data-cb-color="{{.Color}}"></i>
+                    <span class="sr-only">Ícone: {{.IconLabel}}</span>
+                </span>
+                <div class="metas-sheet__copy">
+                    <p class="metas-sheet__eyebrow">Reserva</p>
+                    <h2 id="aporte-sheet-title" class="metas-sheet__title">Aportar na reserva</h2>
+                    <p id="aporte-sheet-description" class="metas-sheet__subtitle">{{.BoxName}}</p>
+                </div>
+                <button type="button" class="ui-btn ui-btn--ghost metas-sheet__close" data-onclick="closeBottomSheet" aria-label="Fechar aporte na reserva {{.BoxName}}">
+                    <i data-lucide="x" aria-hidden="true"></i>
                 </button>
-            </div>
-            <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-[var(--cb-border-strong)] md:hidden"></div>
+            </header>
 
-            <div class="px-6 pt-4 md:pt-5 pb-3">
-                <div class="flex items-center gap-3">
-                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--cb-accent-soft)] text-[var(--cb-accent)]">
-                        <i data-lucide="{{.IconOrDefault}}" class="w-4 h-4 icon-colored" data-cb-color="{{.Color}}" aria-hidden="true"></i><span class="sr-only">Ícone: {{.IconLabel}}</span>
-                    </span>
-                    <div class="pr-8 min-w-0">
-                        <h2 class="text-sm font-semibold cb-text-main truncate">Aportar na reserva</h2>
-                        <p class="mt-0.5 text-xs cb-text-subtle truncate">{{.BoxName}}</p>
+            <div class="metas-sheet__body">
+                {{if .ErrorMessage}}
+                <div class="metas-form__alert" role="alert" tabindex="-1" data-metas-form-alert>{{.ErrorMessage}}</div>
+                {{end}}
+
+                <div class="metas-form__summary" role="group" aria-label="Contexto da reserva">
+                    {{if .CategoryName}}
+                    <div class="metas-form__summary-row">
+                        <span class="metas-form__summary-label">Categoria</span>
+                        <span class="metas-form__summary-value">{{.CategoryName}}</span>
                     </div>
+                    {{end}}
+                    <div class="metas-form__summary-row">
+                        <span class="metas-form__summary-label">Saldo atual</span>
+                        <span class="metas-form__summary-value metas-form__summary-value--money" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</span>
+                    </div>
+                    {{if .Target.Reais}}
+                    <div class="metas-form__summary-row">
+                        <span class="metas-form__summary-label">Alvo</span>
+                        <span class="metas-form__summary-value metas-form__summary-value--money" data-sensitive>R$ {{.Target.Reais}}{{.Target.Cents}}</span>
+                    </div>
+                    {{end}}
                 </div>
-            </div>
 
-            <div class="px-6 pb-2 space-y-2">
-                {{if .CategoryName}}
-                <div class="flex items-center justify-between text-xs">
-                    <span class="cb-text-subtle">Categoria</span>
-                    <span class="font-medium cb-text-main">{{.CategoryName}}</span>
-                </div>
-                {{end}}
-                <div class="flex items-center justify-between text-xs">
-                    <span class="cb-text-subtle">Saldo atual</span>
-                    <span class="font-semibold cb-text-main tabular-nums" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</span>
-                </div>
-                {{if .Target.Reais}}
-                <div class="flex items-center justify-between text-xs">
-                    <span class="cb-text-subtle">Alvo</span>
-                    <span class="font-medium cb-text-main tabular-nums" data-sensitive>R$ {{.Target.Reais}}{{.Target.Cents}}</span>
-                </div>
-                {{end}}
-            </div>
-
-            {{if .ErrorMessage}}
-            <div class="mx-6 mb-1 rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">{{.ErrorMessage}}</div>
-            {{end}}
-
-            <div class="px-6 pb-6 pt-2">
-                <form hx-post="/metas/caixinha/aporte" hx-swap="none">
+                <form id="aporte-form" class="metas-form" hx-post="/metas/caixinha/aporte" hx-swap="none" hx-sync="this:drop" hx-indicator="#htmx-indicator" data-metas-money-form data-metas-form-kind="aporte" novalidate>
                     <input type="hidden" name="box_id" value="{{.BoxID}}">
                     <input type="hidden" name="_from_sheet" value="1">
-                    <label class="block mb-1.5">
-                        <span class="sheet-label">Valor do aporte</span>
-                    </label>
-                    <input type="text" name="amount" placeholder="R$ 0,00" inputmode="decimal" data-money-mask
-                        class="cb-input h-12 w-full text-lg font-medium text-center tracking-wide"
-                        autofocus autocomplete="off">
-                    <div class="flex items-center gap-2.5 mt-3">
-                        <button type="submit" class="cb-button cb-button-primary flex-1 h-11 text-sm font-semibold">
-                            Confirmar
-                        </button>
-                        <button type="button" data-onclick="closeBottomSheet" class="cb-button cb-button-secondary h-11 px-5 text-sm font-medium">
-                            Cancelar
-                        </button>
+                    <div class="metas-form__field metas-form__field--amount">
+                        <label class="ui-label" for="aporteAmount">Valor do aporte</label>
+                        <input id="aporteAmount" name="amount" type="text" placeholder="R$ 0,00" inputmode="decimal" data-money-mask
+                            class="ui-input metas-form__control metas-form__amount-input"
+                            autocomplete="off"
+                            aria-describedby="aporte-amount-error aporte-amount-help"
+                            aria-required="true"
+                            required
+                            autofocus
+                            data-metas-form-initial>
+                        <span id="aporte-amount-error" class="metas-form__field-error hidden" role="alert"></span>
+                        <p id="aporte-amount-help" class="metas-form__hint">O valor fica reservado; não sai da conta até o lançamento da despesa.</p>
                     </div>
                 </form>
             </div>
+
+            <footer class="metas-sheet__footer">
+                <button type="button" class="ui-btn ui-btn--ghost metas-sheet__btn metas-sheet__btn--cancel" data-onclick="closeBottomSheet">
+                    Cancelar
+                </button>
+                <button type="submit" form="aporte-form" class="ui-btn ui-btn--primary metas-sheet__btn metas-sheet__btn--primary">
+                    <i data-lucide="check" aria-hidden="true"></i><span>Confirmar aporte</span>
+                </button>
+            </footer>
         </article>
     </div>
 </div>
@@ -483,122 +549,156 @@
 
 
 {{define "caixinha-resgate-sheet"}}
-<div class="fixed inset-0 z-[100]">
-    <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation" data-onclick="closeBottomSheet"></div>
-    <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto">
-        <article class="sheet-in cb-modal relative flex flex-col w-full max-w-md rounded-t-xl shadow-2xl shadow-black/80 md:mx-auto md:my-8 md:rounded-2xl md:shadow-2xl">
-            <div class="absolute right-4 top-4 z-[110]">
-                <button type="button" class="cb-button cb-button-secondary h-8 w-8 flex items-center justify-center rounded-full p-0" data-onclick="closeBottomSheet">
-                    <i data-lucide="x" class="h-4 w-4"></i>
+<div class="fixed inset-0 z-[100] metas-sheet" data-metas-sheet data-metas-money-sheet="resgate">
+    <div class="metas-sheet__backdrop" role="presentation" data-onclick="closeBottomSheet"></div>
+    <div class="metas-sheet__layer">
+        <article class="metas-sheet__dialog metas-form__dialog"
+            data-metas-form-panel
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="resgate-sheet-title"
+            aria-describedby="resgate-sheet-description"
+            tabindex="-1">
+            <div class="metas-sheet__handle md:hidden" aria-hidden="true"></div>
+            <header class="metas-sheet__head">
+                <span class="metas-sheet__tile metas-sheet__tile--warning" aria-hidden="true">
+                    <i data-lucide="arrow-up-from-line"></i>
+                </span>
+                <div class="metas-sheet__copy">
+                    <p class="metas-sheet__eyebrow">Reserva</p>
+                    <h2 id="resgate-sheet-title" class="metas-sheet__title">Liberar saldo</h2>
+                    <p id="resgate-sheet-description" class="metas-sheet__subtitle">{{.BoxName}}</p>
+                </div>
+                <button type="button" class="ui-btn ui-btn--ghost metas-sheet__close" data-onclick="closeBottomSheet" aria-label="Fechar liberação da reserva {{.BoxName}}">
+                    <i data-lucide="x" aria-hidden="true"></i>
                 </button>
-            </div>
-            <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-[var(--cb-border-strong)] md:hidden"></div>
+            </header>
 
-            <div class="px-6 pt-4 md:pt-5 pb-3">
-                <div class="flex items-center gap-3">
-                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400">
-                        <i data-lucide="arrow-up-from-line" class="w-4 h-4"></i>
-                    </span>
-                    <div class="pr-8 min-w-0">
-                        <h2 class="text-sm font-semibold cb-text-main truncate">Liberar saldo da reserva</h2>
-                        <p class="mt-0.5 text-xs cb-text-subtle truncate">{{.BoxName}}</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="px-6 pb-2 space-y-2">
-                <div class="flex items-center justify-between text-xs">
-                    <span class="cb-text-subtle">Saldo atual</span>
-                    <span class="font-semibold cb-text-main tabular-nums" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</span>
-                </div>
-                {{if .AvailableForRelease.Reais}}
-                <div class="flex items-center justify-between text-xs">
-                    <span class="cb-text-subtle">Disponível para liberar</span>
-                    <span class="font-medium cb-text-main tabular-nums" data-sensitive>R$ {{.AvailableForRelease.Reais}}{{.AvailableForRelease.Cents}}</span>
-                </div>
+            <div class="metas-sheet__body">
+                {{if .ErrorMessage}}
+                <div class="metas-form__alert" role="alert" tabindex="-1" data-metas-form-alert>{{.ErrorMessage}}</div>
                 {{end}}
-                <div class="rounded-lg bg-amber-500/8 border border-amber-500/15 px-3 py-2 mt-1">
-                    <p class="text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">A liberação reduz o saldo reservado e devolve o valor ao saldo livre das contas.</p>
+
+                <div class="metas-form__summary" role="group" aria-label="Contexto da reserva">
+                    <div class="metas-form__summary-row">
+                        <span class="metas-form__summary-label">Saldo atual</span>
+                        <span class="metas-form__summary-value metas-form__summary-value--money" data-sensitive>R$ {{.Balance.Reais}}{{.Balance.Cents}}</span>
+                    </div>
+                    {{if .AvailableForRelease.Reais}}
+                    <div class="metas-form__summary-row">
+                        <span class="metas-form__summary-label">Disponível para liberar</span>
+                        <span class="metas-form__summary-value metas-form__summary-value--money" data-sensitive>R$ {{.AvailableForRelease.Reais}}{{.AvailableForRelease.Cents}}</span>
+                    </div>
+                    {{end}}
                 </div>
-            </div>
 
-            {{if .ErrorMessage}}
-            <div class="mx-6 mb-1 rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">{{.ErrorMessage}}</div>
-            {{end}}
+                <div class="metas-form__notice metas-form__notice--warning" role="note">
+                    <i data-lucide="info" aria-hidden="true"></i>
+                    <p>A liberação reduz o saldo reservado e devolve o valor ao saldo livre das contas.</p>
+                </div>
 
-            <div class="px-6 pb-6 pt-2">
-                <form hx-post="/metas/caixinha/resgate" hx-swap="none">
+                <form id="resgate-form" class="metas-form" hx-post="/metas/caixinha/resgate" hx-swap="none" hx-sync="this:drop" hx-indicator="#htmx-indicator" data-metas-money-form data-metas-form-kind="resgate" novalidate>
                     <input type="hidden" name="box_id" value="{{.BoxID}}">
                     <input type="hidden" name="_from_sheet" value="1">
-                    <label class="block mb-1.5">
-                        <span class="sheet-label">Valor a liberar</span>
-                    </label>
-                    <input type="text" name="amount" placeholder="R$ 0,00" inputmode="decimal" data-money-mask
-                        class="cb-input h-12 w-full text-lg font-medium text-center tracking-wide"
-                        autofocus autocomplete="off">
-                    <div class="flex items-center gap-2.5 mt-3">
-                        <button type="submit" class="cb-button cb-button-primary flex-1 h-11 text-sm font-semibold !bg-[var(--cb-warning)] hover:!opacity-90">
-                            Confirmar
-                        </button>
-                        <button type="button" data-onclick="closeBottomSheet" class="cb-button cb-button-secondary h-11 px-5 text-sm font-medium">
-                            Cancelar
-                        </button>
+                    <div class="metas-form__field metas-form__field--amount">
+                        <label class="ui-label" for="resgateAmount">Valor a liberar</label>
+                        <input id="resgateAmount" name="amount" type="text" placeholder="R$ 0,00" inputmode="decimal" data-money-mask
+                            class="ui-input metas-form__control metas-form__amount-input"
+                            autocomplete="off"
+                            aria-describedby="resgate-amount-error resgate-amount-help"
+                            aria-required="true"
+                            required
+                            autofocus
+                            data-metas-form-initial>
+                        <span id="resgate-amount-error" class="metas-form__field-error hidden" role="alert"></span>
+                        <p id="resgate-amount-help" class="metas-form__hint">O valor volta ao saldo livre e não altera lançamentos.</p>
                     </div>
                 </form>
             </div>
+
+            <footer class="metas-sheet__footer">
+                <button type="button" class="ui-btn ui-btn--ghost metas-sheet__btn metas-sheet__btn--cancel" data-onclick="closeBottomSheet">
+                    Cancelar
+                </button>
+                <button type="submit" form="resgate-form" class="ui-btn ui-btn--primary metas-sheet__btn metas-sheet__btn--primary">
+                    <i data-lucide="check" aria-hidden="true"></i><span>Confirmar liberação</span>
+                </button>
+            </footer>
         </article>
     </div>
 </div>
 {{end}}
 
 {{define "limit-history"}}
-<div class="fixed inset-0 z-[100]">
+<div class="fixed inset-0 z-[100]" data-metas-sheet data-metas-history="limit">
     <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" role="presentation"></div>
     <div class="absolute inset-x-0 bottom-0 flex justify-center md:inset-0 md:items-center md:overflow-y-auto">
-        <article class="sheet-in cb-modal relative flex h-auto max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl shadow-2xl md:mx-auto md:my-8 md:h-auto md:max-h-[calc(100vh-6rem)] md:max-w-md md:rounded-2xl">
-        <div class="absolute right-4 top-4 z-[110]">
-            <button type="button" class="cb-button cb-button-secondary h-8 w-8 flex items-center justify-center rounded-full p-0" data-onclick="closeBottomSheet">
-                <i data-lucide="x" class="h-4 w-4"></i>
-            </button>
-        </div>
-        <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-[var(--cb-border-strong)] md:hidden"></div>
-        <div class="pt-4 md:pt-5 pb-1 flex items-center gap-3 px-6">
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl border icon-wrap-colored" data-cb-color="{{.CategoryColor}}">
-                <i data-lucide="{{.CategoryIcon}}" class="w-4 h-4 icon-colored" data-cb-color="{{.CategoryColor}}" aria-hidden="true"></i>
-            </span>
-            <div class="pr-8 min-w-0">
-                <h2 class="text-sm font-semibold cb-text-main truncate">{{.LimitName}}</h2>
-                <p class="mt-0.5 text-xs cb-text-subtle">{{if .IsBusiness}}Controle:{{else}}Limite:{{end}} <span class="font-medium cb-text-main" data-sensitive>R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}</span> &middot; <span data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}}</span> gasto{{if .Percent}} ({{.Percent}}%){{end}}</p>
-            </div>
-        </div>
+        <article class="sheet-in cb-modal metas-history__sheet relative flex h-auto max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-t-xl shadow-2xl md:mx-auto md:my-8 md:h-auto md:max-h-[calc(100vh-6rem)] md:max-w-md md:rounded-2xl"
+            data-metas-history-panel
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="limit-history-title"
+            aria-describedby="limit-history-description">
+            <div class="mx-auto mt-4 mb-3 h-1 w-10 rounded-full bg-[var(--ui-border-strong)] md:hidden" aria-hidden="true"></div>
+            <header class="metas-history__head">
+                <span class="metas-history__tile icon-wrap-colored" data-cb-color="{{.CategoryColor}}" aria-hidden="true">
+                    <i data-lucide="{{.CategoryIcon}}" class="icon-colored" data-cb-color="{{.CategoryColor}}"></i>
+                </span>
+                <div class="metas-history__copy">
+                    <p class="metas-history__eyebrow">Categoria</p>
+                    <h2 id="limit-history-title" class="metas-history__title">{{.LimitName}}</h2>
+                    <p class="metas-history__summary">
+                        <span class="metas-history__summary-item">{{if .IsBusiness}}Controle{{else}}Limite{{end}}: <span class="metas-history__figure" data-sensitive>R$ {{.MaxAmount.Reais}}{{.MaxAmount.Cents}}</span></span>
+                        <span class="metas-history__summary-item">Gasto: <span class="metas-history__figure" data-sensitive>R$ {{.Spent.Reais}}{{.Spent.Cents}}</span></span>
+                        {{if .Percent}}<span class="ui-badge ui-badge--neutral metas-history__percent">{{.Percent}}%</span>{{end}}
+                    </p>
+                    <p id="limit-history-description" class="sr-only">Histórico de gastos do limite {{.LimitName}} neste mês.</p>
+                </div>
+                <button type="button"
+                    class="ui-btn ui-btn--ghost metas-history__close"
+                    data-metas-history-close
+                    data-onclick="closeBottomSheet"
+                    aria-label="Fechar histórico do limite {{.LimitName}}">
+                    <i data-lucide="x" aria-hidden="true"></i>
+                </button>
+            </header>
 
-        <div class="flex-1 overflow-y-auto px-6 py-4 pb-8">
-            {{if .HasTransactions}}
-            <p class="mb-3 text-[10px] uppercase tracking-wider font-semibold cb-text-subtle">Lançamentos deste mês</p>
-            <div class="space-y-2">
-                {{range .Transactions}}
-                <div class="cb-card-muted flex items-center justify-between px-4 py-3">
-                    <div class="min-w-0 flex-1 mr-3">
-                        <span class="text-xs font-semibold cb-text-main truncate block">{{.Description}}</span>
-                        <p class="mt-0.5 text-[11px] cb-text-subtle">{{.DateLabel}}</p>
-                        {{if .AccountName}}
-                        <p class="mt-0.5 text-[11px] cb-text-subtle truncate">{{.AccountLabel}} · {{.AccountName}}</p>
+            <div class="metas-history__body" role="region" aria-label="Lançamentos do limite {{.LimitName}} neste mês"{{if .HasTransactions}} tabindex="0"{{end}}>
+                {{if .HasTransactions}}
+                <div class="ui-panel ui-list-panel metas-history__panel">
+                    <div class="ui-list-panel__head metas-history__panel-head">
+                        <h3 class="metas-history__panel-title">Lançamentos deste mês</h3>
+                    </div>
+                    <div class="ui-list">
+                        {{range .Transactions}}
+                        <div class="ui-row metas-history__row">
+                            <span class="ui-row__status metas-history__mark" aria-hidden="true">
+                                <i data-lucide="receipt-text"></i>
+                            </span>
+                            <div class="ui-row__main">
+                                <span class="ui-row__title metas-history__description">{{if .Description}}{{.Description}}{{else}}Lançamento sem descrição{{end}}</span>
+                                <span class="ui-row__meta metas-history__meta">
+                                    <span class="metas-history__date">{{.DateLabel}}</span>
+                                    {{if .AccountName}}
+                                    <span class="metas-history__account">{{if .AccountLabel}}{{.AccountLabel}} · {{end}}{{.AccountName}}</span>
+                                    {{end}}
+                                </span>
+                            </div>
+                            <span class="ui-row__amount metas-history__amount metas-history__amount--expense" data-sensitive>
+                                <span class="sr-only">Valor do gasto: </span>R$ {{.Amount.Reais}}{{.Amount.Cents}}
+                            </span>
+                        </div>
                         {{end}}
                     </div>
-                    <span class="text-sm font-bold text-[var(--cb-danger)] tabular-nums shrink-0" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                </div>
+                {{else}}
+                <div class="ui-empty metas-history__empty" role="status">
+                    <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="inbox"></i></span>
+                    <p class="ui-empty__title">Nenhum lançamento este mês</p>
+                    <p class="ui-empty__text">Os gastos na categoria {{.CategoryName}} aparecem aqui</p>
                 </div>
                 {{end}}
             </div>
-            {{else}}
-            <div class="flex flex-col items-center justify-center py-16 text-center">
-                <div class="w-14 h-14 rounded-2xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-4">
-                    <i data-lucide="search-x" class="w-7 h-7 cb-text-muted"></i>
-                </div>
-                <p class="text-sm font-semibold cb-text-main">Nenhum lançamento este mês</p>
-                <p class="text-xs cb-text-subtle mt-1">Os gastos na categoria {{.CategoryName}} aparecem aqui</p>
-            </div>
-            {{end}}
-        </div>
         </article>
     </div>
 </div>

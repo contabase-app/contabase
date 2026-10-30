@@ -75,6 +75,9 @@ type pdfCategorySummaryRow struct {
 }
 
 func (h *RelatoriosHandler) HandleExportarExtratoPDF(w http.ResponseWriter, r *http.Request) {
+	if !h.requireReportsPermission(w) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -133,6 +136,9 @@ func (h *RelatoriosHandler) HandleExportarExtratoPDF(w http.ResponseWriter, r *h
 }
 
 func (h *RelatoriosHandler) HandleExportarDREPDF(w http.ResponseWriter, r *http.Request) {
+	if !h.requireReportsPermission(w) {
+		return
+	}
 	mes, ano, err := parseDREPDFPeriod(r)
 	if err != nil {
 		http.Error(w, "periodo invalido", http.StatusBadRequest)
@@ -171,6 +177,9 @@ func (h *RelatoriosHandler) HandleExportarDREPDF(w http.ResponseWriter, r *http.
 }
 
 func (h *RelatoriosHandler) HandleExportarCaixaPDF(w http.ResponseWriter, r *http.Request) {
+	if !h.requireReportsPermission(w) {
+		return
+	}
 	mes, ano, err := parseDREPDFPeriod(r)
 	if err != nil {
 		http.Error(w, "periodo invalido", http.StatusBadRequest)
@@ -214,6 +223,9 @@ func (h *RelatoriosHandler) HandleExportarCaixaPDF(w http.ResponseWriter, r *htt
 }
 
 func (h *RelatoriosHandler) HandleExportarContabilPDF(w http.ResponseWriter, r *http.Request) {
+	if !h.requireReportsPermission(w) {
+		return
+	}
 	mes, ano, err := parseDREPDFPeriod(r)
 	if err != nil {
 		http.Error(w, "periodo invalido", http.StatusBadRequest)
@@ -337,10 +349,10 @@ func (h *RelatoriosHandler) queryDREPDFCategorySummaries(mes, ano int) ([]pdfCat
 }
 
 func queryDREPDFCategorySummary(db *sql.DB, workspaceID, txType string, start, end int64) ([]pdfCategorySummaryRow, error) {
-	rows, err := db.Query(`
+	groups, err := queryReportGroupedAmounts(context.Background(), db, "DRE PDF category", `
 		SELECT
 			COALESCE(NULLIF(TRIM(COALESCE(c.name, p.name, '')), ''), 'Sem categoria') AS category_name,
-			COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) AS total
+			`+transactionNetAmountTSQL+` AS total
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -348,33 +360,30 @@ func queryDREPDFCategorySummary(db *sql.DB, workspaceID, txType string, start, e
 		  AND t.type = ?
 		  AND t.date >= ? AND t.date <= ?
 		  AND `+excludeInvoicePaymentCompetenceClause("t")+`
-		GROUP BY category_name
-		ORDER BY total DESC, category_name ASC
-		LIMIT 5
 	`, workspaceID, txType, start, end)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	type rawRow struct {
 		Name   string
 		Amount int64
 	}
 	raw := make([]rawRow, 0, 5)
-	var total int64
-	for rows.Next() {
-		var item rawRow
-		if err := rows.Scan(&item.Name, &item.Amount); err != nil {
-			return nil, err
-		}
+	var exactTotal reportExactAmount
+	for _, group := range groups {
+		item := rawRow{Name: group.name, Amount: group.cents}
 		if item.Amount <= 0 {
 			continue
 		}
-		total += item.Amount
+		exactTotal.add(item.Amount)
 		raw = append(raw, item)
+		if len(raw) == 5 {
+			break
+		}
 	}
-	if err := rows.Err(); err != nil {
+	total, err := exactTotal.int64("DRE PDF top categories")
+	if err != nil {
 		return nil, err
 	}
 	if total <= 0 || len(raw) == 0 {
@@ -384,7 +393,7 @@ func queryDREPDFCategorySummary(db *sql.DB, workspaceID, txType string, start, e
 	out := make([]pdfCategorySummaryRow, 0, len(raw))
 	cumulative := 0
 	for idx, item := range raw {
-		percent := int((item.Amount * 100) / total)
+		percent := reportPercent(item.Amount, total)
 		if idx == len(raw)-1 {
 			percent = 100 - cumulative
 		}
@@ -430,7 +439,7 @@ func pdfCategorySummaryRowsFromCategoriaRows(rows []categoriaBreakdownRow, total
 		if row.Total <= 0 {
 			continue
 		}
-		percent := int((row.Total * 100) / total)
+		percent := reportPercent(row.Total, total)
 		if idx == limit-1 {
 			percent = 100 - cumulative
 		}
@@ -452,13 +461,13 @@ func queryCaixaPDFCategorySummary(db *sql.DB, workspaceID, txType string, start,
 	if normalizeCaixaModo(modo) == "previsao" {
 		return queryCaixaPrevisaoPDFCategorySummary(db, workspaceID, txType, start, end)
 	}
-	rows, err := db.Query(`
-		SELECT category_name, COALESCE(SUM(total), 0)
+	groups, err := queryReportGroupedAmounts(context.Background(), db, "cash PDF category", `
+		SELECT category_name, total
 		FROM (
 			SELECT
 				COALESCE(NULLIF(TRIM(COALESCE(c.name, p.name, '')), ''), CASE WHEN ip.id IS NOT NULL THEN 'Fatura de cartão' ELSE 'Sem categoria' END) AS category_name,
 				t.amount AS total
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 			LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -470,33 +479,30 @@ func queryCaixaPDFCategorySummary(db *sql.DB, workspaceID, txType string, start,
 			  AND COALESCE(NULLIF(t.paid_at, 0), t.date) >= ?
 			  AND COALESCE(NULLIF(t.paid_at, 0), t.date) <= ?
 		)
-		GROUP BY category_name
-		ORDER BY total DESC, category_name ASC
-		LIMIT 5
 	`, workspaceID, txType, start, end)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	type rawRow struct {
 		Name   string
 		Amount int64
 	}
 	raw := make([]rawRow, 0, 5)
-	var total int64
-	for rows.Next() {
-		var item rawRow
-		if err := rows.Scan(&item.Name, &item.Amount); err != nil {
-			return nil, err
-		}
+	var exactTotal reportExactAmount
+	for _, group := range groups {
+		item := rawRow{Name: group.name, Amount: group.cents}
 		if item.Amount <= 0 {
 			continue
 		}
-		total += item.Amount
+		exactTotal.add(item.Amount)
 		raw = append(raw, item)
+		if len(raw) == 5 {
+			break
+		}
 	}
-	if err := rows.Err(); err != nil {
+	total, err := exactTotal.int64("cash PDF top categories")
+	if err != nil {
 		return nil, err
 	}
 	if total <= 0 || len(raw) == 0 {
@@ -506,7 +512,7 @@ func queryCaixaPDFCategorySummary(db *sql.DB, workspaceID, txType string, start,
 	out := make([]pdfCategorySummaryRow, 0, len(raw))
 	cumulative := 0
 	for idx, item := range raw {
-		percent := int((item.Amount * 100) / total)
+		percent := reportPercent(item.Amount, total)
 		if idx == len(raw)-1 {
 			percent = 100 - cumulative
 		}
@@ -525,13 +531,13 @@ func queryCaixaPDFCategorySummary(db *sql.DB, workspaceID, txType string, start,
 }
 
 func queryCaixaPrevisaoPDFCategorySummary(db *sql.DB, workspaceID, txType string, start, end int64) ([]pdfCategorySummaryRow, error) {
-	rows, err := db.Query(`
-		SELECT category_name, COALESCE(SUM(total), 0)
+	groups, err := queryReportGroupedAmounts(context.Background(), db, "forecast PDF category", `
+		SELECT category_name, total
 		FROM (
 			SELECT
 				COALESCE(NULLIF(TRIM(COALESCE(c.name, p.name, '')), ''), 'Sem categoria') AS category_name,
 				t.amount AS total
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 			LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -548,7 +554,7 @@ func queryCaixaPrevisaoPDFCategorySummary(db *sql.DB, workspaceID, txType string
 			SELECT
 				COALESCE(NULLIF(TRIM(COALESCE(c.name, p.name, '')), ''), 'Sem categoria') AS category_name,
 				t.amount AS total
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 			LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -560,33 +566,30 @@ func queryCaixaPrevisaoPDFCategorySummary(db *sql.DB, workspaceID, txType string
 			  AND COALESCE(NULLIF(t.due_date, 0), t.date) <= ?
 			  AND `+excludeInvoicePaymentCompetenceClause("t")+`
 		)
-		GROUP BY category_name
-		ORDER BY total DESC, category_name ASC
-		LIMIT 5
 	`, workspaceID, txType, start, end, workspaceID, txType, start, end)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	type rawRow struct {
 		Name   string
 		Amount int64
 	}
 	raw := make([]rawRow, 0, 5)
-	var total int64
-	for rows.Next() {
-		var item rawRow
-		if err := rows.Scan(&item.Name, &item.Amount); err != nil {
-			return nil, err
-		}
+	var exactTotal reportExactAmount
+	for _, group := range groups {
+		item := rawRow{Name: group.name, Amount: group.cents}
 		if item.Amount <= 0 {
 			continue
 		}
-		total += item.Amount
+		exactTotal.add(item.Amount)
 		raw = append(raw, item)
+		if len(raw) == 5 {
+			break
+		}
 	}
-	if err := rows.Err(); err != nil {
+	total, err := exactTotal.int64("forecast PDF top categories")
+	if err != nil {
 		return nil, err
 	}
 	if total <= 0 || len(raw) == 0 {
@@ -596,7 +599,7 @@ func queryCaixaPrevisaoPDFCategorySummary(db *sql.DB, workspaceID, txType string
 	out := make([]pdfCategorySummaryRow, 0, len(raw))
 	cumulative := 0
 	for idx, item := range raw {
-		percent := int((item.Amount * 100) / total)
+		percent := reportPercent(item.Amount, total)
 		if idx == len(raw)-1 {
 			percent = 100 - cumulative
 		}

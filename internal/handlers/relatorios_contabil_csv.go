@@ -32,6 +32,9 @@ func (h *RelatoriosHandler) buildContabilCSVData(w http.ResponseWriter, r *http.
 }
 
 func (h *RelatoriosHandler) HandleExportarContabilResumoCSV(w http.ResponseWriter, r *http.Request) {
+	if !h.requireReportsPermission(w) {
+		return
+	}
 	data, mes, ano, ok := h.buildContabilCSVData(w, r)
 	if !ok {
 		return
@@ -79,6 +82,9 @@ func writeContabilResumoCSVBody(out io.Writer, data RelatoriosData, periodo, wor
 }
 
 func (h *RelatoriosHandler) HandleExportarContabilMacrosCSV(w http.ResponseWriter, r *http.Request) {
+	if !h.requireReportsPermission(w) {
+		return
+	}
 	data, mes, ano, ok := h.buildContabilCSVData(w, r)
 	if !ok {
 		return
@@ -163,6 +169,9 @@ func writeContabilMacrosCSVBody(out io.Writer, data RelatoriosData, periodo stri
 }
 
 func (h *RelatoriosHandler) HandleExportarContabilSaldosCSV(w http.ResponseWriter, r *http.Request) {
+	if !h.requireReportsPermission(w) {
+		return
+	}
 	data, mes, ano, ok := h.buildContabilCSVData(w, r)
 	if !ok {
 		return

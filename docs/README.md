@@ -15,6 +15,7 @@ Se você está começando, leia nesta ordem:
 - [Instalação em LXC/VPS](instalacao-lxc-vps.md) — instalação sem Docker, com binário pronto e systemd.
 - [Instalação com Docker](instalacao-docker.md) — Docker Compose, Docker guiado e Docker manual com GHCR.
 - [Configuração](configuracao.md) — variáveis como `APP_BASE_URL`, `ALLOWED_HOSTS`, `TRUSTED_PROXIES`, `CONTABASE_ACCESS_MODE` e secrets.
+- [Investimentos](investimentos.md) — disponibilidade padrão, aplicações, posição conhecida e limites da candidata Beta 6.
 - [Atualização](atualizacao.md) — como trocar de versão.
 - [Backup e restauração](backup-restauracao.md) — como proteger os dados.
 - [Solução de problemas](solucao-de-problemas.md) — erros comuns.
@@ -53,6 +54,7 @@ Não use `latest`.
 - [Arquitetura](arquitetura.md)
 - [Permissões](permissoes.md)
 - [Regras financeiras](regras-financeiras.md)
+- [Design System Premium Fintech](design-system-premium-fintech.md)
 - [Retenção de dados](retencao-de-dados.md)
 - [CLI administrativo](cli-admin.md)
 - [Recuperação de senha de admin](recuperacao-senha-admin.md)
@@ -63,7 +65,8 @@ Não use `latest`.
 
 ## Notas de versão
 
-- [v1.0.0-beta.5 — preparação local](releases/v1.0.0-beta.5.md)
+- [v1.0.0-beta.6 — preparação local](releases/v1.0.0-beta.6.md)
+- [v1.0.0-beta.5 — Beta pública publicada](releases/v1.0.0-beta.5.md)
 - [v1.0.0-beta.4 — Beta pública publicada](releases/v1.0.0-beta.4.md)
 - [v1.0.0-beta.3 — Beta pública publicada](releases/v1.0.0-beta.3.md)
 - [v1.0.0-beta.2 — Beta pública publicada](releases/v1.0.0-beta.2.md)
@@ -77,4 +80,4 @@ Não use `latest`.
 - [v0.1.0-beta.3 — Beta pública controlada](releases/v0.1.0-beta.3.md)
 - [v0.1.0-beta.2 — Beta pública controlada](releases/v0.1.0-beta.2.md)
 - [v0.1.0-beta.1 — primeira Beta pública controlada](releases/v0.1.0-beta.1.md)
-- [v0.1.0-alpha.1 — Primeira validação pública](releases/v0.1.0-alpha.1.md)
+- v0.1.0-alpha.1: primeira validação pública, preservada no histórico das notas gerais.

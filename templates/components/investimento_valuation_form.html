@@ -1,12 +1,13 @@
 {{define "investimento-valuation-form"}}
-<form method="post" action="/investimentos/{{.Investment.ID}}/valuations" hx-post="/investimentos/{{.Investment.ID}}/valuations" hx-swap="none" hx-indicator="#htmx-indicator" class="space-y-4">
+<form method="post" action="/investimentos/{{.Investment.ID}}/valuations" hx-post="/investimentos/{{.Investment.ID}}/valuations" hx-swap="none" hx-indicator="#htmx-indicator" data-investment-operation hx-sync="this:drop" hx-disabled-elt="find button[type='submit']" class="space-y-4">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-    <h3 class="text-lg font-semibold">Registrar posição</h3>
-    <p class="text-sm">Informe quanto este investimento valia na data. Uma posição na mesma data corrige o valor anterior.</p>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div><label class="cb-label" for="investment-valuation-date">Data da posição</label><input id="investment-valuation-date" type="date" name="valuation_date" min="{{.Investment.AppliedDate}}" class="cb-input" required></div>
-        <div><label class="cb-label" for="investment-valuation-amount">Valor da posição (centavos)</label><input id="investment-valuation-amount" type="number" inputmode="numeric" name="amount_cents" min="0" step="1" class="cb-input" aria-describedby="investment-valuation-help" required><p id="investment-valuation-help" class="text-sm mt-2">Ex.: 100000 para R$ 1.000,00. Zero indica perda total.</p></div>
-    </div>
+    <fieldset class="investment-fieldset">
+        <legend>Posição observada</legend>
+        <div class="investment-field-grid">
+            <div><label class="cb-label" for="investment-valuation-date">Data da posição</label><input id="investment-valuation-date" type="date" name="valuation_date" min="{{.Investment.AppliedDate}}" class="cb-input" required><p class="investment-help">Informe a data em que este valor foi observado. Mesma data corrige o valor anterior.</p></div>
+            <div><label class="cb-label" for="investment-valuation-amount">Valor atual (R$)</label><input id="investment-valuation-amount" type="text" inputmode="decimal" name="amount" data-investment-money="zero" placeholder="R$ 1.234,56" class="cb-input" aria-describedby="investment-valuation-help" required><p id="investment-valuation-help" class="investment-help">Digite em reais, com até duas casas decimais. Zero indica perda total.</p></div>
+        </div>
+    </fieldset>
     <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm">Salvar posição</button>
 </form>
 {{end}}

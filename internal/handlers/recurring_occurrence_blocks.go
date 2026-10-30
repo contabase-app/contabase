@@ -67,8 +67,8 @@ func ensureAutomaticInvoiceAcceptsTransactionTx(tx *sql.Tx, workspaceID, account
 		SELECT i.id, i.reference, i.status, i.account_id, a.workspace_id, a.type
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id
-		WHERE i.id = ?
-	`, invoiceID).Scan(
+		WHERE i.id = ? AND a.workspace_id = ?
+	`, invoiceID, workspaceID).Scan(
 		&evidence.InvoiceID,
 		&evidence.InvoiceReference,
 		&evidence.InvoiceStatus,
@@ -257,12 +257,10 @@ func resolveRecurringOccurrenceBlockTx(tx *sql.Tx, expected recurringOccurrenceB
 		SELECT i.reference, i.status, i.account_id, a.workspace_id, a.type
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id
-		WHERE i.id = ?
-	`, block.InvoiceID).Scan(&liveReference, &liveStatus, &liveAccountID, &liveWorkspaceID, &liveAccountType)
+		WHERE i.id = ? AND a.workspace_id = ?
+	`, block.InvoiceID, expected.WorkspaceID).Scan(&liveReference, &liveStatus, &liveAccountID, &liveWorkspaceID, &liveAccountType)
 	if errors.Is(err, sql.ErrNoRows) {
-		// The persisted block is the terminal historical evidence. A later invoice
-		// deletion does not authorize rerouting or occurrence resurrection.
-		return true, nil
+		return false, fmt.Errorf("%w: recurring occurrence block invoice unavailable", errInvoiceStateStructural)
 	}
 	if err != nil {
 		return false, fmt.Errorf("resolve recurring occurrence block invoice: %w", err)
@@ -289,8 +287,8 @@ func validateRecurringOccurrenceBlockRuleCoverageTx(tx *sql.Tx, block recurringO
 		       COALESCE(NULLIF(starts_at_civil, ''), NULLIF(start_date_civil, '')),
 		       frequency
 		FROM recurring_rules
-		WHERE id = ?
-	`, block.RecurringRuleID).Scan(
+		WHERE id = ? AND workspace_id = ?
+	`, block.RecurringRuleID, block.WorkspaceID).Scan(
 		&workspaceID, &seriesID, &effectiveStart, &effectiveEnd,
 		&totalOccurrences, &startsAtCivil, &frequency,
 	); err != nil {

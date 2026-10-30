@@ -99,6 +99,11 @@ func startServerRuntime(dbs *database.RuntimeDBs, options serverRuntimeOptions) 
 		_ = runtime.Close()
 		return nil, err
 	}
+	// Restored databases must pass the same credential containment as cold starts.
+	if err := disableLegacySeedCredentials(dbs.Immediate); err != nil {
+		_ = runtime.Close()
+		return nil, fmt.Errorf("disable legacy seed credentials: %w", err)
+	}
 	// RuntimeDBs and every external background resource remain dormant through
 	// all fallible construction checkpoints. Activate is the final operation
 	// that can reject this generation.
@@ -114,8 +119,10 @@ func startServerRuntime(dbs *database.RuntimeDBs, options serverRuntimeOptions) 
 	// each starter only installs ownership and returns its lifecycle handle.
 	runtime.fallback = handlers.InitRecurringMaterializationFallback(dbs.Immediate)
 	runtime.resourceStarted(serverRuntimeStageFallback, dbs.Immediate)
-	runtime.scheduledDone = handlers.StartScheduledPaymentExecutor(ctx, dbs.DB, options.scheduledInterval)
-	runtime.resourceStarted(serverRuntimeStageScheduled, dbs.DB)
+	// Reserve the writer before scheduled payments reload eligibility. A deferred
+	// read-to-write upgrade can return plain SQLITE_BUSY while another job writes.
+	runtime.scheduledDone = handlers.StartScheduledPaymentExecutor(ctx, dbs.Immediate, options.scheduledInterval)
+	runtime.resourceStarted(serverRuntimeStageScheduled, dbs.Immediate)
 	runtime.recurringDone = handlers.StartRecurringMaterializationJob(ctx, dbs.Immediate, options.recurringInterval)
 	runtime.resourceStarted(serverRuntimeStageRecurring, dbs.Immediate)
 	var onSessionCleanup func(error)

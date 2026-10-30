@@ -51,6 +51,12 @@ Nesse caso, use o script manual de atualização uma vez conforme seu tipo de in
 * **Source/systemd:** `sudo ./scripts/update-contabase-source.sh`
 * **Release/binário:** `sudo env CONTABASE_VERSION=vX.Y.Z bash scripts/update-contabase-release.sh`
 
+Antes de executar scripts diretamente, habilite a execução conforme o método usado:
+
+```bash
+chmod +x scripts/install.sh scripts/update-contabase-docker.sh scripts/update-contabase-source.sh scripts/update-contabase-release.sh
+```
+
 Após a atualização, verifique se o comando foi instalado:
 
 ```bash
@@ -141,6 +147,8 @@ O updater preserva:
 Ele troca o binário e os arquivos da aplicação.
 
 Ele não restaura banco automaticamente.
+
+Se a troca do bundle falhar depois de parar o serviço, o updater tenta recuperar o bundle anterior e reiniciar o serviço. Confirme `systemctl status contabase` e o healthcheck; se a tentativa falhar, preserve o pacote pré-update e siga [backup e restauração](backup-restauracao.md). O fallback de bundle não reverte migrations nem restaura o banco automaticamente.
 
 `CONTABASE_SETUP_TOKEN` é usado somente para bootstrap/setup inicial. Se você já criou o primeiro administrador e removeu ou comentou esse token, o update deve continuar normalmente. Não recrie esse token para update comum; reset ou novo setup devem seguir um procedimento próprio.
 
@@ -269,9 +277,25 @@ A atualização não deve:
 - sobrescrever secrets;
 - trocar chaves de segurança;
 - exigir ou recriar `CONTABASE_SETUP_TOKEN` quando a instalação já existe;
-- restaurar banco automaticamente.
+- restaurar banco automaticamente;
+- reverter migrations ou o schema automaticamente;
+- reativar uma conta legada com senha pública.
 
 Se precisar restaurar backup, faça isso manualmente e com cuidado.
+
+## Candidata v1.0.0-beta.6: Investimentos, credenciais e recuperação
+
+Esta candidata ainda não foi publicada. Ao atualizar para seu código, a ausência de `CONTABASE_FEATURE_INVESTMENTS` disponibiliza o módulo sem alteração manual de configuração. Uma desativação explícita, inclusive valor vazio, permanece respeitada; não há reconciliação ou débito retroativo. As operações financeiras controladas continuam opt-in. Veja [Investimentos](investimentos.md) para limites e compatibilidade.
+
+No Compose fornecido pelo projeto, `.env.docker` passa a ser a fonte dessa flag, sem repasse implícito do shell. Se você desabilitava Investimentos apenas prefixando o comando Docker com a variável, registre a desativação no arquivo antes de atualizar. Configurações explícitas no override local continuam prevalecendo.
+
+Antes de atualizar, preserve `AUTH_ENCRYPTION_KEY` e `SECURITY_MASTER_KEY`. A partir desta versão, `SECURITY_MASTER_KEY` é exigida explicitamente para gravar senha SMTP e não há fallback público em desenvolvimento. A atualização não gera nem troca essa chave. Se houver senha SMTP cifrada, uma chave ausente ou incorreta impede o envio de alertas, mas preserva o ciphertext e não bloqueia o restante da aplicação. Senhas cifradas pela chave pública antiga não são lidas automaticamente; configure uma chave forte persistente e informe novamente a senha em `Administração`, ou remova a credencial de forma explícita.
+
+Contas criadas pela identidade de seed histórica deixam de ser reativadas no startup. Uma credencial pública, vazia ou inválida é inutilizada, e a conta passa a exigir recuperação administrativa em `Administração > Usuários` ou pelo Admin CLI. A redefinição gera senha temporária, exige troca, revoga sessões e desafios anteriores e preserva os fatores 2FA cadastrados. Se o 2FA também foi perdido, desative-o em ação separada. Não edite a tabela `users` diretamente.
+
+O retorno automático de bundle ou imagem só é permitido para uma cópia verificada da própria Beta 6, com prova administrativa local, conteúdo exato, emitida após health válido, e somente antes de qualquer tentativa de startup da candidata. Não há downgrade automático para a Beta 5. Depois de uma tentativa de startup, o schema pode ter avançado: mantenha o serviço parado, preserve banco, WAL, uploads, configuração, chaves e backups, e repare com um artefato verificado compatível com o schema atual. O fallback de código não restaura banco, configuração nem chaves; restore ou reversão de schema exige plano e autorização próprios.
+
+O upgrade operacional `v1.0.0-beta.5` → `v1.0.0-beta.6` pelo instalador público ainda não foi comprovado integralmente. A validação funcional em Docker DEV não substitui o ensaio de atualização em instalação real.
 
 ## Recorrências versionadas (a partir da v0.1.0-beta.7)
 

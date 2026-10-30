@@ -2,12 +2,86 @@ package investments
 
 import (
 	"math"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/contabase-app/contabase/internal/civildate"
 	"github.com/contabase-app/contabase/internal/models"
 )
+
+func TestAdjustedPositionVariation(t *testing.T) {
+	inv := testInvestment(models.InvestmentTaxRegimeManual, 100000)
+	buy := func(id, date string, cents int64, initial bool) models.InvestmentPurchase {
+		return models.InvestmentPurchase{ID: id, WorkspaceID: inv.WorkspaceID, InvestmentID: inv.ID, PurchaseDate: date, PrincipalCents: cents, IsInitial: initial}
+	}
+	withdraw := func(id, date string, cents int64) models.InvestmentWithdrawal {
+		return models.InvestmentWithdrawal{ID: id, WorkspaceID: inv.WorkspaceID, InvestmentID: inv.ID, WithdrawalDate: date, ReceivedCents: cents,
+			Allocations: []models.InvestmentWithdrawalAllocation{{PurchaseID: "initial", ReceivedCents: cents / 2}, {PurchaseID: "extra", ReceivedCents: cents - cents/2}}}
+	}
+	initial := buy("initial", "2026-01-01", 100000, true)
+	foreign := valuation("2026-04-01", 110000)
+	foreign.WorkspaceID = "other"
+	foreignPurchase := buy("foreign", "2026-03-01", 100, false)
+	foreignPurchase.InvestmentID = "other"
+	foreignWithdrawal := withdraw("foreign", "2026-03-15", 100)
+	foreignWithdrawal.WorkspaceID = "other"
+	for _, tc := range []struct {
+		name        string
+		current     int64
+		positions   []models.InvestmentValuation
+		purchases   []models.InvestmentPurchase
+		withdrawals []models.InvestmentWithdrawal
+		delta       int64
+		reason      string
+	}{
+		{name: "aporte sem valorização", current: 150000, purchases: []models.InvestmentPurchase{initial, buy("extra", "2026-03-01", 50000, false)}},
+		{name: "retirada sem desvalorização", current: 80000, purchases: []models.InvestmentPurchase{initial}, withdrawals: []models.InvestmentWithdrawal{withdraw("w", "2026-03-15", 20000)}},
+		{name: "compras e retiradas com principal desconhecido", current: 135000, purchases: []models.InvestmentPurchase{initial, buy("extra", "2026-03-01", 50000, false)}, withdrawals: []models.InvestmentWithdrawal{withdraw("w", "2026-03-15", 20000)}, delta: 5000},
+		{name: "variação negativa combinada", current: 125000, purchases: []models.InvestmentPurchase{initial, buy("extra", "2026-03-01", 50000, false)}, withdrawals: []models.InvestmentWithdrawal{withdraw("w", "2026-03-15", 20000)}, delta: -5000},
+		{name: "variação positiva sem fluxos", current: 110000, purchases: []models.InvestmentPurchase{initial}, delta: 10000},
+		{name: "variação negativa sem fluxos", current: 90000, purchases: []models.InvestmentPurchase{initial}, delta: -10000},
+		{name: "posição zero registrada", current: 0, purchases: []models.InvestmentPurchase{initial}, delta: -100000},
+		{name: "uma posição", positions: []models.InvestmentValuation{valuation("2026-02-01", 100000)}, purchases: []models.InvestmentPurchase{initial}, reason: AdjustedVariationNeedsPositions},
+		{name: "sem posições", positions: []models.InvestmentValuation{}, purchases: []models.InvestmentPurchase{initial}, reason: AdjustedVariationNeedsPositions},
+		{name: "lacunas e ordem real", positions: []models.InvestmentValuation{valuation("2026-04-01", 110000), valuation("2026-01-15", 90000), valuation("2026-02-01", 100000)}, purchases: []models.InvestmentPurchase{initial}, delta: 10000},
+		{name: "operações posteriores não alteram período histórico", current: 110000, purchases: []models.InvestmentPurchase{initial, buy("later", "2026-05-01", 50000, false)}, withdrawals: []models.InvestmentWithdrawal{withdraw("later", "2026-05-02", 20000)}, delta: 10000},
+		{name: "compra na posição inicial", current: 110000, purchases: []models.InvestmentPurchase{initial, buy("extra", "2026-02-01", 50000, false)}, reason: AdjustedVariationAmbiguousDates},
+		{name: "compra na posição final", current: 110000, purchases: []models.InvestmentPurchase{initial, buy("extra", "2026-04-01", 50000, false)}, reason: AdjustedVariationAmbiguousDates},
+		{name: "retirada na posição inicial", current: 110000, purchases: []models.InvestmentPurchase{initial}, withdrawals: []models.InvestmentWithdrawal{withdraw("w", "2026-02-01", 20000)}, reason: AdjustedVariationAmbiguousDates},
+		{name: "retirada na posição final", current: 110000, purchases: []models.InvestmentPurchase{initial}, withdrawals: []models.InvestmentWithdrawal{withdraw("w", "2026-04-01", 20000)}, reason: AdjustedVariationAmbiguousDates},
+		{name: "histórico de compras ausente", current: 110000, reason: AdjustedVariationMissingHistory},
+		{name: "posição de outro workspace", positions: []models.InvestmentValuation{valuation("2026-02-01", 100000), foreign}, purchases: []models.InvestmentPurchase{initial}, reason: AdjustedVariationMissingHistory},
+		{name: "compra de outro investimento", current: 110000, purchases: []models.InvestmentPurchase{initial, foreignPurchase}, reason: AdjustedVariationMissingHistory},
+		{name: "retirada de outro workspace", current: 110000, purchases: []models.InvestmentPurchase{initial}, withdrawals: []models.InvestmentWithdrawal{foreignWithdrawal}, reason: AdjustedVariationMissingHistory},
+		{name: "data civil impossível", positions: []models.InvestmentValuation{valuation("2026-02-31", 100000), valuation("2026-04-01", 110000)}, purchases: []models.InvestmentPurchase{initial}, reason: AdjustedVariationMissingHistory},
+		{name: "data de posição repetida", positions: []models.InvestmentValuation{valuation("2026-02-01", 100000), valuation("2026-02-01", 110000)}, purchases: []models.InvestmentPurchase{initial}, reason: AdjustedVariationMissingHistory},
+		{name: "compra repetida não duplica aporte", current: 110000, purchases: []models.InvestmentPurchase{initial, initial}, reason: AdjustedVariationMissingHistory},
+		{name: "retirada repetida não duplica recebimento", current: 110000, purchases: []models.InvestmentPurchase{initial}, withdrawals: []models.InvestmentWithdrawal{withdraw("w", "2026-03-15", 100), withdraw("w", "2026-03-15", 100)}, reason: AdjustedVariationMissingHistory},
+		{name: "overflow soma de compras", current: 110000, purchases: []models.InvestmentPurchase{initial, buy("a", "2026-03-01", math.MaxInt64, false), buy("b", "2026-03-02", 1, false)}, reason: AdjustedVariationUnsafe},
+		{name: "overflow soma de retiradas", current: 110000, purchases: []models.InvestmentPurchase{initial}, withdrawals: []models.InvestmentWithdrawal{withdraw("a", "2026-03-01", math.MaxInt64), withdraw("b", "2026-03-02", 1)}, reason: AdjustedVariationUnsafe},
+		{name: "overflow subtração", positions: []models.InvestmentValuation{valuation("2026-02-01", math.MaxInt64), valuation("2026-04-01", 0)}, purchases: []models.InvestmentPurchase{initial, buy("extra", "2026-03-01", 2, false)}, reason: AdjustedVariationUnsafe},
+		{name: "overflow resultado", positions: []models.InvestmentValuation{valuation("2026-02-01", 0), valuation("2026-04-01", math.MaxInt64)}, purchases: []models.InvestmentPurchase{initial}, withdrawals: []models.InvestmentWithdrawal{withdraw("w", "2026-03-01", 1)}, reason: AdjustedVariationUnsafe},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			positions := tc.positions
+			if positions == nil {
+				positions = []models.InvestmentValuation{valuation("2026-02-01", 100000), valuation("2026-04-01", tc.current)}
+			}
+			before := append([]models.InvestmentValuation{}, positions...)
+			got := AdjustedPositionVariation(inv, positions, tc.purchases, tc.withdrawals)
+			if got.Available != (tc.reason == "") || got.Reason != tc.reason || got.DeltaCents != tc.delta {
+				t.Fatalf("variation=%+v, want delta=%d reason=%q", got, tc.delta, tc.reason)
+			}
+			if got.Available && (got.PreviousDate != "2026-02-01" || got.CurrentDate != "2026-04-01") {
+				t.Fatalf("real position dates lost: %+v", got)
+			}
+			if !reflect.DeepEqual(before, positions) {
+				t.Fatal("calculation mutated positions")
+			}
+		})
+	}
+}
 
 func mustDate(t *testing.T, value string) civildate.CivilDate {
 	t.Helper()
@@ -185,6 +259,31 @@ func TestYieldCents(t *testing.T) {
 		if err != nil || got != tc.want {
 			t.Fatalf("%s: YieldCents = %d, %v; want %d", tc.name, got, err, tc.want)
 		}
+	}
+}
+
+func TestAccumulatedReturnBasisPoints(t *testing.T) {
+	for _, tc := range []struct {
+		yield, principal, want int64
+		available              bool
+	}{
+		{25000, 1000000, 250, true},
+		{-20000, 1000000, -200, true},
+		{0, 1000000, 0, true},
+		{0, 0, 0, false},
+		{100, -1, 0, false},
+		{4_000_000_000_000_000_000, 4_000_000_000_000_000_000, 10000, true},
+	} {
+		got, available, err := AccumulatedReturnBasisPoints(tc.yield, tc.principal)
+		if err != nil || got != tc.want || available != tc.available {
+			t.Fatalf("yield=%d principal=%d: %d, %v, %v", tc.yield, tc.principal, got, available, err)
+		}
+	}
+	if _, _, err := AccumulatedReturnBasisPoints(math.MaxInt64, 1); err == nil {
+		t.Fatal("rentabilidade não representável deve falhar")
+	}
+	if _, err := YieldCents(math.MaxInt64, -1); err == nil {
+		t.Fatal("ganho com overflow deve falhar")
 	}
 }
 

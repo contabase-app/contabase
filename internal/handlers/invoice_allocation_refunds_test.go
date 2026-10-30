@@ -48,7 +48,7 @@ func TestInvoiceAllocationUsesNetRefundWeights(t *testing.T) {
 				insertCaixaTransaction(t, db, "net-payment", "EXPENSE", "chk-caixa", "cat-food-caixa", tc.payment, date, date, "paid")
 				execTestSQL(t, db, `INSERT INTO invoice_payments (id, workspace_id, invoice_id, account_id, transaction_id, amount_cents, paid_at, source, created_by, created_at)
 					VALUES ('net-payment', 'ws-caixa', 'inv-net', 'chk-caixa', 'net-payment', ?, ?, 'manual', 'u-caixa', ?)`, tc.payment, date, date)
-				h := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+				h := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 				start, end := testUnixDate("2026-08-01"), testUnixDate("2026-09-01")-1
 				for _, mode := range []struct {
 					name string
@@ -93,7 +93,7 @@ func TestInvoiceAllocationUsesNetRefundWeights(t *testing.T) {
 					}
 					assertPDFBodyContainsText(t, rr.Body.String(), "200,00")
 				}
-				foreign := RelatoriosHandler{DB: db, WorkspaceID: "other-workspace"}
+				foreign := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "other-workspace"}
 				items, total, err := foreign.queryInvoiceAllocationItems(context.Background(), "inv-net")
 				if err != nil || len(items) != 0 || total != 0 {
 					t.Fatalf("foreign invoice lookup = %v/%d/%v", items, total, err)
@@ -127,7 +127,7 @@ func TestInvoiceAllocationRejectsOverflowingTotal(t *testing.T) {
 	insertCaixaTransaction(t, db, "huge-a", "EXPENSE", "card-caixa", "cat-food-caixa", math.MaxInt64, 1, 0, "paid")
 	insertCaixaTransaction(t, db, "huge-b", "EXPENSE", "card-caixa", "cat-card-caixa", 1, 1, 0, "paid")
 	execTestSQL(t, db, `UPDATE transactions SET invoice_id='inv-overflow' WHERE id IN ('huge-a','huge-b')`)
-	h := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa"}
+	h := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa"}
 	items, total, err := h.queryInvoiceAllocationItems(context.Background(), "inv-overflow")
 	if err == nil || items != nil || total != 0 {
 		t.Fatalf("overflow must fail without partial allocation: %v/%d/%v", items, total, err)

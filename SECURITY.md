@@ -33,9 +33,11 @@ Os seguintes recursos estão presentes e operacionais no código atual:
 **Arquitetura e Dados:**
 - Aplicativo self-hosted e armazenamento SQLite isolado.
 - Exclusão técnica pública restrita de arquivos `.env`, `data/`, backups e keys no ambiente Github via scripts de exportação validados.
+- `SECURITY_MASTER_KEY` explícita, com exatamente 32 bytes, para cifrar a senha SMTP. Não há fallback público; o ciphertext existente é preservado quando a chave está ausente ou incorreta.
 
 **Autenticação e Sessões:**
 - Senhas armazenadas via algoritmo `bcrypt`.
+- Credenciais da identidade de seed histórica não são reativadas no startup. Hashes correspondentes à senha pública ou inválidos são inutilizados, e a conta exige recuperação administrativa explícita, preservando fatores 2FA e vínculos existentes.
 - Cookies seguros: `HttpOnly`, `SameSite=Lax` e `Secure`.
 - Sessões de usuário hashadas com SHA-256 no banco de dados; botões ativos de revogação remota ("Sair dos outros dispositivos").
 - Proteção CSRF via HMAC (Double-submit mitigation).
@@ -50,6 +52,11 @@ Os seguintes recursos estão presentes e operacionais no código atual:
 - Elementos `<style>` e atributos `style` são bloqueados. Regras estáticas vêm de arquivos do próprio origin; cores livres passam por validação hexadecimal e por uma folha autenticada limitada ao workspace ativo; movimentos e posições calculados usam a Web Animations API sem criar CSS inline. A cobertura de regressão impede que templates ou scripts reintroduzam essas superfícies.
 - Headers `Cache-Control: no-store` para respostas autenticadas sensíveis e parciais HTMX.
 - Mitigação de CSV Injection nas exportações CSV disponíveis para campos textuais controlados por usuários.
+
+**Atualização e Recuperação:**
+- Os fluxos de instalação e atualização só reativam automaticamente um código ou imagem anterior quando há prova administrativa local de conteúdo verificado da própria Beta 6 e nenhuma tentativa de startup da candidata. Não há downgrade automático para a Beta 5.
+- O fallback de código não restaura banco, schema, configuração ou chaves. Depois de uma tentativa de startup, o retorno automático é bloqueado e a recuperação exige artefato corrigido compatível com o schema atual, com plano próprio para restore.
+- A política inicial de recuperação reconhece somente `v1.0.0-beta.6`; versões futuras exigem revisão específica.
 
 ---
 

@@ -20,6 +20,47 @@ import (
 
 // --- fixtures -----------------------------------------------------------------
 
+func TestBuildInvestmentDetailPositionAndReturn(t *testing.T) {
+	inv := models.Investment{PrincipalCents: 1_000_000}
+	positions := []models.InvestmentValuation{
+		{ValuationDate: "2026-02-01", AmountCents: 1_025_000},
+		{ValuationDate: "2026-03-01", AmountCents: 1_023_000},
+	}
+	for _, tc := range []struct {
+		name    string
+		values  []models.InvestmentValuation
+		current int64
+		date    string
+		yield   int64
+		bps     int64
+	}{
+		{"fallback", nil, 1_000_000, "", 0, 0},
+		{"final", positions, 1_023_000, "2026-03-01", 23_000, 230},
+		{"unordered", []models.InvestmentValuation{positions[1], positions[0]}, 1_023_000, "2026-03-01", 23_000, 230},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := BuildInvestmentDetail(inv, tc.values)
+			if err != nil || got.CurrentCents != tc.current || got.PositionDate != tc.date || got.YieldCents != tc.yield || got.ReturnBasisPoints != tc.bps || !got.ReturnAvailable || got.CurrentIsPrincipal != (len(tc.values) == 0) {
+				t.Fatalf("detail=%+v err=%v", got, err)
+			}
+		})
+	}
+	inv.PrincipalCents = 0
+	got, err := BuildInvestmentDetail(inv, nil)
+	if err != nil || got.ReturnAvailable {
+		t.Fatalf("principal zero: %+v err=%v", got, err)
+	}
+	inv.PrincipalCents = 4_000_000_000_000_000_000
+	got, err = BuildInvestmentDetail(inv, []models.InvestmentValuation{{ValuationDate: "2026-04-01", AmountCents: 8_000_000_000_000_000_000}})
+	if err != nil || got.YieldCents != 4_000_000_000_000_000_000 || got.ReturnBasisPoints != 10000 {
+		t.Fatalf("posição grande: %+v err=%v", got, err)
+	}
+	inv.PrincipalCents = -1
+	if _, err := BuildInvestmentDetail(inv, []models.InvestmentValuation{{ValuationDate: "2026-01-01", AmountCents: math.MaxInt64}}); err == nil {
+		t.Fatal("overflow do ganho deve falhar")
+	}
+}
+
 func seedInvestmentServiceFixtures(t *testing.T, db *sql.DB) {
 	t.Helper()
 	now := time.Now().Unix()

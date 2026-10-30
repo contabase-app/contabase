@@ -57,3 +57,14 @@ data/backups/*.db
 .impeccable/
 PRODUCT.md
 DESIGN.md
+
+# Tooling local opcional e binários de recuperação.
+/.agents/
+/.opencode/
+/.codex/
+/.claude/
+/CLAUDE.md
+/server.pre-*
+
+# Inventário local de skills opcionais; não participa do build nem dos testes.
+/skills-lock.json

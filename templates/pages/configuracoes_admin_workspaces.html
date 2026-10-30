@@ -1,212 +1,286 @@
 {{define "configuracoes-admin_workspaces-page"}}
-{{template "configuracoes-v2-section-start" .}}
+{{template "configuracoes-admin-section-start" .}}
 {{template "configuracoes-admin_workspaces-content" .}}
-{{template "configuracoes-v2-section-end" .}}
+<script src="{{assetPath "/assets/js/admin-workspace.js"}}"></script>
+<script src="{{assetPath "/assets/js/config-masks.js"}}"></script>
+{{template "configuracoes-admin-section-end" .}}
 {{end}}
 
 {{define "configuracoes-admin_workspaces-content"}}
 <div id="settings-dynamic-payload" class="w-full">
-    <!-- Header Mobile Only -->
-    <header class="sticky top-14 z-20 bg-[var(--cb-surface-overlay)] backdrop-blur-xl border-b border-[var(--cb-border-subtle)] transition-colors md:hidden w-full">
-        <div class="mx-auto flex max-w-7xl items-center gap-4 px-4 pt-4 pb-3">
-            <button type="button" hx-get="/configuracoes" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] btn-tactile">
-                <i data-lucide="arrow-left" class="h-4 w-4"></i>
-            </button>
-            <div class="min-w-0 flex-1">
-                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
-                <h1 class="mt-0.5 text-lg font-bold text-[var(--cb-text-main)] md:text-xl capitalize">workspaces</h1>
+    <div class="admin-page">
+        {{if .FlashError}}<div class="admin-flash cb-flash-danger" role="alert"><i data-lucide="circle-alert" aria-hidden="true"></i><span>{{.FlashError}}</span></div>{{end}}
+        {{if .FlashSuccess}}<div class="admin-flash cb-flash-success" role="status"><i data-lucide="circle-check" aria-hidden="true"></i><span>{{.FlashSuccess}}</span></div>{{end}}
+
+        <header class="ui-page-header admin-page-header">
+            <div class="admin-page-header__copy">
+                <p class="ui-eyebrow">Administração da instância</p>
+                <h1 class="ui-page-title">Workspaces</h1>
+                <p class="ui-page-description">Crie e mantenha os workspaces, seus dados corporativos e os vínculos de acesso.</p>
+                <div class="admin-page-header__meta">
+                    <span class="ui-badge ui-badge--accent"><i data-lucide="shield-check" aria-hidden="true"></i>Acesso global</span>
+                    <span class="ui-badge ui-badge--neutral">{{len .AdminWorkspaces}} {{if eq (len .AdminWorkspaces) 1}}workspace{{else}}workspaces{{end}}</span>
+                </div>
             </div>
-        </div>
-    </header>
+        </header>
 
-    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
-        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-danger">{{.FlashError}}</div>{{end}}
-        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-success">{{.FlashSuccess}}</div>{{end}}
-
-        <!-- Section header -->
-        <div class="mb-6">
-            <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Gerenciar Workspaces</h1>
-            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Painel administrativo global — crie e gerencie workspaces.</p>
-        </div>
-
-        <div class="cb-card-dense p-4 md:p-6">
-            <form data-admin-ws-create class="cb-card-muted mb-6 p-4 md:p-5" hx-post="/admin/workspaces/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-encoding="multipart/form-data">
-                <div id="workspace-error-container" class="mb-4"></div>
-                <div class="space-y-4">
+        <section class="ui-panel admin-panel" aria-labelledby="adminWorkspaceCreateTitle">
+            <header class="admin-panel__head">
+                <div class="admin-panel__heading">
+                    <span class="ui-section-icon" aria-hidden="true"><i data-lucide="folder-plus"></i></span>
                     <div>
-                        <span class="{{template "field-label" .}}">Nome do workspace</span>
-                        <input type="text" name="name" placeholder="Ex: Família, ACME Corp..." class="{{template "field-class" .}}">
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div>
-                            <span class="{{template "field-label" .}}">Tipo</span>
-                            <select name="type" data-admin-ws-type class="{{template "field-class" .}}">
-                                <option value="personal">Pessoal</option>
-                                <option value="business">Empresarial (Business)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <span class="{{template "field-label" .}}">Cor de contexto</span>
-                            <select name="theme_token" class="{{template "field-class" .}}">
-                                <option value="violeta">Violeta</option>
-                                <option value="laranja">Laranja</option>
-                                <option value="amarelo">Amarelo</option>
-                                <option value="azul">Azul</option>
-                                <option value="esmeralda">Esmeralda</option>
-                                <option value="rosa">Rosa</option>
-                            </select>
-                        </div>
-                        <div class="md:col-span-2">
-                            <span class="{{template "field-label" .}}">Descrição</span>
-                            <input type="text" name="description" placeholder="Descrição opcional do workspace" class="{{template "field-class" .}}">
-                        </div>
+                        <h2 id="adminWorkspaceCreateTitle" class="admin-panel__title">Novo workspace</h2>
+                        <p class="admin-panel__desc">Escolha o tipo, o tema e, para Business, complete o perfil corporativo.</p>
                     </div>
                 </div>
-                <div data-admin-ws-business class="hidden mt-4 cb-card-muted border-[var(--cb-accent)]/20 p-4">
-                    <p class="cb-section-title mb-3">Perfil corporativo</p>
-                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <div>
-                            <span class="{{template "field-label" .}}">Razão social / Nome da empresa</span>
-                            <input type="text" name="company_name" placeholder="Ex: ACME Ltda" class="{{template "field-class" .}}">
-                        </div>
-                        <div>
-                            <span class="{{template "field-label" .}}">CNPJ / CPF</span>
-                            <input type="text" name="cnpj_cpf" data-admin-mask="cnpj" placeholder="00.000.000/0001-00" class="{{template "field-class" .}}">
-                        </div>
-                        <div>
-                            <span class="{{template "field-label" .}}">Endereço</span>
-                            <input type="text" name="address" placeholder="Rua, numero, bairro, cidade" class="{{template "field-class" .}}">
-                        </div>
-                        <div>
-                            <span class="{{template "field-label" .}}">Telefone</span>
-                            <input type="text" name="phone" data-admin-mask="phone" placeholder="(11) 99999-9999" class="{{template "field-class" .}}">
-                        </div>
+            </header>
+            <form data-admin-ws-create class="admin-form" hx-post="/admin/workspaces/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-encoding="multipart/form-data" hx-disabled-elt="find button[type='submit']" hx-sync="this:drop" hx-indicator="#htmx-indicator">
+                <div id="workspace-error-container" class="admin-form-error" role="alert" aria-live="polite"></div>
+                <div class="admin-field">
+                    <label class="ui-label" for="adminWorkspaceName">Nome do workspace</label>
+                    <input id="adminWorkspaceName" type="text" name="name" placeholder="Ex: Família, ACME Corp..." autocomplete="organization" required class="ui-input">
+                </div>
+                <div class="admin-form-grid admin-form-grid--4">
+                    <div class="admin-field">
+                        <label class="ui-label" for="adminWorkspaceType">Tipo</label>
+                        <select id="adminWorkspaceType" name="type" data-admin-ws-type class="ui-select">
+                            <option value="personal">Pessoal</option>
+                            <option value="business">Empresarial (Business)</option>
+                        </select>
+                    </div>
+                    <div class="admin-field">
+                        <label class="ui-label" for="adminWorkspaceTheme">Cor de contexto</label>
+                        <select id="adminWorkspaceTheme" name="theme_token" class="ui-select">
+                            <option value="violeta">Violeta</option>
+                            <option value="laranja">Laranja</option>
+                            <option value="amarelo">Amarelo</option>
+                            <option value="azul">Azul</option>
+                            <option value="esmeralda">Esmeralda</option>
+                            <option value="rosa">Rosa</option>
+                        </select>
+                    </div>
+                    <div class="admin-field admin-field--full">
+                        <label class="ui-label" for="adminWorkspaceDescription">Descrição</label>
+                        <input id="adminWorkspaceDescription" type="text" name="description" placeholder="Descrição opcional do workspace" autocomplete="off" class="ui-input">
                     </div>
                 </div>
-                <div data-admin-ws-business class="hidden mt-4 cb-card-muted border-[var(--cb-info)]/20 p-4">
-                    <p class="cb-section-title mb-1">Identidade visual (logos)</p>
-                    <p class="mb-3 text-xs text-[var(--cb-text-muted)]">PNG, SVG ou WebP · 200 × 60 px recomendado · fundo transparente · máx. 2 MB</p>
-                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <div>
-                            <label class="cb-label">Logo claro <span class="font-normal text-[var(--cb-text-muted)]">(para fundo escuro)</span></label>
-                            <input type="file" name="logo_light_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="block w-full text-sm text-[var(--cb-text-muted)] file:mr-3 file:h-9 file:cursor-pointer file:rounded-xl file:border file:border-[var(--cb-accent)]/30 file:bg-[var(--cb-accent-soft)] file:px-3 file:text-xs file:font-semibold file:text-[var(--cb-accent-solid)] hover:file:bg-[color-mix(in srgb,var(--cb-accent) 18%,transparent)]">
-                        </div>
-                        <div>
-                            <label class="cb-label">Logo escuro <span class="font-normal text-[var(--cb-text-muted)]">(para impressão / fundo branco)</span></label>
-                            <input type="file" name="logo_dark_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="block w-full text-sm text-[var(--cb-text-muted)] file:mr-3 file:h-9 file:cursor-pointer file:rounded-xl file:border file:border-[var(--cb-accent)]/30 file:bg-[var(--cb-accent-soft)] file:px-3 file:text-xs file:font-semibold file:text-[var(--cb-accent-solid)] hover:file:bg-[color-mix(in srgb,var(--cb-accent) 18%,transparent)]">
-                        </div>
-                    </div>
-                </div>
-                <button class="cb-button cb-button-primary h-11 px-6 text-sm mt-4">Criar workspace</button>
-            </form>
 
-            <div class="space-y-3">
-                {{range .AdminWorkspaces}}
-                <article data-admin-ws-card class="cb-row-dense">
-                    <div class="flex items-start justify-between gap-3">
-                        <div>
-                            <h3 class="text-sm font-semibold text-[var(--cb-text-main)]">{{.Name}}</h3>
-                            <p class="mt-1 text-xs text-[var(--cb-text-muted)]">{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</p>
+                <fieldset data-admin-ws-business class="hidden admin-subpanel admin-subpanel--spaced">
+                    <legend class="admin-subpanel__head">
+                        <span class="admin-subpanel__title">Perfil corporativo</span>
+                        <span class="admin-subpanel__desc">Razão social e CNPJ são obrigatórios para workspaces Business.</span>
+                    </legend>
+                    <div class="admin-form-grid admin-form-grid--2">
+                        <div class="admin-field">
+                            <label class="ui-label" for="adminWorkspaceCompany">Razão social / nome da empresa</label>
+                            <input id="adminWorkspaceCompany" type="text" name="company_name" placeholder="Ex: ACME Ltda" autocomplete="organization" class="ui-input">
                         </div>
-                        <button type="button" data-admin-ws-toggle class="cb-button cb-button-secondary h-9 px-3 text-xs">
-                            <span data-admin-ws-toggle-text>Editar</span>
-                        </button>
+                        <div class="admin-field">
+                            <label class="ui-label" for="adminWorkspaceCNPJ">CNPJ / CPF</label>
+                            <input id="adminWorkspaceCNPJ" type="text" name="cnpj_cpf" data-admin-mask="cnpj" placeholder="00.000.000/0001-00" inputmode="numeric" autocomplete="off" class="ui-input">
+                        </div>
+                        <div class="admin-field">
+                            <label class="ui-label" for="adminWorkspaceAddress">Endereço</label>
+                            <input id="adminWorkspaceAddress" type="text" name="address" placeholder="Rua, número, bairro, cidade" autocomplete="street-address" class="ui-input">
+                        </div>
+                        <div class="admin-field">
+                            <label class="ui-label" for="adminWorkspacePhone">Telefone</label>
+                            <input id="adminWorkspacePhone" type="text" name="phone" data-admin-mask="phone" placeholder="(11) 99999-9999" inputmode="tel" autocomplete="tel" class="ui-input">
+                        </div>
                     </div>
-                    <div data-admin-ws-view class="mt-4 space-y-3">
-                        <div class="flex flex-wrap gap-2">
-                            <span class="cb-status-chip {{if eq .Type "business"}}cb-status-chip-info{{else}}cb-status-chip-neutral{{end}}">{{if eq .Type "business"}}Empresarial (Business){{else}}Pessoal{{end}}</span>
-                            <span class="cb-status-chip cb-status-chip-neutral">Tema visual: {{.ThemeToken}}</span>
+                </fieldset>
+
+                <fieldset data-admin-ws-business class="hidden admin-subpanel admin-subpanel--spaced">
+                    <legend class="admin-subpanel__head">
+                        <span class="admin-subpanel__title">Identidade visual</span>
+                        <span class="admin-subpanel__desc">PNG, SVG ou WebP · 200 × 60 px recomendado · fundo transparente · máx. 2 MB.</span>
+                    </legend>
+                    <div class="admin-logo-grid">
+                        <div class="admin-field">
+                            <label class="ui-label" for="adminWorkspaceLogoLight">Logo claro <span class="font-normal text-[var(--ui-text-muted)]">(para fundo escuro)</span></label>
+                            <input id="adminWorkspaceLogoLight" type="file" name="logo_light_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="ui-input admin-file-input">
+                        </div>
+                        <div class="admin-field">
+                            <label class="ui-label" for="adminWorkspaceLogoDark">Logo escuro <span class="font-normal text-[var(--ui-text-muted)]">(para impressão / fundo branco)</span></label>
+                            <input id="adminWorkspaceLogoDark" type="file" name="logo_dark_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="ui-input admin-file-input">
+                        </div>
+                    </div>
+                </fieldset>
+
+                <div class="admin-form-actions">
+                    <button type="submit" class="ui-btn ui-btn--primary">Criar workspace</button>
+                </div>
+            </form>
+        </section>
+
+        <div class="admin-ws-list">
+            {{range .AdminWorkspaces}}
+            <article data-admin-ws-card class="ui-panel admin-ws-card" aria-labelledby="admin-ws-name-{{.ID}}">
+                <div class="admin-ws-card__head admin-ws-card__persistent">
+                    <div class="admin-ws-card__identity">
+                        <h2 id="admin-ws-name-{{.ID}}" class="admin-ws-card__name">{{.Name}}</h2>
+                        <p class="admin-ws-card__desc">{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</p>
+                    </div>
+                    <div class="admin-ws-badges">
+                        <span class="ui-badge {{if eq .Type "business"}}ui-badge--info{{else}}ui-badge--neutral{{end}}">{{if eq .Type "business"}}Empresarial (Business){{else}}Pessoal{{end}}</span>
+                        <span class="ui-badge ui-badge--neutral">Tema: <span class="admin-ws-theme">{{.ThemeToken}}</span></span>
+                    </div>
+                    <button type="button" data-admin-ws-toggle aria-expanded="false" aria-controls="admin-ws-form-{{.ID}}" class="ui-btn ui-btn--secondary ui-btn--sm">
+                        <i data-lucide="pencil" aria-hidden="true"></i>
+                        <span data-admin-ws-toggle-text>Editar</span>
+                    </button>
+                </div>
+
+                <div data-admin-ws-view class="admin-ws-card__view">
+                    <div class="admin-ws-facts">
+                        <div class="admin-ws-fact">
+                            <dt>Identificador</dt>
+                            <dd><span class="font-mono text-[11px] text-[var(--ui-text-muted)]">{{.ID}}</span></dd>
                         </div>
                         {{if eq .Type "business"}}
-                        <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
-                            <p class="text-xs text-[var(--cb-text-muted)]"><span class="text-[var(--cb-text-subtle)]">Empresa:</span> {{if .CompanyName}}{{.CompanyName}}{{else}}-{{end}}</p>
-                            <p class="text-xs text-[var(--cb-text-muted)]"><span class="text-[var(--cb-text-subtle)]">CNPJ/CPF:</span> {{if .CNPJCPF}}{{.CNPJCPF}}{{else}}-{{end}}</p>
-                            <p class="text-xs text-[var(--cb-text-muted)] md:col-span-2"><span class="text-[var(--cb-text-subtle)]">Endereço:</span> {{if .Address}}{{.Address}}{{else}}-{{end}}</p>
-                            <p class="text-xs text-[var(--cb-text-muted)]"><span class="text-[var(--cb-text-subtle)]">Telefone:</span> {{if .Phone}}{{.Phone}}{{else}}-{{end}}</p>
+                        <div class="admin-ws-fact">
+                            <dt>Empresa</dt>
+                            <dd>{{if .CompanyName}}{{.CompanyName}}{{else}}Não informado{{end}}</dd>
+                        </div>
+                        <div class="admin-ws-fact">
+                            <dt>CNPJ / CPF</dt>
+                            <dd>{{if .CNPJCPF}}{{.CNPJCPF}}{{else}}Não informado{{end}}</dd>
+                        </div>
+                        <div class="admin-ws-fact">
+                            <dt>Telefone</dt>
+                            <dd>{{if .Phone}}{{.Phone}}{{else}}Não informado{{end}}</dd>
+                        </div>
+                        <div class="admin-ws-fact">
+                            <dt>Endereço</dt>
+                            <dd>{{if .Address}}{{.Address}}{{else}}Não informado{{end}}</dd>
                         </div>
                         {{end}}
+                    </div>
+
+                    <div class="admin-ws-members">
+                        <p class="admin-meta-label">Membros</p>
+                        <ul class="admin-ws-member-list">
+                            {{range .Members}}
+                            <li class="admin-ws-member">
+                                <span class="admin-ws-member__name">{{.Name}}</span>
+                                <span class="admin-ws-member__email" data-sensitive>{{.Email}}</span>
+                                <span class="ui-badge ui-badge--neutral">{{if eq .Role "ADMIN"}}Administrador{{else if eq .Role "MANAGER"}}Gestor{{else}}Usuário{{end}}</span>
+                            </li>
+                            {{else}}
+                            <li class="admin-ws-member">Sem membros</li>
+                            {{end}}
+                        </ul>
+                    </div>
+                </div>
+
+                <div data-admin-ws-form id="admin-ws-form-{{.ID}}" class="hidden admin-ws-card__edit">
+                    <div class="admin-edit-head">
                         <div>
-                            <p class="text-xs text-[var(--cb-text-muted)] mb-1.5">Membros:</p>
-                            <div class="space-y-1">
-                                {{range .Members}}
-                                <p class="text-xs text-[var(--cb-text-muted)]"><span class="text-[var(--cb-text-main)]">{{.Name}}</span> <span class="text-[var(--cb-text-muted)]">({{.Email}})</span> · <span class="text-[var(--cb-text-muted)]">{{.Role}}</span></p>
-                                {{else}}
-                                <p class="text-xs text-[var(--cb-text-muted)]">Sem membros</p>
-                                {{end}}
-                            </div>
+                            <p class="ui-eyebrow">Edição</p>
+                            <h3 class="admin-edit-title">Editar workspace</h3>
+                            <p class="admin-edit-subtitle">{{.Name}} · <span class="font-mono text-[11px]">{{.ID}}</span></p>
                         </div>
                     </div>
-                    <form data-admin-ws-form class="hidden mt-4 space-y-3" hx-post="/admin/workspaces/editar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-encoding="multipart/form-data">
+                    <form hx-post="/admin/workspaces/editar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-encoding="multipart/form-data" hx-disabled-elt="find button[type='submit']" hx-sync="this:drop" hx-indicator="#htmx-indicator">
                         <input type="hidden" name="workspace_id" value="{{.ID}}">
-                        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                            <div>
-                                <label class="cb-label">Nome do Workspace</label>
-                                <input type="text" name="name" value="{{.Name}}" placeholder="Ex: Nome do Workspace ou Empresa" class="cb-input">
+                        <div class="admin-ws-form-grid">
+                            <div class="admin-field">
+                                <label class="ui-label" for="admin-ws-input-name-{{.ID}}">Nome do workspace</label>
+                                <input id="admin-ws-input-name-{{.ID}}" type="text" name="name" value="{{.Name}}" placeholder="Ex: Nome do Workspace ou Empresa" autocomplete="organization" required class="ui-input">
                             </div>
-                            <div>
-                                <label class="cb-label">Tipo de Workspace</label>
-                                <select name="type" data-admin-ws-type class="cb-input">
-                                    <option value="personal">Pessoal</option>
-                                    <option value="business">Empresarial (Business)</option>
+                            <div class="admin-field">
+                                <label class="ui-label" for="admin-ws-type-{{.ID}}">Tipo de workspace</label>
+                                <select id="admin-ws-type-{{.ID}}" name="type" data-admin-ws-type class="ui-select">
+                                    <option value="personal" {{if eq .Type "personal"}}selected{{end}}>Pessoal</option>
+                                    <option value="business" {{if eq .Type "business"}}selected{{end}}>Empresarial (Business)</option>
                                 </select>
                             </div>
-                            <div>
-                                <label class="cb-label">Tema Visual (Cor)</label>
-                                <select name="theme_token" class="cb-input">
-                                    <option value="violeta">Violeta</option>
-                                    <option value="laranja">Laranja</option>
-                                    <option value="amarelo">Amarelo</option>
-                                    <option value="azul">Azul</option>
-                                    <option value="esmeralda">Esmeralda</option>
-                                    <option value="rosa">Rosa</option>
+                            <div class="admin-field">
+                                <label class="ui-label" for="admin-ws-theme-{{.ID}}">Tema visual (cor)</label>
+                                <select id="admin-ws-theme-{{.ID}}" name="theme_token" class="ui-select">
+                                    <option value="violeta" {{if eq .ThemeToken "violeta"}}selected{{end}}>Violeta</option>
+                                    <option value="laranja" {{if eq .ThemeToken "laranja"}}selected{{end}}>Laranja</option>
+                                    <option value="amarelo" {{if eq .ThemeToken "amarelo"}}selected{{end}}>Amarelo</option>
+                                    <option value="azul" {{if eq .ThemeToken "azul"}}selected{{end}}>Azul</option>
+                                    <option value="esmeralda" {{if eq .ThemeToken "esmeralda"}}selected{{end}}>Esmeralda</option>
+                                    <option value="rosa" {{if eq .ThemeToken "rosa"}}selected{{end}}>Rosa</option>
                                 </select>
                             </div>
-                            <div class="md:col-span-2">
-                                <label class="cb-label">Descrição</label>
-                                <input type="text" name="description" value="{{.Description}}" placeholder="Ex: Controle financeiro da operação principal" class="cb-input">
+                            <div class="admin-field admin-field--full">
+                                <label class="ui-label" for="admin-ws-desc-{{.ID}}">Descrição</label>
+                                <input id="admin-ws-desc-{{.ID}}" type="text" name="description" value="{{.Description}}" placeholder="Ex: Controle financeiro da operação principal" autocomplete="off" class="ui-input">
                             </div>
                         </div>
-                        <div data-admin-ws-business class="hidden cb-card-muted border-[var(--cb-accent)]/20 p-4">
-                            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                <input type="text" name="company_name" value="{{.CompanyName}}" placeholder="Ex: Minha Empresa LTDA" class="cb-input">
-                                <input type="text" name="cnpj_cpf" value="{{.CNPJCPF}}" data-admin-mask="cnpj" placeholder="Ex: 00.000.000/0001-00" class="cb-input">
-                                <input type="text" name="address" value="{{.Address}}" placeholder="Ex: Av. Paulista, 1000 - São Paulo/SP" class="cb-input md:col-span-2">
-                                <input type="text" name="phone" value="{{.Phone}}" data-admin-mask="phone" placeholder="Ex: (11) 99999-9999" class="cb-input">
+
+                        <fieldset data-admin-ws-business class="admin-subpanel admin-subpanel--spaced{{if ne .Type "business"}} hidden{{end}}">
+                            <legend class="admin-subpanel__head">
+                                <span class="admin-subpanel__title">Perfil corporativo</span>
+                                <span class="admin-subpanel__desc">Dados exibidos no contexto empresarial deste workspace.</span>
+                            </legend>
+                            <div class="admin-form-grid admin-form-grid--2">
+                                <div class="admin-field">
+                                    <label class="ui-label" for="admin-ws-company-{{.ID}}">Razão social / nome da empresa</label>
+                                    <input id="admin-ws-company-{{.ID}}" type="text" name="company_name" value="{{.CompanyName}}" placeholder="Ex: Minha Empresa LTDA" autocomplete="organization" class="ui-input">
+                                </div>
+                                <div class="admin-field">
+                                    <label class="ui-label" for="admin-ws-cnpj-{{.ID}}">CNPJ / CPF</label>
+                                    <input id="admin-ws-cnpj-{{.ID}}" type="text" name="cnpj_cpf" value="{{.CNPJCPF}}" data-admin-mask="cnpj" placeholder="00.000.000/0001-00" inputmode="numeric" autocomplete="off" class="ui-input">
+                                </div>
+                                <div class="admin-field">
+                                    <label class="ui-label" for="admin-ws-address-{{.ID}}">Endereço</label>
+                                    <input id="admin-ws-address-{{.ID}}" type="text" name="address" value="{{.Address}}" placeholder="Av. Paulista, 1000 - São Paulo/SP" autocomplete="street-address" class="ui-input">
+                                </div>
+                                <div class="admin-field">
+                                    <label class="ui-label" for="admin-ws-phone-{{.ID}}">Telefone</label>
+                                    <input id="admin-ws-phone-{{.ID}}" type="text" name="phone" value="{{.Phone}}" data-admin-mask="phone" placeholder="(11) 99999-9999" inputmode="tel" autocomplete="tel" class="ui-input">
+                                </div>
                             </div>
-                        </div>
-                        <div data-admin-ws-business class="hidden cb-card-muted border-[var(--cb-info)]/20 p-4">
-                            <p class="cb-section-title mb-1">Identidade visual (logos)</p>
-                            <p class="mb-3 text-xs text-[var(--cb-text-muted)]">PNG, SVG ou WebP · 200 × 60 px recomendado · fundo transparente · máx. 2 MB</p>
-                            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                <div>
-                                    <label class="cb-label">Logo claro <span class="font-normal text-[var(--cb-text-muted)]">(para fundo escuro)</span></label>
-                                    {{if .LogoLightURL}}<img src="{{.LogoLightURL}}" alt="Logo claro atual" class="mb-2 h-8 max-w-[160px] object-contain rounded border border-[var(--cb-border-subtle)] bg-[var(--cb-text-main)] px-2 py-1" data-avatar-fallback>{{end}}
-                                    <input type="file" name="logo_light_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="block w-full text-sm text-[var(--cb-text-muted)] file:mr-3 file:h-9 file:cursor-pointer file:rounded-xl file:border file:border-[var(--cb-accent)]/30 file:bg-[var(--cb-accent-soft)] file:px-3 file:text-xs file:font-semibold file:text-[var(--cb-accent-solid)] hover:file:bg-[color-mix(in srgb,var(--cb-accent) 18%,transparent)]">
+                        </fieldset>
+
+                        <fieldset data-admin-ws-business class="admin-subpanel admin-subpanel--spaced{{if ne .Type "business"}} hidden{{end}}">
+                            <legend class="admin-subpanel__head">
+                                <span class="admin-subpanel__title">Identidade visual</span>
+                                <span class="admin-subpanel__desc">PNG, SVG ou WebP · 200 × 60 px recomendado · fundo transparente · máx. 2 MB.</span>
+                            </legend>
+                            <div class="admin-logo-grid">
+                                <div class="admin-field">
+                                    <p class="ui-label">Logo claro <span class="font-normal text-[var(--ui-text-muted)]">(para fundo escuro)</span></p>
+                                    {{if .LogoLightURL}}<img src="{{.LogoLightURL}}" alt="Logo claro atual" class="admin-logo-preview" data-avatar-fallback>{{end}}
+                                    <label class="ui-label" for="admin-ws-logo-light-{{.ID}}">Enviar novo logo claro</label>
+                                    <input id="admin-ws-logo-light-{{.ID}}" type="file" name="logo_light_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="ui-input admin-file-input">
                                     <input type="hidden" name="logo_light_url" value="{{.LogoLightURL}}">
                                 </div>
-                                <div>
-                                    <label class="cb-label">Logo escuro <span class="font-normal text-[var(--cb-text-muted)]">(para impressão / fundo branco)</span></label>
-                                    {{if .LogoDarkURL}}<img src="{{.LogoDarkURL}}" alt="Logo escuro atual" class="mb-2 h-8 max-w-[160px] object-contain rounded border border-[var(--cb-border-subtle)] bg-[var(--cb-bg)] px-2 py-1" data-avatar-fallback>{{end}}
-                                    <input type="file" name="logo_dark_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="block w-full text-sm text-[var(--cb-text-muted)] file:mr-3 file:h-9 file:cursor-pointer file:rounded-xl file:border file:border-[var(--cb-accent)]/30 file:bg-[var(--cb-accent-soft)] file:px-3 file:text-xs file:font-semibold file:text-[var(--cb-accent-solid)] hover:file:bg-[color-mix(in srgb,var(--cb-accent) 18%,transparent)]">
+                                <div class="admin-field">
+                                    <p class="ui-label">Logo escuro <span class="font-normal text-[var(--ui-text-muted)]">(para impressão / fundo branco)</span></p>
+                                    {{if .LogoDarkURL}}<img src="{{.LogoDarkURL}}" alt="Logo escuro atual" class="admin-logo-preview admin-logo-preview--on-light" data-avatar-fallback>{{end}}
+                                    <label class="ui-label" for="admin-ws-logo-dark-{{.ID}}">Enviar novo logo escuro</label>
+                                    <input id="admin-ws-logo-dark-{{.ID}}" type="file" name="logo_dark_file" accept=".jpg,.jpeg,.png,.svg,.webp" class="ui-input admin-file-input">
                                     <input type="hidden" name="logo_dark_url" value="{{.LogoDarkURL}}">
                                 </div>
                             </div>
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                            <button class="cb-button cb-button-primary h-9 px-3 text-xs">Salvar Alterações</button>
-                            <button type="button" class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-danger)]/30 bg-[color-mix(in srgb,var(--cb-danger) 12%,transparent)] text-xs font-semibold text-[var(--cb-danger)] transition-all hover:bg-[color-mix(in srgb,var(--cb-danger) 18%,transparent)] active:scale-95" hx-delete="/workspaces/{{.ID}}" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="ATENÇÃO: Esta ação é irreversível! Deseja continuar?">
-                                Excluir Workspace
-                            </button>
+                        </fieldset>
+
+                        <div class="admin-form-actions">
+                            <button type="submit" class="ui-btn ui-btn--primary">Salvar alterações</button>
                         </div>
                     </form>
-                </article>
-                {{else}}
-                <div class="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-dashed border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)]/50">
-                    <div class="w-12 h-12 rounded-xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-3"><i data-lucide="building-2" class="w-5 h-5 text-[var(--cb-text-subtle)]"></i></div>
-                    <p class="text-sm text-[var(--cb-text-muted)]">Nenhum workspace cadastrado</p>
+
+                    <div class="admin-danger-zone">
+                        <div class="admin-danger-zone__copy">
+                            <p class="admin-danger-zone__title"><i data-lucide="triangle-alert" aria-hidden="true"></i>Zona de perigo</p>
+                            <p class="admin-danger-zone__text">Excluir um workspace é irreversível e interrompe o acesso de todos os membros. Os registros financeiros vinculados ao workspace são removidos em cascata.</p>
+                        </div>
+                        <button type="button" hx-delete="/workspaces/{{.ID}}" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="ATENÇÃO: Esta ação é irreversível! Deseja continuar?" class="ui-btn admin-danger-btn">Excluir workspace</button>
+                    </div>
                 </div>
-                {{end}}
+            </article>
+            {{else}}
+            <div class="ui-empty" role="status">
+                <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="building-2"></i></span>
+                <p class="ui-empty__title">Nenhum workspace cadastrado</p>
+                <p class="ui-empty__text">Use o formulário acima para criar o primeiro workspace da instância.</p>
             </div>
+            {{end}}
         </div>
     </div>
 </div>

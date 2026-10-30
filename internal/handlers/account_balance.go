@@ -141,7 +141,9 @@ func (h *ConfiguracoesHandler) renderAccountAdjustment(w http.ResponseWriter, r 
 		return
 	}
 	data.Balance = formatCurrencyLabel(balance)
-	data.BalanceInput = strings.ReplaceAll(centsToInput(balance), ".", ",")
+	// Pre-fill the exact string the money mask produces and this file's parser
+	// accepts, so an untouched submit keeps the sign and every centavo.
+	data.BalanceInput = data.Balance
 	rows, err := tx.QueryContext(r.Context(), `SELECT a.before_balance, a.after_balance, a.delta_cents, a.reason, u.name, a.created_at
 		FROM account_balance_adjustments a JOIN users u ON u.id = a.created_by
 		WHERE a.workspace_id = ? AND a.account_id = ? ORDER BY a.created_at DESC, a.expected_version DESC LIMIT 50`, h.WorkspaceID, accountID)

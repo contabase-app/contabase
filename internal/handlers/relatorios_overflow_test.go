@@ -67,7 +67,7 @@ func TestBuildRelatoriosPersonalExtremeError(t *testing.T) {
 	seedOverflowReportTransaction(t, db, "tx-ovf-p1", wsID, usrID, accID, "INCOME", math.MaxInt64, midMonth, "paid")
 	seedOverflowReportTransaction(t, db, "tx-ovf-p2", wsID, usrID, accID, "INCOME", math.MaxInt64, midMonth, "paid")
 
-	h := RelatoriosHandler{DB: db, WorkspaceID: wsID, UserID: usrID}
+	h := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: wsID, UserID: usrID}
 	data, err := h.buildRelatoriosDataWithModo("", "caixa", "movimentos", "previsao", int(now.Month()), now.Year())
 	if err == nil {
 		t.Fatalf("expected overflow error on personal extreme report, got totals receitas=%+v", data.TotalReceitas)
@@ -106,7 +106,7 @@ func TestBuildRelatoriosBusinessExtremeError(t *testing.T) {
 	seedOverflowReportTransaction(t, db, "tx-ovf-b1", wsID, usrID, accID, "INCOME", math.MaxInt64, midMonth, "paid")
 	seedOverflowReportTransaction(t, db, "tx-ovf-b2", wsID, usrID, accID, "INCOME", math.MaxInt64, midMonth, "paid")
 
-	h := RelatoriosHandler{DB: db, WorkspaceID: wsID, UserID: usrID}
+	h := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: wsID, UserID: usrID}
 
 	// Caminho 1: agregação SQL do tab de competência.
 	data, err := h.buildRelatoriosDataWithModo("", "competencia", "movimentos", "realizado", int(now.Month()), now.Year())
@@ -152,7 +152,7 @@ func TestBuildRelatoriosCurrentBalanceSumOverflow(t *testing.T) {
 	`, wsID, math.MaxInt64, now, now)
 
 	appNow := appTime(time.Now())
-	h := RelatoriosHandler{DB: db, WorkspaceID: wsID, UserID: usrID}
+	h := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: wsID, UserID: usrID}
 	data, err := h.buildRelatoriosData("", "caixa", "movimentos", int(appNow.Month()), appNow.Year())
 	if err == nil {
 		t.Fatalf("expected SQL sum overflow error, got saldo acumulado=%+v", data.SaldoAcumulado)

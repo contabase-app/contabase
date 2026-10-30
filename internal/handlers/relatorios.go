@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/big"
 	"math/bits"
 	"net/http"
 	"sort"
@@ -24,6 +25,17 @@ type RelatoriosHandler struct {
 	Templates   TemplateEngine
 	WorkspaceID string
 	UserID      string
+	// ActorRole revalida a permissão dentro do handler (defesa em
+	// profundidade). A rota continua sendo a primeira barreira.
+	ActorRole string
+}
+
+func (h *RelatoriosHandler) requireReportsPermission(w http.ResponseWriter) bool {
+	if models.HasPermission(&models.WorkspaceMember{Role: h.ActorRole}, models.PermissionReportsView) {
+		return true
+	}
+	http.Error(w, "forbidden", http.StatusForbidden)
+	return false
 }
 
 type RelatoriosData struct {
@@ -280,6 +292,9 @@ type CaixaMacroGroupAmount struct {
 }
 
 func (h *RelatoriosHandler) HandleExibirRelatorios(w http.ResponseWriter, r *http.Request) {
+	if !h.requireReportsPermission(w) {
+		return
+	}
 	mesStr := r.URL.Query().Get("mes")
 	anoStr := r.URL.Query().Get("ano")
 	tab := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("tab")))
@@ -326,6 +341,9 @@ func (h *RelatoriosHandler) HandleExibirRelatorios(w http.ResponseWriter, r *htt
 }
 
 func (h *RelatoriosHandler) HandleRelatoriosConceito(w http.ResponseWriter, r *http.Request) {
+	if !h.requireReportsPermission(w) {
+		return
+	}
 	t0 := time.Now()
 	reqID := perfReqID()
 	dbB := dbSnap(h.DB)
@@ -397,9 +415,18 @@ func (h *RelatoriosHandler) HandleRelatoriosConceito(w http.ResponseWriter, r *h
 }
 
 func (h *RelatoriosHandler) HandleExportarCSV(w http.ResponseWriter, r *http.Request) {
+	if !h.requireReportsPermission(w) {
+		return
+	}
 	tipo := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("tipo")))
 	if tipo == "" {
 		tipo = "dre"
+	}
+	switch tipo {
+	case "dre", "caixa", "extrato-movimentos", "extrato-diario", "pagar", "receber", "inadimplencia":
+	default:
+		http.Error(w, "tipo de exportação inválido", http.StatusBadRequest)
+		return
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.csv"`, tipo))
@@ -559,8 +586,6 @@ func (h *RelatoriosHandler) HandleExportarCSV(w http.ResponseWriter, r *http.Req
 				sanitizeCSVField(item.ContactName),
 			})
 		}
-	default:
-		http.Error(w, "tipo de exportação inválido", http.StatusBadRequest)
 	}
 }
 
@@ -619,7 +644,7 @@ type categoriaBreakdownRow struct {
 
 type categoriaBreakdownGroup struct {
 	parent      categoriaBreakdownRow
-	directTotal int64
+	directTotal reportExactAmount
 	children    []categoriaBreakdownRow
 }
 
@@ -630,7 +655,7 @@ type categoriaBreakdownEntry struct {
 	standalone categoriaBreakdownRow
 }
 
-func buildCategoriaBreakdown(rows []categoriaBreakdownRow, totalDespesas int64) []CategoriaBar {
+func buildCategoriaBreakdown(rows []categoriaBreakdownRow, totalDespesas int64) ([]CategoriaBar, error) {
 	groups := make(map[string]*categoriaBreakdownGroup)
 	standalone := make([]categoriaBreakdownRow, 0)
 
@@ -647,7 +672,7 @@ func buildCategoriaBreakdown(rows []categoriaBreakdownRow, totalDespesas int64) 
 				Icon:  row.Icon,
 				Color: row.Color,
 			})
-			group.directTotal += row.Total
+			group.directTotal.add(row.Total)
 			continue
 		}
 
@@ -673,9 +698,14 @@ func buildCategoriaBreakdown(rows []categoriaBreakdownRow, totalDespesas int64) 
 
 	entries := make([]categoriaBreakdownEntry, 0, len(groups)+len(standalone))
 	for _, group := range groups {
-		total := group.directTotal
+		var exactTotal reportExactAmount
+		exactTotal.addExact(&group.directTotal)
 		for _, child := range group.children {
-			total += child.Total
+			exactTotal.add(child.Total)
+		}
+		total, err := exactTotal.int64("category parent")
+		if err != nil {
+			return nil, err
 		}
 		if total == 0 {
 			continue
@@ -728,8 +758,12 @@ func buildCategoriaBreakdown(rows []categoriaBreakdownRow, totalDespesas int64) 
 		group := entry.group
 		out = append(out, categoriaBarFromRow(group.parent, entry.total, totalDespesas, false, "", "", true, false))
 
-		if group.directTotal > 0 {
-			out = append(out, categoriaBarFromRow(group.parent, group.directTotal, totalDespesas, true, group.parent.ID, group.parent.Name, false, true))
+		directTotal, err := group.directTotal.int64("category direct amount")
+		if err != nil {
+			return nil, err
+		}
+		if directTotal > 0 {
+			out = append(out, categoriaBarFromRow(group.parent, directTotal, totalDespesas, true, group.parent.ID, group.parent.Name, false, true))
 		}
 
 		sort.SliceStable(group.children, func(i, j int) bool {
@@ -743,7 +777,7 @@ func buildCategoriaBreakdown(rows []categoriaBreakdownRow, totalDespesas int64) 
 		}
 	}
 
-	return out
+	return out, nil
 }
 
 func ensureCategoriaBreakdownGroup(groups map[string]*categoriaBreakdownGroup, parent categoriaBreakdownRow) *categoriaBreakdownGroup {
@@ -783,28 +817,44 @@ func categoriaBarFromRow(row categoriaBreakdownRow, amount int64, totalDespesas 
 }
 
 func categoriaPercent(amount int64, totalDespesas int64) int {
-	if totalDespesas <= 0 || amount <= 0 {
+	return reportPercent(amount, totalDespesas)
+}
+
+func reportPercent(amount, total int64) int {
+	if total <= 0 || amount <= 0 {
 		return 0
 	}
-	return int((amount * 100) / totalDespesas)
+	var numerator big.Int
+	numerator.Mul(big.NewInt(amount), big.NewInt(100))
+	numerator.Div(&numerator, big.NewInt(total))
+	if !numerator.IsInt64() || numerator.Int64() > int64(math.MaxInt) {
+		return math.MaxInt
+	}
+	return int(numerator.Int64())
 }
 
 func percentLabel(amount, total int64) string {
 	if total <= 0 || amount <= 0 {
 		return "0%"
 	}
-	if amount*10000 < total {
+	var numerator big.Int
+	numerator.Mul(big.NewInt(amount), big.NewInt(10000))
+	if numerator.Cmp(big.NewInt(total)) < 0 {
 		return "<0,01%"
 	}
-	basisPoints := ((amount * 10000) + (total / 2)) / total
-	if basisPoints == 0 {
+	numerator.Add(&numerator, big.NewInt(total/2))
+	basisPoints := new(big.Int).Div(&numerator, big.NewInt(total))
+	if basisPoints.Sign() == 0 {
 		return "<0,01%"
 	}
-	if basisPoints < 1000 {
-		return fmt.Sprintf("%d,%02d%%", basisPoints/100, basisPoints%100)
+	if basisPoints.Cmp(big.NewInt(1000)) < 0 {
+		bp := basisPoints.Int64()
+		return fmt.Sprintf("%d,%02d%%", bp/100, bp%100)
 	}
-	roundedPercent := ((amount * 100) + (total / 2)) / total
-	return fmt.Sprintf("%d%%", roundedPercent)
+	numerator.Mul(big.NewInt(amount), big.NewInt(100))
+	numerator.Add(&numerator, big.NewInt(total/2))
+	numerator.Div(&numerator, big.NewInt(total))
+	return numerator.String() + "%"
 }
 
 func (h *RelatoriosHandler) buildRelatoriosData(reqID, tab, view string, mes, ano int) (RelatoriosData, error) {
@@ -876,17 +926,18 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 	period := NewReportPeriodFromMonth(ano, mes)
 	var totalReceitas, totalDespesas int64
 	if tab == "caixa" && modo == "realizado" {
-		if err := h.DB.QueryRowContext(ctx, `
-			SELECT COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
-			       COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END), 0)
-			FROM transactions t
+		var err error
+		totalReceitas, totalDespesas, err = queryReportIncomeExpense(ctx, h.DB, `
+			SELECT t.type, CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE t.amount END
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			WHERE t.workspace_id = ?
 			  AND t.status = 'paid'
 			  AND t.type IN ('INCOME', 'EXPENSE')
 			  AND a.type != 'CREDIT_CARD'
 			  AND COALESCE(NULLIF(t.paid_at, 0), t.date) >= ? AND COALESCE(NULLIF(t.paid_at, 0), t.date) <= ?
-		`, h.WorkspaceID, monthStart, monthEnd).Scan(&totalReceitas, &totalDespesas); err != nil {
+		`, h.WorkspaceID, monthStart, monthEnd)
+		if err != nil {
 			return data, fmt.Errorf("query totals caixa realizado: %w", err)
 		}
 	} else if tab == "caixa" {
@@ -904,13 +955,14 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 			return data, fmt.Errorf("sum caixa previsao expense: %w", err)
 		}
 	} else {
-		if err := h.DB.QueryRowContext(ctx, `
-			SELECT COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
-			       COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END), 0)
+		var err error
+		totalReceitas, totalDespesas, err = queryReportIncomeExpense(ctx, h.DB, `
+			SELECT t.type, CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE t.amount END
 				FROM transactions t
 				WHERE t.workspace_id = ? AND t.date >= ? AND t.date <= ?
 				  AND `+excludeInvoicePaymentCompetenceClause("t")+`
-			`, h.WorkspaceID, monthStart, monthEnd).Scan(&totalReceitas, &totalDespesas); err != nil {
+			`, h.WorkspaceID, monthStart, monthEnd)
+		if err != nil {
 			return data, fmt.Errorf("query totals: %w", err)
 		}
 	}
@@ -1039,8 +1091,8 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 	perfStep(reqID, "Relatorios", "cashFlowData", time.Since(tS))
 	tS = time.Now()
 
-	var totalBalance int64
-	if err := h.DB.QueryRowContext(ctx, `SELECT COALESCE(SUM(current_balance), 0) FROM accounts WHERE workspace_id = ? AND type != 'CREDIT_CARD' AND archived_at IS NULL`, h.WorkspaceID).Scan(&totalBalance); err != nil {
+	totalBalance, err := queryReportExactSum(ctx, h.DB, "account balance", `SELECT current_balance FROM accounts WHERE workspace_id = ? AND type != 'CREDIT_CARD' AND archived_at IS NULL`, h.WorkspaceID)
+	if err != nil {
 		return data, fmt.Errorf("query saldo acumulado: %w", err)
 	}
 	var saldoAcumulado int64
@@ -1067,15 +1119,13 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 			       COALESCE(p.name, ''),
 			       COALESCE(p.icon, ''),
 			       COALESCE(p.color, ''),
-			       SUM(`+transactionNetAmountTSQL+`) AS total
+			       `+transactionNetAmountTSQL+` AS total
 			FROM transactions t
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 			LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
 			WHERE t.workspace_id = ? AND t.type = 'EXPENSE'
 			  AND t.date >= ? AND t.date <= ?
 			  AND `+excludeInvoicePaymentCompetenceClause("t")+`
-			GROUP BY c.id
-			ORDER BY total DESC
 		`, h.WorkspaceID, monthStart, monthEnd)
 	if err != nil {
 		return data, fmt.Errorf("query categories: %w", err)
@@ -1083,28 +1133,46 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 	defer catRows.Close()
 
 	var rawBars []categoriaBreakdownRow
+	catIndexes := make(map[string]int)
+	catAmounts := make(map[string]*reportExactAmount)
 	for catRows.Next() {
 		var total int64
 		var catID, name, icon, color, parentID, parentName, parentIcon, parentColor string
 		if err := catRows.Scan(&catID, &name, &icon, &color, &parentID, &parentName, &parentIcon, &parentColor, &total); err != nil {
 			return data, fmt.Errorf("scan category breakdown row: %w", err)
 		}
-		rawBars = append(rawBars, categoriaBreakdownRow{
-			ID:          catID,
-			Name:        name,
-			Icon:        icon,
-			Color:       color,
-			ParentID:    parentID,
-			ParentName:  parentName,
-			ParentIcon:  parentIcon,
-			ParentColor: parentColor,
-			Total:       total,
-		})
+		if _, ok := catIndexes[catID]; !ok {
+			catIndexes[catID] = len(rawBars)
+			rawBars = append(rawBars, categoriaBreakdownRow{
+				ID:          catID,
+				Name:        name,
+				Icon:        icon,
+				Color:       color,
+				ParentID:    parentID,
+				ParentName:  parentName,
+				ParentIcon:  parentIcon,
+				ParentColor: parentColor,
+			})
+			catAmounts[catID] = &reportExactAmount{}
+		}
+		catAmounts[catID].add(total)
 	}
 	if err := catRows.Err(); err != nil {
 		return data, fmt.Errorf("scan categories: %w", err)
 	}
-	data.Categorias = buildCategoriaBreakdown(rawBars, totalDespesas)
+	if err := catRows.Close(); err != nil {
+		return data, fmt.Errorf("close categories: %w", err)
+	}
+	for i := range rawBars {
+		rawBars[i].Total, err = catAmounts[rawBars[i].ID].int64("expense category")
+		if err != nil {
+			return data, err
+		}
+	}
+	data.Categorias, err = buildCategoriaBreakdown(rawBars, totalDespesas)
+	if err != nil {
+		return data, err
+	}
 	perfStep(reqID, "Relatorios", "queryCategories", time.Since(tS))
 	tS = time.Now()
 
@@ -1140,8 +1208,8 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 		data.DonutEssentialTotal = MoneyMinor(essentialTotal)
 		data.DonutLifestyleTotal = MoneyMinor(lifestyleTotal)
 		if totalDespesas > 0 {
-			data.DonutEssentialPercent = int((essentialTotal * 100) / totalDespesas)
-			data.DonutLifestylePercent = int((lifestyleTotal * 100) / totalDespesas)
+			data.DonutEssentialPercent = reportPercent(essentialTotal, totalDespesas)
+			data.DonutLifestylePercent = reportPercent(lifestyleTotal, totalDespesas)
 		}
 		data.DonutEssentialPercentLabel = percentLabel(essentialTotal, totalDespesas)
 		data.DonutLifestylePercentLabel = percentLabel(lifestyleTotal, totalDespesas)
@@ -1153,8 +1221,8 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 		data.DonutCaixaEssentialTotal = MoneyMinor(essentialTotalCaixa)
 		data.DonutCaixaLifestyleTotal = MoneyMinor(lifestyleTotalCaixa)
 		if monthExpenseTotal > 0 {
-			data.DonutCaixaEssentialPercent = int((essentialTotalCaixa * 100) / monthExpenseTotal)
-			data.DonutCaixaLifestylePercent = int((lifestyleTotalCaixa * 100) / monthExpenseTotal)
+			data.DonutCaixaEssentialPercent = reportPercent(essentialTotalCaixa, monthExpenseTotal)
+			data.DonutCaixaLifestylePercent = reportPercent(lifestyleTotalCaixa, monthExpenseTotal)
 		}
 		data.DonutCaixaEssentialPercentLabel = percentLabel(essentialTotalCaixa, monthExpenseTotal)
 		data.DonutCaixaLifestylePercentLabel = percentLabel(lifestyleTotalCaixa, monthExpenseTotal)
@@ -1181,7 +1249,10 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 			if row.Vencimento != selectedVencimento {
 				continue
 			}
-			income, expense := caixaRowIncomeExpense(row)
+			income, expense, err := caixaRowIncomeExpense(row)
+			if err != nil {
+				return data, fmt.Errorf("monthly cash income/expense: %w", err)
+			}
 			result, err := subInt64Checked(income, expense)
 			if err != nil {
 				return data, fmt.Errorf("resultado mensal projetado: %w", err)
@@ -1220,7 +1291,10 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 		if row, ok := findDREMonthRow(dreRows, ano, mes); ok {
 			data.ContabilDREAtual = row
 			data.HasContabilDREAtual = true
-			operRow := filterDREOperational(row)
+			operRow, err := filterDREOperational(row)
+			if err != nil {
+				return data, fmt.Errorf("operational DRE: %w", err)
+			}
 			data.ContabilDREOperacional = operRow
 			data.HasContabilDREOperacional = true
 		}
@@ -1287,7 +1361,7 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 			return data, fmt.Errorf("build account closing balances: %w", err)
 		}
 		var saldos []AccountBalance
-		var saldoTotal int64
+		var saldoTotal reportExactAmount
 		for _, cb := range closingBalances {
 			saldos = append(saldos, AccountBalance{
 				Name:       cb.Name,
@@ -1298,13 +1372,17 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 				Icon:       cb.Icon,
 				IsArchived: cb.IsArchived,
 			})
-			saldoTotal += cb.Balance
+			saldoTotal.add(cb.Balance)
+		}
+		saldoTotalCents, err := saldoTotal.int64("account closing balance total")
+		if err != nil {
+			return data, err
 		}
 		data.ContabilSaldosContas = saldos
 		data.ContabilSaldoReferencia = time.Unix(monthEnd, 0).Format("02/01/2006")
-		data.ContabilSaldoTotal = MoneyMinor(saldoTotal)
-		data.ContabilSaldoTotalRaw = saldoTotal
-		data.ContabilSaldoTotalNegativo = saldoTotal < 0
+		data.ContabilSaldoTotal = MoneyMinor(saldoTotalCents)
+		data.ContabilSaldoTotalRaw = saldoTotalCents
+		data.ContabilSaldoTotalNegativo = saldoTotalCents < 0
 
 		missingRF, err := h.queryMissingReceitasFinanceirasCategory(ctx)
 		if err != nil {
@@ -1334,8 +1412,10 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 	tS = time.Now()
 
 	dailyMap := make(map[string]*DailySummaryRow)
+	type dailyAmounts struct{ income, expense reportExactAmount }
+	dailyExact := make(map[string]*dailyAmounts)
 	var dayOrder []string
-	var accumulated int64
+	var accumulated reportExactAmount
 	for _, r := range extratoRows {
 		if r.IsTransfer {
 			continue
@@ -1345,23 +1425,42 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 		if !ok {
 			ds = &DailySummaryRow{DateLabel: dl}
 			dailyMap[dl] = ds
+			dailyExact[dl] = &dailyAmounts{}
 			dayOrder = append(dayOrder, dl)
 		}
 		if r.Tipo == "INCOME" {
-			ds.RawIncome += r.AmountCents
+			dailyExact[dl].income.add(r.AmountCents)
 		} else if r.Tipo == "EXPENSE" {
-			ds.RawExpense += r.AmountCents
+			dailyExact[dl].expense.add(r.AmountCents)
 		}
 	}
 	for _, dl := range dayOrder {
 		ds := dailyMap[dl]
-		net := ds.RawIncome - ds.RawExpense
-		accumulated += net
+		ds.RawIncome, err = dailyExact[dl].income.int64("daily income")
+		if err != nil {
+			return data, err
+		}
+		ds.RawExpense, err = dailyExact[dl].expense.int64("daily expense")
+		if err != nil {
+			return data, err
+		}
+		var dailyNet reportExactAmount
+		dailyNet.addExact(&dailyExact[dl].income)
+		dailyNet.value.Sub(&dailyNet.value, &dailyExact[dl].expense.value)
+		net, err := dailyNet.int64("daily net")
+		if err != nil {
+			return data, err
+		}
+		accumulated.addExact(&dailyNet)
+		accumulatedCents, err := accumulated.int64("daily accumulated balance")
+		if err != nil {
+			return data, err
+		}
 		ds.IncomeTotal = MoneyMinor(ds.RawIncome)
 		ds.ExpenseTotal = MoneyMinor(ds.RawExpense)
 		ds.NetTotal = MoneyMinor(net)
-		ds.RawAccumulated = accumulated
-		ds.AccumulatedBalance = MoneyMinor(accumulated)
+		ds.RawAccumulated = accumulatedCents
+		ds.AccumulatedBalance = MoneyMinor(accumulatedCents)
 		ds.HasIncome = ds.RawIncome > 0
 		ds.HasExpense = ds.RawExpense > 0
 		ds.NetPositive = net > 0
@@ -1371,7 +1470,7 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 		} else {
 			ds.NetClass = "text-[var(--cb-success)]"
 		}
-		if accumulated < 0 {
+		if accumulatedCents < 0 {
 			ds.AccumulatedClass = "text-[var(--cb-danger)]"
 		} else {
 			ds.AccumulatedClass = ""
@@ -1397,7 +1496,7 @@ func (h *RelatoriosHandler) queryDRERows(ano int) ([]DRERow, error) {
 	}
 	groupOrder := make([]string, 0)
 	groupSeen := make(map[string]struct{})
-	rowsByCompetencia := make(map[string]map[string]int64)
+	rowsByCompetencia := make(map[string]map[string]*reportExactAmount)
 	competencias := make([]string, 0)
 	competenciaSeen := make(map[string]struct{})
 	for _, raw := range rawRows {
@@ -1411,29 +1510,43 @@ func (h *RelatoriosHandler) queryDRERows(ano int) ([]DRERow, error) {
 			groupOrder = append(groupOrder, raw.MacroGroup)
 		}
 		if _, ok := rowsByCompetencia[raw.Competencia]; !ok {
-			rowsByCompetencia[raw.Competencia] = make(map[string]int64)
+			rowsByCompetencia[raw.Competencia] = make(map[string]*reportExactAmount)
 		}
-		rowsByCompetencia[raw.Competencia][raw.MacroGroup] += raw.Amount
+		if rowsByCompetencia[raw.Competencia][raw.MacroGroup] == nil {
+			rowsByCompetencia[raw.Competencia][raw.MacroGroup] = &reportExactAmount{}
+		}
+		rowsByCompetencia[raw.Competencia][raw.MacroGroup].add(raw.Amount)
 	}
 	out := make([]DRERow, 0, len(competencias))
 	for _, competencia := range competencias {
 		groupAmounts := make([]DREMacroGroupAmount, 0, len(groupOrder))
-		var total int64
+		var total reportExactAmount
 		for _, macroGroup := range groupOrder {
-			value := rowsByCompetencia[competencia][macroGroup]
+			groupTotal := rowsByCompetencia[competencia][macroGroup]
+			var value int64
+			if groupTotal != nil {
+				value, err = groupTotal.int64("DRE macro group")
+				if err != nil {
+					return nil, err
+				}
+				total.addExact(groupTotal)
+			}
 			groupAmounts = append(groupAmounts, DREMacroGroupAmount{
 				MacroGroup: macroGroup,
 				Amount:     MoneyMinor(value),
 				RawAmount:  value,
 			})
-			total += value
+		}
+		totalCents, err := total.int64("DRE month")
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, DRERow{
 			Competencia:       competencia,
 			MacroGroups:       groupAmounts,
-			Resultado:         MoneyMinor(total),
-			RawResultado:      total,
-			ResultadoNegativo: total < 0,
+			Resultado:         MoneyMinor(totalCents),
+			RawResultado:      totalCents,
+			ResultadoNegativo: totalCents < 0,
 		})
 	}
 	return out, nil
@@ -1460,28 +1573,32 @@ func findDREMonthRow(rows []DRERow, ano, mes int) (DRERow, bool) {
 	return DRERow{}, false
 }
 
-func filterDREOperational(in DRERow) DRERow {
+func filterDREOperational(in DRERow) (DRERow, error) {
 	nonOperational := map[string]bool{
 		categorycontract.MacroRetiradasDistribuicao:    true,
 		categorycontract.MacroInvestimentosPatrimonial: true,
 		categorycontract.MacroInvestimentosOutros:      true,
 	}
 	var filtered []DREMacroGroupAmount
-	var operationalResult int64
+	var operationalResult reportExactAmount
 	for _, mg := range in.MacroGroups {
 		if nonOperational[mg.MacroGroup] {
 			continue
 		}
 		filtered = append(filtered, mg)
-		operationalResult += mg.RawAmount
+		operationalResult.add(mg.RawAmount)
+	}
+	result, err := operationalResult.int64("operational DRE")
+	if err != nil {
+		return DRERow{}, err
 	}
 	return DRERow{
 		Competencia:       in.Competencia,
 		MacroGroups:       filtered,
-		RawResultado:      operationalResult,
-		Resultado:         MoneyMinor(operationalResult),
-		ResultadoNegativo: operationalResult < 0,
-	}
+		RawResultado:      result,
+		Resultado:         MoneyMinor(result),
+		ResultadoNegativo: result < 0,
+	}, nil
 }
 
 func dreMacroValue(groups []DREMacroGroupAmount, macroGroup string) MoneyDisplay {
@@ -1496,11 +1613,11 @@ func dreMacroValue(groups []DREMacroGroupAmount, macroGroup string) MoneyDisplay
 func (h *RelatoriosHandler) queryDRERaw(ano int) ([]dreRawRow, error) {
 	start := time.Date(ano, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
 	end := time.Date(ano+1, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
-	rows, err := h.DB.Query(`
+	monthly, err := queryReportMonthlyAmounts(context.Background(), h.DB, `
 		SELECT
 			strftime('%Y-%m', datetime(t.date, 'unixepoch')) AS competencia,
 			COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro') AS macro_group,
-			COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE -t.amount END), 0) AS total
+			CASE WHEN t.type = 'INCOME' THEN t.amount ELSE -t.amount END AS total
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -1508,42 +1625,26 @@ func (h *RelatoriosHandler) queryDRERaw(ano int) ([]dreRawRow, error) {
 			  AND t.type IN ('INCOME', 'EXPENSE')
 			  AND t.date >= ? AND t.date < ?
 			  AND `+excludeInvoicePaymentCompetenceClause("t")+`
-		GROUP BY
-			strftime('%Y-%m', datetime(t.date, 'unixepoch')),
-			COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro')
-		ORDER BY
-			strftime('%Y-%m', datetime(t.date, 'unixepoch')) ASC,
-			COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro') ASC
 		`, h.WorkspaceID, start, end)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []dreRawRow
-	for rows.Next() {
-		var competencia string
-		var macroGroup string
-		var amount int64
-		if err := rows.Scan(&competencia, &macroGroup, &amount); err != nil {
-			return nil, err
-		}
+	out := make([]dreRawRow, 0, len(monthly))
+	for _, item := range monthly {
 		out = append(out, dreRawRow{
-			Competencia: competencia,
-			MacroGroup:  macroGroup,
-			Amount:      amount,
+			Competencia: item.month,
+			MacroGroup:  item.group,
+			Amount:      item.cents,
 		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	return out, nil
 }
 
 func (h *RelatoriosHandler) queryContabilReceitasByMacro(ctx context.Context, monthStart, monthEnd int64) ([]BusinessCostMacroRow, error) {
-	rows, err := h.DB.QueryContext(ctx, `
+	groups, err := queryReportGroupedAmounts(ctx, h.DB, "accounting revenue macro group", `
 		SELECT
 			COALESCE(NULLIF(c.macro_group, ''), NULLIF(p.macro_group, ''), 'Sem grupo macro') AS macro_group,
-			COALESCE(SUM(t.amount), 0) AS total
+			t.amount AS total
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -1551,30 +1652,22 @@ func (h *RelatoriosHandler) queryContabilReceitasByMacro(ctx context.Context, mo
 			AND t.type = 'INCOME'
 			AND t.date >= ? AND t.date <= ?
 			AND `+excludeInvoicePaymentCompetenceClause("t")+`
-		GROUP BY COALESCE(NULLIF(c.macro_group, ''), NULLIF(p.macro_group, ''), 'Sem grupo macro')
-		ORDER BY total DESC
 	`, h.WorkspaceID, monthStart, monthEnd)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
 	var rawRows []BusinessCostMacroRow
-	var totalRevenue int64
-	for rows.Next() {
-		var macroGroup string
-		var total int64
-		if err := rows.Scan(&macroGroup, &total); err != nil {
-			return nil, fmt.Errorf("scan contabil receitas: %w", err)
-		}
+	var revenueTotal reportExactAmount
+	for _, group := range groups {
 		rawRows = append(rawRows, BusinessCostMacroRow{
-			MacroGroup: macroGroup,
-			Amount:     MoneyMinor(total),
-			RawAmount:  total,
+			MacroGroup: group.name,
+			Amount:     MoneyMinor(group.cents),
+			RawAmount:  group.cents,
 		})
-		totalRevenue += total
+		revenueTotal.add(group.cents)
 	}
-	if err := rows.Err(); err != nil {
+	totalRevenue, err := revenueTotal.int64("accounting revenue total")
+	if err != nil {
 		return nil, err
 	}
 
@@ -1584,7 +1677,7 @@ func (h *RelatoriosHandler) queryContabilReceitasByMacro(ctx context.Context, mo
 		rawRows[i].Stroke = strokeColors[i%len(strokeColors)]
 		rawRows[i].DashOffset = nextOffset
 		if totalRevenue > 0 {
-			pct := int((rawRows[i].RawAmount * 100) / totalRevenue)
+			pct := reportPercent(rawRows[i].RawAmount, totalRevenue)
 			rawRows[i].Percent = pct
 			if pct < 1 {
 				rawRows[i].PercentLabel = "<1%"
@@ -1599,20 +1692,19 @@ func (h *RelatoriosHandler) queryContabilReceitasByMacro(ctx context.Context, mo
 
 func (h *RelatoriosHandler) queryMacroGroupTotals(ctx context.Context, monthStart, monthEnd int64) (int64, int64, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT COALESCE(c.macro_group, p.macro_group, 'Estilo de Vida'), COALESCE(SUM(`+transactionNetAmountTSQL+`), 0)
+		SELECT COALESCE(c.macro_group, p.macro_group, 'Estilo de Vida'), `+transactionNetAmountTSQL+`
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
 			WHERE t.workspace_id = ? AND t.type = 'EXPENSE' AND t.date >= ? AND t.date <= ?
 			  AND `+excludeInvoicePaymentCompetenceClause("t")+`
-			GROUP BY COALESCE(c.macro_group, p.macro_group, 'Estilo de Vida')
 		`, h.WorkspaceID, monthStart, monthEnd)
 	if err != nil {
 		return 0, 0, err
 	}
 	defer rows.Close()
 
-	var essential, lifestyle int64
+	var essential, lifestyle reportExactAmount
 	for rows.Next() {
 		var group string
 		var total int64
@@ -1620,12 +1712,20 @@ func (h *RelatoriosHandler) queryMacroGroupTotals(ctx context.Context, monthStar
 			return 0, 0, err
 		}
 		if canonicalMacroGroup(group) == "Essencial" {
-			essential += total
+			essential.add(total)
 		} else {
-			lifestyle += total
+			lifestyle.add(total)
 		}
 	}
-	return essential, lifestyle, rows.Err()
+	if err := rows.Err(); err != nil {
+		return 0, 0, err
+	}
+	essentialCents, err := essential.int64("essential expenses")
+	if err != nil {
+		return 0, 0, err
+	}
+	lifestyleCents, err := lifestyle.int64("lifestyle expenses")
+	return essentialCents, lifestyleCents, err
 }
 
 func canonicalMacroGroup(group string) string {
@@ -1644,10 +1744,10 @@ func canonicalMacroGroup(group string) string {
 }
 
 func (h *RelatoriosHandler) queryRevenueByCategory(ctx context.Context, monthStart, monthEnd int64) ([]RevenueCategorySlice, error) {
-	rows, err := h.DB.QueryContext(ctx, `
+	groups, err := queryReportGroupedAmounts(ctx, h.DB, "revenue category", `
 		SELECT
 			COALESCE(NULLIF(TRIM(COALESCE(c.name, p.name, '')), ''), 'Sem categoria') AS category_name,
-			COALESCE(SUM(t.amount), 0) AS total
+			t.amount AS total
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -1656,32 +1756,27 @@ func (h *RelatoriosHandler) queryRevenueByCategory(ctx context.Context, monthSta
 		  AND t.status = 'paid'
 		  AND t.date >= ? AND t.date <= ?
 		  AND `+excludeInvoicePaymentCompetenceClause("t")+`
-		GROUP BY category_name
-		ORDER BY total DESC
 	`, h.WorkspaceID, monthStart, monthEnd)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	type revenueRaw struct {
 		Name   string
 		Amount int64
 	}
 	raw := make([]revenueRaw, 0)
-	var totalRevenue int64
-	for rows.Next() {
-		var item revenueRaw
-		if err := rows.Scan(&item.Name, &item.Amount); err != nil {
-			return nil, err
-		}
+	var revenueTotal reportExactAmount
+	for _, group := range groups {
+		item := revenueRaw{Name: group.name, Amount: group.cents}
 		if item.Amount <= 0 {
 			continue
 		}
-		totalRevenue += item.Amount
+		revenueTotal.add(item.Amount)
 		raw = append(raw, item)
 	}
-	if err := rows.Err(); err != nil {
+	totalRevenue, err := revenueTotal.int64("revenue category total")
+	if err != nil {
 		return nil, err
 	}
 	if len(raw) == 0 || totalRevenue <= 0 {
@@ -1690,11 +1785,15 @@ func (h *RelatoriosHandler) queryRevenueByCategory(ctx context.Context, monthSta
 
 	const maxSlices = 6
 	if len(raw) > maxSlices {
-		var others int64
+		var others reportExactAmount
 		for _, item := range raw[maxSlices-1:] {
-			others += item.Amount
+			others.add(item.Amount)
 		}
-		raw = append(raw[:maxSlices-1], revenueRaw{Name: "Outras categorias", Amount: others})
+		otherCents, err := others.int64("other revenue categories")
+		if err != nil {
+			return nil, err
+		}
+		raw = append(raw[:maxSlices-1], revenueRaw{Name: "Outras categorias", Amount: otherCents})
 	}
 
 	colors := []string{
@@ -1708,7 +1807,7 @@ func (h *RelatoriosHandler) queryRevenueByCategory(ctx context.Context, monthSta
 	slices := make([]RevenueCategorySlice, 0, len(raw))
 	cumulative := 0
 	for idx, item := range raw {
-		percent := int((item.Amount * 100) / totalRevenue)
+		percent := reportPercent(item.Amount, totalRevenue)
 		if idx == len(raw)-1 {
 			percent = 100 - cumulative
 		}
@@ -1729,57 +1828,49 @@ func (h *RelatoriosHandler) queryRevenueByCategory(ctx context.Context, monthSta
 }
 
 func (h *RelatoriosHandler) queryTopClientsByRevenue(ctx context.Context, monthStart, monthEnd int64) ([]TopClientRevenue, error) {
-	var totalRevenue int64
-	if err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(amount), 0)
+	totalRevenue, err := queryReportExactSum(ctx, h.DB, "top clients revenue", `
+		SELECT amount
 		FROM transactions
 		WHERE workspace_id = ?
 		  AND type = 'INCOME'
 		  AND status = 'paid'
 		  AND date >= ? AND date <= ?
-	`, h.WorkspaceID, monthStart, monthEnd).Scan(&totalRevenue); err != nil {
+	`, h.WorkspaceID, monthStart, monthEnd)
+	if err != nil {
 		return nil, err
 	}
 	if totalRevenue <= 0 {
 		return nil, nil
 	}
 
-	rows, err := h.DB.QueryContext(ctx, `
+	groups, err := queryReportGroupedAmounts(ctx, h.DB, "top client revenue", `
 		SELECT
 			COALESCE(NULLIF(TRIM(c.name), ''), 'Sem contato') AS contact_name,
-			COALESCE(SUM(t.amount), 0) AS total
+			t.amount AS total
 		FROM transactions t
 		LEFT JOIN contacts c ON c.id = t.contact_id AND c.workspace_id = t.workspace_id
 		WHERE t.workspace_id = ?
 		  AND t.type = 'INCOME'
 		  AND t.status = 'paid'
 		  AND t.date >= ? AND t.date <= ?
-		GROUP BY contact_name
-		ORDER BY total DESC
-		LIMIT 5
 	`, h.WorkspaceID, monthStart, monthEnd)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	out := make([]TopClientRevenue, 0, 5)
 	highlights := []string{"emerald", "indigo", "violet", "amber", "sky"}
 	var topAmount int64
-	for rows.Next() {
-		var name string
-		var amount int64
-		if err := rows.Scan(&name, &amount); err != nil {
-			return nil, err
-		}
+	for _, group := range groups {
+		name, amount := group.name, group.cents
 		if amount <= 0 {
 			continue
 		}
 		if topAmount == 0 {
 			topAmount = amount
 		}
-		percent := int((amount * 100) / totalRevenue)
-		barWidth := int((amount * 100) / topAmount)
+		percent := reportPercent(amount, totalRevenue)
+		barWidth := reportPercent(amount, topAmount)
 		if barWidth < 8 {
 			barWidth = 8
 		}
@@ -1790,38 +1881,34 @@ func (h *RelatoriosHandler) queryTopClientsByRevenue(ctx context.Context, monthS
 			BarWidth:  barWidth,
 			Highlight: highlights[len(out)%len(highlights)],
 		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+		if len(out) == 5 {
+			break
+		}
 	}
 	return out, nil
 }
 
 func (h *RelatoriosHandler) queryUncategorizedExpenses(ctx context.Context, monthStart, monthEnd int64) (int64, error) {
-	var total int64
-	err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(`+transactionNetAmountTSQL+`), 0)
+	return queryReportExactSum(ctx, h.DB, "uncategorized expenses", `
+		SELECT `+transactionNetAmountTSQL+`
 		FROM transactions t
 		WHERE t.workspace_id = ? AND t.type = 'EXPENSE'
 			  AND t.date >= ? AND t.date <= ?
 			  AND (t.category_id IS NULL OR t.category_id = '')
 			  AND `+excludeInvoicePaymentCompetenceClause("t")+`
-		`, h.WorkspaceID, monthStart, monthEnd).Scan(&total)
-	return total, err
+		`, h.WorkspaceID, monthStart, monthEnd)
 }
 
 func (h *RelatoriosHandler) queryNetCashflow(ctx context.Context, monthStart, monthEnd int64) (int64, error) {
-	var income, expense int64
-	if err := h.DB.QueryRowContext(ctx, `
-		SELECT
-		  COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
-		  COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END), 0)
-		FROM transactions t
+	income, expense, err := queryReportIncomeExpense(ctx, h.DB, `
+		SELECT t.type, CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE t.amount END
+		FROM financial_transactions t
 		WHERE t.workspace_id = ? AND t.status = 'paid' AND t.date >= ? AND t.date <= ?
-	`, h.WorkspaceID, monthStart, monthEnd).Scan(&income, &expense); err != nil {
+	`, h.WorkspaceID, monthStart, monthEnd)
+	if err != nil {
 		return 0, err
 	}
-	return income - expense, nil
+	return subInt64Checked(income, expense)
 }
 
 func (h *RelatoriosHandler) queryBusinessCostsByMacro(ctx context.Context, mes, ano int) ([]BusinessCostMacroRow, error) {
@@ -1832,12 +1919,8 @@ func (h *RelatoriosHandler) queryBusinessCostsByMacro(ctx context.Context, mes, 
 
 	competencia := fmt.Sprintf("%04d-%02d", ano, mes)
 
-	type macroAcc struct {
-		total  int64
-		isCost bool
-	}
-	macroExpenses := make(map[string]*macroAcc)
-	var totalCost int64
+	macroExpenses := make(map[string]*reportExactAmount)
+	var totalCostExact reportExactAmount
 
 	for _, row := range dreRows {
 		if row.Competencia != competencia {
@@ -1846,31 +1929,39 @@ func (h *RelatoriosHandler) queryBusinessCostsByMacro(ctx context.Context, mes, 
 		if row.AmountCents >= 0 {
 			continue
 		}
-		cost := -row.AmountCents
+		var cost reportExactAmount
+		cost.sub(row.AmountCents)
 		mg := row.MacroGroup
-		if acc, ok := macroExpenses[mg]; ok {
-			acc.total += cost
-		} else {
-			macroExpenses[mg] = &macroAcc{total: cost, isCost: true}
+		if macroExpenses[mg] == nil {
+			macroExpenses[mg] = &reportExactAmount{}
 		}
-		totalCost += cost
+		macroExpenses[mg].addExact(&cost)
+		totalCostExact.addExact(&cost)
+	}
+	totalCost, err := totalCostExact.int64("business total cost")
+	if err != nil {
+		return nil, err
 	}
 
 	var out []BusinessCostMacroRow
 	for mg, acc := range macroExpenses {
-		if acc.total <= 0 {
+		total, err := acc.int64("business cost macro group")
+		if err != nil {
+			return nil, err
+		}
+		if total <= 0 {
 			continue
 		}
 		pct := 0
 		if totalCost > 0 {
-			pct = int((acc.total * 100) / totalCost)
+			pct = reportPercent(total, totalCost)
 		}
 		out = append(out, BusinessCostMacroRow{
 			MacroGroup:   mg,
-			Amount:       MoneyMinor(acc.total),
-			RawAmount:    acc.total,
+			Amount:       MoneyMinor(total),
+			RawAmount:    total,
 			Percent:      pct,
-			PercentLabel: percentLabel(acc.total, totalCost),
+			PercentLabel: percentLabel(total, totalCost),
 		})
 	}
 
@@ -1907,7 +1998,7 @@ func (h *RelatoriosHandler) queryCaixaRows(ano, mes int, modo string) ([]CaixaRo
 	}
 	groupOrder := make([]string, 0)
 	groupSeen := make(map[string]struct{})
-	rowsByVencimento := make(map[string]map[string]int64)
+	rowsByVencimento := make(map[string]map[string]*reportExactAmount)
 	vencimentos := make([]string, 0)
 	vencimentoSeen := make(map[string]struct{})
 	for _, raw := range rawRows {
@@ -1920,9 +2011,12 @@ func (h *RelatoriosHandler) queryCaixaRows(ano, mes int, modo string) ([]CaixaRo
 			groupOrder = append(groupOrder, raw.MacroGroup)
 		}
 		if _, ok := rowsByVencimento[raw.Vencimento]; !ok {
-			rowsByVencimento[raw.Vencimento] = make(map[string]int64)
+			rowsByVencimento[raw.Vencimento] = make(map[string]*reportExactAmount)
 		}
-		rowsByVencimento[raw.Vencimento][raw.MacroGroup] += raw.AmountCents
+		if rowsByVencimento[raw.Vencimento][raw.MacroGroup] == nil {
+			rowsByVencimento[raw.Vencimento][raw.MacroGroup] = &reportExactAmount{}
+		}
+		rowsByVencimento[raw.Vencimento][raw.MacroGroup].add(raw.AmountCents)
 	}
 	for _, vencimento := range caixaWindowMonths(ano, mes, modo) {
 		if _, ok := vencimentoSeen[vencimento]; ok {
@@ -1931,29 +2025,40 @@ func (h *RelatoriosHandler) queryCaixaRows(ano, mes int, modo string) ([]CaixaRo
 		vencimentoSeen[vencimento] = struct{}{}
 		vencimentos = append(vencimentos, vencimento)
 		if _, ok := rowsByVencimento[vencimento]; !ok {
-			rowsByVencimento[vencimento] = make(map[string]int64)
+			rowsByVencimento[vencimento] = make(map[string]*reportExactAmount)
 		}
 	}
 	sort.Strings(vencimentos)
 	out := make([]CaixaRow, 0, len(vencimentos))
 	for _, vencimento := range vencimentos {
 		groupAmounts := make([]CaixaMacroGroupAmount, 0, len(groupOrder))
-		var total int64
+		var total reportExactAmount
 		for _, macroGroup := range groupOrder {
-			value := rowsByVencimento[vencimento][macroGroup]
+			groupTotal := rowsByVencimento[vencimento][macroGroup]
+			var value int64
+			if groupTotal != nil {
+				value, err = groupTotal.int64("cash macro group")
+				if err != nil {
+					return nil, err
+				}
+				total.addExact(groupTotal)
+			}
 			groupAmounts = append(groupAmounts, CaixaMacroGroupAmount{
 				MacroGroup: macroGroup,
 				Amount:     MoneyMinor(value),
 				RawAmount:  value,
 			})
-			total += value
+		}
+		totalCents, err := total.int64("cash month")
+		if err != nil {
+			return nil, err
 		}
 		out = append(out, CaixaRow{
 			Vencimento:        vencimento,
 			MacroGroups:       groupAmounts,
-			Resultado:         MoneyMinor(total),
-			RawResultado:      total,
-			ResultadoNegativo: total < 0,
+			Resultado:         MoneyMinor(totalCents),
+			RawResultado:      totalCents,
+			ResultadoNegativo: totalCents < 0,
 		})
 	}
 	if modo == "previsao" {
@@ -1971,16 +2076,24 @@ func (h *RelatoriosHandler) queryCaixaRawRows(ano, mes int, modo string) ([]Caix
 	return BuildCaixaRealizadoData(h.DB, h.WorkspaceID, ano)
 }
 
-func caixaRowIncomeExpense(row CaixaRow) (int64, int64) {
-	var income, expense int64
+func caixaRowIncomeExpense(row CaixaRow) (int64, int64, error) {
+	var income, expense reportExactAmount
 	for _, item := range row.MacroGroups {
 		if item.RawAmount > 0 {
-			income += item.RawAmount
+			income.add(item.RawAmount)
 		} else if item.RawAmount < 0 {
-			expense += -item.RawAmount
+			expense.sub(item.RawAmount)
 		}
 	}
-	return income, expense
+	incomeCents, err := income.int64("cash month income")
+	if err != nil {
+		return 0, 0, err
+	}
+	expenseCents, err := expense.int64("cash month expense")
+	if err != nil {
+		return 0, 0, err
+	}
+	return incomeCents, expenseCents, nil
 }
 
 func (h *RelatoriosHandler) applyProjectedBalancesToCaixaRows(rows []CaixaRow) error {
@@ -2063,7 +2176,7 @@ func (h *RelatoriosHandler) queryRevenueByCategoryCaixa(ctx context.Context, mon
 		SELECT
 			COALESCE(NULLIF(TRIM(COALESCE(c.name, p.name, '')), ''), 'Sem categoria') AS category_name,
 			t.amount AS amount
-		FROM transactions t
+		FROM financial_transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -2081,7 +2194,7 @@ func (h *RelatoriosHandler) queryRevenueByCategoryCaixa(ctx context.Context, mon
 			SELECT
 				COALESCE(NULLIF(TRIM(COALESCE(c.name, p.name, '')), ''), 'Sem categoria') AS category_name,
 				t.amount AS amount
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 			LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -2094,37 +2207,27 @@ func (h *RelatoriosHandler) queryRevenueByCategoryCaixa(ctx context.Context, mon
 		`
 		args = append(args, h.WorkspaceID, monthStart, monthEnd)
 	}
-	rows, err := h.DB.QueryContext(ctx, `
-		SELECT
-			category_name,
-			COALESCE(SUM(amount), 0) AS total
-		FROM (`+sourceSQL+`)
-		GROUP BY category_name
-		ORDER BY total DESC
-	`, args...)
+	groups, err := queryReportGroupedAmounts(ctx, h.DB, "cash revenue category", sourceSQL, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	type revenueRaw struct {
 		Name   string
 		Amount int64
 	}
 	raw := make([]revenueRaw, 0)
-	var totalRevenue int64
-	for rows.Next() {
-		var item revenueRaw
-		if err := rows.Scan(&item.Name, &item.Amount); err != nil {
-			return nil, err
-		}
+	var revenueTotal reportExactAmount
+	for _, group := range groups {
+		item := revenueRaw{Name: group.name, Amount: group.cents}
 		if item.Amount <= 0 {
 			continue
 		}
-		totalRevenue += item.Amount
+		revenueTotal.add(item.Amount)
 		raw = append(raw, item)
 	}
-	if err := rows.Err(); err != nil {
+	totalRevenue, err := revenueTotal.int64("cash revenue total")
+	if err != nil {
 		return nil, err
 	}
 	if len(raw) == 0 || totalRevenue <= 0 {
@@ -2133,11 +2236,15 @@ func (h *RelatoriosHandler) queryRevenueByCategoryCaixa(ctx context.Context, mon
 
 	const maxSlices = 6
 	if len(raw) > maxSlices {
-		var others int64
+		var others reportExactAmount
 		for _, item := range raw[maxSlices-1:] {
-			others += item.Amount
+			others.add(item.Amount)
 		}
-		raw = append(raw[:maxSlices-1], revenueRaw{Name: "Outras categorias", Amount: others})
+		otherCents, err := others.int64("other cash revenue categories")
+		if err != nil {
+			return nil, err
+		}
+		raw = append(raw[:maxSlices-1], revenueRaw{Name: "Outras categorias", Amount: otherCents})
 	}
 
 	colors := []string{
@@ -2151,7 +2258,7 @@ func (h *RelatoriosHandler) queryRevenueByCategoryCaixa(ctx context.Context, mon
 	slices := make([]RevenueCategorySlice, 0, len(raw))
 	cumulative := 0
 	for idx, item := range raw {
-		percent := int((item.Amount * 100) / totalRevenue)
+		percent := reportPercent(item.Amount, totalRevenue)
 		if idx == len(raw)-1 {
 			percent = 100 - cumulative
 		}
@@ -2187,7 +2294,7 @@ func (h *RelatoriosHandler) queryBusinessCostsByMacroCaixa(ctx context.Context, 
 		}
 		pct := 0
 		if totalCost > 0 {
-			pct = int((total * 100) / totalCost)
+			pct = reportPercent(total, totalCost)
 		}
 		out = append(out, BusinessCostMacroRow{
 			MacroGroup:   mg,
@@ -2229,15 +2336,20 @@ func (h *RelatoriosHandler) queryMacroGroupTotalsCaixa(ctx context.Context, mont
 		return 0, 0, err
 	}
 
-	var essential, lifestyle int64
+	var essential, lifestyle reportExactAmount
 	for group, total := range macroTotals {
 		if canonicalMacroGroup(group) == "Essencial" {
-			essential += total
+			essential.add(total)
 		} else {
-			lifestyle += total
+			lifestyle.add(total)
 		}
 	}
-	return essential, lifestyle, nil
+	essentialCents, err := essential.int64("cash essential expenses")
+	if err != nil {
+		return 0, 0, err
+	}
+	lifestyleCents, err := lifestyle.int64("cash lifestyle expenses")
+	return essentialCents, lifestyleCents, err
 }
 
 func (h *RelatoriosHandler) queryExpenseCategoriesCaixa(ctx context.Context, monthStart, monthEnd int64, modo string) ([]CategoriaBar, error) {
@@ -2245,7 +2357,7 @@ func (h *RelatoriosHandler) queryExpenseCategoriesCaixa(ctx context.Context, mon
 	if err != nil {
 		return nil, err
 	}
-	return buildCategoriaBreakdown(catRows.rows, catRows.total), nil
+	return buildCategoriaBreakdown(catRows.rows, catRows.total)
 }
 
 type caixaExpenseCategoryRows struct {
@@ -2265,14 +2377,28 @@ func (h *RelatoriosHandler) queryCaixaExpenseCategoryRows(ctx context.Context, m
 		return caixaExpenseCategoryRows{}, err
 	}
 
-	totals := make(map[string]int64)
-	var totalDespesas int64
+	exactTotals := make(map[string]*reportExactAmount)
+	var expenses reportExactAmount
 	for _, row := range analysisRows {
 		if row.Amount <= 0 {
 			continue
 		}
-		totals[row.CategoryID] += row.Amount
-		totalDespesas += row.Amount
+		if exactTotals[row.CategoryID] == nil {
+			exactTotals[row.CategoryID] = &reportExactAmount{}
+		}
+		exactTotals[row.CategoryID].add(row.Amount)
+		expenses.add(row.Amount)
+	}
+	totals := make(map[string]int64, len(exactTotals))
+	for categoryID, amount := range exactTotals {
+		totals[categoryID], err = amount.int64("cash expense category")
+		if err != nil {
+			return caixaExpenseCategoryRows{}, err
+		}
+	}
+	totalDespesas, err := expenses.int64("cash expenses")
+	if err != nil {
+		return caixaExpenseCategoryRows{}, err
 	}
 	rawBars, err := h.categoriaBreakdownRowsForTotals(ctx, totals)
 	if err != nil {
@@ -2371,17 +2497,28 @@ func (h *RelatoriosHandler) queryCaixaExpenseMacroAnalysis(ctx context.Context, 
 		return nil, 0, err
 	}
 
-	out := make(map[string]int64)
-	var total int64
+	exactGroups := make(map[string]*reportExactAmount)
+	var exactTotal reportExactAmount
 	for _, row := range analysisRows {
 		if row.Amount <= 0 {
 			continue
 		}
 		macroGroup := canonicalMacroGroup(row.MacroGroup)
-		out[macroGroup] += row.Amount
-		total += row.Amount
+		if exactGroups[macroGroup] == nil {
+			exactGroups[macroGroup] = &reportExactAmount{}
+		}
+		exactGroups[macroGroup].add(row.Amount)
+		exactTotal.add(row.Amount)
 	}
-	return out, total, nil
+	out := make(map[string]int64, len(exactGroups))
+	for macroGroup, amount := range exactGroups {
+		out[macroGroup], err = amount.int64("cash expense macro group")
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+	total, err := exactTotal.int64("cash expense analysis total")
+	return out, total, err
 }
 
 func (h *RelatoriosHandler) queryCaixaExpenseAnalysisRows(ctx context.Context, monthStart, monthEnd int64, modo string) ([]caixaExpenseAnalysisRow, error) {
@@ -2392,7 +2529,7 @@ func (h *RelatoriosHandler) queryCaixaExpenseAnalysisRows(ctx context.Context, m
 			COALESCE(t.category_id, '') AS category_id,
 			COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro') AS macro_group,
 			t.amount
-		FROM transactions t
+		FROM financial_transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -2412,7 +2549,7 @@ func (h *RelatoriosHandler) queryCaixaExpenseAnalysisRows(ctx context.Context, m
 				COALESCE(t.category_id, '') AS category_id,
 				COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro') AS macro_group,
 				t.amount
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 			LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -2512,50 +2649,31 @@ func (h *RelatoriosHandler) queryInvoiceItemAllocations(ctx context.Context, sta
 
 func (h *RelatoriosHandler) queryInvoiceAllocationTargets(ctx context.Context, start, end int64, mode string) (map[string]int64, error) {
 	targets := make(map[string]int64)
-	var rows *sql.Rows
-	var err error
 	if mode == "paid" {
-		rows, err = h.DB.QueryContext(ctx, `
-			SELECT ip.invoice_id, COALESCE(SUM(ip.amount_cents), 0)
+		groups, err := queryReportGroupedAmounts(ctx, h.DB, "invoice payment allocation", `
+			SELECT ip.invoice_id, ip.amount_cents
 			FROM invoice_payments ip
 			WHERE ip.workspace_id = ?
 			  AND ip.paid_at >= ? AND ip.paid_at <= ?
-			GROUP BY ip.invoice_id
 		`, h.WorkspaceID, start, end)
-	} else {
-		rows, err = h.DB.QueryContext(ctx, `
-			SELECT
-				i.id,
-				COALESCE((
-					SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN `+transactionNetAmountTxSQL+` ELSE 0 END)
-					FROM transactions tx
-					WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
-				), 0) - `+invoiceGeneralRefundTotalIASQL+` -
-				`+invoiceEffectivePaidSQLExpr+` AS pending_amount
-			FROM invoices i
-			JOIN accounts a ON a.id = i.account_id
-			WHERE a.workspace_id = ?
-			  AND i.status IN ('OPEN', 'CLOSED')
-			  AND i.due_date >= ? AND i.due_date <= ?
-		`, h.WorkspaceID, start, end)
+		if err != nil {
+			return nil, err
+		}
+		for _, group := range groups {
+			if group.cents > 0 {
+				targets[group.name] = group.cents
+			}
+		}
+		return targets, nil
 	}
+	invoices, err := queryReportPendingInvoices(ctx, h.DB, h.WorkspaceID, start, end, true, false)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var invoiceID string
-		var amount int64
-		if err := rows.Scan(&invoiceID, &amount); err != nil {
-			return nil, err
+	for _, invoice := range invoices {
+		if invoice.pending > 0 {
+			targets[invoice.id] = invoice.pending
 		}
-		if amount > 0 {
-			targets[invoiceID] += amount
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	return targets, nil
 }
@@ -2654,7 +2772,7 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 				t.category_id AS category_id,
 				COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro') AS macro_group,
 				t.amount AS amount
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 			LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -2677,7 +2795,7 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 				t.category_id AS category_id,
 				COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro') AS macro_group,
 				t.amount AS amount
-			FROM transactions t
+			FROM financial_transactions t
 			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 			LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 			LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -2701,7 +2819,7 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 						a.workspace_id,
 						COALESCE((
 							SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN ` + transactionNetAmountTxSQL + ` ELSE 0 END)
-							FROM transactions tx
+							FROM financial_transactions tx
 							WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
 						), 0) - ` + invoiceGeneralRefundTotalIASQL + ` AS total_amount,
 						COALESCE(SUM(ip.amount_cents), 0) AS paid_amount
@@ -2713,7 +2831,7 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 					  AND ip.paid_at >= ? AND ip.paid_at <= ?
 					GROUP BY i.id, a.workspace_id
 				) invoice_totals
-				JOIN transactions t ON t.invoice_id = invoice_totals.id AND t.workspace_id = invoice_totals.workspace_id
+				JOIN financial_transactions t ON t.invoice_id = invoice_totals.id AND t.workspace_id = invoice_totals.workspace_id
 				LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 				LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
 				WHERE t.type = 'EXPENSE'
@@ -2732,7 +2850,7 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 						a.workspace_id,
 						COALESCE((
 							SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN ` + transactionNetAmountTxSQL + ` ELSE 0 END)
-							FROM transactions tx
+							FROM financial_transactions tx
 							WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
 						), 0) - ` + invoiceGeneralRefundTotalIASQL + ` AS total_amount,
 						COALESCE((
@@ -2744,7 +2862,7 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 						), 0) AS paid_amount,
 						COALESCE((
 							SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN ` + transactionNetAmountTxSQL + ` ELSE 0 END)
-							FROM transactions tx
+							FROM financial_transactions tx
 							WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
 						), 0) - ` + invoiceGeneralRefundTotalIASQL + ` -
 						COALESCE((
@@ -2760,7 +2878,7 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 					  AND i.status IN ('OPEN', 'CLOSED')
 					  AND i.due_date >= ? AND i.due_date <= ?
 				) invoice_totals
-				JOIN transactions t ON t.invoice_id = invoice_totals.id AND t.workspace_id = invoice_totals.workspace_id
+				JOIN financial_transactions t ON t.invoice_id = invoice_totals.id AND t.workspace_id = invoice_totals.workspace_id
 				LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 				LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
 				WHERE t.type = 'EXPENSE'
@@ -2773,7 +2891,7 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 			t.category_id AS category_id,
 			COALESCE(c.macro_group, p.macro_group, 'Sem grupo macro') AS macro_group,
 			t.amount AS amount
-		FROM transactions t
+		FROM financial_transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -2802,7 +2920,7 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 				a.workspace_id,
 				COALESCE((
 					SELECT SUM(CASE WHEN tx.type = 'EXPENSE' THEN ` + transactionNetAmountTxSQL + ` ELSE 0 END)
-					FROM transactions tx
+					FROM financial_transactions tx
 					WHERE tx.workspace_id = a.workspace_id AND tx.invoice_id = i.id
 				), 0) - ` + invoiceGeneralRefundTotalIASQL + ` AS total_amount,
 				COALESCE(SUM(ip.amount_cents), 0) AS paid_amount
@@ -2814,7 +2932,7 @@ func caixaExpenseAnalysisSourceSQL(modo string) string {
 			  AND ip.paid_at >= ? AND ip.paid_at <= ?
 			GROUP BY i.id, a.workspace_id
 		) invoice_totals
-		JOIN transactions t ON t.invoice_id = invoice_totals.id AND t.workspace_id = invoice_totals.workspace_id
+		JOIN financial_transactions t ON t.invoice_id = invoice_totals.id AND t.workspace_id = invoice_totals.workspace_id
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = t.workspace_id
 		WHERE t.type = 'EXPENSE'
@@ -2898,9 +3016,8 @@ func buildRelatoriosMonthOptionsAt(ano, mesAtual int, tab, view, modo string, no
 }
 
 func (h *RelatoriosHandler) queryProLaboreAmount(ctx context.Context, monthStart, monthEnd int64) (int64, error) {
-	var amount int64
-	err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(`+transactionNetAmountTSQL+`), 0)
+	return queryReportExactSum(ctx, h.DB, "pro labore", `
+		SELECT `+transactionNetAmountTSQL+`
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -2911,15 +3028,14 @@ func (h *RelatoriosHandler) queryProLaboreAmount(ctx context.Context, monthStart
 			AND (c.macro_group = ? OR p.macro_group = ?)
 	`, h.WorkspaceID, monthStart, monthEnd,
 		categorycontract.MacroRetiradasDistribuicao,
-		categorycontract.MacroRetiradasDistribuicao).Scan(&amount)
-	return amount, err
+		categorycontract.MacroRetiradasDistribuicao)
 }
 
 func (h *RelatoriosHandler) queryImpostosAmounts(ctx context.Context, monthStart, monthEnd int64) ([]ContabilImposto, error) {
-	rows, err := h.DB.QueryContext(ctx, `
+	groups, err := queryReportGroupedAmounts(ctx, h.DB, "accounting tax macro group", `
 		SELECT
 			COALESCE(NULLIF(c.macro_group, ''), NULLIF(p.macro_group, ''), ?) AS macro_group,
-			COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) AS total
+			`+transactionNetAmountTSQL+` AS total
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -2928,32 +3044,20 @@ func (h *RelatoriosHandler) queryImpostosAmounts(ctx context.Context, monthStart
 			AND t.date >= ? AND t.date <= ?
 			AND `+excludeInvoicePaymentCompetenceClause("t")+`
 			AND (c.macro_group = ? OR p.macro_group = ?)
-		GROUP BY COALESCE(NULLIF(c.macro_group, ''), NULLIF(p.macro_group, ''), ?)
-		ORDER BY total DESC
 	`, categorycontract.MacroDeducoesImpostos,
 		h.WorkspaceID, monthStart, monthEnd,
-		categorycontract.MacroDeducoesImpostos,
 		categorycontract.MacroDeducoesImpostos,
 		categorycontract.MacroDeducoesImpostos)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var out []ContabilImposto
-	for rows.Next() {
-		var macroGroup string
-		var total int64
-		if err := rows.Scan(&macroGroup, &total); err != nil {
-			return nil, fmt.Errorf("scan impostos: %w", err)
-		}
+	for _, group := range groups {
 		out = append(out, ContabilImposto{
-			MacroGroup: macroGroup,
-			Amount:     MoneyMinor(total),
-			RawAmount:  total,
+			MacroGroup: group.name,
+			Amount:     MoneyMinor(group.cents),
+			RawAmount:  group.cents,
 		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	if len(out) == 0 {
 		out = append(out, ContabilImposto{MacroGroup: categorycontract.MacroDeducoesImpostos, Amount: MoneyMinor(0), RawAmount: 0})
@@ -2962,10 +3066,10 @@ func (h *RelatoriosHandler) queryImpostosAmounts(ctx context.Context, monthStart
 }
 
 func (h *RelatoriosHandler) queryRendimentosFinanceiros(ctx context.Context, monthStart, monthEnd int64) ([]ContabilRendimentoFinanceiro, error) {
-	rows, err := h.DB.QueryContext(ctx, `
+	groups, err := queryReportGroupedAmounts(ctx, h.DB, "financial income category", `
 		SELECT
 			COALESCE(c.name, p.name, 'Receitas Financeiras') AS category_name,
-			COALESCE(SUM(t.amount), 0) AS total
+			t.amount AS total
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -2973,38 +3077,26 @@ func (h *RelatoriosHandler) queryRendimentosFinanceiros(ctx context.Context, mon
 			AND t.type = 'INCOME'
 			AND t.date >= ? AND t.date <= ?
 			AND (c.macro_group = ? OR p.macro_group = ?)
-		GROUP BY COALESCE(c.name, p.name, 'Receitas Financeiras')
-		ORDER BY total DESC
 	`, h.WorkspaceID, monthStart, monthEnd,
 		categorycontract.MacroReceitasFinanceiras,
 		categorycontract.MacroReceitasFinanceiras)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var out []ContabilRendimentoFinanceiro
-	for rows.Next() {
-		var catName string
-		var total int64
-		if err := rows.Scan(&catName, &total); err != nil {
-			return nil, fmt.Errorf("scan rendimentos: %w", err)
-		}
+	for _, group := range groups {
 		out = append(out, ContabilRendimentoFinanceiro{
-			CategoryName: catName,
-			Amount:       MoneyMinor(total),
-			RawAmount:    total,
+			CategoryName: group.name,
+			Amount:       MoneyMinor(group.cents),
+			RawAmount:    group.cents,
 		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	return out, nil
 }
 
 func (h *RelatoriosHandler) queryInvestimentosPatrimonialAmount(ctx context.Context, monthStart, monthEnd int64) (int64, error) {
-	var amount int64
-	err := h.DB.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(`+transactionNetAmountTSQL+`), 0)
+	return queryReportExactSum(ctx, h.DB, "patrimonial investment", `
+		SELECT `+transactionNetAmountTSQL+`
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
@@ -3015,8 +3107,7 @@ func (h *RelatoriosHandler) queryInvestimentosPatrimonialAmount(ctx context.Cont
 			AND (c.macro_group = ? OR p.macro_group = ?)
 	`, h.WorkspaceID, monthStart, monthEnd,
 		categorycontract.MacroInvestimentosPatrimonial,
-		categorycontract.MacroInvestimentosPatrimonial).Scan(&amount)
-	return amount, err
+		categorycontract.MacroInvestimentosPatrimonial)
 }
 
 func (h *RelatoriosHandler) queryInvestimentosOutrosLegacyExists(ctx context.Context, monthStart, monthEnd int64) (bool, error) {

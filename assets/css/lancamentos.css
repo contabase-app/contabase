@@ -7,53 +7,83 @@
     padding: 30px 0 12px;
 }
 
+/* Page header follows the Premium Fintech canonical composition
+   (ui-page-header/ui-eyebrow/ui-page-title/ui-page-description from
+   premium.css). This file only owns the page-specific action row. */
 .cb-v2-lancamentos-header {
+    flex-wrap: nowrap;
+}
+
+.lancamentos-header-copy {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.lancamentos-header-actions {
     display: flex;
-    align-items: end;
-    justify-content: space-between;
-    gap: 20px;
-    margin-bottom: 24px;
-}
-
-.cb-v2-lancamentos-header h1 {
-    margin: 3px 0 5px;
-    color: var(--v2-text);
-    font-size: clamp(25px, 2.25vw, 31px);
-    font-weight: 700;
-    letter-spacing: -0.04em;
-    line-height: 1.08;
-}
-
-.cb-v2-lancamentos-header > div > p:last-child {
-    margin: 0;
-    color: var(--v2-muted);
-    font-size: 13px;
-}
-
-.cb-v2-lancamentos-new {
-    display: inline-flex;
-    min-height: 40px;
+    flex: 0 0 auto;
     align-items: center;
-    gap: 7px;
-    padding: 0 13px;
-    border: 1px solid var(--v2-fab-border);
-    border-radius: 10px;
-    background: var(--v2-accent);
-    color: #fff;
-    font-size: 12px;
-    font-weight: 650;
-    transition: background-color 180ms ease, transform 180ms ease;
+    gap: 8px;
+    margin-left: auto;
 }
 
-.cb-v2-lancamentos-new:hover { background: var(--v2-fab-hover); transform: translateY(-1px); }
-.cb-v2-lancamentos-new svg { width: 16px; height: 16px; }
+.lancamentos-icon-btn {
+    width: var(--ui-control-height);
+    min-width: var(--ui-control-height);
+    padding: 0;
+}
+
+.lancamentos-icon-btn svg {
+    width: 17px;
+    height: 17px;
+}
+
+.lancamentos-toolbar {
+    align-items: stretch;
+    margin: 2px 0 16px;
+}
+
+.lancamentos-toolbar .ui-search {
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: none;
+}
+
+.lancamentos-filter-trigger {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.lancamentos-filter-indicator {
+    display: none;
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--ui-accent-strong);
+    box-shadow: 0 0 0 2px var(--ui-surface);
+}
+
+.lancamentos-filter-trigger.is-active .lancamentos-filter-indicator { display: block; }
 
 @media (max-width: 767px) {
     .cb-v2-lancamentos-content { padding-top: 20px; }
-    .cb-v2-lancamentos-header { margin-bottom: 18px; }
-    .cb-v2-lancamentos-header h1 { font-size: 23px; }
-    .cb-v2-lancamentos-header > div > p:last-child { font-size: 12px; }
-    .cb-v2-lancamentos-new { display: none; }
+    .cb-v2-lancamentos-header { align-items: flex-start; gap: 14px; }
+    .lancamentos-header-actions { gap: 6px; }
+    .lancamentos-new { display: none; }
+    .lancamentos-toolbar { margin-bottom: 14px; }
+}
+
+/* 320px keeps the filter affordance as a 44px icon button so the search
+   placeholder remains readable without shrinking the 16px anti-zoom font. */
+@media (max-width: 359px) {
+    .lancamentos-filter-label { display: none; }
+    .lancamentos-filter-trigger {
+        width: var(--ui-control-height);
+        padding: 0;
+    }
 }
 
 /* === SCROLLBAR HIDE === */
@@ -61,430 +91,1067 @@
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 
 /* === RESUMO DO FILTRO APLICADO ===
-   Uma superfície principal com cabeçalho compacto e as cinco métricas do
-   conjunto filtrado. Regra dura: valor monetário nunca recebe ellipsis, nunca
-   vaza do tile e nunca cria overflow horizontal na página. Para isso o valor
-   escala em duas dimensões — a largura real do tile (container query) e a faixa
-   de comprimento do próprio valor (`data-len`, calculado no handler).
-   O card é o container de layout: a grade decide quantas colunas cabem pela
-   largura REAL do card (que muda com a sidebar do shell), não pelo viewport. */
-.cb-resumo {
+   One Premium panel for the filtered summary. The panel is the only surface;
+   the five indicators are separated by hairlines instead of five nested cards.
+   Monetary values keep data-len (long-number safety) and data-sensitive
+   (global privacy state); no financial value is recalculated here. */
+.lancamentos-summary {
     margin-bottom: 16px;
-    padding: 14px;
-    border: 1px solid var(--cb-border-subtle);
-    border-radius: 16px;
-    background: var(--cb-surface-1);
-    /* Container NOMEADO: as regras de layout do resumo apontam para ele por nome,
-       porque o próprio tile também é container (para escalar a fonte) e uma
-       consulta anônima resolveria contra o tile em vez do card. */
-    container: cb-resumo-card / inline-size;
+    overflow: hidden;
+    container: lancamentos-summary / inline-size;
 }
 
-/* --- cabeçalho --- */
-.cb-resumo-head {
+.lancamentos-summary__head {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: 8px 16px;
-    padding-bottom: 12px;
-    margin-bottom: 12px;
-    border-bottom: 1px solid var(--cb-border-subtle);
+    gap: 18px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--ui-border);
 }
 
-.cb-resumo-head-copy {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex: 1 1 200px;
+.lancamentos-summary__identity {
+    flex: 1 1 auto;
     min-width: 0;
 }
 
-.cb-resumo-head-icon {
+.lancamentos-summary__copy { min-width: 0; }
+
+.lancamentos-summary__copy p { color: var(--ui-text-muted); }
+
+.lancamentos-summary__meta {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 30px;
-    height: 30px;
-    border-radius: 9px;
-    color: var(--v2-tone-progress);
-    background: color-mix(in srgb, var(--v2-tone-progress) 14%, transparent);
-}
-.cb-resumo-head-icon svg { width: 16px; height: 16px; }
-
-.cb-resumo-head-text { min-width: 0; }
-
-.cb-resumo-head-title {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    line-height: 1.2;
-    color: var(--cb-text-main);
-}
-
-.cb-resumo-head-subtitle {
-    margin: 1px 0 0;
-    font-size: 11.5px;
-    line-height: 1.3;
-    color: var(--cb-text-muted);
-}
-
-.cb-resumo-head-meta {
-    display: flex;
+    flex: 0 1 auto;
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 6px 14px;
-    flex: 0 1 auto;
+    gap: 10px 14px;
     min-width: 0;
-    margin-left: auto;
 }
 
-.cb-resumo-total-chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 9px;
-    border: 1px solid var(--cb-border-subtle);
-    border-radius: 999px;
-    background: var(--cb-surface-2);
-    color: var(--cb-text-muted);
-    font-size: 11px;
+.lancamentos-summary__total {
+    color: var(--ui-text-muted);
+    font-size: var(--ui-fs-sm);
     font-weight: 600;
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
 
-.cb-resumo-liquido {
+.lancamentos-summary__net {
     display: flex;
     align-items: baseline;
-    gap: 6px;
-    flex-shrink: 0;
+    gap: 7px;
     min-width: 0;
+    padding-left: 14px;
+    border-left: 1px solid var(--ui-border);
 }
 
-.cb-resumo-liquido-label {
-    font-size: 10.5px;
+.lancamentos-summary__net-label {
+    color: var(--ui-text-muted);
+    font-size: var(--ui-fs-sm);
     font-weight: 600;
-    line-height: 1.2;
-    color: var(--cb-text-muted);
     white-space: nowrap;
 }
 
-/* Resultado líquido é informação auxiliar: nunca compete com as cinco métricas. */
-.cb-resumo-liquido-value {
-    font-weight: 700;
+.lancamentos-summary__net-value {
+    color: var(--ui-success);
+    font-size: 18px;
+    font-weight: 680;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.015em;
+    letter-spacing: -.02em;
     line-height: 1.15;
     white-space: nowrap;
-    color: var(--v2-tone-ok);
-    font-size: clamp(12px, 3.4cqi, 15px);
 }
-.cb-resumo-liquido.is-negative .cb-resumo-liquido-value { color: var(--v2-tone-danger); }
-.cb-resumo-liquido-value[data-len="m"] { font-size: clamp(11px, 3cqi, 14px); }
-.cb-resumo-liquido-value[data-len="l"] { font-size: clamp(10px, 2.6cqi, 12px); }
-.cb-resumo-liquido-value[data-len="xl"] {
-    font-size: clamp(10px, 2.2cqi, 11px);
+
+.lancamentos-summary__net.is-negative .lancamentos-summary__net-value { color: var(--ui-danger); }
+.lancamentos-summary__net-value[data-len="m"] { font-size: 17px; }
+.lancamentos-summary__net-value[data-len="l"] { font-size: 15.5px; }
+.lancamentos-summary__net-value[data-len="xl"] {
+    font-size: 13px;
     white-space: normal;
     overflow-wrap: anywhere;
 }
 
-/* --- métricas --- */
-.cb-resumo-grid {
+.lancamentos-summary__metrics {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
-.cb-resumo-metric {
-    --cb-resumo-metric-tone: var(--v2-tone-neutral);
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: center;
-    column-gap: 8px;
-    row-gap: 1px;
+.lancamentos-summary__metric {
+    --summary-tone: var(--ui-text-muted);
+    --summary-value-size: 16.5px;
+    --summary-value-size-m: 15.5px;
+    --summary-value-size-l: 14px;
+    --summary-value-size-xl: 12px;
     min-width: 0;
-    padding: 10px 11px;
-    border: 1px solid var(--cb-border-subtle);
-    border-radius: 12px;
-    background: var(--cb-surface-2);
-    container-type: inline-size;
+    padding: 10px 14px;
+    border-top: 1px solid var(--ui-border);
+    border-left: 1px solid var(--ui-border);
 }
 
-.cb-resumo-metric-copy { display: contents; }
+.lancamentos-summary__metric.is-primary {
+    --summary-value-size: 18px;
+    --summary-value-size-m: 17px;
+    --summary-value-size-l: 15px;
+    --summary-value-size-xl: 12.5px;
+}
 
-.cb-resumo-tone-ok { --cb-resumo-metric-tone: var(--v2-tone-ok); }
-.cb-resumo-tone-danger { --cb-resumo-metric-tone: var(--v2-tone-danger); }
-.cb-resumo-tone-attention { --cb-resumo-metric-tone: var(--v2-tone-attention); }
-.cb-resumo-tone-progress { --cb-resumo-metric-tone: var(--v2-tone-progress); }
+.lancamentos-summary__metric.is-ok { --summary-tone: var(--ui-success); }
+.lancamentos-summary__metric.is-danger { --summary-tone: var(--ui-danger); }
+.lancamentos-summary__metric.is-attention { --summary-tone: var(--ui-warning); }
+.lancamentos-summary__metric.is-progress { --summary-tone: var(--ui-accent-strong); }
+.lancamentos-summary__metric.is-neutral { --summary-tone: var(--ui-text-muted); }
 
-.cb-resumo-metric-icon {
-    grid-area: 1 / 1;
+/* A zero count has no direction or alert to communicate; keeping semantic
+   color would imply a state that the bucket does not have. */
+.lancamentos-summary__metric.is-empty { --summary-tone: var(--ui-text-muted); }
+
+.lancamentos-summary__metric:nth-child(1),
+.lancamentos-summary__metric:nth-child(2) { border-top: 0; }
+
+.lancamentos-summary__metric:nth-child(odd) { border-left: 0; }
+
+.lancamentos-summary__metric:last-child {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-block: 10px;
+    border-left: 0;
+}
+
+.lancamentos-summary__metric:last-child .lancamentos-summary__metric-label { flex: 1 1 auto; }
+.lancamentos-summary__metric:last-child .lancamentos-summary__metric-value { margin-top: 0; }
+.lancamentos-summary__metric:last-child .lancamentos-summary__metric-count { margin-top: 0; margin-left: auto; }
+
+.lancamentos-summary__metric-label {
     display: flex;
     align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 22px;
-    height: 22px;
-    border-radius: 7px;
-    color: var(--cb-resumo-metric-tone);
-    background: color-mix(in srgb, var(--cb-resumo-metric-tone) 14%, transparent);
-}
-.cb-resumo-metric-icon svg { width: 13px; height: 13px; }
-
-.cb-resumo-metric-label {
-    grid-area: 1 / 2;
+    gap: 6px;
     min-width: 0;
+    color: var(--ui-text-muted);
     font-size: 11px;
     font-weight: 600;
     line-height: 1.25;
-    color: var(--cb-text-muted);
 }
 
-/* O valor ocupa a largura inteira do tile: é o que permite escalar a fonte pelo
-   tile sem depender do rótulo ou do ícone. */
-.cb-resumo-metric-value {
-    grid-area: 2 / 1 / 3 / -1;
+.lancamentos-summary__metric-label svg {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+    color: var(--summary-tone);
+}
+
+.lancamentos-summary__label-short { display: none; }
+
+.lancamentos-summary__metric-value {
     display: block;
     min-width: 0;
-    font-weight: 700;
+    margin-top: 3px;
+    color: var(--summary-tone);
+    font-size: var(--summary-value-size);
+    font-weight: 680;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.015em;
+    letter-spacing: -.02em;
     line-height: 1.15;
     white-space: nowrap;
-    color: var(--cb-resumo-metric-tone);
-    font-size: clamp(13px, 12cqi, 19px);
 }
-.cb-resumo-metric-value[data-len="m"] { font-size: clamp(12px, 10cqi, 18px); }
-/* O piso entra em ação só em tile muito estreito (metade de um card de 320px);
-   para valores de 17 a 20 caracteres ele cede até 10px em vez de estourar. */
-.cb-resumo-metric-value[data-len="l"] { font-size: clamp(10px, 7.6cqi, 15px); }
-/* Acima de ~20 caracteres nenhum tile sustentaria o valor em uma linha legível;
-   aqui o valor pode quebrar (reflow) em vez de estourar ou sumir atrás de
-   ellipsis. Só acontece com valores na casa dos quintilhões de reais. */
-.cb-resumo-metric-value[data-len="xl"] {
-    font-size: clamp(10px, 6.4cqi, 12px);
+
+.lancamentos-summary__metric-value[data-len="m"] { font-size: var(--summary-value-size-m); }
+.lancamentos-summary__metric-value[data-len="l"] { font-size: var(--summary-value-size-l); }
+.lancamentos-summary__metric-value[data-len="xl"] {
+    font-size: var(--summary-value-size-xl);
     white-space: normal;
     overflow-wrap: anywhere;
 }
 
-.cb-resumo-metric-count {
-    grid-area: 3 / 1 / 4 / -1;
-    font-size: 11px;
+.lancamentos-summary__metric-count {
+    display: block;
+    margin-top: 2px;
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
     font-weight: 500;
-    line-height: 1.25;
-    color: var(--cb-text-subtle);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
-/* Pendente/Vencido/Agendado usam fonte menor que Entradas/Saídas: a hierarquia
-   é informação, não decoração. */
-.cb-resumo-metric.is-secondary .cb-resumo-metric-value { font-size: clamp(12px, 10cqi, 16px); }
-.cb-resumo-metric.is-secondary .cb-resumo-metric-value[data-len="m"] { font-size: clamp(11px, 8.6cqi, 15px); }
-.cb-resumo-metric.is-secondary .cb-resumo-metric-value[data-len="l"] { font-size: clamp(10px, 6.6cqi, 13px); }
-.cb-resumo-metric.is-secondary .cb-resumo-metric-value[data-len="xl"] { font-size: clamp(10px, 5.6cqi, 12px); }
-
-/* Rótulo curto só existe em telas estreitas (regra dentro do container abaixo). */
-.cb-resumo-label-short { display: none; }
-
-/* Card estreito (mobile): o resumo tem UMA superfície principal com três blocos —
-   cabeçalho, dois mini-cards direcionais e UMA faixa de lifecycle. Antes eram
-   cinco cards independentes, o que criava "lista dentro da lista" e empurrava a
-   lista real para baixo da dobra. */
-@container cb-resumo-card (max-width: 559px) {
-    /* Cabeçalho em fluxo vertical ALINHADO À ESQUERDA: nada ancorado à direita.
-       O pill de itens e o resultado líquido deixam de flutuar no lado direito e
-       passam a pertencer ao mesmo fluxo do título; o líquido vira par
-       label+valor na mesma linha, que quebra junto quando não couber. */
-    .cb-resumo-head {
+@container lancamentos-summary (max-width: 559px) {
+    .lancamentos-summary__head {
         display: block;
-        gap: 0;
-        padding-bottom: 9px;
-        margin-bottom: 9px;
-    }
-    .cb-resumo-head-copy { gap: 8px; }
-    .cb-resumo-head-icon { width: 26px; height: 26px; border-radius: 8px; }
-    .cb-resumo-head-icon svg { width: 14px; height: 14px; }
-    .cb-resumo-head-meta {
-        justify-content: flex-start;
-        margin: 6px 0 0;
-        gap: 4px 6px;
-    }
-    .cb-resumo-liquido {
-        flex-direction: row;
-        align-items: baseline;
-        gap: 6px;
+        padding: 12px 14px 10px;
     }
 
-    /* mini-cards direcionais: mesmo desenho, padding enxuto */
-    .cb-resumo-metric.is-primary {
-        row-gap: 0;
-        padding: 8px 9px;
+    .lancamentos-summary__identity { align-items: flex-start; }
+
+    .lancamentos-summary__meta {
+        justify-content: space-between;
+        gap: 8px 10px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--ui-border);
     }
 
-    /* faixa única das três métricas de lifecycle */
-    .cb-resumo-lifecycle {
-        grid-column: 1 / -1;
-        border: 1px solid var(--cb-border-subtle);
-        border-radius: 12px;
-        background: var(--cb-surface-2);
-        overflow: hidden;
-    }
-    .cb-resumo-lifecycle-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-    /* A célula NÃO é um card: a superfície é a faixa e a separação é um divisor. */
-    .cb-resumo-lifecycle .cb-resumo-metric {
-        row-gap: 0;
-        padding: 8px 9px;
-        border: 0;
-        border-radius: 0;
-        border-left: 1px solid var(--cb-border-subtle);
-        background: none;
-    }
-    .cb-resumo-lifecycle .cb-resumo-metric:first-child { border-left: 0; }
-    /* ícone menor: a faixa é informação secundária e o ícone é o que define a
-       altura da primeira linha em cada célula */
-    .cb-resumo-lifecycle .cb-resumo-metric-icon { width: 18px; height: 18px; border-radius: 6px; }
-    .cb-resumo-lifecycle .cb-resumo-metric-icon svg { width: 11px; height: 11px; }
-    /* Em três células estreitas, valores de 16+ caracteres não cabem em uma linha
-       sem descer abaixo do piso legível de fonte. Eles quebram de forma
-       deliberada (na prática, entre "R$" e o número) em vez de estourar a célula
-       ou virar ellipsis. Valores curtos seguem em uma linha.
-       `anywhere` (e não `break-word`) é obrigatório: só ele reduz o min-content
-       do valor, impedindo que a grade esprema o rótulo da métrica até cortá-lo. */
-    .cb-resumo-lifecycle .cb-resumo-metric-value[data-len="l"],
-    .cb-resumo-lifecycle .cb-resumo-metric-value[data-len="xl"] {
-        white-space: normal;
-        overflow-wrap: anywhere;
-    }
-
-    /* "Entradas"/"Saídas" em vez de "Entradas confirmadas"/"Saídas confirmadas",
-       como na referência mobile: o rótulo completo quebraria em duas linhas. Só
-       vale para as métricas que TÊM rótulo curto — as demais mantêm o texto. */
-    .cb-resumo-metric-label.has-short-label .cb-resumo-label-full { display: none; }
-    .cb-resumo-metric-label.has-short-label .cb-resumo-label-short { display: inline; }
-}
-
-/* Card muito estreito: a faixa de três células não sustentaria valor monetário
-   grande em fonte legível (em 360px uma célula pediria ~9,3px para
-   R$ 123.456.789,01). As três métricas viram três linhas DENTRO da mesma
-   superfície, com o valor dividindo a linha — nunca três cards separados. */
-@media (max-width: 379px) {
-    .cb-resumo-lifecycle-grid { grid-template-columns: minmax(0, 1fr); }
-    /* Linha compacta em FLEX, não em grade: aqui rótulo, valor e contagem
-       disputam a mesma linha e a faixa `auto` de uma grade cede até cortar o
-       rótulo. Com flex, rótulo e contagem são rígidos e quem cede espaço é o
-       valor — que com `overflow-wrap: anywhere` quebra em vez de empurrar. */
-    .cb-resumo-lifecycle .cb-resumo-metric {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 5px 9px;
+    .lancamentos-summary__net {
+        margin-left: auto;
+        padding-left: 0;
         border-left: 0;
-        border-top: 1px solid var(--cb-border-subtle);
     }
-    .cb-resumo-lifecycle .cb-resumo-metric:first-child { border-top: 0; }
-    .cb-resumo-lifecycle .cb-resumo-metric-icon { flex: 0 0 auto; }
-    .cb-resumo-lifecycle .cb-resumo-metric-label { flex: 0 0 auto; }
-    .cb-resumo-lifecycle .cb-resumo-metric-value {
-        flex: 1 1 auto;
+
+    .lancamentos-summary__metric-label.has-short-label .lancamentos-summary__label-full { display: none; }
+    .lancamentos-summary__metric-label.has-short-label .lancamentos-summary__label-short { display: inline; }
+}
+
+@container lancamentos-summary (max-width: 359px) {
+    .lancamentos-summary__head { padding: 10px 14px 8px; }
+    .lancamentos-summary__meta { margin-top: 8px; padding-top: 8px; }
+    .lancamentos-summary__metric { padding: 9px 12px; }
+    .lancamentos-summary__metric:last-child { padding-block: 9px; }
+    .lancamentos-summary__total { font-size: 10.5px; }
+    .lancamentos-summary__net { gap: 4px; }
+    .lancamentos-summary__net-label { font-size: 10.5px; }
+    .lancamentos-summary__net-value { font-size: 15px; }
+    .lancamentos-summary__net-value[data-len="m"] { font-size: 14px; }
+    .lancamentos-summary__net-value[data-len="l"] { font-size: 13px; }
+    .lancamentos-summary__net-value[data-len="xl"] { font-size: 12px; }
+}
+
+@container lancamentos-summary (min-width: 560px) {
+    .lancamentos-summary__metrics {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+
+    .lancamentos-summary__metric {
+        --summary-value-size: 18px;
+        --summary-value-size-m: 17px;
+        --summary-value-size-l: 15px;
+        --summary-value-size-xl: 13px;
+        display: block;
+        grid-column: span 2;
+        padding: 12px 16px;
+        border-top: 1px solid var(--ui-border);
+        border-left: 1px solid var(--ui-border);
+    }
+
+    .lancamentos-summary__metric.is-primary {
+        --summary-value-size: 20px;
+        --summary-value-size-m: 19px;
+        --summary-value-size-l: 17px;
+        --summary-value-size-xl: 14px;
+        grid-column: span 3;
+    }
+
+    .lancamentos-summary__metric:nth-child(1) { border-top: 0; border-left: 0; }
+    .lancamentos-summary__metric:nth-child(2) { border-top: 0; border-left: 1px solid var(--ui-border); }
+    .lancamentos-summary__metric:nth-child(3) { border-left: 0; }
+    .lancamentos-summary__metric:nth-child(4),
+    .lancamentos-summary__metric:nth-child(5) { border-left: 1px solid var(--ui-border); }
+
+    .lancamentos-summary__metric:last-child {
+        grid-column: span 2;
+        display: block;
+        padding-block: 12px;
+    }
+
+    .lancamentos-summary__metric:last-child .lancamentos-summary__metric-label { flex: initial; }
+    .lancamentos-summary__metric:last-child .lancamentos-summary__metric-value { margin-top: 3px; }
+    .lancamentos-summary__metric:last-child .lancamentos-summary__metric-count { margin-top: 2px; margin-left: 0; }
+}
+
+@container lancamentos-summary (min-width: 940px) {
+    .lancamentos-summary__metrics {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .lancamentos-summary__metric,
+    .lancamentos-summary__metric.is-primary {
+        grid-column: auto;
+    }
+
+    .lancamentos-summary__metric {
+        padding: 14px 18px;
+        border-top: 0;
+        border-left: 1px solid var(--ui-border);
+    }
+
+    .lancamentos-summary__metric:first-child { border-left: 0; }
+    .lancamentos-summary__metric:nth-child(3) { border-left: 1px solid var(--ui-border); }
+    .lancamentos-summary__metric:last-child {
+        grid-column: auto;
+        display: block;
+        padding-block: 14px;
+        border-left: 1px solid var(--ui-border);
+    }
+}
+
+/* === TRANSACTION LIST / ROWS ===
+   One panel per filtered transaction set. Each date label is a quiet group
+   header; each transaction is a row with a status tile, editable main area,
+   right-aligned amount and desktop-only contextual actions. Swipe keeps its
+   original three-node contract (bg-left / content / bg-right). */
+.lancamentos-list-head {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+}
+
+.lancamentos-list-head__label {
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+.lancamentos-list-head__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px 10px;
+    margin-left: auto;
+}
+
+.lancamentos-bulk-toggle {
+    min-height: 36px;
+    padding-inline: 10px;
+    font-size: 11.5px;
+}
+
+.lancamentos-bulk-count {
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.lancamentos-list-head .bulk-mode-label {
+    align-items: center;
+    gap: 8px;
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.lancamentos-bulk-check {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    accent-color: var(--ui-accent-strong);
+    cursor: pointer;
+}
+
+.bulk-mode .lancamentos-list-head {
+    border-bottom-color: color-mix(in srgb, var(--ui-accent) 30%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-accent) 5%, var(--ui-surface));
+}
+
+.bulk-mode .lancamentos-list-head__label { display: none; }
+
+.lancamentos-day {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 18px 6px;
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: .06em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.lancamentos-day__label {
+    margin: 0;
+    font: inherit;
+    line-height: inherit;
+    white-space: nowrap;
+}
+
+.lancamentos-day__line {
+    flex: 1 1 auto;
+    height: 1px;
+    background: linear-gradient(90deg, var(--ui-border) 0%, transparent 100%);
+}
+
+/* The article owns the swipe geometry. The content is the visible row. */
+.tx-row {
+    position: relative;
+    overflow: hidden;
+    background: var(--ui-surface);
+}
+
+.ui-row--transaction {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--ui-border);
+    background: var(--ui-surface);
+    color: var(--ui-text);
+    transition: background-color var(--ui-transition);
+}
+
+.ui-row--transaction:hover { background: var(--ui-surface-raised); }
+
+.tx-row.overdue .ui-row--transaction {
+    background: color-mix(in srgb, var(--ui-danger) 4%, var(--ui-surface));
+}
+
+.tx-row.overdue .ui-row--transaction:hover {
+    background: color-mix(in srgb, var(--ui-danger) 7%, var(--ui-surface));
+}
+
+.ui-row--transaction:has(.lancamentos-row-check:checked) {
+    background: color-mix(in srgb, var(--ui-accent) 7%, var(--ui-surface));
+}
+
+#lancamentos-table-body .ui-row--transaction:last-child { border-bottom: 0; }
+
+.bulk-mode .ui-row--transaction { cursor: pointer; }
+
+[data-swipe-bg-left],
+[data-swipe-bg-right] {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    width: 7rem;
+    align-items: center;
+    padding: 0 1.5rem;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Legacy swipe default (invoice-row) stays exactly as shipped; the Premium
+   transaction background opts into the semantic token through is-delete. */
+[data-swipe-bg-left] { left: 0; transform-origin: left; justify-content: flex-start; background: #ef4444; }
+[data-swipe-bg-right] { right: 0; transform-origin: right; justify-content: flex-end; }
+
+.lancamentos-swipe-bg.is-delete,
+.lancamentos-swipe-bg.is-reverse { background: var(--ui-danger); }
+.lancamentos-swipe-bg.is-pay { background: var(--ui-success); }
+
+.swipe-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    color: var(--ui-action-fg);
+}
+
+.ui-row--transaction .lancamentos-row-check {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    accent-color: var(--ui-accent-strong);
+    cursor: pointer;
+}
+
+.ui-row--transaction .lancamentos-row-check:focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+
+.ui-row--transaction .ui-row__status { flex: 0 0 auto; }
+
+.tx-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.tx-status-warning {
+    background: color-mix(in srgb, var(--ui-warning) 14%, transparent);
+    color: var(--ui-warning);
+}
+
+.tx-status-danger {
+    background: color-mix(in srgb, var(--ui-danger) 14%, transparent);
+    color: var(--ui-danger);
+}
+
+.tx-status-scheduled {
+    background: color-mix(in srgb, var(--ui-accent) 15%, transparent);
+    color: var(--ui-accent-strong);
+}
+
+.tx-status-success {
+    background: color-mix(in srgb, var(--ui-success) 14%, transparent);
+    color: var(--ui-success);
+}
+
+.tx-edit-trigger {
+    flex: 1 1 auto;
+    min-height: 44px;
+    border-radius: 6px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.tx-edit-trigger:focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+
+.tx-edit-trigger:active { background: var(--ui-surface-hover); }
+
+.ui-row--transaction .ui-row__title {
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+.ui-row--transaction .ui-row__meta { color: var(--ui-text-muted); }
+
+.lancamentos-row-transfer {
+    display: inline-flex;
+    max-width: 100%;
+    min-width: 0;
+    align-items: center;
+    gap: 4px;
+}
+
+.lancamentos-row-transfer__account {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lancamentos-row-category {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 4px;
+}
+
+.lancamentos-row-category svg {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+}
+
+.lancamentos-row-category > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lancamentos-row-competence {
+    color: var(--ui-text-muted);
+    white-space: nowrap;
+}
+
+.ui-row--transaction .ui-row__note {
+    font-size: 11.5px;
+    font-weight: 550;
+}
+
+.ui-row--transaction .ui-row__note.is-paid { color: var(--ui-success); }
+.ui-row--transaction .ui-row__note.is-scheduled { color: var(--ui-accent-strong); }
+
+.lancamentos-row-badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+}
+
+.lancamentos-row-amount {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 3px;
+    min-width: 104px;
+}
+
+.lancamentos-row-amount .ui-row__amount { font-size: 14px; }
+.ui-row--transaction .ui-row__amount.is-transfer { color: var(--ui-info); }
+
+.lancamentos-row-date {
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.tx-desktop-actions {
+    display: none;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 2px;
+}
+
+@media (min-width: 768px) {
+    .tx-desktop-actions { display: flex; }
+}
+
+.tx-desktop-actions .ui-row__action { color: var(--ui-text-muted); }
+
+.lancamentos-action-danger:hover {
+    color: var(--ui-danger);
+    background: color-mix(in srgb, var(--ui-danger) 12%, transparent);
+}
+
+@media (max-width: 767px) {
+    .lancamentos-list-head { padding-block: 10px; }
+    .lancamentos-bulk-toggle { min-height: 44px; }
+    .lancamentos-day { padding: 12px 14px 6px; }
+    .ui-row--transaction { gap: 10px; padding: 10px 14px; }
+    .ui-row--transaction .ui-row__title {
+        display: -webkit-box;
+        overflow: hidden;
+        white-space: normal;
+        text-overflow: clip;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+    }
+    .lancamentos-row-amount { min-width: 100px; }
+    .lancamentos-row-date { font-size: 10.5px; }
+    .bulk-action-bar button { min-height: 44px; }
+    .bulk-action-bar button[data-bulk-delete-btn] { min-width: 44px; }
+}
+
+@media (max-width: 389px) {
+    /* At 320–360 the amount column would squeeze the description into a
+       truncated column. Use a two-line row: status + editable copy first, then
+       the amount/date on their own right-aligned line. */
+    .ui-row--transaction {
+        flex-wrap: wrap;
+        gap: 8px;
+        row-gap: 6px;
+        padding: 10px 12px;
+    }
+
+    .ui-row--transaction .tx-edit-trigger {
+        width: auto;
+        flex: 1 1 0;
         min-width: 0;
-        text-align: right;
     }
-    .cb-resumo-lifecycle .cb-resumo-metric-count {
-        flex: 0 0 auto;
-        white-space: nowrap;
+
+    .lancamentos-row-amount {
+        flex: 1 1 100%;
+        flex-direction: row;
+        justify-content: flex-end;
+        align-items: baseline;
+        gap: 8px;
+        min-width: 0;
     }
-    /* Na linha compacta o valor divide espaço com rótulo e contagem. */
-    .cb-resumo-lifecycle .cb-resumo-metric-value { font-size: clamp(11px, 5cqi, 14px); }
-    .cb-resumo-lifecycle .cb-resumo-metric-value[data-len="m"] { font-size: clamp(11px, 4.6cqi, 13px); }
-    .cb-resumo-lifecycle .cb-resumo-metric-value[data-len="l"] { font-size: clamp(10px, 4cqi, 13px); }
-    .cb-resumo-lifecycle .cb-resumo-metric-value[data-len="xl"] { font-size: clamp(10px, 3.4cqi, 12px); }
+
+    .lancamentos-row-amount .ui-row__amount { order: 2; }
+    .lancamentos-row-date { order: 1; }
 }
 
-/* Card médio: Entradas/Saídas em duas colunas e lifecycle em três, cada bloco
-   largo o bastante para valores grandes sem comprimir a fonte. A faixa de
-   lifecycle é agrupamento só de mobile: aqui no desktop os três tiles voltam a
-   ser itens diretos da grade, exatamente como antes. */
-@container cb-resumo-card (min-width: 560px) {
-    .cb-resumo-lifecycle,
-    .cb-resumo-lifecycle-grid { display: contents; }
-    .cb-resumo-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-    .cb-resumo-metric.is-primary { grid-column: span 3; }
-    .cb-resumo-metric.is-secondary { grid-column: span 2; }
+/* === CONSOLIDATED INVOICE SECTION ===
+   Invoices remain a distinct section above transactions. The panel and row
+   reuse the Premium row vocabulary, but keep the invoice-specific fields
+   (reference, due date, pending/total/paid and cycle status). */
+.lancamentos-invoices { margin-bottom: 16px; }
+
+.lancamentos-invoices-head { padding-block: 11px; }
+
+.lancamentos-invoices-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    color: var(--ui-text);
+    font-size: 12.5px;
+    font-weight: 630;
+    letter-spacing: -.01em;
+    line-height: 1.25;
 }
 
-/* Card largo: cinco métricas lado a lado. */
-@container cb-resumo-card (min-width: 940px) {
-    .cb-resumo-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-    .cb-resumo-metric.is-primary,
-    .cb-resumo-metric.is-secondary { grid-column: auto; }
+.lancamentos-invoices-title svg {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+    color: var(--ui-accent-strong);
 }
 
-/* === TRANSACTION ROW === */
-.tx-row:active { transform: none; }
+.lancamentos-invoices-list { display: flex; flex-direction: column; }
 
-[data-swipe-bg-left],[data-swipe-bg-right]{position:absolute;top:0;bottom:0;display:flex;width:7rem;align-items:center;opacity:0;pointer-events:none;padding:0 1.5rem}
-[data-swipe-bg-left]{left:0;transform-origin:left;justify-content:flex-start;border-radius:.75rem 0 0 .75rem;background:#ef4444}
-[data-swipe-bg-right]{right:0;transform-origin:right;justify-content:flex-end;border-radius:0 .75rem .75rem 0}
-.swipe-icon{width:1.25rem;height:1.25rem;color:#fff}
-.tx-content{position:relative;z-index:10;display:flex;align-items:center;gap:.625rem;border-radius:.75rem;border:1px solid var(--cb-border-subtle);background:var(--cb-surface-1);padding:.625rem .75rem;cursor:pointer}
-.tx-content:hover{background:var(--cb-surface-2)}
-.tx-edit-trigger{min-height:44px;border-radius:.5rem;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-.tx-edit-trigger:focus-visible{outline:2px solid var(--cb-border-focus);outline-offset:2px}
-.tx-edit-trigger:active{background:var(--cb-surface-2)}
-.tx-status{width:2rem;height:2rem;border-radius:.625rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.tx-status-warning,.tx-row.pending .tx-status{background:color-mix(in srgb, var(--cb-warning) 12%, transparent);color:color-mix(in srgb, var(--cb-warning) 80%, var(--cb-text-main))}
-.tx-status-danger,.tx-row.overdue .tx-status{background:color-mix(in srgb, var(--cb-danger) 12%, transparent);color:color-mix(in srgb, var(--cb-danger) 80%, var(--cb-text-main))}
-.tx-status-scheduled,.tx-row.scheduled .tx-status{background:color-mix(in srgb, var(--cb-accent) 14%, transparent);color:color-mix(in srgb, var(--cb-accent) 80%, var(--cb-text-main))}
-.tx-status-success,.tx-row:not(.overdue):not(.pending):not(.scheduled) .tx-status{background:color-mix(in srgb, var(--cb-success) 12%, transparent);color:color-mix(in srgb, var(--cb-success) 80%, var(--cb-text-main))}
-.tx-desktop-actions{display:none}
-@media(min-width:768px){.tx-desktop-actions{display:flex;align-items:center;gap:.25rem}}
-.tx-action-btn{display:flex;height:1.75rem;width:1.75rem;align-items:center;justify-content:center;border-radius:.5rem;color:var(--cb-text-muted);transition:all .15s}
-.tx-action-btn:hover{color:var(--cb-text-main);background:var(--cb-surface-3)}
-.tx-action-btn-danger:hover{color:var(--cb-danger);background:color-mix(in srgb, var(--cb-danger) 12%, transparent)}
-
-/* === INVOICE ROW === */
-.invoice-content{display:grid;grid-template-columns:2.25rem minmax(0,1fr) minmax(6rem,42%);align-items:center;gap:.75rem}
-.invoice-copy{overflow:hidden}
-.invoice-summary{min-width:0;max-width:100%;text-align:right;font-variant-numeric:tabular-nums}
-.invoice-summary-primary{max-width:100%;white-space:nowrap}
-.invoice-summary-detail{display:flex;max-width:100%;flex-wrap:wrap;justify-content:flex-end;gap:.125rem .375rem;line-height:1.2}
-.invoice-summary-detail>span{min-width:0;overflow-wrap:anywhere}
-
-.tx-row.overdue .tx-content button i {
-    animation: pulse-overdue-icon 2s infinite;
+.invoice-row {
+    position: relative;
+    overflow: hidden;
+    background: var(--ui-surface);
 }
 
-@keyframes pulse-overdue-icon {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+.ui-row--invoice-summary {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--ui-border);
+    background: var(--ui-surface);
+    color: var(--ui-text);
+    transition: background-color var(--ui-transition);
 }
 
-/* === SEARCH INPUT === */
-.search-input {
-    width: 100%;
-    height: 40px;
+.ui-row--invoice-summary:hover { background: var(--ui-surface-raised); }
+
+.lancamentos-invoices-list .invoice-row:last-child .ui-row--invoice-summary { border-bottom: 0; }
+
+.ui-row--invoice-summary .ui-avatar { flex: 0 0 auto; }
+
+.lancamentos-invoice-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    min-height: 17px;
+    padding: 1px 3px;
+    border-radius: 4px;
+    background: color-mix(in srgb, #000 55%, var(--ic, var(--ui-surface-raised)));
+    color: #fff;
+    font-size: 8px;
+    font-weight: 760;
+    letter-spacing: -.02em;
+    line-height: 1;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.lancamentos-invoice-mark.hidden { display: none; }
+
+.ui-row--invoice-summary .ui-row__main {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.ui-row--invoice-summary .ui-row__title {
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: normal;
+    text-overflow: clip;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.lancamentos-invoice-reference {
+    color: var(--ui-text-muted);
+    font-weight: 560;
+}
+
+.ui-row--invoice-summary .ui-row__meta { color: var(--ui-text-muted); }
+
+.lancamentos-invoice-detail {
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    line-height: 1.3;
+}
+
+.lancamentos-invoice-summary {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    min-width: 112px;
+}
+
+.ui-row--invoice-summary .ui-row__amount {
+    font-size: 14px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+.ui-row--invoice-summary .ui-row__amount.is-overdue { color: var(--ui-danger); }
+
+.lancamentos-invoice-badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+}
+
+@media (max-width: 359px) {
+    .lancamentos-invoices-head { padding-block: 10px; }
+
+    /* At 320 the amount column would leave very little room for the card name.
+       Put the summary on its own right-aligned line for every invoice. */
+    .ui-row--invoice-summary {
+        flex-wrap: wrap;
+        gap: 8px;
+        row-gap: 6px;
+        padding: 12px 14px;
+    }
+
+    .ui-row--invoice-summary .ui-row__main {
+        flex: 1 1 0;
+    }
+
+    .ui-row--invoice-summary.is-long-name .ui-row__title {
+        -webkit-line-clamp: 3;
+    }
+
+    .ui-row--invoice-summary .lancamentos-invoice-summary {
+        flex: 1 1 100%;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        min-width: 0;
+    }
+}
+
+@media (min-width: 360px) and (max-width: 430px) {
+    .lancamentos-invoices-head { padding-block: 10px; }
+
+    .ui-row--invoice-summary { padding: 12px 14px; }
+
+    /* Only a genuinely long card name gets the extra summary line; ordinary
+       invoices keep the amount and status beside the name. */
+    .ui-row--invoice-summary.is-long-name {
+        flex-wrap: wrap;
+        gap: 8px;
+        row-gap: 6px;
+    }
+
+    .ui-row--invoice-summary.is-long-name .ui-row__main {
+        flex: 1 1 0;
+    }
+
+    .ui-row--invoice-summary.is-long-name .lancamentos-invoice-summary {
+        flex: 1 1 100%;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        min-width: 0;
+    }
+}
+
+/* === EMPTY STATES ===
+   Reuse ui-empty; only reduce padding for the listing area so the empty
+   state does not become another large card. */
+.lancamentos-empty {
+    max-width: 100%;
+    padding: 28px 18px;
+}
+
+.lancamentos-empty--compact { padding: 22px 18px; }
+
+.lancamentos-empty--compact .ui-empty__icon {
+    width: 36px;
+    height: 36px;
     border-radius: 12px;
-    border: 1px solid var(--cb-border-subtle);
-    background: var(--cb-surface-1);
-    padding: 0 14px 0 38px;
-    font-size: 13px;
-    color: var(--cb-text-main);
-    transition: border-color 0.2s ease;
 }
 
-.search-input:focus {
-    outline: none;
-    border-color: var(--cb-border-focus);
+.lancamentos-empty__action { margin-top: 2px; }
+
+@media (max-width: 430px) {
+    .lancamentos-empty { padding: 24px 16px; }
+    .lancamentos-empty--compact { padding: 20px 16px; }
 }
 
-.search-input::placeholder { color: var(--cb-text-muted); }
+@media (max-width: 767px) {
+    .lancamentos-filter-trigger {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    #lancamentosFilterPanel [data-filter-chip] {
+        min-height: 40px;
+        padding-block: .5rem;
+    }
+
+    #lancamentosFilterPanel summary,
+    #lancamentosFilterPanel .lancamentos-category-item,
+    #lancamentosFilterPanel .lancamentos-filter-reset,
+    #lancamentosFilterPanel .lancamentos-filter-apply,
+    #lancamentosFilterPanel .lancamentos-panel-close {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    #clearFiltersBtn { min-height: 28px; }
+    .lancamentos-empty__action { min-height: 44px; }
+}
+
+/* === INVOICE ROW ===
+   Legacy pre-F5 invoice row styles (content/copy/summary family) were removed
+   with the ui-row--invoice-summary contract in F8. */
+
+/* === SEARCH / TOOLBAR ===
+   The field itself is the canonical ui-input/ui-input--search from premium.css
+   (42px desktop, 44px and 16px font on mobile). These rules only keep the
+   search flexible inside the page toolbar. */
+.lancamentos-toolbar .ui-input--search {
+    min-width: 0;
+}
+
+/* === FILTER PANEL ===
+   Structure and contracts stay in the template; this pass only aligns the
+   existing controls to the Premium tokens (radius, height, type, focus). */
+#lancamentosFilterPanel .filter-panel {
+    border-color: var(--ui-border);
+    border-radius: var(--ui-radius-panel);
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-panel);
+}
+
+#lancamentosFilterPanel .filter-panel > div:first-child {
+    border-bottom-color: var(--ui-border);
+    background: var(--ui-surface);
+}
+
+#lancamentosFilterPanel .filter-panel > div:last-child {
+    border-top-color: var(--ui-border);
+    background: var(--ui-surface);
+}
+
+.lancamentos-panel-close {
+    width: var(--ui-control-height);
+    min-width: var(--ui-control-height);
+    padding: 0;
+}
+
+#lancamentosFilterPanel details {
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-card);
+    background: var(--ui-surface);
+}
+
+#lancamentosFilterPanel summary {
+    color: var(--ui-text);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+#lancamentosFilterPanel [data-filter-chip] {
+    --chip-tone: var(--ui-accent);
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-pill);
+    background: var(--ui-surface-raised);
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color var(--ui-transition), background-color var(--ui-transition), color var(--ui-transition);
+}
+
+#lancamentosFilterPanel [data-filter-chip]:hover {
+    border-color: var(--ui-border-strong);
+    color: var(--ui-text);
+}
+
+#lancamentosFilterPanel [data-filter-chip]:focus-within {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+
+#lancamentosFilterPanel [data-filter-chip]:has(input:checked) {
+    border-color: color-mix(in srgb, var(--chip-tone) 55%, transparent);
+    background: color-mix(in srgb, var(--chip-tone) 10%, var(--ui-surface));
+    color: var(--chip-tone);
+}
+
+#lancamentosFilterPanel [data-filter-chip]:has(input[name="situacao"][value="pendente"]:checked) { --chip-tone: var(--ui-warning); }
+#lancamentosFilterPanel [data-filter-chip]:has(input[name="situacao"][value="vencido"]:checked) { --chip-tone: var(--ui-danger); }
+#lancamentosFilterPanel [data-filter-chip]:has(input[name="situacao"][value="agendado"]:checked) { --chip-tone: var(--ui-accent-strong); }
+#lancamentosFilterPanel [data-filter-chip]:has(input[name="situacao"][value="pago"]:checked) { --chip-tone: var(--ui-success); }
+#lancamentosFilterPanel [data-filter-chip]:has(input[name="tipo"][value="receita"]:checked) { --chip-tone: var(--ui-success); }
+#lancamentosFilterPanel [data-filter-chip]:has(input[name="tipo"][value="despesa"]:checked) { --chip-tone: var(--ui-danger); }
+#lancamentosFilterPanel [data-filter-chip]:has(input[name="tipo"][value="transferencia"]:checked) { --chip-tone: var(--ui-info); }
+
+#lancamentosFilterPanel label:has(> input[name="ordem"]) {
+    min-height: 42px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-control);
+    background: var(--ui-surface-raised);
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+#lancamentosFilterPanel label:has(> input[name="ordem"]):hover {
+    border-color: var(--ui-border-strong);
+    color: var(--ui-text);
+}
+
+#lancamentosFilterPanel label:has(> input[name="ordem"]):focus-within {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+
+#lancamentosFilterPanel label:has(> input[name="ordem"]:checked) {
+    border-color: color-mix(in srgb, var(--ui-accent) 55%, transparent);
+    background: color-mix(in srgb, var(--ui-accent) 10%, var(--ui-surface));
+    color: var(--ui-accent-strong);
+}
+
+.lancamentos-filter-reset,
+.lancamentos-filter-apply {
+    width: 100%;
+}
+
+.lancamentos-filter-reset {
+    border-color: color-mix(in srgb, var(--ui-danger) 30%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-danger) 7%, var(--ui-surface));
+    color: var(--ui-danger);
+}
+
+.lancamentos-filter-reset:hover {
+    border-color: color-mix(in srgb, var(--ui-danger) 45%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-danger) 11%, var(--ui-surface));
+}
+
+@media (pointer: coarse) {
+    #lancamentosFilterPanel [data-filter-chip] { min-height: 42px; }
+    #lancamentosFilterPanel label:has(> input[name="ordem"]) { min-height: var(--ui-control-height); }
+}
+
+/* === PRIVACY ===
+   Reuses the global privacy state (sessionStorage contabasePrivacy + body
+   .privacy-enabled owned by privacy.js). Only Lançamentos is masked here;
+   the value keeps its box, so the layout does not jump. */
+.privacy-enabled .cb-v2-transactions-main [data-sensitive] {
+    visibility: hidden;
+    user-select: none;
+}
+
+.privacy-enabled .cb-v2-transactions-main :is(strong, span, p, small, div, dd)[data-sensitive] {
+    position: relative;
+}
+
+.privacy-enabled .cb-v2-transactions-main :is(strong, span, p, small, div, dd)[data-sensitive]::after {
+    content: "••••";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    visibility: visible;
+    color: var(--ui-text-muted);
+    font-variant-numeric: normal;
+    letter-spacing: .12em;
+}
+
+.privacy-enabled .cb-v2-transactions-main .ui-row__amount[data-sensitive]::after {
+    justify-content: flex-end;
+}
 
 /* === OVERLAY PANEL === */
 .filter-panel {
@@ -538,30 +1205,17 @@
     to { transform: translateY(0); opacity: 1; }
 }
 
-/* === BOTTOM SHEET ANIMATION === */
-@keyframes sheetIn {
-    from { opacity: 0; transform: translateY(32px) scale(0.97); }
-    to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-.sheet-in { animation: sheetIn 320ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-
 /* === RESPONSIVE === */
-@media (max-width: 640px) {
-    .tx-content { padding: 8px 10px; gap: .5rem; }
-    .invoice-content { padding: .625rem .75rem; }
-    .invoice-summary-detail { flex-direction: column; align-items: flex-end; gap: 0; }
-}
+/* The pre-F7 sheet animation override (sheetIn 320ms) was removed in F8:
+   every sheet consumer loads sheet-form.css, which owns the canonical
+   220ms sheetIn keyframes. */
 
-@media (pointer: coarse) {
-    .tx-status { width: 2.75rem; height: 2.75rem; }
-}
-
-/* === LINE CLAMP FALLBACK (Tailwind utility depends on build) === */
-.line-clamp-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+/* Keep the mobile filter chip target above the later F2 base rule. */
+@media (max-width: 767px) {
+    #lancamentosFilterPanel [data-filter-chip] {
+        min-height: 44px;
+        padding-block: .5rem;
+    }
 }
 
 /* === BULK SELECTION VISIBILITY (CSP-compliant, class-based) === */

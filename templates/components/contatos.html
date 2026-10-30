@@ -1,101 +1,173 @@
 {{define "contato-form-fields"}}
-<div class="cb-contact-form-grid">
-    <label>
-        <span class="cb-label">Tipo</span>
-        <select name="type" class="cb-input">
+<div class="contatos-sheet__grid">
+    <label class="contatos-sheet__field">
+        <span class="ui-label">Tipo</span>
+        <select name="type" class="ui-select">
             <option value="client" {{if eq .Type "client"}}selected{{end}}>Cliente</option>
             <option value="vendor" {{if eq .Type "vendor"}}selected{{end}}>Fornecedor</option>
         </select>
     </label>
-    <label>
-        <span class="cb-label">ID do Cliente</span>
-        <input type="text" name="custom_client_id" value="{{.CustomClientID}}"{{if .CustomClientIDPlaceholder}} placeholder="{{.CustomClientIDPlaceholder}}"{{end}} class="cb-input uppercase">
+    <label class="contatos-sheet__field">
+        <span class="ui-label">ID do Cliente</span>
+        <input type="text" name="custom_client_id" value="{{.CustomClientID}}"{{if .CustomClientIDPlaceholder}} placeholder="{{.CustomClientIDPlaceholder}}"{{end}} class="ui-input uppercase" autocomplete="off">
     </label>
 </div>
-<div class="cb-contact-form-grid">
-    <label>
-        <span class="cb-label">CPF/CNPJ</span>
-        <input type="text" name="document" value="{{.Document}}" data-oninput="maskCnpjCpfContato" class="cb-input">
+<div class="contatos-sheet__grid">
+    <label class="contatos-sheet__field">
+        <span class="ui-label">CPF/CNPJ</span>
+        <input type="text" name="document" value="{{.Document}}" data-oninput="maskCnpjCpfContato" class="ui-input" inputmode="numeric" autocomplete="off">
     </label>
-    <label>
-        <span class="cb-label">Nome</span>
-        <input type="text" name="name" required value="{{.Name}}" class="cb-input">
+    <label class="contatos-sheet__field">
+        <span class="ui-label">Nome</span>
+        <input type="text" name="name" required value="{{.Name}}" class="ui-input" autocomplete="name" data-contato-sheet-initial>
     </label>
 </div>
-<div class="cb-contact-form-grid">
-    <label>
-        <span class="cb-label">E-mail</span>
-        <input type="email" name="email" value="{{.Email}}" class="cb-input">
+<div class="contatos-sheet__grid">
+    <label class="contatos-sheet__field">
+        <span class="ui-label">E-mail</span>
+        <input type="email" name="email" value="{{.Email}}" class="ui-input" inputmode="email" autocomplete="email">
     </label>
-    <label>
-        <span class="cb-label">Telefone</span>
-        <input type="text" name="phone" value="{{.Phone}}" data-oninput="maskPhoneContato" class="cb-input">
+    <label class="contatos-sheet__field">
+        <span class="ui-label">Telefone</span>
+        <input type="text" name="phone" value="{{.Phone}}" data-oninput="maskPhoneContato" class="ui-input" inputmode="tel" autocomplete="tel">
     </label>
 </div>
 {{end}}
 
 {{define "contato-row-summary"}}
 <div class="cb-contact-summary">
-    <span class="cb-contact-avatar {{if eq .Type "client"}}cb-contact-avatar-client{{else}}cb-contact-avatar-vendor{{end}}">
-        {{slice .Name 0 2 | upper}}
-    </span>
-    <div>
+    <span class="cb-contact-avatar {{if eq .Type "client"}}cb-contact-avatar-client{{else}}cb-contact-avatar-vendor{{end}}" aria-hidden="true">{{.Initials}}</span>
+    <div class="cb-contact-identity">
         <h3>{{.Name}}</h3>
-        <span class="cb-status-chip {{if eq .Type "client"}}cb-status-chip-success{{else}}cb-status-chip-warning{{end}}">
+        <span class="ui-badge {{if eq .Type "client"}}ui-badge--success{{else}}ui-badge--warning{{end}}">
             {{.TypeLabel}}
         </span>
     </div>
 </div>
 {{end}}
 
-{{define "contato-row"}}
-<article id="contato-{{.ID}}" class="cb-contact-card cb-contact-row">
+{{define "contato-card"}}
+<article id="contato-{{.ID}}" class="cb-contact-card">
     <div class="cb-contact-card-header">
-        <div class="cb-contact-row-copy">
-            <strong>{{.Name}}</strong>
-            <p>{{.TypeLabel}}{{if .CustomClientID}} · ID {{.CustomClientID}}{{end}}{{if .Document}} · <span data-sensitive>{{.Document}}</span>{{end}}</p>
-            <p>{{if .Email}}<span data-sensitive>{{.Email}}</span>{{else}}Sem e-mail{{end}}{{if .Phone}} · <span data-sensitive>{{.Phone}}</span>{{end}}</p>
-            <small>{{.CreatedAt}}</small>
-        </div>
+        {{template "contato-row-summary" .}}
+        {{if .CanUpdate}}
         <div class="cb-contact-actions" data-stop-propagation>
             <button type="button"
                 hx-get="/contatos/{{.ID}}"
-                hx-target="#contato-{{.ID}}"
-                hx-swap="outerHTML"
-                class="cb-contact-action"
-                aria-label="Editar {{.Name}}" title="Editar contato">
+                hx-target="#bottom-sheet-container"
+                hx-swap="innerHTML"
+                hx-push-url="false"
+                class="ui-btn ui-btn--ghost ui-btn--sm cb-contact-action" aria-label="Editar {{.Name}}" title="Editar contato">
                 <i data-lucide="pencil" aria-hidden="true"></i>
             </button>
-            <button type="button"
-                hx-delete="/contatos/{{.ID}}"
-                hx-target="#contato-{{.ID}}"
-                hx-swap="delete"
-                hx-confirm="Remover {{.Name}}?"
-                class="cb-contact-action cb-contact-action-danger"
-                aria-label="Excluir {{.Name}}" title="Excluir contato">
-                <i data-lucide="trash-2" aria-hidden="true"></i>
-            </button>
         </div>
+        {{end}}
     </div>
+
+    <dl class="cb-contact-details">
+        {{if .CustomClientID}}
+        <div>
+            <dt>ID</dt>
+            <dd>{{.CustomClientID}}</dd>
+        </div>
+        {{end}}
+        {{if .Document}}
+        <div>
+            <dt>{{if eq .Type "client"}}CPF/CNPJ{{else}}CNPJ{{end}}</dt>
+            <dd data-sensitive>{{.Document}}</dd>
+        </div>
+        {{end}}
+        {{if .Email}}
+        <div>
+            <dt>E-mail</dt>
+            <dd data-sensitive>{{.Email}}</dd>
+        </div>
+        {{end}}
+        {{if .Phone}}
+        <div>
+            <dt>Telefone</dt>
+            <dd data-sensitive>{{.Phone}}</dd>
+        </div>
+        {{end}}
+    </dl>
+
+    <footer class="cb-contact-card-footer">Criado em {{.CreatedAt}}</footer>
 </article>
 {{end}}
 
-{{define "contato-row-form"}}
-<article id="contato-{{.ID}}" class="cb-contact-edit-card">
-    <form hx-post="/contatos/{{.ID}}/salvar" hx-target="#contato-{{.ID}}" hx-swap="outerHTML" class="cb-v2-contatos-form">
-        {{template "contato-form-fields" .}}
-        <div class="cb-v2-contatos-form-actions">
-            <button type="button"
-                hx-get="/contatos" hx-target="#main-content" hx-select="#main-content" hx-push-url="true"
-                class="cb-button cb-button-secondary">
-                Cancelar
-            </button>
-            <button class="cb-button cb-button-primary">
-                Salvar
-            </button>
-        </div>
-    </form>
-</article>
+{{define "contato-create-sheet"}}
+<div class="contatos-sheet" data-contatos-sheet="create">
+    <div class="contatos-sheet__backdrop" data-onclick="closeBottomSheet" aria-hidden="true"></div>
+    <div class="contatos-sheet__layer">
+        <article class="sheet-in contatos-sheet__dialog" role="dialog" aria-modal="true"
+            aria-labelledby="contato-sheet-title" aria-describedby="contato-sheet-description" tabindex="-1">
+            <div class="contatos-sheet__handle" aria-hidden="true"></div>
+            <header class="contatos-sheet__head">
+                <div class="contatos-sheet__copy">
+                    <p class="ui-eyebrow">Cadastro</p>
+                    <h2 id="contato-sheet-title" class="contatos-sheet__title">Novo contato</h2>
+                    <p id="contato-sheet-description" class="contatos-sheet__subtitle">Cliente ou fornecedor usado nos lançamentos.</p>
+                </div>
+                <button type="button" class="ui-btn ui-btn--ghost contatos-sheet__close" data-onclick="closeBottomSheet" aria-label="Fechar cadastro de contato">
+                    <i data-lucide="x" aria-hidden="true"></i>
+                </button>
+            </header>
+            <form class="contatos-sheet__form cb-v2-contatos-form" hx-post="/contatos" hx-target="#contatos-list" hx-swap="outerHTML" hx-sync="this:drop">
+                <div class="contatos-sheet__body">
+                    <div id="contato-form-error" class="cb-contact-form-error hidden" role="alert" tabindex="-1"></div>
+                    {{template "contato-form-fields" .}}
+                </div>
+                <footer class="contatos-sheet__foot">
+                    <button type="button" class="ui-btn ui-btn--secondary" data-onclick="closeBottomSheet">Cancelar</button>
+                    <button class="ui-btn ui-btn--primary">Salvar contato</button>
+                </footer>
+            </form>
+        </article>
+    </div>
+</div>
+{{end}}
+
+{{define "contato-edit-sheet"}}
+<div class="contatos-sheet" data-contatos-sheet="edit" data-contato-id="{{.ID}}">
+    <div class="contatos-sheet__backdrop" data-onclick="closeBottomSheet" aria-hidden="true"></div>
+    <div class="contatos-sheet__layer">
+        <article class="sheet-in contatos-sheet__dialog" role="dialog" aria-modal="true"
+            aria-labelledby="contato-sheet-title" aria-describedby="contato-sheet-description" tabindex="-1">
+            <div class="contatos-sheet__handle" aria-hidden="true"></div>
+            <header class="contatos-sheet__head">
+                <div class="contatos-sheet__copy">
+                    <p class="ui-eyebrow">Cadastro</p>
+                    <h2 id="contato-sheet-title" class="contatos-sheet__title">Editar contato</h2>
+                    <p id="contato-sheet-description" class="contatos-sheet__subtitle">{{.Name}}</p>
+                </div>
+                <button type="button" class="ui-btn ui-btn--ghost contatos-sheet__close" data-onclick="closeBottomSheet" aria-label="Fechar edição de contato">
+                    <i data-lucide="x" aria-hidden="true"></i>
+                </button>
+            </header>
+            <form class="contatos-sheet__form cb-v2-contatos-form" hx-post="/contatos/{{.ID}}/salvar" hx-target="#contatos-list" hx-swap="outerHTML" hx-sync="this:drop">
+                <div class="contatos-sheet__body">
+                    <div id="contato-form-error" class="cb-contact-form-error hidden" role="alert" tabindex="-1"></div>
+                    {{template "contato-form-fields" .}}
+                    {{if .CanDelete}}
+                    <section class="contatos-sheet__danger" aria-labelledby="contato-danger-title">
+                        <h3 id="contato-danger-title" class="contatos-sheet__danger-title">Zona de perigo</h3>
+                        <p class="contatos-sheet__danger-text">Excluir remove este contato do workspace. Contatos com lançamentos vinculados não podem ser excluídos.</p>
+                        <button type="button" class="ui-btn contatos-sheet__danger-btn"
+                            data-contato-delete="{{.ID}}" data-contato-name="{{.Name}}">
+                            <i data-lucide="trash-2" aria-hidden="true"></i>
+                            Excluir contato
+                        </button>
+                    </section>
+                    {{end}}
+                </div>
+                <footer class="contatos-sheet__foot">
+                    <button type="button" class="ui-btn ui-btn--secondary" data-onclick="closeBottomSheet">Cancelar</button>
+                    <button class="ui-btn ui-btn--primary">Salvar alterações</button>
+                </footer>
+            </form>
+        </article>
+    </div>
+</div>
 {{end}}
 
 {{define "contatos-options"}}

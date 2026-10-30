@@ -1,4 +1,4 @@
-// Config Pages — Input Masks + Profile Photo Upload Helper
+// Config Pages — Input Masks (CNPJ/CPF e telefone)
 (function() {
     window.maskCnpjCpf = function(input) {
         var d = input.value.replace(/\D/g, '').substring(0, 14);
@@ -20,13 +20,4 @@
         input.value = d;
     };
 
-    window.submitProfilePhoto = function(input) {
-        if (!input || !input.files || input.files.length === 0) return;
-        var form = input.closest('form');
-        if (!form) return;
-        if (typeof showGlobalFeedback === 'function') {
-            showGlobalFeedback('Enviando foto de perfil...', 'success');
-        }
-        form.requestSubmit();
-    };
 })();

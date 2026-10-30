@@ -16,12 +16,12 @@ O ContaBase usa SemVer. A tag pública, o arquivo `VERSION`, o changelog e a not
 - `v0.1.0-beta.9` — última Beta pública da linha 0.1. Tag, GitHub Release, GHCR e assets permanecem disponíveis.
 - `v1.0.0-beta.2` — segunda candidata da linha 1.0, materializada como prerelease pública com artifacts, GHCR e canal Beta.
 - `v1.0.0-beta.3` — terceira candidata da linha 1.0, materializada como prerelease pública com artifacts, GHCR e canal Beta.
-- `v1.0.0-beta.4` — quarta candidata da linha 1.0, materializada como prerelease pública e versão atual do canal Beta.
+- `v1.0.0-beta.4` — quarta candidata da linha 1.0, materializada como prerelease pública.
+- `v1.0.0-beta.5` — quinta candidata da linha 1.0, publicada como prerelease; versão atual do canal Beta e da imagem GHCR `:beta`.
 
 ## Candidata em publicação
 
-- `v1.0.0-beta.5` — candidata da linha 1.0 em preparação local, ainda dependente dos gates separados de branch pública, Release Preflight, tag, draft prerelease, artifacts, GHCR, smokes e canal.
-- `v1.0.0-beta.4` permanece como versão materializada no canal Beta até a conclusão de todos os gates e a atualização validada do canal.
+- `v1.0.0-beta.6` — candidata local em preparação; os gates públicos continuam separados e dependem de revisão e autorização.
 
 ## Processo de publicação
 
@@ -131,7 +131,7 @@ O update por release artifact segue o mesmo contrato de segurança (backup canô
 - [Release Notes](../RELEASE_NOTES.md)
 - [GitHub Releases](https://github.com/contabase-app/contabase/releases)
 - [GHCR](https://github.com/contabase-app/contabase/pkgs/container/contabase)
-- [Nota da v1.0.0-beta.5 — candidata](releases/v1.0.0-beta.5.md)
+- [Nota da v1.0.0-beta.5 — publicada](releases/v1.0.0-beta.5.md)
 - [Nota da v1.0.0-beta.4 — publicada](releases/v1.0.0-beta.4.md)
 - [Nota da v1.0.0-beta.3 — publicada](releases/v1.0.0-beta.3.md)
 - [Nota da v1.0.0-beta.2 — publicada](releases/v1.0.0-beta.2.md)

@@ -92,6 +92,7 @@ type ConfiguracoesData struct {
 	CategoryExpenseMacros     []categorycontract.MacroGroup
 	Contas                    []ConfigAccountRow
 	ContasArquivadas          []ConfigAccountRow
+	InvestmentPatrimony       *investmentPatrimonyView
 	Cartoes                   []ConfigCardRow
 	CartoesArquivados         []ConfigCardRow
 	ConfigPaymentAccounts     []InvoicePaymentAccountOption
@@ -110,10 +111,11 @@ type ConfiguracoesData struct {
 	ProfileWorkspaces         []ConfigWorkspaceRow
 	UserWorkspaces            []UserWorkspace
 	AccountProviders          []AccountProviderOption
+	ProviderPicker            AccountProviderPickerData
 	SMTPHost                  string
 	SMTPPort                  int
 	SMTPUser                  string
-	SMTPPass                  string
+	SMTPPassConfigured        bool
 	NotificationEmail         string
 	EmailPrefAuth             bool
 	EmailPrefBackup           bool
@@ -166,20 +168,22 @@ type CategoryParentOption struct {
 }
 
 type ConfigAccountRow struct {
-	ID               string
-	Name             string
-	Type             string
-	TypeLabel        string
-	Color            string
-	Icon             string
-	ProviderSlug     string
-	ProviderMark     string
-	ProviderLogoPath string
-	Balance          string
-	BalanceCents     int64
-	BalanceInput     string
-	SortOrder        int64
-	Archived         bool
+	InvestmentPatrimony *investmentPatrimonyView
+	ID                  string
+	Name                string
+	Type                string
+	TypeLabel           string
+	Color               string
+	Icon                string
+	ProviderSlug        string
+	ProviderMark        string
+	ProviderLogoPath    string
+	ProviderPicker      AccountProviderPickerData
+	Balance             string
+	BalanceCents        int64
+	BalanceInput        string
+	SortOrder           int64
+	Archived            bool
 }
 
 type ConfigCardRow struct {
@@ -901,9 +905,12 @@ func (h *ConfiguracoesHandler) HandleCartoesCreate(w http.ResponseWriter, r *htt
 	}
 	if err := execOneTx(tx, `
 		INSERT INTO credit_cards (id, account_id, closing_day, due_day, credit_limit, default_payment_account_id)
-		VALUES (?, ?, ?, ?, ?, NULLIF(?, ''))
-	`, uuid.NewString(), accountID, closingDay, dueDay, creditLimit, defaultPaymentAccountID); err != nil {
+		SELECT ?, owner.id, ?, ?, ?, NULLIF(?, '')
+		FROM accounts owner
+		WHERE owner.id = ? AND owner.workspace_id = ?
+	`, uuid.NewString(), closingDay, dueDay, creditLimit, defaultPaymentAccountID, accountID, h.WorkspaceID); err != nil {
 		log.Printf("create credit card error: %v", err)
+		_ = tx.Rollback()
 		h.renderConfigSectionWithFlash(w, "cartoes", "Não foi possível criar dados do cartão.", "")
 		return
 	}
@@ -997,6 +1004,7 @@ func (h *ConfiguracoesHandler) HandleContasInlineForm(w http.ResponseWriter, r *
 	row.ProviderSlug = normalizeAccountProviderSlug(row.ProviderSlug)
 	row.ProviderMark = accountProviderMark(row.ProviderSlug, row.Name)
 	row.ProviderLogoPath = accountProviderLogoPathForAccount(row.ProviderSlug, row.Name)
+	row.ProviderPicker = newAccountProviderPickerData(row.ProviderSlug, row.Name, row.Color)
 	if row.Icon == "" {
 		row.Icon = accountVisualByProvider(row.ProviderSlug, row.Type)
 	}
@@ -1017,11 +1025,31 @@ func (h *ConfiguracoesHandler) HandleContasInlineSave(w http.ResponseWriter, r *
 		http.Error(w, "nome e tipo obrigatórios", http.StatusBadRequest)
 		return
 	}
+	// A instituição é metadado visual e continua opcional na edição: sem seleção
+	// no formulário, o valor já gravado é preservado.
+	var currentProviderSlug string
+	if err := h.DB.QueryRow(`
+		SELECT COALESCE(NULLIF(provider_slug, ''), 'custom')
+		FROM accounts
+		WHERE id = ? AND workspace_id = ? AND type != 'CREDIT_CARD'
+	`, accountID, h.WorkspaceID).Scan(&currentProviderSlug); err != nil {
+		http.Error(w, "conta não encontrada", http.StatusNotFound)
+		return
+	}
+	providerSlug := normalizeAccountProviderSlug(currentProviderSlug)
+	if raw := strings.TrimSpace(r.FormValue("provider_slug")); raw != "" {
+		_, resolved, _, providerErr := resolveAccountProviderInput(raw, r.FormValue("provider_custom_name"), color)
+		if providerErr != nil {
+			http.Error(w, providerErr.Error(), http.StatusBadRequest)
+			return
+		}
+		providerSlug = resolved
+	}
 	if err := execOne(h.DB, `
 		UPDATE accounts
-		SET name = ?, type = ?, color = ?, icon = ?, updated_at = unixepoch()
+		SET name = ?, type = ?, color = ?, icon = ?, provider_slug = ?, updated_at = unixepoch()
 		WHERE id = ? AND workspace_id = ? AND type != 'CREDIT_CARD'
-	`, name, accType, color, icon, accountID, h.WorkspaceID); err != nil {
+	`, name, accType, color, icon, providerSlug, accountID, h.WorkspaceID); err != nil {
 		http.Error(w, "conta não encontrada", http.StatusNotFound)
 		return
 	}
@@ -1116,12 +1144,20 @@ func (h *ConfiguracoesHandler) HandleCartoesInlineSave(w http.ResponseWriter, r 
 		UPDATE credit_cards
 		SET closing_day = ?, due_day = ?, credit_limit = ?, default_payment_account_id = NULLIF(?, '')
 		WHERE account_id = ?
-	`, closingDay, dueDay, creditLimit, defaultPaymentAccountID, accountID)
+		  AND EXISTS (
+			SELECT 1 FROM accounts owner
+			WHERE owner.id = credit_cards.account_id AND owner.workspace_id = ?
+		  )
+	`, closingDay, dueDay, creditLimit, defaultPaymentAccountID, accountID, h.WorkspaceID)
 	if err != nil {
 		http.Error(w, "não foi possível atualizar o cartão", http.StatusInternalServerError)
 		return
 	}
-	rowsAffected, _ := result.RowsAffected()
+	rowsAffected, err := result.RowsAffected()
+	if err != nil || rowsAffected < 0 || rowsAffected > 1 {
+		http.Error(w, "não foi possível atualizar o cartão", http.StatusInternalServerError)
+		return
+	}
 	if rowsAffected == 0 {
 		http.Error(w, "cartão sem configuração interna — recrie ou repare este cartão", http.StatusUnprocessableEntity)
 		return
@@ -1241,6 +1277,7 @@ func (h *ConfiguracoesHandler) HandleContasReorder(w http.ResponseWriter, r *htt
 	var sortOrder int64
 	err = tx.QueryRow(`SELECT sort_order FROM accounts WHERE id = ? AND workspace_id = ? AND type != 'CREDIT_CARD' AND archived_at IS NULL`, accountID, h.WorkspaceID).Scan(&sortOrder)
 	if err != nil {
+		_ = tx.Rollback()
 		h.renderConfigContasSection(w, r, "")
 		return
 	}
@@ -1252,14 +1289,17 @@ func (h *ConfiguracoesHandler) HandleContasReorder(w http.ResponseWriter, r *htt
 		err = tx.QueryRow(`SELECT id, sort_order FROM accounts WHERE workspace_id = ? AND type != 'CREDIT_CARD' AND archived_at IS NULL AND sort_order > ? ORDER BY sort_order ASC, name ASC LIMIT 1`, h.WorkspaceID, sortOrder).Scan(&adjacentID, &adjacentSort)
 	}
 	if err != nil {
+		_ = tx.Rollback()
 		h.renderConfigContasSection(w, r, "")
 		return
 	}
-	if _, err := tx.Exec(`UPDATE accounts SET sort_order = ? WHERE id = ?`, adjacentSort, accountID); err != nil {
+	if err := execOneTx(tx, `UPDATE accounts SET sort_order = ? WHERE id = ? AND workspace_id = ?`, adjacentSort, accountID, h.WorkspaceID); err != nil {
+		_ = tx.Rollback()
 		h.renderConfigContasSection(w, r, "")
 		return
 	}
-	if _, err := tx.Exec(`UPDATE accounts SET sort_order = ? WHERE id = ?`, sortOrder, adjacentID); err != nil {
+	if err := execOneTx(tx, `UPDATE accounts SET sort_order = ? WHERE id = ? AND workspace_id = ?`, sortOrder, adjacentID, h.WorkspaceID); err != nil {
+		_ = tx.Rollback()
 		h.renderConfigContasSection(w, r, "")
 		return
 	}
@@ -1285,6 +1325,7 @@ func (h *ConfiguracoesHandler) HandleCartoesReorder(w http.ResponseWriter, r *ht
 	var sortOrder int64
 	err = tx.QueryRow(`SELECT sort_order FROM accounts WHERE id = ? AND workspace_id = ? AND type = 'CREDIT_CARD' AND archived_at IS NULL`, accountID, h.WorkspaceID).Scan(&sortOrder)
 	if err != nil {
+		_ = tx.Rollback()
 		h.renderConfigCartoesSection(w, r, "")
 		return
 	}
@@ -1296,14 +1337,17 @@ func (h *ConfiguracoesHandler) HandleCartoesReorder(w http.ResponseWriter, r *ht
 		err = tx.QueryRow(`SELECT id, sort_order FROM accounts WHERE workspace_id = ? AND type = 'CREDIT_CARD' AND archived_at IS NULL AND sort_order > ? ORDER BY sort_order ASC, name ASC LIMIT 1`, h.WorkspaceID, sortOrder).Scan(&adjacentID, &adjacentSort)
 	}
 	if err != nil {
+		_ = tx.Rollback()
 		h.renderConfigCartoesSection(w, r, "")
 		return
 	}
-	if _, err := tx.Exec(`UPDATE accounts SET sort_order = ? WHERE id = ?`, adjacentSort, accountID); err != nil {
+	if err := execOneTx(tx, `UPDATE accounts SET sort_order = ? WHERE id = ? AND workspace_id = ?`, adjacentSort, accountID, h.WorkspaceID); err != nil {
+		_ = tx.Rollback()
 		h.renderConfigCartoesSection(w, r, "")
 		return
 	}
-	if _, err := tx.Exec(`UPDATE accounts SET sort_order = ? WHERE id = ?`, sortOrder, adjacentID); err != nil {
+	if err := execOneTx(tx, `UPDATE accounts SET sort_order = ? WHERE id = ? AND workspace_id = ?`, sortOrder, adjacentID, h.WorkspaceID); err != nil {
+		_ = tx.Rollback()
 		h.renderConfigCartoesSection(w, r, "")
 		return
 	}
@@ -1370,6 +1414,10 @@ func (h *ConfiguracoesHandler) renderAccountRow(w http.ResponseWriter, accountID
 		return
 	}
 	row.Balance = formatCurrencyLabel(row.BalanceCents)
+	if row.Type == models.AccountTypeInvestment {
+		summary, accounts := queryInvestmentPatrimonyViews(h.DB, h.WorkspaceID, h.UserID)
+		row.InvestmentPatrimony = accountInvestmentPatrimonyView(summary, accounts, row.ID)
+	}
 	row.BalanceInput = centsToInput(row.BalanceCents)
 	row.TypeLabel = models.AccountTypeLabel(row.Type)
 	row.Color = normalizeHexColor(row.Color, "#6B7280")
@@ -1941,6 +1989,10 @@ func (h *ConfiguracoesHandler) HandleAdminUsersRevokeSessions(w http.ResponseWri
 }
 
 func (h *ConfiguracoesHandler) HandleAdminAuditoriaSave(w http.ResponseWriter, r *http.Request) {
+	if h.ActorRole != models.RoleAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		h.renderConfigSectionWithFlash(w, "admin-auditoria", "Formulário inválido.", "")
 		return
@@ -1949,8 +2001,8 @@ func (h *ConfiguracoesHandler) HandleAdminAuditoriaSave(w http.ResponseWriter, r
 	smtpHost := strings.TrimSpace(r.FormValue("smtp_host"))
 	smtpUser := strings.TrimSpace(r.FormValue("smtp_user"))
 	smtpPass := strings.TrimSpace(r.FormValue("smtp_pass"))
+	removeSMTPPass := strings.TrimSpace(r.FormValue("smtp_pass_remove")) != ""
 	notificationEmail := strings.TrimSpace(r.FormValue("notification_email"))
-	encryptedSMTPPass := ""
 
 	smtpPort := int64(587)
 	if rawPort := strings.TrimSpace(r.FormValue("smtp_port")); rawPort != "" {
@@ -1968,12 +2020,26 @@ func (h *ConfiguracoesHandler) HandleAdminAuditoriaSave(w http.ResponseWriter, r
 		h.renderConfigSectionWithFlash(w, "admin-auditoria", "Não foi possível salvar as preferências.", "")
 		return
 	}
+
+	// Contrato da credencial: vazio mantém o valor atual (sem descriptografar),
+	// valor informado substitui e a remoção é sempre uma ação explícita.
+	if smtpPass != "" && removeSMTPPass {
+		h.renderConfigSectionWithFlash(w, "admin-auditoria", "Informe uma nova senha SMTP OU remova a credencial, não ambos.", "")
+		return
+	}
+	replaceSMTPPass := 0
+	removeFlag := 0
+	encryptedSMTPPass := ""
 	if smtpPass != "" {
 		encryptedSMTPPass, err = security.Encrypt(smtpPass)
 		if err != nil {
 			h.renderConfigSectionWithFlash(w, "admin-auditoria", "Não foi possível proteger a senha SMTP.", "")
 			return
 		}
+		replaceSMTPPass = 1
+	}
+	if removeSMTPPass {
+		removeFlag = 1
 	}
 
 	if err := execOne(h.DB, `
@@ -1981,17 +2047,27 @@ func (h *ConfiguracoesHandler) HandleAdminAuditoriaSave(w http.ResponseWriter, r
 		SET smtp_host = NULLIF(?, ''),
 			smtp_port = ?,
 			smtp_user = NULLIF(?, ''),
-			smtp_pass = NULLIF(?, ''),
+			smtp_pass = CASE
+				WHEN ? = 1 THEN NULL
+				WHEN ? = 1 THEN ?
+				ELSE smtp_pass
+			END,
 			notification_email = NULLIF(?, ''),
 			email_preferences = ?,
 			updated_at = unixepoch()
 		WHERE id = ?
-	`, smtpHost, smtpPort, smtpUser, encryptedSMTPPass, notificationEmail, string(prefsRaw), h.WorkspaceID); err != nil {
+	`, smtpHost, smtpPort, smtpUser, removeFlag, replaceSMTPPass, encryptedSMTPPass, notificationEmail, string(prefsRaw), h.WorkspaceID); err != nil {
 		h.renderConfigSectionWithFlash(w, "admin-auditoria", "Não foi possível salvar as configurações de auditoria.", "")
 		return
 	}
 
-	h.renderConfigSectionWithFlash(w, "admin-auditoria", "", "Configurações de auditoria atualizadas com sucesso.")
+	successMsg := "Configurações de auditoria atualizadas com sucesso."
+	if removeSMTPPass {
+		successMsg = "Credencial SMTP removida. Os alertas por e-mail param até uma nova senha ser configurada."
+	} else if smtpPass != "" {
+		successMsg = "Configurações de auditoria atualizadas com sucesso. Credencial SMTP substituída."
+	}
+	h.renderConfigSectionWithFlash(w, "admin-auditoria", "", successMsg)
 }
 
 // saveWorkspaceLogoFile validates and persists an uploaded logo file.
@@ -2323,6 +2399,7 @@ func (h *ConfiguracoesHandler) HandleAdminWorkspaceDelete(w http.ResponseWriter,
 
 	res, err := tx.Exec(`DELETE FROM workspaces WHERE id = ?`, workspaceID)
 	if err != nil {
+		_ = tx.Rollback()
 		if isSQLiteForeignKeyConstraint(err) {
 			msg := "⚠️ Não é possível excluir este Workspace porque ele possui vínculos ativos. Remova ou transfira os registros vinculados antes de prosseguir."
 			w.Header().Set("HX-Trigger", fmt.Sprintf(`{"mostrarAlerta":%q}`, msg))
@@ -2338,10 +2415,12 @@ func (h *ConfiguracoesHandler) HandleAdminWorkspaceDelete(w http.ResponseWriter,
 		return
 	}
 	if affected != 1 {
+		_ = tx.Rollback()
 		h.renderConfigSectionWithFlash(w, "admin-workspaces", "Workspace não encontrado.", "")
 		return
 	}
 	if err := ensureWorkspaceCascadeDeleted(tx, workspaceID); err != nil {
+		_ = tx.Rollback()
 		log.Printf("workspace cascade delete validation failed for %s: %v", workspaceID, err)
 		h.renderConfigSectionWithFlash(w, "admin-workspaces", "A exclusão não foi concluída com segurança. Nenhuma alteração foi aplicada.", "")
 		return
@@ -2548,6 +2627,7 @@ func (h *ConfiguracoesHandler) newConfigData(section, errMsg, okMsg string) Conf
 		BackupTicker:          "diário",
 		BackupRetention:       database.AutomaticBackupRetentionDays,
 		AccountProviders:      accountProviderOptions(),
+		ProviderPicker:        newAccountProviderPickerData("", "", ""),
 		AuditEventFilter:      normalizeAuditEventFilter(h.AuditEventFilter),
 		AuditSeverityFilter:   normalizeAuditSeverityFilter(h.AuditSeverityFilter),
 		CategoryIncomeMacros:  categoryMacroGroupsForTemplate(isBusiness, models.CategoryTypeIncome),
@@ -2629,6 +2709,7 @@ func (h *ConfiguracoesHandler) loadConfigSectionData(data *ConfiguracoesData, sh
 			return err
 		}
 		data.ContasArquivadas = archivedRows
+		h.attachConfigInvestmentPatrimony(data)
 	case "cartoes":
 		rows, err := h.queryCartoes(repo)
 		if err != nil {
@@ -2747,6 +2828,7 @@ func (h *ConfiguracoesHandler) buildConfigData(section, errMsg, okMsg string) (C
 		BackupTicker:              "diário",
 		BackupRetention:           database.AutomaticBackupRetentionDays,
 		AccountProviders:          accountProviderOptions(),
+		ProviderPicker:            newAccountProviderPickerData("", "", ""),
 		AuditEventFilter:          normalizeAuditEventFilter(h.AuditEventFilter),
 		AuditSeverityFilter:       normalizeAuditSeverityFilter(h.AuditSeverityFilter),
 	}
@@ -2783,6 +2865,7 @@ func (h *ConfiguracoesHandler) buildConfigData(section, errMsg, okMsg string) (C
 			return data, err
 		}
 		data.ContasArquivadas = archivedRows
+		h.attachConfigInvestmentPatrimony(&data)
 	case "cartoes":
 		rows, err := h.queryCartoes(repo)
 		if err != nil {
@@ -2904,13 +2987,7 @@ func (h *ConfiguracoesHandler) loadAdminAuditSettings(data *ConfiguracoesData) e
 	data.SMTPHost = smtpHost
 	data.SMTPPort = smtpPort
 	data.SMTPUser = smtpUser
-	if strings.TrimSpace(smtpPass) != "" {
-		decryptedSMTPPass, err := security.Decrypt(smtpPass)
-		if err != nil {
-			return err
-		}
-		data.SMTPPass = decryptedSMTPPass
-	}
+	data.SMTPPassConfigured = strings.TrimSpace(smtpPass) != ""
 	data.NotificationEmail = notificationEmail
 
 	preferences := parseAuditPreferences(emailPreferences)

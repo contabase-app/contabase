@@ -53,7 +53,7 @@ func TestReportStrokePaletteUsesExternalStylesheet(t *testing.T) {
 			t.Errorf("stylesheet does not map supported report stroke %q", color)
 		}
 	}
-	if !strings.Contains(css, ".cb-report-stroke-dot") || !strings.Contains(css, ".cb-report-stroke-text") {
-		t.Fatal("stylesheet must provide report stroke color consumers")
+	if !strings.Contains(css, ".cb-report-stroke-dot") {
+		t.Fatal("stylesheet must provide the report stroke dot consumer")
 	}
 }

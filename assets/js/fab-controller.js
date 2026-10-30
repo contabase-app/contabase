@@ -40,11 +40,11 @@
             visualDiv.classList.add('bg-fuchsia-600', 'group-hover:bg-fuchsia-700', 'shadow-fuchsia-500/25');
             newIconName = "user-plus";
             extraIconClass = "group-hover:scale-110";
-            button.onclick = function(event) {
-                if (typeof openContatosModal === 'function') {
-                    openContatosModal(event);
-                }
-            };
+            button.setAttribute('hx-get', '/contatos/novo');
+            button.setAttribute('hx-target', '#bottom-sheet-container');
+            button.setAttribute('hx-swap', 'innerHTML');
+            button.setAttribute('hx-push-url', 'false');
+            if (window.htmx) htmx.process(button);
         } else if (path === '/metas') {
             visualDiv.classList.add('bg-indigo-600', 'group-hover:bg-indigo-700', 'shadow-indigo-500/25');
             newIconName = "target";

@@ -16,7 +16,7 @@ func TestHandleCriarCaixinhaPersistsTargetDate(t *testing.T) {
 	defer db.Close()
 	seedCaixinhaTargetDateScenario(t, db)
 
-	handler := MetasHandler{
+	handler := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-a",
@@ -60,7 +60,7 @@ func TestHandleCriarCaixinhaAllowsOnlyName(t *testing.T) {
 	defer db.Close()
 	seedCaixinhaTargetDateScenario(t, db)
 
-	handler := MetasHandler{
+	handler := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-a",
@@ -107,7 +107,7 @@ func TestHandleCriarCaixinhaClearsTargetDate(t *testing.T) {
 		VALUES ('a-box', 'ws-a', 'Meta A', 'a-cat', 100000, 5000, ?, ?, ?)
 	`, time.Now().UTC().AddDate(0, 4, 0).Unix(), now, now)
 
-	handler := MetasHandler{
+	handler := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-a",
@@ -151,7 +151,7 @@ func TestHandleCriarCaixinhaClearsOptionalFields(t *testing.T) {
 		VALUES ('a-box-clear', 'ws-a', 'Meta Limpar', 'a-cat', 100000, 5000, ?, 0.008, ?, ?)
 	`, time.Now().UTC().AddDate(0, 4, 0).Unix(), now, now)
 
-	handler := MetasHandler{
+	handler := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-a",
@@ -205,7 +205,7 @@ func TestHandleCriarCaixinhaUpdateRespectsWorkspaceIsolation(t *testing.T) {
 		VALUES ('b-box', 'ws-b', 'Meta B', 'b-cat', 200000, 7000, ?, ?, ?)
 	`, foreignTarget, now, now)
 
-	handler := MetasHandler{
+	handler := MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          db,
 		Templates:   testMetasMutationTemplates(t),
 		WorkspaceID: "ws-a",

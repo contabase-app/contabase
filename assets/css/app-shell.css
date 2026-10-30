@@ -15,39 +15,39 @@
 
 .cb-v2-body,
 .cb-v2 {
-    --v2-canvas: #0d121a;
-    --v2-sidebar: #0a1017;
-    --v2-surface: #121a25;
-    --v2-surface-raised: #17212e;
-    --v2-surface-hover: #1b2736;
-    --v2-border: #253242;
-    --v2-border-strong: #35465a;
-    --v2-text: #edf1f5;
-    --v2-muted: #9aa8b9;
-    --v2-subtle: #708093;
-    --v2-accent: #8967f5;
-    --v2-accent-soft: #2a214f;
-    --v2-positive: #26c875;
-    --v2-danger: #f05c68;
-    --v2-warning: #eba43d;
-    --v2-info: #3da8e9;
-    --v2-detail-surface: #101822;
-    --v2-progress-track: #263242;
-    --v2-tab-badge: #344054;
-    --v2-accent-strong: #b4a2ff;
-    --v2-accent-on-soft: #ded5ff;
-    --v2-row-hover-text: #c3b6ff;
-    --v2-fab-border: #a890ff;
-    --v2-fab-hover: #9c80ff;
-    --v2-avatar-surface: #c6c8ff;
-    --v2-avatar-text: #27215e;
+    --v2-canvas: #161a20;
+    --v2-sidebar: #181d24;
+    --v2-surface: #1e242d;
+    --v2-surface-raised: #232a34;
+    --v2-surface-hover: #29313c;
+    --v2-border: #2c3542;
+    --v2-border-strong: #3d4858;
+    --v2-text: #eef1f5;
+    --v2-muted: #a3acb9;
+    --v2-subtle: #8b95a4;
+    --v2-accent: #8b5cf6;
+    --v2-accent-soft: #241f3d;
+    --v2-positive: #34d399;
+    --v2-danger: #fb7185;
+    --v2-warning: #fbbf24;
+    --v2-info: #60a5fa;
+    --v2-detail-surface: #1b2129;
+    --v2-progress-track: #303a47;
+    --v2-tab-badge: #303a47;
+    --v2-accent-strong: #a78bfa;
+    --v2-accent-on-soft: #d9ccff;
+    --v2-row-hover-text: #c4b5fd;
+    --v2-fab-border: #9a8bff;
+    --v2-fab-hover: #9b8cfb;
+    --v2-avatar-surface: #2b2547;
+    --v2-avatar-text: #d9ccff;
     /* Tons semânticos únicos da interface (ver internal/handlers/ui_tones.go).
        Toda barra, chip ou percentual usa estes tokens em vez de cor solta. */
     --v2-tone-ok: var(--v2-positive);
     --v2-tone-attention: var(--v2-warning);
-    --v2-tone-near: color-mix(in srgb, var(--v2-warning) 55%, var(--v2-danger));
+    --v2-tone-near: color-mix(in srgb, var(--v2-warning) 72%, var(--v2-danger));
     --v2-tone-exceeded: var(--v2-danger);
-    --v2-tone-initial: color-mix(in srgb, var(--v2-danger) 55%, var(--v2-muted));
+    --v2-tone-initial: color-mix(in srgb, var(--v2-accent) 52%, var(--v2-muted));
     --v2-tone-progress: var(--v2-accent);
     --v2-tone-complete: var(--v2-positive);
     --v2-tone-info: var(--v2-info);
@@ -63,26 +63,26 @@
 
 html[data-theme="light"] .cb-v2-body,
 html[data-theme="light"] .cb-v2 {
-    --v2-canvas: #f3f5f8;
-    --v2-sidebar: #f9fbfd;
+    --v2-canvas: #f3f4f6;
+    --v2-sidebar: #fafbfc;
     --v2-surface: #ffffff;
-    --v2-surface-raised: #f7f9fc;
-    --v2-surface-hover: #edf2f7;
-    --v2-border: #d8e0ea;
-    --v2-border-strong: #c4d0de;
-    --v2-text: #172033;
-    --v2-muted: #56677e;
-    --v2-subtle: #73839a;
-    --v2-accent: #6844d2;
-    --v2-accent-soft: #ede8fb;
-    --v2-positive: #118451;
-    --v2-danger: #c73e51;
-    --v2-warning: #a86600;
-    --v2-info: #176fae;
-    --v2-detail-surface: #f8fafc;
-    --v2-progress-track: #dce4ee;
-    --v2-tab-badge: #e2e8f0;
-    --v2-accent-strong: #5129b6;
+    --v2-surface-raised: #f7f8fa;
+    --v2-surface-hover: #eef1f5;
+    --v2-border: #e1e5eb;
+    --v2-border-strong: #cbd3dd;
+    --v2-text: #1b2430;
+    --v2-muted: #556274;
+    --v2-subtle: #657183;
+    --v2-accent: #6d4de0;
+    --v2-accent-soft: #eee9fb;
+    --v2-positive: #0f7a52;
+    --v2-danger: #c04355;
+    --v2-warning: #8a5a00;
+    --v2-info: #1e6fa8;
+    --v2-detail-surface: #f7f9fb;
+    --v2-progress-track: #dde4ec;
+    --v2-tab-badge: #e7ebf0;
+    --v2-accent-strong: #5b2fcc;
     --v2-accent-on-soft: #4f2ca8;
     --v2-row-hover-text: #5130ae;
     --v2-fab-border: #6b47d7;
@@ -93,7 +93,7 @@ html[data-theme="light"] .cb-v2 {
     --v2-tone-attention: var(--v2-warning);
     --v2-tone-near: color-mix(in srgb, var(--v2-warning) 78%, var(--v2-danger));
     --v2-tone-exceeded: var(--v2-danger);
-    --v2-tone-initial: color-mix(in srgb, var(--v2-danger) 62%, var(--v2-muted));
+    --v2-tone-initial: color-mix(in srgb, var(--v2-accent) 48%, var(--v2-muted));
     --v2-tone-progress: var(--v2-accent);
     --v2-tone-complete: #0f7a4a;
     --v2-tone-info: var(--v2-info);
@@ -107,8 +107,13 @@ html[data-theme="light"] .cb-v2-body { color-scheme: light; }
 
 .cb-v2 {
     min-height: 100dvh;
-    background: var(--v2-canvas);
-    color: var(--v2-text);
+    background: var(--ui-canvas);
+    color: var(--ui-text);
+    /* Shared hooks for the fixed mobile navigation. A page may tune the offset
+       (for example to clear a sticky element); the bar geometry itself is
+       owned by the shell. */
+    --cb-v2-bottom-nav-inline: 12px;
+    --cb-v2-bottom-nav-bottom: 10px;
 }
 
 .cb-v2 *,
@@ -116,9 +121,13 @@ html[data-theme="light"] .cb-v2-body { color-scheme: light; }
 .cb-v2 *::after { box-sizing: border-box; }
 
 .cb-v2 a,
-.cb-v2 button { -webkit-tap-highlight-color: transparent; }
+.cb-v2 button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 .cb-v2 a { color: inherit; text-decoration: none; }
-.cb-v2 button { border: 0; font: inherit; }
+/* Buttons inherit typography from Tailwind Preflight at (0,0,1). Do not reset
+   `font`/`border` here: a descendant rule like `.cb-v2 button` (0,1,1) would
+   silently beat every component class (.cb-button, .ui-tab, .ui-btn, group
+   toggles), making the same component render with the parent's font size and
+   without its border depending on the page. */
 
 .cb-v2 button:focus-visible,
 .cb-v2 a:focus-visible,
@@ -127,6 +136,23 @@ html[data-theme="light"] .cb-v2-body { color-scheme: light; }
     outline: 2px solid var(--v2-accent);
     outline-offset: 3px;
 }
+
+/* Shared legacy fields inside the authenticated shell use the same focus
+   language as the Premium fields. Standalone/auth surfaces keep their own. */
+.cb-v2 .cb-input:focus,
+.cb-v2 .cb-select:focus,
+.cb-v2 .search-input:focus {
+    border-color: var(--ui-field-focus-border);
+    box-shadow: none;
+}
+
+html[data-input-modality="keyboard"] .cb-v2 .cb-input:focus,
+html[data-input-modality="keyboard"] .cb-v2 .cb-select:focus,
+html[data-input-modality="keyboard"] .cb-v2 .search-input:focus {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+.cb-v2 .cb-input::placeholder { color: var(--v2-subtle); }
 
 .cb-v2-brand,
 .cb-v2-appbar-brand {
@@ -147,9 +173,9 @@ html[data-theme="light"] .cb-v2-body { color-scheme: light; }
  * são estreitos no mobile, então o logo acompanha o espaço de cada recorte.
  */
 .cb-v2-brand-lockup,
-.cb-v2-brand-mark { width: auto; height: 52px; }
+.cb-v2-brand-mark { width: auto; height: 44px; }
 
-.cb-v2-brand-mark { display: none; width: 46px; height: 46px; }
+.cb-v2-brand-mark { display: none; width: 40px; height: 40px; }
 .cb-v2-brand-lockup-light { display: none; }
 
 html[data-theme="light"] .cb-v2-brand-lockup-dark { display: none; }
@@ -163,10 +189,10 @@ html[data-theme="light"] .cb-v2-brand-lockup-light { display: inline-block; }
     inset: 0 auto 0 0;
     z-index: var(--v2-z-navigation);
     display: flex;
-    width: 272px;
+    width: var(--ui-nav-width);
     min-height: 100dvh;
     flex-direction: column;
-    padding: 26px 20px 18px;
+    padding: 22px 16px 16px;
     border-right: 1px solid var(--v2-border);
     background: var(--v2-sidebar);
     transition: width 180ms ease, padding 180ms ease;
@@ -183,7 +209,7 @@ html[data-theme="light"] .cb-v2-brand-lockup-light { display: inline-block; }
 }
 
 .cb-v2-sidebar-header { position: relative; }
-.cb-v2-sidebar-toggle { width: 34px; height: 34px; flex: 0 0 auto; }
+.cb-v2-sidebar .cb-v2-sidebar-toggle { width: var(--ui-icon-button-size-sm); height: var(--ui-icon-button-size-sm); flex: 0 0 auto; }
 .cb-v2-sidebar-toggle-open { display: none; }
 .cb-v2-sidebar-body {
     display: flex;
@@ -201,121 +227,140 @@ html[data-theme="light"] .cb-v2-brand-lockup-light { display: inline-block; }
 .cb-v2-sidebar-body::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: var(--v2-border-strong); background-clip: padding-box; }
 .cb-v2-sidebar-body::-webkit-scrollbar-thumb:hover { background: var(--v2-muted); background-clip: padding-box; }
 .cb-v2-sidebar-footer { display: grid; flex: 0 0 auto; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--v2-border); }
-.cb-v2-sidebar-footer-context { display: flex; min-width: 0; align-items: center; gap: 4px; }
+.cb-v2-sidebar-footer-context { display: flex; min-width: 0; align-items: center; gap: 2px; }
 .cb-v2-sidebar-controls {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 2px;
+    gap: 0;
     flex: 0 0 auto;
 }
-.cb-v2-sidebar-controls .cb-v2-icon-button { width: 32px; height: 32px; }
+/* Controles utilitários do rodapé: 30px é a variante compacta que preserva o
+   nome do workspace dentro da largura canônica de 248px. */
+.cb-v2-sidebar-controls .cb-v2-icon-button { width: var(--ui-icon-button-size-xs); height: var(--ui-icon-button-size-xs); }
 
 .cb-v2-nav-list { display: grid; gap: 3px; margin-top: 30px; }
 
 .cb-v2-nav-link,
 .cb-v2-quick-action {
     display: flex;
-    min-height: 40px;
+    min-height: var(--ui-nav-item-height);
     align-items: center;
-    gap: 12px;
-    border-radius: 10px;
-    color: var(--v2-muted);
-    font-size: 14px;
-    font-weight: 590;
-    transition: background-color 180ms ease, color 180ms ease;
+    gap: var(--ui-nav-gap);
+    border-radius: var(--ui-nav-item-radius);
+    color: var(--ui-text-muted);
+    font-size: var(--ui-fs-md);
+    font-weight: var(--ui-fw-item);
+    transition: background-color var(--ui-transition), color var(--ui-transition);
 }
 
-.cb-v2-nav-link { padding: 0 12px; }
+.cb-v2-nav-link { padding: 0 var(--ui-nav-item-pad); }
 .cb-v2-nav-link svg,
-.cb-v2-quick-action svg { width: 17px; height: 17px; flex: 0 0 auto; }
+.cb-v2-quick-action svg { width: 16px; height: 16px; flex: 0 0 auto; }
 
 .cb-v2-nav-link:hover,
-.cb-v2-quick-action:hover { background: var(--v2-surface-hover); color: var(--v2-text); }
-.cb-v2-nav-link.is-active { background: var(--v2-accent-soft); color: var(--v2-accent-on-soft); }
+.cb-v2-quick-action:hover { background: var(--ui-surface-hover); color: var(--ui-text); }
+
+/* Canonical selected state (shell-owned):
+   - discrete violet surface
+   - one 2px side accent, never a competing border/ring
+   - high-contrast text and accent icon
+   The same .is-active state produces this appearance on every authenticated
+   route. Page stylesheets must not redefine it. */
+.cb-v2-nav-link.is-active {
+    background: var(--ui-nav-active-bg);
+    box-shadow: inset var(--ui-nav-active-indicator-width) 0 0 var(--ui-nav-active-indicator);
+    color: var(--ui-nav-active-fg);
+}
+.cb-v2-nav-link.is-active svg,
+.cb-v2-nav-sub-link.is-active svg { color: var(--ui-nav-active-icon); }
+
+/* Focus stays inside the rail so the sidebar scroll container never clips it. */
+.cb-v2 .cb-v2-nav-link:focus-visible,
+.cb-v2 .cb-v2-nav-sub-link:focus-visible,
+.cb-v2 .cb-v2-nav-group-toggle:focus-visible,
+.cb-v2 .cb-v2-quick-action:focus-visible,
+.cb-v2 .cb-v2-workspace:focus-visible,
+.cb-v2 .cb-v2-sidebar-toggle:focus-visible { outline-offset: -2px; }
 
 .cb-v2-nav-group { display: grid; gap: 3px; margin-top: 8px; }
 .cb-v2-settings-nav { display: grid; gap: 6px; margin-top: 16px; }
 .cb-v2-settings-nav .cb-v2-nav-group { margin-top: 0; }
-.cb-v2-nav-separator { height: 1px; margin: 0 4px; background: var(--v2-border); }
+.cb-v2-nav-separator { height: 1px; margin: 0 4px; background: var(--ui-border); }
 .cb-v2-nav-group-toggle,
 .cb-v2-nav-sub-link {
     display: flex;
     width: 100%;
-    min-height: 38px;
+    min-height: var(--ui-nav-group-height);
     align-items: center;
-    gap: 10px;
-    border-radius: 9px;
-    color: var(--v2-muted);
-    font-size: 13px;
-    font-weight: 590;
+    gap: var(--ui-nav-gap);
+    border-radius: var(--ui-nav-item-radius);
+    color: var(--ui-text-muted);
+    font-size: var(--ui-fs-md);
+    font-weight: var(--ui-fw-item);
     text-align: left;
 }
-.cb-v2-nav-group-toggle { justify-content: space-between; padding: 0 11px; background: transparent; cursor: pointer; }
-.cb-v2-nav-group-toggle > span { display: inline-flex; min-width: 0; align-items: center; gap: 10px; }
+.cb-v2-nav-group-toggle { justify-content: space-between; padding: 0 var(--ui-nav-item-pad); background: transparent; cursor: pointer; }
+.cb-v2-nav-group-toggle > span { display: inline-flex; min-width: 0; align-items: center; gap: var(--ui-nav-gap); }
 .cb-v2-nav-group-toggle svg,
 .cb-v2-nav-sub-link svg { width: 16px; height: 16px; flex: 0 0 auto; }
-.cb-v2-nav-group-toggle > svg { width: 15px; height: 15px; color: var(--v2-subtle); transition: transform 180ms ease; }
-.cb-v2-nav-group.is-open .cb-v2-nav-group-toggle { color: var(--v2-text); }
+.cb-v2-nav-group-toggle > svg { width: 15px; height: 15px; color: var(--ui-text-subtle); transition: transform 180ms ease; }
+.cb-v2-nav-group.is-open .cb-v2-nav-group-toggle { color: var(--ui-text); }
 .cb-v2-nav-group.is-open .cb-v2-nav-group-toggle > svg { transform: rotate(180deg); }
-.cb-v2-nav-group-toggle:hover { background: var(--v2-surface-hover); color: var(--v2-text); }
+.cb-v2-nav-group-toggle:hover { background: var(--ui-surface-hover); color: var(--ui-text); }
 .cb-v2-nav-sub-list { display: grid; gap: 2px; padding-left: 12px; }
-.cb-v2-nav-sub-link { min-height: 34px; padding: 0 11px; font-size: 12px; }
-.cb-v2-nav-sub-link:hover { background: var(--v2-surface-hover); color: var(--v2-text); }
-.cb-v2-nav-sub-link.is-active { background: var(--v2-accent-soft); color: var(--v2-accent-on-soft); }
+.cb-v2-nav-sub-link { min-height: var(--ui-nav-item-height-sm); padding: 0 var(--ui-nav-item-pad); border-radius: var(--ui-nav-item-radius-sm); font-size: var(--ui-fs-sm); }
+.cb-v2-nav-sub-link:hover { background: var(--ui-surface-hover); color: var(--ui-text); }
+.cb-v2-nav-sub-link.is-active { background: var(--ui-nav-active-bg); color: var(--ui-nav-active-fg); }
 
-.cb-v2-quick-actions { display: grid; gap: 3px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--v2-border); }
+.cb-v2-quick-actions { display: grid; gap: 3px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--ui-border); }
 .cb-v2-quick-actions > p,
 .cb-v2-eyebrow {
-    margin: 0 0 7px;
-    color: var(--v2-subtle);
-    font-size: 10px;
+    margin: 0 0 8px;
+    color: var(--ui-text-subtle);
+    font-size: 9.5px;
     font-weight: 650;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.075em;
     text-transform: uppercase;
 }
 
-.cb-v2-quick-action { width: 100%; padding: 0 12px; cursor: pointer; text-align: left; }
-.cb-v2-quick-action:nth-of-type(1) svg { color: var(--v2-danger); }
-.cb-v2-quick-action:nth-of-type(2) svg { color: var(--v2-positive); }
-.cb-v2-quick-action:nth-of-type(3) svg { color: var(--v2-muted); }
+.cb-v2-quick-action { width: 100%; padding: 0 var(--ui-nav-item-pad); cursor: pointer; text-align: left; }
+.cb-v2-quick-action:nth-of-type(1) svg { color: var(--ui-danger); }
+.cb-v2-quick-action:nth-of-type(2) svg { color: var(--ui-success); }
+.cb-v2-quick-action:nth-of-type(3) svg { color: var(--ui-text-muted); }
 
 .cb-v2-workspace {
     display: flex;
     width: 100%;
     min-width: 0;
-    min-height: 40px;
+    min-height: var(--ui-nav-item-height);
     align-items: center;
-    gap: 10px;
-    padding: 0 10px;
-    border: 1px solid var(--v2-border);
-    border-radius: 10px;
-    background: var(--v2-surface);
-    color: var(--v2-muted);
+    gap: 6px;
+    padding: 0 7px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-nav-item-radius);
+    background: var(--ui-surface);
+    color: var(--ui-text-muted);
     cursor: pointer;
-    font-size: 11px;
-    font-weight: 590;
+    font-size: 10.5px;
+    font-weight: var(--ui-fw-item);
     text-align: left;
-    transition: border-color 180ms ease, background-color 180ms ease;
+    transition: border-color var(--ui-transition), background-color var(--ui-transition);
 }
 
-.cb-v2-workspace:hover { border-color: var(--v2-border-strong); background: var(--v2-surface-hover); }
-.cb-v2-workspace svg { width: 15px; height: 15px; color: var(--v2-positive); }
-.cb-v2-workspace svg:last-child { width: 14px; height: 14px; margin-left: auto; color: var(--v2-subtle); }
+.cb-v2-workspace:hover { border-color: var(--ui-border-strong); background: var(--ui-surface-hover); }
+.cb-v2-workspace svg { width: 15px; height: 15px; color: var(--ui-positive); }
+.cb-v2-workspace svg:last-child { width: 14px; height: 14px; margin-left: auto; color: var(--ui-text-subtle); }
 .cb-v2-workspace span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.cb-v2.is-sidebar-collapsed .cb-v2-sidebar { width: 72px; padding-inline: 12px; }
-.cb-v2.is-sidebar-collapsed .cb-v2-main { margin-left: 72px; }
+.cb-v2.is-sidebar-collapsed .cb-v2-sidebar { width: var(--ui-nav-width-collapsed); padding-inline: 12px; }
+.cb-v2.is-sidebar-collapsed .cb-v2-main { margin-left: var(--ui-nav-width-collapsed); }
 .cb-v2.is-sidebar-collapsed .cb-v2-sidebar-header { justify-content: center; }
 .cb-v2.is-sidebar-collapsed .cb-v2-sidebar-toggle {
     position: absolute;
     top: -2px;
     right: -28px;
     z-index: 1;
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--v2-border);
-    background: var(--v2-surface);
 }
 .cb-v2.is-sidebar-collapsed .cb-v2-sidebar-toggle-close { display: none; }
 .cb-v2.is-sidebar-collapsed .cb-v2-sidebar-toggle-open { display: block; }
@@ -338,12 +383,17 @@ html[data-theme="light"] .cb-v2-brand-lockup-light { display: inline-block; }
 .cb-v2.is-sidebar-collapsed .cb-v2-sidebar .cb-v2-workspace { justify-content: center; padding-inline: 0; }
 .cb-v2.is-sidebar-collapsed .cb-v2-sidebar-footer-context { display: grid; gap: 4px; }
 .cb-v2.is-sidebar-collapsed .cb-v2-sidebar-controls { justify-content: center; padding-top: 0; }
-.cb-v2.is-sidebar-collapsed .cb-v2-sidebar-controls .cb-v2-icon-button { width: 23px; height: 28px; }
+.cb-v2.is-sidebar-collapsed .cb-v2-sidebar-controls .cb-v2-icon-button {
+    width: 23px;
+    height: 28px;
+    border-color: transparent;
+    background: transparent;
+}
 
 .cb-v2-main {
     min-height: 100dvh;
-    margin-left: 272px;
-    padding: 0 48px 32px;
+    margin-left: var(--ui-nav-width);
+    padding: 0 40px 32px;
     transition: margin-left 180ms ease;
 }
 
@@ -364,18 +414,18 @@ html[data-theme="light"] .cb-v2-brand-lockup-light { display: inline-block; }
 .cb-v2-setup-notice-commands span { color: var(--v2-muted); font-size: 11px; }
 
 .cb-v2-footer {
-    margin-left: 272px;
-    padding: 20px 48px 28px;
-    color: var(--v2-subtle);
+    margin-left: var(--ui-nav-width);
+    padding: 18px 40px 26px;
+    color: var(--ui-text-muted);
     text-align: center;
-    font-size: 11px;
+    font-size: 10.5px;
     line-height: 1.6;
     transition: margin-left 180ms ease;
 }
 .cb-v2-footer p { margin: 0; }
-.cb-v2-footer a { color: var(--v2-muted); font-weight: 650; }
-.cb-v2-footer a:hover { color: var(--v2-text); }
-.cb-v2.is-sidebar-collapsed .cb-v2-footer { margin-left: 72px; }
+.cb-v2-footer a { color: var(--ui-text-muted); font-weight: 650; }
+.cb-v2-footer a:hover { color: var(--ui-text); }
+.cb-v2.is-sidebar-collapsed .cb-v2-footer { margin-left: var(--ui-nav-width-collapsed); }
 
 .cb-v2-appbar {
     min-height: 0;
@@ -385,22 +435,37 @@ html[data-theme="light"] .cb-v2-brand-lockup-light { display: inline-block; }
 .cb-v2-appbar-actions { display: none; align-items: center; gap: 6px; }
 .cb-v2-appbar-start { display: none; gap: 5px; }
 .cb-v2-appbar-brand { font-size: 16px; }
-.cb-v2-appbar-brand .cb-v2-brand-lockup { height: 50px; }
+.cb-v2-appbar-brand .cb-v2-brand-lockup { height: 42px; }
 .cb-v2-menu-button { display: none; }
 
 .cb-v2-icon-button {
     position: relative;
     display: inline-grid;
-    width: 40px;
-    height: 40px;
+    width: var(--ui-icon-button-size);
+    height: var(--ui-icon-button-size);
     place-items: center;
-    border-radius: 10px;
+    border: 1px solid transparent;
+    border-radius: var(--ui-icon-button-radius);
     background: transparent;
-    color: var(--v2-muted);
+    color: var(--ui-text-muted);
     cursor: pointer;
-    transition: background-color 180ms ease, color 180ms ease;
+    transition: background-color var(--ui-transition), border-color var(--ui-transition), color var(--ui-transition);
 }
-.cb-v2-icon-button:hover { background: var(--v2-surface-hover); color: var(--v2-text); }
+.cb-v2-icon-button:hover { background: var(--ui-surface-hover); color: var(--ui-text); }
+/* Appbar and sidebar affordances share one surface treatment: an icon in a
+   bordered control, never a bare glyph on one page and a box on another.
+   The shorthand keeps width/style/color together, so a later `border-color`
+   override on hover cannot leave the control without a border. */
+.cb-v2-appbar .cb-v2-icon-button,
+.cb-v2-sidebar .cb-v2-icon-button {
+    border: var(--ui-border-width) solid var(--ui-icon-button-border);
+    background: var(--ui-icon-button-bg);
+}
+.cb-v2-appbar .cb-v2-icon-button:hover,
+.cb-v2-sidebar .cb-v2-icon-button:hover {
+    border-color: var(--ui-border-strong);
+    background: var(--ui-surface-hover);
+}
 .cb-v2-icon-button svg { width: 18px; height: 18px; }
 .cb-v2-theme-icon-light { display: none; }
 html[data-theme="light"] .cb-v2-theme-icon-dark { display: none; }
@@ -432,8 +497,23 @@ html[data-theme="light"] .cb-v2-theme-icon-light { display: block; }
     cursor: pointer;
     transition: background-color 180ms ease, transform 180ms ease;
 }
+
+/* No desktop the sidebar already exposes the three creation actions. The
+   floating button duplicated the action and covered content on every page, so
+   it only exists where the sidebar is hidden (mobile/tablet). */
+@media (min-width: 1024px) {
+    .cb-v2-fab { display: none; }
+}
 .cb-v2-fab:hover { background: var(--v2-fab-hover); transform: translateY(-1px); }
+.cb-v2-fab:focus-visible {
+    outline: 2px solid var(--v2-accent-strong);
+    outline-offset: 3px;
+}
 .cb-v2-fab svg { width: 22px; height: 22px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .cb-v2-fab { transition: none; }
+}
 
 .cb-v2-bottom-nav { display: none; }
 .cb-v2-drawer {
@@ -537,32 +617,54 @@ html[data-theme="light"] .cb-v2-theme-icon-light { display: block; }
     .cb-v2.is-sidebar-collapsed .cb-v2-main { margin-left: 0; }
     .cb-v2-footer,
     .cb-v2.is-sidebar-collapsed .cb-v2-footer { margin-left: 0; padding: 16px 24px calc(96px + env(safe-area-inset-bottom)); }
-    .cb-v2-appbar { min-height: 68px; justify-content: space-between; border-bottom: 1px solid var(--v2-border); }
+    /* Appbar touch context: keep the 40px desktop geometry but give theme,
+       notifications and menu a 44px interactive target on mobile/tablet. */
+    .cb-v2-appbar .cb-v2-icon-button,
+    .cb-v2-appbar .cb-v2-menu-button {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+    .cb-v2-appbar {
+        min-height: 68px;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--ui-border);
+        background: color-mix(in srgb, var(--ui-canvas) 78%, transparent);
+        backdrop-filter: blur(14px);
+    }
     .cb-v2-appbar-start { display: flex; }
     .cb-v2-appbar-actions { display: flex; }
     .cb-v2-menu-button { display: inline-grid; }
+    /* O botão central e a barra compartilham o mesmo deslocamento vertical.
+       Assim a página pode ajustar apenas --cb-v2-bottom-nav-bottom sem deixar
+       o FAB flutuando 2 px abaixo (ou 10 px fora do centro) da navegação. */
     .cb-v2-fab {
         right: auto;
-        bottom: max(36px, calc(env(safe-area-inset-bottom) + 28px));
+        bottom: calc(var(--cb-v2-bottom-nav-bottom, 0px) + 8px + env(safe-area-inset-bottom));
         left: 50%;
-        width: min(64px, calc((100vw - 32px) / 5 - 2px));
-        height: min(64px, calc((100vw - 32px) / 5 - 2px));
-        border-radius: 50%;
+        width: 52px;
+        height: 52px;
+        border-radius: 16px;
         transform: translateX(-50%);
     }
     .cb-v2-fab:hover { transform: translate(-50%, -1px); }
+    .cb-v2-fab:active { transform: translate(-50%, 0); }
     .cb-v2-bottom-nav {
         position: fixed;
-        right: 0;
-        bottom: 0;
-        left: 0;
+        right: var(--cb-v2-bottom-nav-inline);
+        bottom: calc(var(--cb-v2-bottom-nav-bottom) + env(safe-area-inset-bottom));
+        left: var(--cb-v2-bottom-nav-inline);
         z-index: var(--v2-z-navigation);
         display: grid;
         grid-template-columns: repeat(5, 1fr);
-        min-height: calc(68px + env(safe-area-inset-bottom));
-        padding: 6px 14px calc(6px + env(safe-area-inset-bottom));
-        border-top: 1px solid var(--v2-border);
-        background: var(--v2-sidebar);
+        min-height: 68px;
+        padding: 6px 14px;
+        border: 1px solid var(--ui-border);
+        border-radius: 20px;
+        background: color-mix(in srgb, var(--ui-sidebar) 92%, transparent);
+        box-shadow: var(--ui-shadow-floating);
+        backdrop-filter: blur(14px);
     }
     .cb-v2-bottom-nav a {
         display: flex;
@@ -573,10 +675,13 @@ html[data-theme="light"] .cb-v2-theme-icon-light { display: block; }
         min-width: 0;
         min-height: 46px;
         padding: 5px 4px;
-        border-radius: 10px;
-        color: var(--v2-muted);
+        border-radius: var(--ui-nav-item-radius);
+        color: var(--ui-text-muted);
+        transition: background-color var(--ui-transition), color var(--ui-transition);
     }
-    .cb-v2-bottom-nav a.is-active { background: var(--v2-accent-soft); color: var(--v2-accent-on-soft); }
+    .cb-v2-bottom-nav a:active { background: var(--ui-surface-hover); }
+    .cb-v2-bottom-nav a.is-active { background: var(--ui-nav-active-bg); color: var(--ui-nav-active-fg); }
+    .cb-v2-bottom-nav a.is-active svg { color: var(--ui-nav-active-icon); }
     .cb-v2-bottom-nav svg { width: 20px; height: 20px; }
     .cb-v2-bottom-nav .cb-v2-bottom-nav-label {
         max-width: 100%;
@@ -609,7 +714,7 @@ html[data-theme="light"] .cb-v2-theme-icon-light { display: block; }
     .cb-v2-menu-button:focus-visible { outline: 0; }
     .cb-v2-menu-button svg { width: 22px; height: 22px; }
     .cb-v2-appbar-brand { gap: 9px; font-size: 17px; }
-    .cb-v2-appbar-brand .cb-v2-brand-lockup { height: 48px; }
+    .cb-v2-appbar-brand .cb-v2-brand-lockup { height: 42px; }
     .cb-v2-setup-notice-commands { display: grid; }
 }
 
@@ -619,11 +724,76 @@ html[data-theme="light"] .cb-v2-theme-icon-light { display: block; }
     .cb-v2-icon-button { width: 36px; height: 40px; }
     .cb-v2-menu-button { width: 44px; height: 44px; }
     .cb-v2-menu-button svg { width: 22px; height: 22px; }
-    .cb-v2-appbar-brand .cb-v2-brand-lockup { height: 45px; }
+    .cb-v2-appbar-brand .cb-v2-brand-lockup { height: 40px; }
 }
+
+.cb-investment-patrimony {
+    min-width: 0;
+    margin-block: 10px;
+    color: var(--cb-text-main);
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+.cb-investment-patrimony p { margin: 0; }
+.cb-investment-patrimony-label { font-weight: 600; }
+.cb-investment-patrimony-value { font-size: 1rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.cb-investment-patrimony-note { color: var(--cb-text-muted); max-width: 65ch; }
+.cb-investment-patrimony-warning { color: var(--cb-text-main); font-weight: 600; margin-block: 8px; }
+.cb-investment-patrimony-details { margin-top: 8px; }
+.cb-investment-patrimony-details summary { cursor: pointer; color: var(--cb-text-main); padding-block: 6px; }
+.cb-investment-patrimony-details summary:focus-visible { outline: 2px solid var(--cb-accent); outline-offset: 2px; }
+.cb-investment-patrimony-account { margin-top: 10px; }
+.cb-investment-patrimony-position { border-top: 1px solid var(--cb-border-subtle); padding-block: 8px; }
+.cb-investment-account { flex-direction: column; align-items: stretch; gap: 10px; }
+.cb-investment-account > div:first-child { align-items: flex-start; }
+.cb-investment-account > div:last-child { flex-wrap: wrap; justify-content: space-between; gap: 8px; }
 
 @media (prefers-reduced-motion: reduce) {
     .cb-v2 *,
     .cb-v2 *::before,
     .cb-v2 *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+}
+
+
+/* Bottom nav labels fit without ellipsis on narrow phones. The Dashboard
+   previously duplicated these rules in dashboard-wallet.css. */
+@media (max-width: 389px) {
+    .cb-v2-bottom-nav { padding-inline: 8px; }
+    .cb-v2-bottom-nav a { padding-inline: 2px; }
+    .cb-v2-bottom-nav .cb-v2-bottom-nav-label { font-size: 10px; }
+}
+
+@media (max-width: 359px) {
+    .cb-v2-bottom-nav { padding-inline: 6px; }
+    .cb-v2-bottom-nav a { padding-inline: 2px; }
+    .cb-v2-bottom-nav .cb-v2-bottom-nav-label { font-size: 9px; letter-spacing: 0; }
+}
+
+
+/* Overlay scroll lock: while a dialog/sheet/drawer is open, the page behind
+   must not scroll. Toggled by overlay-stack.js (cb-overlay-open). */
+html.cb-overlay-open,
+html.cb-overlay-open body {
+    overflow: hidden;
+}
+
+/* Shared payment confirmation: payment-confirm.js appends the row amount as a
+   [data-sensitive] span. When the global privacy mode is on, mask that value
+   just like the page values; the dialog text and payment payload are unchanged. */
+.privacy-enabled #payment-confirm-description [data-sensitive] {
+    position: relative;
+    visibility: hidden;
+    user-select: none;
+}
+
+.privacy-enabled #payment-confirm-description [data-sensitive]::after {
+    content: "••••";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    visibility: visible;
+    color: var(--v2-muted);
+    letter-spacing: .12em;
 }

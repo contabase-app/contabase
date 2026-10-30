@@ -1,84 +1,78 @@
 {{define "configuracoes-categorias-page"}}
-{{template "configuracoes-v2-section-start" .}}
+{{template "configuracoes-premium-section-start" .}}
 {{template "configuracoes-categorias-content" .}}
-{{template "configuracoes-v2-section-end" .}}
+<script src="{{assetPath "/assets/js/categorias-ui.js"}}"></script>
+{{template "configuracoes-premium-section-end" .}}
 {{end}}
 
 {{define "configuracoes-categorias-content"}}
 <div id="settings-dynamic-payload" class="w-full" data-cat-root data-cat-default-tab="EXPENSE" data-cat-default-macro="{{if .IsBusiness}}Custos Operacionais{{else}}Essencial{{end}}" data-cat-is-business="{{if .IsBusiness}}true{{else}}false{{end}}">
-    <!-- Header Mobile Only -->
-    <header class="sticky top-14 z-20 bg-[var(--cb-surface-overlay)] backdrop-blur-xl border-b border-[var(--cb-border-subtle)] transition-colors md:hidden w-full">
-        <div class="mx-auto flex max-w-7xl items-center gap-4 px-4 pt-4 pb-3">
-            <button type="button" hx-get="/configuracoes" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] btn-tactile">
-                <i data-lucide="arrow-left" class="h-4 w-4"></i>
-            </button>
-            <div class="min-w-0 flex-1">
-                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
-                <h1 class="mt-0.5 text-lg font-bold text-[var(--cb-text-main)] md:text-xl capitalize">categorias</h1>
+    <div class="cb-v2-configuracoes-body">
+        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-danger" role="alert">{{.FlashError}}</div>{{end}}
+        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-success" role="status">{{.FlashSuccess}}</div>{{end}}
+
+        <header class="cb-v2-configuracoes-head ui-page-header">
+            <div class="min-w-0">
+                <p class="ui-eyebrow">Configurações</p>
+                <h1 class="ui-page-title">Categorias</h1>
+                <p class="ui-page-description">Gerencie as categorias de despesas e receitas do workspace.</p>
             </div>
-        </div>
-    </header>
+            <div class="flex items-center gap-2 shrink-0">
+                <a href="/ajuda#categorias-hierarquia" hx-get="/ajuda" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="ui-btn ui-btn--ghost ui-btn--sm" aria-label="Ajuda sobre hierarquia de categorias" title="Ajuda sobre hierarquia de categorias">
+                    <i data-lucide="help-circle" aria-hidden="true"></i>
+                </a>
+            </div>
+        </header>
 
-    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
-        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-danger">{{.FlashError}}</div>{{end}}
-        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-success">{{.FlashSuccess}}</div>{{end}}
-
-        <!-- Section header -->
-        <div class="mb-6 flex items-start justify-between gap-4">
-            <div>
-                <div class="flex items-center gap-2">
-                    <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Categorias</h1>
-                    <a href="/ajuda#categorias-hierarquia" hx-get="/ajuda" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="text-[var(--cb-text-subtle)] hover:text-[var(--cb-text-main)]" title="Ajuda sobre Hierarquia de Categorias">
-                        <i data-lucide="help-circle" class="w-4 h-4"></i>
-                    </a>
+        <div class="ui-panel p-4 md:p-6">
+            <form class="cb-v2-config-form" hx-post="/configuracoes/categorias" hx-target="#settings-dynamic-payload" hx-swap="outerHTML"
+                hx-disabled-elt="find button[type='submit']" hx-sync="this:drop" hx-indicator="#htmx-indicator">
+                <div>
+                    <h2 class="cb-v2-section-title">Nova categoria</h2>
+                    <p class="cb-v2-section-desc">Crie uma categoria raiz ou uma subcategoria de despesa ou receita.</p>
                 </div>
-                <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Gerencie as categorias de despesas e receitas do workspace.</p>
-            </div>
-        </div>
 
-        <div class="cb-card-dense p-4 md:p-6">
-            <!-- Cadastro Superior Form -->
-            <form class="cb-card-muted mb-6 p-4 md:p-5" hx-post="/configuracoes/categorias" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
                     <div class="md:col-span-2">
-                        <span class="cb-label">Nome da categoria</span>
-                        <input type="text" name="name" placeholder="Ex: Alimentação, Transporte..." class="cb-input">
+                        <label class="ui-label" for="catCreateName">Nome da categoria</label>
+                        <input id="catCreateName" type="text" name="name" placeholder="Ex: Alimentação, Transporte..." class="ui-input" required>
                     </div>
                     <div>
-                        <span class="cb-label">Tipo</span>
-                        <select name="type" data-cat-type-select class="cb-input">
+                        <label class="ui-label" for="catCreateType">Tipo</label>
+                        <select id="catCreateType" name="type" data-cat-type-select class="ui-select">
                             <option value="EXPENSE">Despesa</option>
                             <option value="INCOME">Receita</option>
                         </select>
                     </div>
                     <div>
-                        <span class="cb-label">Categoria Pai (Opcional)</span>
+                        <span class="ui-label" id="catCreateParentLabel">Categoria pai (opcional)</span>
                         <div class="relative" data-cat-combobox>
                             <button type="button" data-cat-combobox-toggle
-                                class="cb-input flex items-center justify-between cursor-pointer text-left">
+                                aria-haspopup="listbox" aria-expanded="false" aria-labelledby="catCreateParentLabel"
+                                class="ui-input cb-v2-combobox-trigger">
                                 <span data-cat-combobox-label class="truncate">Nenhuma (categoria raiz)</span>
-                                <i data-lucide="chevrons-up-down" class="w-4 h-4 shrink-0 text-[var(--cb-text-subtle)] ml-2"></i>
+                                <i data-lucide="chevrons-up-down" class="shrink-0" aria-hidden="true"></i>
                             </button>
                             <div data-cat-combobox-panel
-                                class="hidden opacity-0 scale-95 absolute z-50 left-0 right-0 mt-1.5 w-full rounded-xl border bg-[var(--cb-surface-overlay)] border-[var(--cb-border-strong)] shadow-xl max-h-64 overflow-hidden flex flex-col">
+                                class="hidden opacity-0 scale-95 absolute z-50 left-0 right-0 mt-2 w-full rounded-xl border bg-[var(--cb-surface-overlay)] border-[var(--cb-border-strong)] shadow-xl max-h-64 overflow-hidden flex flex-col cb-v2-combobox-panel">
                                 <div class="p-2 border-b border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)]">
-                                    <input type="text" data-cat-combobox-search placeholder="Buscar categoria pai..."
-                                        class="w-full h-9 rounded-lg border bg-[var(--cb-surface-1)] border-[var(--cb-border-strong)] px-3 text-sm text-[var(--cb-text-main)] placeholder:text-[var(--cb-text-subtle)] outline-none focus:border-[var(--cb-accent)] transition-colors">
+                                    <input type="search" data-cat-combobox-search placeholder="Buscar categoria pai..." autocomplete="off"
+                                        class="ui-input cb-v2-combobox-search" aria-label="Buscar categoria pai">
                                 </div>
-                                <ul class="overflow-y-auto max-h-48 py-1">
-                                    <li data-cat-combobox-option data-cat-option-value="" data-cat-option-name="Nenhuma (categoria raiz)"
-                                        data-cat-option-active="text-[var(--cb-accent)] bg-[var(--cb-accent-soft)]"
-                                        data-cat-option-inactive="text-[var(--cb-text-muted)]"
-                                        class="cursor-pointer px-4 py-2.5 text-sm transition-colors hover:bg-[var(--cb-surface-3)] flex items-center gap-2 text-[var(--cb-text-muted)]">
-                                        <span class="text-xs opacity-50">&mdash;</span>
+                                <ul role="listbox" aria-label="Categoria pai" class="overflow-y-auto max-h-48 py-1">
+                                    <li data-cat-combobox-option role="option" tabindex="0" aria-selected="true" data-cat-option-value="" data-cat-option-name="Nenhuma (categoria raiz)"
+                                        data-cat-option-active="cb-v2-option-active"
+                                        data-cat-option-inactive="cb-v2-option-inactive"
+                                        class="cb-v2-combobox-option flex items-center gap-2">
+                                        <span class="cb-v2-combobox-dash" aria-hidden="true">&mdash;</span>
                                         <span>Nenhuma (categoria raiz)</span>
                                     </li>
                                     {{range .Categorias}}{{if not .IsChild}}
-                                    <li data-cat-combobox-option data-cat-option-value="{{.ID}}" data-cat-option-name="{{.Name}}" data-cat-option-type="{{.Type}}" data-cat-option-macro="{{.MacroGroup}}"
-                                        data-cat-option-active="text-[var(--cb-accent)] bg-[var(--cb-accent-soft)]"
-                                        data-cat-option-inactive="text-[var(--cb-text-muted)]"
-                                        class="cursor-pointer px-4 py-2.5 text-sm transition-colors hover:bg-[var(--cb-surface-3)] flex items-center gap-2 text-[var(--cb-text-muted)]">
-                                        <i data-lucide="{{if eq .Type "EXPENSE"}}arrow-down-right{{else}}arrow-up-right{{end}}" class="w-3.5 h-3.5 {{if eq .Type "EXPENSE"}}text-[var(--cb-danger)]{{else}}text-[var(--cb-success)]{{end}} shrink-0"></i>
+                                    <li data-cat-combobox-option role="option" tabindex="0" aria-selected="false" data-cat-option-value="{{.ID}}" data-cat-option-name="{{.Name}}" data-cat-option-type="{{.Type}}" data-cat-option-macro="{{.MacroGroup}}"
+                                        data-cat-option-active="cb-v2-option-active"
+                                        data-cat-option-inactive="cb-v2-option-inactive"
+                                        class="cb-v2-combobox-option flex items-center gap-2">
+                                        <i data-lucide="{{if eq .Type "EXPENSE"}}arrow-down-right{{else}}arrow-up-right{{end}}" class="shrink-0 {{if eq .Type "EXPENSE"}}cb-v2-tone-expense{{else}}cb-v2-tone-income{{end}}" aria-hidden="true"></i>
                                         <span class="truncate">{{.Name}}</span>
                                     </li>
                                     {{end}}{{end}}
@@ -89,11 +83,10 @@
                     </div>
                 </div>
 
-                <!-- Segunda linha condicional para macro grupos (oculta se tiver pai selecionado) -->
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-4 mt-4" data-cat-macro-section>
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-4" data-cat-macro-section>
                     <div class="md:col-span-2">
-                        <span class="cb-label">Grupo macro</span>
-                        <select name="macro_group" data-cat-macro-select class="cb-input">
+                        <label class="ui-label" for="catCreateMacro">Grupo macro</label>
+                        <select id="catCreateMacro" name="macro_group" data-cat-macro-select class="ui-select">
                             <option value="" data-cat-macro-for-type="EXPENSE,INCOME">Nenhum</option>
                             {{range .CategoryIncomeMacros}}
                             <option value="{{.Name}}" data-cat-macro-for-type="INCOME">{{.Name}}</option>
@@ -101,117 +94,109 @@
                             {{range .CategoryExpenseMacros}}
                             <option value="{{.Name}}" data-cat-macro-for-type="EXPENSE">{{.Name}}</option>
                             {{end}}
-                            <option value="custom" data-cat-macro-for-type="EXPENSE,INCOME">Outro grupo...</option>
                         </select>
-                    </div>
-                    <div class="md:col-span-2 hidden" data-cat-macro-custom>
-                        <span class="cb-label">Nome do Novo Grupo Macro</span>
-                        <input type="text" name="macro_group_custom" placeholder="Digite o novo grupo macro" class="cb-input">
+                        <p class="cb-v2-help">Os grupos macro são definidos pelo ContaBase para cada tipo de categoria.</p>
                     </div>
                 </div>
 
-                <div data-cat-sub-info class="hidden mt-3 text-xs text-[var(--cb-text-subtle)]">
-                    <i data-lucide="info" class="w-3.5 h-3.5 inline mr-1"></i> Subcategoria herda automaticamente o Grupo Macro da categoria pai.
-                </div>
-                <div data-cat-macro-help class="mt-3 p-3 rounded-lg border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)]" {{if .IsBusiness}}data-is-business{{end}}>
-                    {{if .IsBusiness}}
-                    <p class="text-xs font-semibold text-[var(--cb-text-main)] mb-1">Grupo Macro define como a categoria aparece nos relatórios</p>
-                    <ul class="text-xs text-[var(--cb-text-muted)] space-y-0.5 list-disc list-inside">
-                        <li><strong>Receitas Financeiras</strong>: rendimentos, juros e aplicações.</li>
-                        <li><strong>Retiradas/Distribuição</strong>: fica fora do resultado operacional.</li>
-                        <li><strong>Investimentos/Patrimonial</strong>: fica separado do resultado operacional.</li>
-                        <li><strong>Investimentos/Outros</strong>: legado, revise para Investimentos/Patrimonial.</li>
-                    </ul>
-                    {{else}}
-                    <p class="text-xs font-semibold text-[var(--cb-text-main)] mb-1">Grupo Macro organiza suas categorias nos relatórios</p>
-                    <ul class="text-xs text-[var(--cb-text-muted)] space-y-0.5 list-disc list-inside">
-                        <li><strong>Receitas</strong>: entradas de dinheiro.</li>
-                        <li><strong>Essencial</strong>: gastos necessários e recorrentes.</li>
-                        <li><strong>Estilo de Vida</strong>: lazer, consumo e escolhas pessoais.</li>
-                    </ul>
-                    {{end}}
-                </div>
+                <p data-cat-sub-info class="hidden cb-v2-help">
+                    <i data-lucide="info" aria-hidden="true"></i> Subcategoria herda automaticamente o Grupo Macro da categoria pai.
+                </p>
 
-                <div class="mt-4 max-w-sm">
+                <details class="cb-v2-cat-help" data-cat-macro-help {{if .IsBusiness}}data-is-business{{end}}>
+                    <summary>
+                        <i data-lucide="circle-help" aria-hidden="true"></i>
+                        {{if .IsBusiness}}Grupo Macro define como a categoria aparece nos relatórios{{else}}Grupo Macro organiza suas categorias{{end}}
+                    </summary>
+                    <div class="cb-v2-cat-help-body">
+                        {{if .IsBusiness}}
+                        <ul>
+                            <li><strong>Receitas Financeiras</strong>: rendimentos, juros e aplicações.</li>
+                            <li><strong>Retiradas/Distribuição</strong>: fica fora do resultado operacional.</li>
+                            <li><strong>Investimentos/Patrimonial</strong>: fica separado do resultado operacional.</li>
+                            <li><strong>Investimentos/Outros</strong>: legado, revise para Investimentos/Patrimonial.</li>
+                        </ul>
+                        {{else}}
+                        <ul>
+                            <li><strong>Receitas</strong>: entradas de dinheiro.</li>
+                            <li><strong>Essencial</strong>: gastos necessários e recorrentes.</li>
+                            <li><strong>Estilo de Vida</strong>: lazer, consumo e escolhas pessoais.</li>
+                        </ul>
+                        {{end}}
+                    </div>
+                </details>
+
+                <div class="max-w-sm">
                     {{template "icon-picker" iconPickerData "catCreateIcon" "icon" "" defaultIconKey}}
                 </div>
 
-                <button class="cb-button cb-button-primary h-11 px-6 text-sm mt-4">Criar categoria</button>
+                <div class="cb-v2-form-actions">
+                    <button type="submit" class="ui-btn ui-btn--primary">Criar categoria</button>
+                </div>
             </form>
 
             {{$incomeCats := filterCategories .Categorias "INCOME"}}
             {{$expenseCats := filterCategories .Categorias "EXPENSE"}}
 
-            <!-- Search -->
-            <div>
-                <div class="relative">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                        <i data-lucide="search" class="h-4 w-4 text-[var(--cb-text-subtle)]"></i>
-                    </span>
-                    <input type="text" data-cat-search placeholder="Buscar categorias..." class="cb-input pl-9 pr-4 w-full !pl-9">
+            <div class="cb-v2-cat-toolbar">
+                <div class="ui-search">
+                    <i data-lucide="search" class="ui-search__icon" aria-hidden="true"></i>
+                    <input type="search" data-cat-search placeholder="Buscar categorias..." autocomplete="off" class="ui-input ui-input--search" aria-label="Buscar categorias">
                 </div>
+                <span class="cb-v2-cat-summary">{{len $expenseCats}} despesas · {{len $incomeCats}} receitas</span>
             </div>
 
-            <!-- Tabs -->
-            <div class="mt-4">
-                <div class="flex border-b border-[var(--cb-border-subtle)] mb-6 pb-px">
-                    <button type="button" data-cat-tab="EXPENSE"
-                        data-cat-tab-active="border-[var(--cb-danger)] text-[var(--cb-danger)]"
-                        data-cat-tab-inactive="border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]"
-                        data-cat-tab-icon-active="bg-red-500/10 text-[var(--cb-danger)]"
-                        data-cat-tab-icon-inactive="bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)]"
-                        class="flex items-center gap-2 border-b-2 py-3 px-4 text-sm font-semibold transition-all btn-tactile border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]">
-                        <span data-cat-tab-icon class="flex h-5 w-5 items-center justify-center rounded-md transition-colors bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)]">
-                            <i data-lucide="arrow-down-right" class="h-3.5 w-3.5"></i>
-                        </span>
-                        <span>Despesas</span>
-                        <span class="text-xs opacity-60">({{len $expenseCats}})</span>
-                    </button>
-                    <button type="button" data-cat-tab="INCOME"
-                        data-cat-tab-active="border-[var(--cb-success)] text-[var(--cb-success)]"
-                        data-cat-tab-inactive="border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]"
-                        data-cat-tab-icon-active="bg-emerald-500/10 text-[var(--cb-success)]"
-                        data-cat-tab-icon-inactive="bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)]"
-                        class="flex items-center gap-2 border-b-2 py-3 px-4 text-sm font-semibold transition-all btn-tactile border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]">
-                        <span data-cat-tab-icon class="flex h-5 w-5 items-center justify-center rounded-md transition-colors bg-[var(--cb-surface-2)] text-[var(--cb-text-muted)]">
-                            <i data-lucide="arrow-up-right" class="h-3.5 w-3.5"></i>
-                        </span>
-                        <span>Receitas</span>
-                        <span class="text-xs opacity-60">({{len $incomeCats}})</span>
-                    </button>
-                </div>
+            <div class="cb-tabs cb-v2-cat-tabs" role="group" aria-label="Tipo de categoria">
+                <button type="button" data-cat-tab="EXPENSE"
+                    aria-pressed="true" aria-controls="categorias-panel-expense"
+                    data-cat-tab-active="cb-tab-active"
+                    data-cat-tab-inactive="cb-tab-inactive"
+                    class="cb-tab cb-tab-active">
+                    <span data-cat-tab-icon class="cb-v2-cat-tab-icon cb-v2-tone-expense">
+                        <i data-lucide="arrow-down-right" aria-hidden="true"></i>
+                    </span>
+                    <span>Despesas</span>
+                    <span class="cb-v2-cat-count">({{len $expenseCats}})</span>
+                </button>
+                <button type="button" data-cat-tab="INCOME"
+                    aria-pressed="false" aria-controls="categorias-panel-income"
+                    data-cat-tab-active="cb-tab-active"
+                    data-cat-tab-inactive="cb-tab-inactive"
+                    class="cb-tab cb-tab-inactive">
+                    <span data-cat-tab-icon class="cb-v2-cat-tab-icon cb-v2-tone-income">
+                        <i data-lucide="arrow-up-right" aria-hidden="true"></i>
+                    </span>
+                    <span>Receitas</span>
+                    <span class="cb-v2-cat-count">({{len $incomeCats}})</span>
+                </button>
+            </div>
 
-                <!-- Expenses Tab Content -->
-                <div data-cat-tab-panel="EXPENSE" class="space-y-2">
-                    {{if $expenseCats}}
-                    {{range $.CategoryTree}}{{if eq .Type "EXPENSE"}}
-                    {{template "config-categorias-tree-node" .}}
-                    {{end}}{{end}}
-                    {{else}}
-                    <div class="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-dashed border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)]/50">
-                        <div class="w-12 h-12 rounded-xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-3">
-                            <i data-lucide="tags" class="w-5 h-5 text-[var(--cb-text-subtle)]"></i>
-                        </div>
-                        <p class="text-sm text-[var(--cb-text-muted)]">Nenhuma categoria de despesa cadastrada</p>
-                    </div>
-                    {{end}}
+            <div id="categorias-panel-expense" data-cat-tab-panel="EXPENSE" class="cb-v2-cat-list">
+                {{if $expenseCats}}
+                {{range $.CategoryTree}}{{if eq .Type "EXPENSE"}}
+                {{template "config-categorias-tree-node" .}}
+                {{end}}{{end}}
+                {{else}}
+                <div class="ui-empty" role="status">
+                    <span class="ui-empty__icon"><i data-lucide="tags" aria-hidden="true"></i></span>
+                    <p class="ui-empty__title">Nenhuma categoria de despesa cadastrada</p>
+                    <p class="ui-empty__text">Crie a primeira categoria de despesa no formulário acima.</p>
                 </div>
+                {{end}}
+            </div>
 
-                <!-- Incomes Tab Content -->
-                <div data-cat-tab-panel="INCOME" class="hidden space-y-2">
-                    {{if $incomeCats}}
-                    {{range $.CategoryTree}}{{if eq .Type "INCOME"}}
-                    {{template "config-categorias-tree-node" .}}
-                    {{end}}{{end}}
-                    {{else}}
-                    <div class="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-dashed border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)]/50">
-                        <div class="w-12 h-12 rounded-xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-3">
-                            <i data-lucide="tags" class="w-5 h-5 text-[var(--cb-text-subtle)]"></i>
-                        </div>
-                        <p class="text-sm text-[var(--cb-text-muted)]">Nenhuma categoria de receita cadastrada</p>
-                    </div>
-                    {{end}}
+            <div id="categorias-panel-income" data-cat-tab-panel="INCOME" class="cb-v2-cat-list hidden">
+                {{if $incomeCats}}
+                {{range $.CategoryTree}}{{if eq .Type "INCOME"}}
+                {{template "config-categorias-tree-node" .}}
+                {{end}}{{end}}
+                {{else}}
+                <div class="ui-empty" role="status">
+                    <span class="ui-empty__icon"><i data-lucide="tags" aria-hidden="true"></i></span>
+                    <p class="ui-empty__title">Nenhuma categoria de receita cadastrada</p>
+                    <p class="ui-empty__text">Crie a primeira categoria de receita no formulário acima.</p>
                 </div>
+                {{end}}
             </div>
         </div>
     </div>

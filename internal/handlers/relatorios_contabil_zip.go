@@ -9,6 +9,9 @@ import (
 )
 
 func (h *RelatoriosHandler) HandleExportarContabilZIP(w http.ResponseWriter, r *http.Request) {
+	if !h.requireReportsPermission(w) {
+		return
+	}
 	mes, ano, err := parseDREPDFPeriod(r)
 	if err != nil {
 		http.Error(w, "periodo invalido", http.StatusBadRequest)

@@ -57,7 +57,7 @@ func TestBuildMetasDataYieldProjectionShowsWhenRateReducesMonths(t *testing.T) {
 	now := time.Now().UTC().Unix()
 	seedMetasYieldScenario(t, db, now)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-yield", UserID: "user-yield"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-yield", UserID: "user-yield"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -90,7 +90,7 @@ func TestBuildMetasDataYieldDoesNotAffectBalance(t *testing.T) {
 	now := time.Now().UTC().Unix()
 	seedMetasYieldScenario(t, db, now)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-yield", UserID: "user-yield"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-yield", UserID: "user-yield"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
@@ -114,7 +114,7 @@ func TestBuildMetasDataYieldWorkspaceIsolation(t *testing.T) {
 	now := time.Now().UTC().Unix()
 	seedMetasYieldScenario(t, db, now)
 
-	h := MetasHandler{DB: db, WorkspaceID: "ws-other-yield", UserID: "user-other-yield"}
+	h := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-other-yield", UserID: "user-other-yield"}
 	data, err := h.buildMetasData("", "caixinhas")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)

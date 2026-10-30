@@ -49,80 +49,82 @@
 }
 
 .tab-button {
-    color: var(--cb-text-muted);
-}
-
-.dark .tab-button {
-    color: var(--cb-text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid transparent;
+    color: var(--ui-text-muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color var(--ui-transition), border-color var(--ui-transition), color var(--ui-transition);
 }
 
 .tab-button:hover {
-    background: var(--cb-surface-2);
-    color: var(--cb-text-main);
+    background: var(--ui-surface-hover);
+    color: var(--ui-text);
 }
 
-.dark .tab-button:hover {
-    background: var(--cb-surface-3);
-    color: var(--cb-text-main);
+.tab-button:focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
 }
 
-/* Active States */
+/* Active states use a tinted surface + semantic text, not a saturated fill.
+   Expense/income/transfer keep their financial meaning without breaking the
+   Premium tab geometry. */
 .tab-button.is-active-despesa {
-    background: var(--cb-danger);
-    color: #ffffff;
+    border-color: color-mix(in srgb, var(--ui-danger) 34%, transparent);
+    background: color-mix(in srgb, var(--ui-danger) 12%, var(--ui-surface));
+    color: var(--ui-danger);
 }
 .tab-button.is-active-receita {
-    background: var(--cb-success);
-    color: #ffffff;
+    border-color: color-mix(in srgb, var(--ui-success) 34%, transparent);
+    background: color-mix(in srgb, var(--ui-success) 12%, var(--ui-surface));
+    color: var(--ui-success);
 }
 .tab-button.is-active-transferencia {
-    background: var(--cb-warning);
-    color: #ffffff;
+    border-color: color-mix(in srgb, var(--ui-warning) 38%, transparent);
+    background: color-mix(in srgb, var(--ui-warning) 14%, var(--ui-surface));
+    color: var(--ui-warning);
 }
 
-/* Active States Hover Overrides */
-.tab-button.is-active-despesa:hover,
-.dark .tab-button.is-active-despesa:hover {
-    background: color-mix(in srgb, var(--cb-danger) 85%, #000);
-    color: #ffffff;
+.tab-button.is-active-despesa:hover {
+    background: color-mix(in srgb, var(--ui-danger) 18%, var(--ui-surface));
+    color: var(--ui-danger);
 }
-.tab-button.is-active-receita:hover,
-.dark .tab-button.is-active-receita:hover {
-    background: color-mix(in srgb, var(--cb-success) 85%, #000);
-    color: #ffffff;
+.tab-button.is-active-receita:hover {
+    background: color-mix(in srgb, var(--ui-success) 18%, var(--ui-surface));
+    color: var(--ui-success);
 }
-.tab-button.is-active-transferencia:hover,
-.dark .tab-button.is-active-transferencia:hover {
-    background: color-mix(in srgb, var(--cb-warning) 85%, #000);
-    color: #ffffff;
+.tab-button.is-active-transferencia:hover {
+    background: color-mix(in srgb, var(--ui-warning) 20%, var(--ui-surface));
+    color: var(--ui-warning);
 }
 
-/* Inactive States Hover Overrides (based on data-type attribute) */
-.tab-button[data-type="despesa"]:not(.is-active-despesa):hover {
-    background: color-mix(in srgb, var(--cb-danger) 8%, transparent);
-    color: color-mix(in srgb, var(--cb-danger) 90%, #000);
+/* Light mode: a 10% black blend keeps the semantic hue while restoring
+   AA contrast for 10.5–12px text on the tinted active surfaces. */
+html[data-theme="light"] .sheet-lancamento-dialog .tab-button.is-active-despesa {
+    color: color-mix(in srgb, var(--ui-danger) 90%, #000);
 }
-.dark .tab-button[data-type="despesa"]:not(.is-active-despesa):hover {
-    background: color-mix(in srgb, var(--cb-danger) 12%, transparent);
-    color: color-mix(in srgb, var(--cb-danger) 90%, #ffffff);
+html[data-theme="light"] .sheet-lancamento-dialog .tab-button.is-active-receita,
+html[data-theme="light"] .sheet-status-btn.is-paid {
+    color: color-mix(in srgb, var(--ui-success) 90%, #000);
 }
-
-.tab-button[data-type="receita"]:not(.is-active-receita):hover {
-    background: color-mix(in srgb, var(--cb-success) 8%, transparent);
-    color: color-mix(in srgb, var(--cb-success) 90%, #000);
-}
-.dark .tab-button[data-type="receita"]:not(.is-active-receita):hover {
-    background: color-mix(in srgb, var(--cb-success) 12%, transparent);
-    color: color-mix(in srgb, var(--cb-success) 90%, #ffffff);
+html[data-theme="light"] .sheet-lancamento-dialog .tab-button.is-active-transferencia,
+html[data-theme="light"] .sheet-status-btn.is-pending {
+    color: color-mix(in srgb, var(--ui-warning) 90%, #000);
 }
 
-.tab-button[data-type="transferencia"]:not(.is-active-transferencia):hover {
-    background: color-mix(in srgb, var(--cb-warning) 8%, transparent);
-    color: color-mix(in srgb, var(--cb-warning) 90%, #000);
+html[data-theme="light"] #lancamento-form-error:not(.hidden),
+html[data-theme="light"] .sheet-field-error {
+    color: color-mix(in srgb, var(--ui-danger) 88%, #000);
 }
-.dark .tab-button[data-type="transferencia"]:not(.is-active-transferencia):hover {
-    background: color-mix(in srgb, var(--cb-warning) 12%, transparent);
-    color: color-mix(in srgb, var(--cb-warning) 90%, #ffffff);
+
+html[data-theme="light"] .sheet-danger-action--danger {
+    color: color-mix(in srgb, var(--ui-danger) 88%, #000);
 }
 
 .sheet-close-btn {
@@ -157,18 +159,6 @@
 
 .sheet-amount-input {
     color: var(--cb-text-main);
-}
-
-.sheet-amount-input::placeholder {
-    color: var(--cb-text-subtle);
-}
-
-.dark .sheet-amount-input {
-    color: var(--cb-text-main);
-}
-
-.dark .sheet-amount-input::placeholder {
-    color: var(--cb-text-subtle);
 }
 
 .sheet-status-btn {
@@ -216,7 +206,9 @@
 .sheet-select:focus,
 .sheet-file-input:focus {
     background: var(--cb-surface-2);
-    border-color: var(--cb-border-strong);
+    border-color: var(--ui-field-focus-border);
+    outline: none;
+    box-shadow: none;
 }
 
 .dark .sheet-picker:hover,
@@ -224,7 +216,16 @@
 .dark .sheet-select:focus,
 .dark .sheet-file-input:focus {
     background: var(--cb-surface-3);
-    border-color: var(--cb-border-strong);
+    border-color: var(--ui-field-focus-border);
+    outline: none;
+    box-shadow: none;
+}
+
+html[data-input-modality="keyboard"] .sheet-control:focus,
+html[data-input-modality="keyboard"] .sheet-select:focus,
+html[data-input-modality="keyboard"] .sheet-file-input:focus {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
 }
 
 .sheet-control::placeholder,
@@ -237,13 +238,11 @@
     color: var(--cb-text-subtle);
 }
 
-.sheet-control-icon,
-.sheet-muted-text {
+.sheet-control-icon {
     color: var(--cb-text-muted);
 }
 
-.dark .sheet-control-icon,
-.dark .sheet-muted-text {
+.dark .sheet-control-icon {
     color: var(--cb-text-muted);
 }
 
@@ -260,29 +259,9 @@
     color: var(--cb-text-muted);
 }
 
-.sheet-primary-text {
-    color: var(--cb-text-main);
-}
-
-.dark .sheet-primary-text {
-    color: var(--cb-text-main);
-}
-
-.sheet-picker-icon,
-.sheet-feature-icon {
+.sheet-picker-icon {
     background: var(--cb-surface-3);
     border-color: var(--cb-border-subtle);
-}
-
-.sheet-feature-icon {
-    display: inline-flex;
-    width: 2.75rem;
-    height: 2.75rem;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    border-radius: 0.75rem;
-    border-width: 1px;
 }
 
 .toggle-track {
@@ -391,15 +370,6 @@
     color: var(--cb-text-main);
 }
 
-.sheet-submit-bubble {
-    background: var(--cb-success);
-    box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--cb-success) 30%, transparent);
-}
-
-.sheet-submit-bubble:hover {
-    background: color-mix(in srgb, var(--cb-success) 80%, #000);
-}
-
 /* Fatura quick selector */
 #faturaQuickState {
     background: var(--cb-surface-2);
@@ -437,6 +407,8 @@
 
 .sheet-series-overlay {
     background: rgba(15, 19, 26, 0.58);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
 }
 
 .dark .sheet-series-overlay {
@@ -444,91 +416,1284 @@
 }
 
 .sheet-series-card {
-    border: 1px solid var(--cb-border-subtle);
-    border-radius: 1rem;
-    background: var(--cb-surface-1);
+    padding: 20px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-panel);
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-floating);
 }
 
-.dark .sheet-series-card {
-    background: var(--cb-surface-2);
-}
-
-.sheet-series-kicker {
-    color: var(--cb-accent-solid);
-}
-
+.sheet-series-kicker,
 .sheet-series-kicker-danger {
-    color: var(--cb-danger);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .08em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.sheet-series-kicker { color: var(--ui-accent-strong); }
+.sheet-series-kicker-danger { color: var(--ui-danger); }
+
+.sheet-series-title {
+    margin: 6px 0 0;
+    color: var(--ui-text);
+    font-size: 15px;
+    font-weight: 640;
+    letter-spacing: -.015em;
+    line-height: 1.3;
+}
+
+.sheet-series-text {
+    margin: 4px 0 0;
+    color: var(--ui-text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.sheet-series-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 14px;
 }
 
 .sheet-series-option {
-    border: 1px solid var(--cb-border-subtle);
-    border-radius: 1rem;
-    background: var(--cb-surface-2);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 48px;
+    padding: 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-control);
+    background: var(--ui-field-bg);
+    cursor: pointer;
     transition: background-color 150ms ease, border-color 150ms ease;
 }
 
 .sheet-series-option:hover {
-    background: var(--cb-surface-3);
-    border-color: var(--cb-border-strong);
+    border-color: var(--ui-border-strong);
+    background: var(--ui-surface-hover);
+}
+
+.sheet-series-option__title {
+    display: block;
+    color: var(--ui-text);
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.sheet-series-option__hint {
+    display: block;
+    margin-top: 2px;
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    line-height: 1.4;
 }
 
 .sheet-series-radio-scope {
-    accent-color: var(--cb-accent-solid);
-    border-color: var(--cb-border-strong);
+    accent-color: var(--ui-accent-strong);
 }
 
 .sheet-series-radio-danger {
-    accent-color: var(--cb-danger);
-    border-color: var(--cb-border-strong);
+    accent-color: var(--ui-danger);
+}
+
+.sheet-series-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
 }
 
 .sheet-series-action {
-    min-height: 2.25rem;
-    padding: 0 0.75rem;
-    border-radius: 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 600;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 10px;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 620;
+    cursor: pointer;
     transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease, transform 150ms ease;
 }
 
 .sheet-series-action-cancel {
-    border: 1px solid var(--cb-border-subtle);
-    color: var(--cb-text-muted);
+    border: 1px solid var(--ui-border);
     background: transparent;
+    color: var(--ui-text-muted);
 }
 
 .sheet-series-action-cancel:hover {
-    background: var(--cb-surface-3);
-    color: var(--cb-text-main);
+    background: var(--ui-surface-hover);
+    color: var(--ui-text);
 }
 
 .sheet-series-action-confirm {
     border: 1px solid transparent;
-    background: var(--cb-accent-solid);
-    color: var(--cb-accent-text);
+    background: var(--ui-action-bg);
+    color: var(--ui-action-fg);
 }
 
 .sheet-series-action-confirm:hover {
-    background: var(--cb-accent-hover);
+    background: var(--ui-action-bg-hover);
 }
 
 .sheet-series-action-danger {
     border: 1px solid transparent;
-    background: var(--cb-danger);
-    color: var(--cb-accent-text);
+    background: var(--ui-danger);
+    color: var(--ui-action-fg);
+}
+
+/* The dark-theme danger token is tuned as foreground text (#fb7185). As a
+   solid button fill it fails AA with white, so the destructive action uses a
+   deeper blend. Light mode already contrasts 5.03:1 with white. */
+html[data-theme="dark"] .sheet-series-action-danger,
+html.dark .sheet-series-action-danger {
+    background: color-mix(in srgb, var(--ui-danger) 55%, #000);
 }
 
 .sheet-series-action-danger:hover {
     filter: brightness(0.95);
 }
 
-.scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+/* =========================================================================
+   Lançamentos form sheet (F7)
+   Scoped to the transaction sheet and its own origin picker. Shared sheet-*
+   primitives above remain untouched for the Faturas refund sheet.
+   ========================================================================= */
+
+.sheet-lancamento-dialog.sheet-shell,
+.sheet-shell.sheet-lancamento-dialog {
+    width: 100%;
+    max-width: 496px;
+    border-color: var(--ui-border);
+    border-radius: 18px 18px 0 0;
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-floating);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    max-height: 92dvh;
 }
 
-.scrollbar-hide::-webkit-scrollbar { display: none; }
+html[data-theme="dark"] .sheet-shell.sheet-lancamento-dialog,
+html.dark .sheet-shell.sheet-lancamento-dialog {
+    background: var(--ui-surface);
+    border-color: var(--ui-border);
+}
+
+.sheet-lancamento-layer {
+    -webkit-overflow-scrolling: touch;
+}
+
+.sheet-lancamento-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 18px 20px 0;
+}
+
+.sheet-eyebrow {
+    margin: 0 0 3px;
+    color: var(--ui-text-muted);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .08em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.sheet-title {
+    margin: 0;
+    color: var(--ui-text);
+    font-size: 20px;
+    font-weight: 660;
+    letter-spacing: -.03em;
+    line-height: 1.15;
+}
+
+.sheet-subtitle {
+    margin: 4px 0 0;
+    color: var(--ui-text-muted);
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
+.sheet-lancamento-close {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--ui-radius-control);
+}
+
+.sheet-tabs-wrap {
+    padding: 14px 20px 0;
+}
+
+.sheet-lancamento-dialog .sheet-tabs {
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-tab);
+    background: var(--ui-field-bg);
+}
+
+.sheet-lancamento-body {
+    padding: 16px 20px 20px;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+.sheet-error-region:empty { display: none; }
+
+#lancamento-form-error:not(.hidden) {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--ui-danger) 38%, var(--ui-border));
+    border-radius: var(--ui-radius-control);
+    background: color-mix(in srgb, var(--ui-danger) 10%, var(--ui-surface));
+    color: var(--ui-danger);
+    font-size: 12.5px;
+    line-height: 1.45;
+}
+
+.sheet-lancamento-form {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+}
+
+.sheet-lancamento-form > .hidden { display: none; }
+
+/* Amount ---------------------------------------------------------------- */
+
+.sheet-amount-panel--premium {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 12px 0 16px;
+    border-bottom: 1px solid var(--ui-border);
+    text-align: left;
+}
+
+/* Two independent controls: the amount owns the flexible column and the
+   payment status owns a content-sized column. The focus ring belongs to the
+   input shell only, never to a wrapper that also contains the status button. */
+.sheet-amount-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 12px;
+    min-width: 0;
+}
+
+.sheet-amount-controls:has(.sheet-status-btn.hidden) {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.sheet-amount-main {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.sheet-amount-label {
+    color: var(--ui-text-muted);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .08em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.sheet-amount-input-shell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    height: 56px;
+    padding: 0 14px;
+    border: 1px solid var(--ui-field-border);
+    border-radius: var(--ui-radius-control);
+    background: var(--ui-field-bg);
+    transition: border-color var(--ui-transition), background-color var(--ui-transition), box-shadow var(--ui-transition);
+}
+
+.sheet-amount-input-shell:focus-within {
+    border-color: var(--ui-field-focus-border);
+    box-shadow: none;
+}
+
+html[data-input-modality="keyboard"] .sheet-amount-input-shell:focus-within {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+
+#valor-input.has-error {
+    border-color: color-mix(in srgb, var(--ui-danger) 45%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-danger) 7%, var(--ui-field-bg));
+}
+
+#valor-input.has-error:focus-within {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-danger) 18%, transparent);
+}
+
+.sheet-amount-input {
+    min-width: 0;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ui-text);
+    font: inherit;
+    font-size: clamp(30px, 8.6vw, 40px);
+    font-weight: 700;
+    letter-spacing: -.045em;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+.sheet-amount-input:focus { outline: none; }
+
+.sheet-amount-input::placeholder {
+    color: var(--ui-text-muted);
+    font-weight: 700;
+}
+
+.sheet-status-field {
+    display: grid;
+    grid-template-rows: auto auto;
+    gap: 6px;
+    justify-items: end;
+    min-width: 0;
+}
+
+.sheet-status-field:has(.sheet-status-btn.hidden),
+.sheet-status-btn.hidden { display: none; }
+
+.sheet-status-caption {
+    color: var(--ui-text-muted);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .08em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.sheet-status-btn {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: 56px;
+    min-width: 108px;
+    padding: 0 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-control);
+    background: var(--ui-surface-raised);
+    color: var(--ui-text-muted);
+    font: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color var(--ui-transition), border-color var(--ui-transition), color var(--ui-transition), transform 120ms ease;
+}
+
+.sheet-status-btn:active { transform: scale(.98); }
+
+.sheet-status-btn:focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+
+.sheet-status-btn.is-paid {
+    border-color: color-mix(in srgb, var(--ui-success) 28%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-success) 12%, var(--ui-surface));
+    color: var(--ui-success);
+}
+
+.sheet-status-btn.is-pending {
+    border-color: color-mix(in srgb, var(--ui-warning) 30%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-warning) 14%, var(--ui-surface));
+    color: var(--ui-warning);
+}
+
+.sheet-status-icon { width: 16px; height: 16px; flex: 0 0 auto; }
+
+.sheet-status-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: .005em;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.sheet-field-error {
+    color: var(--ui-danger);
+    font-size: 11px;
+    font-weight: 550;
+    line-height: 1.3;
+}
+
+/* Fields ---------------------------------------------------------------- */
+
+.sheet-field-group {
+    display: grid;
+    gap: 14px;
+    min-width: 0;
+}
+
+.sheet-field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+.sheet-field.hidden,
+.sheet-field-group.hidden,
+.sheet-card.hidden {
+    display: none;
+}
+
+.sheet-field-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+}
+
+.sheet-field-label {
+    display: block;
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: .04em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.sheet-lancamento-dialog .sheet-control {
+    width: 100%;
+    height: var(--ui-control-height);
+    min-height: var(--ui-control-height);
+    padding: 0 13px;
+    border: 1px solid var(--ui-field-border);
+    border-radius: var(--ui-radius-control);
+    background: var(--ui-field-bg);
+    color: var(--ui-text);
+    font: inherit;
+    font-size: var(--ui-fs-md);
+    transition: border-color var(--ui-transition), background-color var(--ui-transition), box-shadow var(--ui-transition);
+}
+
+.sheet-lancamento-dialog .sheet-control:hover {
+    border-color: color-mix(in srgb, var(--ui-border-strong) 70%, var(--ui-text-muted));
+}
+
+.sheet-lancamento-dialog .sheet-control:focus {
+    outline: none;
+    border-color: var(--ui-field-focus-border);
+    background: var(--ui-field-bg);
+    box-shadow: none;
+}
+
+html[data-input-modality="keyboard"] .sheet-lancamento-dialog .sheet-control:focus {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+
+.sheet-lancamento-dialog .sheet-control[aria-invalid="true"],
+.sheet-lancamento-dialog .sheet-select[aria-invalid="true"] {
+    border-color: color-mix(in srgb, var(--ui-danger) 55%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-danger) 6%, var(--ui-field-bg));
+}
+
+.sheet-lancamento-dialog .sheet-picker[aria-invalid="true"] {
+    border-color: color-mix(in srgb, var(--ui-danger) 55%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-danger) 6%, var(--ui-field-bg));
+}
+
+.sheet-lancamento-dialog .sheet-control--icon-right { padding-right: 42px; }
+.sheet-lancamento-dialog .sheet-control--icon-both { padding-left: 42px; padding-right: 42px; }
+
+/* Keep one calendar affordance: the field is opened by data-onclick-el and
+   the visible chevron; the browser's native indicator would duplicate it. */
+.sheet-lancamento-dialog input[type="date"]::-webkit-calendar-picker-indicator {
+    opacity: 0;
+    cursor: pointer;
+}
+
+.sheet-lancamento-dialog .sheet-textarea {
+    height: auto;
+    min-height: 96px;
+    padding: 10px 13px;
+    resize: vertical;
+    line-height: 1.5;
+}
+
+.sheet-lancamento-dialog .sheet-select {
+    width: 100%;
+    height: var(--ui-control-height);
+    min-height: var(--ui-control-height);
+    padding: 0 36px 0 13px;
+    border: 1px solid var(--ui-field-border);
+    border-radius: var(--ui-radius-control);
+    background-color: var(--ui-field-bg);
+    color: var(--ui-text);
+    font: inherit;
+    font-size: var(--ui-fs-md);
+    font-weight: 550;
+}
+
+.sheet-lancamento-dialog .sheet-select:focus {
+    outline: none;
+    border-color: var(--ui-field-focus-border);
+    box-shadow: none;
+}
+
+html[data-input-modality="keyboard"] .sheet-lancamento-dialog .sheet-select:focus {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+
+.sheet-lancamento-dialog .sheet-control-icon {
+    color: var(--ui-text-muted);
+}
+
+.sheet-lancamento-dialog .sheet-control::placeholder {
+    color: var(--ui-text-muted);
+}
+
+/* Account/category pickers --------------------------------------------- */
+
+.sheet-lancamento-dialog .sheet-picker {
+    min-height: 58px;
+    padding: 10px 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-control);
+    background: var(--ui-field-bg);
+    color: var(--ui-text);
+    transition: background-color var(--ui-transition), border-color var(--ui-transition);
+}
+
+.sheet-lancamento-dialog .sheet-picker:hover {
+    border-color: var(--ui-border-strong);
+    background: var(--ui-surface-hover);
+}
+
+.sheet-lancamento-dialog .sheet-picker:focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+
+.sheet-lancamento-dialog .sheet-picker-icon {
+    width: 42px;
+    height: 42px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-tile);
+    background: var(--ui-surface);
+}
+
+.sheet-picker__label {
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: .04em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.sheet-picker__value {
+    margin-top: 2px;
+    color: var(--ui-text);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.sheet-picker__chevron { color: var(--ui-text-muted); }
+
+.sheet-transfer-hint {
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: -2px 0;
+    color: var(--ui-accent-strong);
+}
+
+.sheet-transfer-hint:not(.hidden) { display: flex; }
+
+.sheet-transfer-hint__line {
+    height: 1px;
+    flex: 1 1 auto;
+    background: var(--ui-border);
+}
+
+.sheet-transfer-hint__icon {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--ui-accent) 12%, var(--ui-surface));
+    color: var(--ui-accent-strong);
+}
+
+/* Notices, info and cards ---------------------------------------------- */
+
+.sheet-notice {
+    padding: 10px 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-control);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.sheet-notice--accent {
+    border-color: color-mix(in srgb, var(--ui-accent) 30%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-accent) 8%, var(--ui-surface));
+    color: var(--ui-accent-strong);
+}
+
+.sheet-notice--info {
+    border-color: color-mix(in srgb, var(--ui-info) 30%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-info) 8%, var(--ui-surface));
+    color: var(--ui-info);
+}
+
+.sheet-notice--warning {
+    border-color: color-mix(in srgb, var(--ui-warning) 30%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-warning) 9%, var(--ui-surface));
+    color: var(--ui-warning);
+}
+
+.sheet-notice--danger {
+    border-color: color-mix(in srgb, var(--ui-danger) 30%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-danger) 9%, var(--ui-surface));
+    color: var(--ui-danger);
+}
+
+.sheet-subsection {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-control);
+    background: var(--ui-field-bg);
+}
+
+.sheet-subsection.hidden { display: none; }
+
+.sheet-inline-action.hidden { display: none; }
+
+.sheet-inline-action {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ui-accent-strong);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.sheet-inline-action:hover {
+    color: var(--ui-accent);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.sheet-inline-action--subtle { color: var(--ui-text-muted); }
+.sheet-inline-action--subtle:hover { color: var(--ui-text); }
+
+.sheet-quick-state { color: var(--ui-text-muted); }
+
+.sheet-quick-state .font-medium {
+    color: var(--ui-text);
+    font-weight: 620;
+    font-variant-numeric: tabular-nums;
+}
+
+.sheet-lancamento-dialog .sheet-card {
+    padding: 14px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-card);
+    background: var(--ui-surface);
+}
+
+.sheet-business {
+    display: grid;
+    gap: 14px;
+}
+
+.sheet-info {
+    padding: 8px 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-control);
+    background: var(--ui-field-bg);
+}
+
+.sheet-info__text {
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    line-height: 1.45;
+}
+
+.sheet-info__label {
+    color: var(--ui-text);
+    font-weight: 650;
+}
+
+.sheet-info__warn {
+    margin-top: 2px;
+    color: var(--ui-warning);
+    font-size: 11.5px;
+    line-height: 1.4;
+}
+
+.sheet-info__note {
+    margin-top: 2px;
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    line-height: 1.4;
+}
+
+.sheet-lancamento-dialog .sheet-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--ui-warning);
+}
+
+/* Installments and recurrence ------------------------------------------ */
+
+.sheet-options { padding: 6px 14px; }
+
+.sheet-option { min-width: 0; }
+
+.sheet-option__row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+    padding: 8px 0;
+    cursor: pointer;
+}
+
+.sheet-option__icon {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: var(--ui-radius-tile);
+    background: var(--ui-field-bg);
+    color: var(--ui-text-muted);
+}
+
+.sheet-option__title {
+    display: block;
+    color: var(--ui-text);
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.sheet-option__hint {
+    display: block;
+    margin-top: 2px;
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    line-height: 1.35;
+}
+
+.sheet-option__hint.is-filled {
+    color: var(--ui-accent-strong);
+    font-weight: 600;
+}
+
+.sheet-option__panel {
+    gap: 6px;
+    padding: 2px 0 12px;
+}
+
+.sheet-option__panel:not(.hidden) { display: grid; }
+.sheet-option__panel.hidden { display: none; }
+
+.sheet-option__divider {
+    height: 1px;
+    background: var(--ui-border);
+}
+
+.toggle-input:focus-visible + .toggle-label .toggle-track {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+
+.sheet-option__panel .sheet-select,
+.sheet-option__panel .sheet-control {
+    width: 100%;
+}
+
+/* Details and metadata -------------------------------------------------- */
+
+.sheet-details { padding: 6px; }
+
+.sheet-details-toggle {
+    min-height: 56px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--ui-text);
+    cursor: pointer;
+    transition: background-color var(--ui-transition);
+}
+
+.sheet-details-toggle:hover { background: var(--ui-surface-hover); }
+
+.sheet-details__icon {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: var(--ui-radius-tile);
+    background: var(--ui-field-bg);
+    color: var(--ui-text-muted);
+}
+
+.sheet-details__title {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.sheet-details__hint {
+    display: block;
+    margin-top: 2px;
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    line-height: 1.35;
+}
+
+.sheet-details__body {
+    display: grid;
+    gap: 14px;
+    padding: 6px 10px 10px;
+}
+
+.sheet-details__body.hidden { display: none; }
+
+.sheet-attachment {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--ui-accent) 22%, var(--ui-border));
+    border-radius: var(--ui-radius-control);
+    background: color-mix(in srgb, var(--ui-accent) 8%, var(--ui-surface));
+    color: var(--ui-accent-strong);
+    font-size: 12px;
+}
+
+.sheet-attachment__link {
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--ui-accent) 14%, var(--ui-surface));
+    color: var(--ui-accent-strong);
+    font-weight: 650;
+    text-decoration: none;
+}
+
+.sheet-meta-card {
+    display: grid;
+    gap: 8px;
+    color: var(--ui-text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.sheet-meta-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.sheet-meta-row__label {
+    color: var(--ui-text-muted);
+    font-weight: 550;
+}
+
+.sheet-meta-row__value {
+    color: var(--ui-text);
+    font-weight: 620;
+    font-variant-numeric: tabular-nums;
+}
+
+.sheet-meta-row__value.is-success { color: var(--ui-success); }
+
+.sheet-history {
+    display: grid;
+    gap: 10px;
+}
+
+.sheet-history__title {
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.sheet-history__row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--ui-border);
+    font-size: 12px;
+}
+
+.sheet-history__row:last-child {
+    padding-bottom: 0;
+    border-bottom: 0;
+}
+
+.sheet-history__change {
+    color: var(--ui-text);
+    font-weight: 600;
+}
+
+.sheet-history__meta {
+    margin-top: 2px;
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+}
+
+.sheet-history__dates {
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* Danger zone ----------------------------------------------------------- */
+
+.sheet-danger-zone {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid color-mix(in srgb, var(--ui-danger) 24%, var(--ui-border));
+    border-radius: var(--ui-radius-card);
+    background: color-mix(in srgb, var(--ui-danger) 5%, var(--ui-surface));
+}
+
+.sheet-danger-zone__title {
+    color: var(--ui-text);
+    font-size: 12.5px;
+    font-weight: 650;
+}
+
+.sheet-danger-zone__hint {
+    margin-top: 2px;
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    line-height: 1.4;
+}
+
+.sheet-danger-zone__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.sheet-danger-action {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: 10px;
+    background: var(--ui-surface);
+    color: var(--ui-text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 620;
+    cursor: pointer;
+    transition: background-color var(--ui-transition), border-color var(--ui-transition), color var(--ui-transition), filter var(--ui-transition);
+}
+
+.sheet-danger-action--danger {
+    border-color: color-mix(in srgb, var(--ui-danger) 30%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-danger) 8%, var(--ui-surface));
+    color: var(--ui-danger);
+}
+
+.sheet-danger-action--accent {
+    border-color: color-mix(in srgb, var(--ui-accent) 26%, var(--ui-border));
+    background: color-mix(in srgb, var(--ui-accent) 8%, var(--ui-surface));
+    color: var(--ui-accent-strong);
+}
+
+.sheet-danger-action:hover { filter: brightness(1.04); }
+
+/* Footer ---------------------------------------------------------------- */
+
+.sheet-form-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--ui-border);
+    background: var(--ui-surface);
+}
+
+.sheet-footer-btn {
+    display: inline-flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 16px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-button);
+    background: transparent;
+    color: var(--ui-text-muted);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 620;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color var(--ui-transition), border-color var(--ui-transition), color var(--ui-transition), transform 120ms ease;
+}
+
+.sheet-footer-btn:hover {
+    border-color: var(--ui-border-strong);
+    background: var(--ui-surface-hover);
+    color: var(--ui-text);
+}
+
+.sheet-footer-btn:active { transform: scale(.98); }
+
+.sheet-footer-btn:focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+
+.sheet-footer-btn:disabled {
+    opacity: var(--ui-disabled-opacity);
+    cursor: not-allowed;
+    transform: none;
+}
+
+.sheet-footer-btn--primary {
+    min-width: 132px;
+    border-color: transparent;
+    background: var(--ui-action-bg);
+    color: var(--ui-action-fg);
+    box-shadow: inset 0 1px 0 #ffffff24;
+}
+
+.sheet-footer-btn--primary:hover {
+    border-color: transparent;
+    background: var(--ui-action-bg-hover);
+    color: var(--ui-action-fg);
+}
+
+/* Origin picker modal --------------------------------------------------- */
+
+.sheet-origin-modal {
+    border-color: var(--ui-border);
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-floating);
+}
+
+.sheet-origin-modal__title {
+    color: var(--ui-text);
+    font-size: 15px;
+    font-weight: 640;
+    letter-spacing: -.015em;
+}
+
+.sheet-origin-modal__subtitle {
+    margin-top: 2px;
+    color: var(--ui-text-muted);
+    font-size: 12px;
+}
+
+.sheet-origin-modal__close {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--ui-radius-control);
+}
+
+.sheet-origin-modal__list {
+    max-height: min(60vh, 520px);
+    overscroll-behavior: contain;
+}
+
+.sheet-origin-modal__group {
+    padding: 0 4px;
+    color: var(--ui-text-muted);
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.sheet-origin-option {
+    min-height: 56px;
+    padding: 10px 12px;
+    border-color: var(--ui-border);
+    background: var(--ui-field-bg);
+}
+
+.sheet-origin-option:hover {
+    border-color: var(--ui-border-strong);
+    background: var(--ui-surface-hover);
+}
+
+.sheet-origin-option__name {
+    color: var(--ui-text);
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+.sheet-origin-option__meta {
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+}
+
+/* Privacy: sheets live outside #main-content, so they need their own mask.
+   .sheet-shell covers every financial sheet (invoice refund, transaction
+   refund, refund history and the transaction form). Editable controls keep
+   their values; only auxiliary financial values are masked visually and the
+   submitted values never change. */
+.privacy-enabled .sheet-shell [data-sensitive]:not(option) {
+    visibility: hidden;
+    user-select: none;
+}
+
+.privacy-enabled .sheet-shell :is(span, strong, p, small, div, dd)[data-sensitive]:not(option) {
+    position: relative;
+}
+
+.privacy-enabled .sheet-shell :is(span, strong, p, small, div, dd)[data-sensitive]:not(option)::after {
+    content: "••••";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    visibility: visible;
+    color: var(--ui-text-muted);
+    font-variant-numeric: normal;
+    letter-spacing: .12em;
+    pointer-events: none;
+}
+
+/* Responsive ------------------------------------------------------------ */
+
+@media (min-width: 768px) {
+    .sheet-shell.sheet-lancamento-dialog {
+        max-height: min(880px, calc(100dvh - 48px));
+        border-radius: var(--ui-radius-panel);
+    }
+    .sheet-lancamento-header { padding: 20px 22px 0; }
+    .sheet-tabs-wrap { padding: 14px 22px 0; }
+    .sheet-lancamento-body { padding: 16px 22px 20px; }
+    .sheet-form-footer { padding: 14px 22px; }
+}
+
+@media (max-width: 1023px) {
+    .sheet-lancamento-dialog .sheet-control,
+    .sheet-lancamento-dialog .sheet-select {
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 767px) {
+    /* 320px loses width to the 48px status column. The 8.3vw slope keeps the
+       amount hierarchy while still fitting a 7-digit currency value there. */
+    .sheet-amount-input { font-size: clamp(26.5px, 8.3vw, 36px); }
+
+    /* Mobile keeps the amount and the icon-only status control on the same
+       row. The label spans both columns; the input and the 48x48 button share
+       the second row, with independent boxes and a real gap between them. */
+    .sheet-amount-controls {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-rows: auto auto;
+        column-gap: 10px;
+        row-gap: 6px;
+        align-items: center;
+    }
+    .sheet-amount-main { display: contents; }
+    .sheet-amount-label {
+        grid-column: 1 / -1;
+        grid-row: 1;
+    }
+    #valor-input {
+        grid-column: 1;
+        grid-row: 2;
+    }
+    .sheet-status-field {
+        display: flex;
+        grid-column: 2;
+        grid-row: 2;
+        min-width: 48px;
+        align-items: center;
+        justify-content: flex-end;
+        align-self: center;
+    }
+    .sheet-status-caption { display: none; }
+    .sheet-status-btn {
+        width: 48px;
+        min-width: 48px;
+        height: 56px;
+        padding: 0;
+        gap: 0;
+    }
+    .sheet-status-label { display: none; }
+
+    .sheet-form-footer .sheet-footer-btn {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+    .sheet-form-footer .sheet-footer-btn--primary {
+        flex: 1.45 1 0;
+    }
+}
+
+@media (max-width: 389px) {
+    .sheet-field-head {
+        flex-wrap: wrap;
+        align-items: flex-start;
+    }
+    .sheet-field-head .sheet-field-error {
+        flex-basis: 100%;
+    }
+    .sheet-lancamento-header { padding: 16px 16px 0; }
+    .sheet-tabs-wrap { padding: 12px 16px 0; }
+    .sheet-lancamento-body { padding: 14px 16px 18px; }
+    .sheet-form-footer { padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
+    .sheet-title { font-size: 18px; }
+    .sheet-subtitle { font-size: 12px; }
+    .sheet-card { padding: 12px; }
+    .sheet-options { padding: 4px 12px; }
+    .sheet-danger-zone { padding: 12px; }
+    .sheet-danger-zone__actions .sheet-danger-action { flex: 1 1 auto; justify-content: center; }
+}
 
 @media (prefers-reduced-motion: reduce) {
     .sheet-in { animation: none; }
@@ -538,7 +1703,17 @@
     .sheet-control,
     .sheet-select,
     .sheet-status-btn,
-    .sheet-submit-bubble {
+    .sheet-details-toggle,
+    .sheet-danger-action,
+    .sheet-series-action,
+    .sheet-series-card {
         transition: none;
     }
 }
+
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }

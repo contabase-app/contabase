@@ -62,6 +62,7 @@ SERVICE_FILE="/etc/systemd/system/contabase.service"
 SERVICE_BACKUP=""
 NEW_BUNDLE_ACTIVE=false
 NEW_RUNTIME_STARTED=false
+RELEASE_BUNDLE_VERIFIED=false
 SERVICE_WAS_ACTIVE=false
 STATE_PRESENT=false
 PREVIOUS_VERSION="desconhecida"
@@ -73,6 +74,127 @@ CANONICAL_RESTORE_HELPER=""
 PERSISTED_RESTORE_HELPER=""
 CANONICAL_BACKUP_SHA256="6b9382927526cdd77b0d46fec7c6ff410bf003b69420a34aa080970d0956bc72"
 CANONICAL_RESTORE_SHA256="dd8685882a5508fe41705280936a9b301d60248411f972b3fa5e8d288e953b5b"
+
+# Recovery evidence is administrative state, never imported from a release bundle.
+# === SAFE_RECOVERY_BLOCK_BEGIN ===
+recovery_version_known() {
+  [ "$1" = "v1.0.0-beta.6" ]
+}
+
+recovery_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  else
+    shasum -a 256 | awk '{print $1}'
+  fi
+}
+
+recovery_admin_path() {
+  local path="$1" owner mode
+  while :; do
+    [ -e "$path" ] && [ ! -L "$path" ] || return 1
+    owner="$(stat -c %u "$path" 2>/dev/null)" || owner="$(stat -f %u "$path")" || return 1
+    mode="$(stat -c %a "$path" 2>/dev/null)" || mode="$(stat -f %Lp "$path")" || return 1
+    [ "$owner" = 0 ] && [[ "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+    (( (8#$mode & 0022) == 0 )) || return 1
+    [ "$path" != / ] || break
+    path="$(dirname "$path")"
+  done
+}
+
+recovery_source_known() {
+  local root="$1" expected path actual
+  [ "$(cat "$root/VERSION" 2>/dev/null)" = v1.0.0-beta.6 ] || return 1
+  # Exact reviewed security sources; a version label cannot attest a local build.
+  while read -r expected path; do
+    [ -f "$root/$path" ] && [ ! -L "$root/$path" ] || return 1
+    actual="$(recovery_sha256 < "$root/$path")" || return 1
+    [ "$actual" = "$expected" ] || return 1
+  done <<'RECOVERY_SOURCES'
+e00dcd07672e3f89242ffecf489926621020e18e943d3becd5ad8766140db674 cmd/server/main.go
+28dac28177886cef83978757d943e013924af575ae4ac58052de0a668e29487c cmd/server/server_runtime.go
+0fc224bc1fa1b27cc339aaaede07f28cdc204ae5a0cc17c8bd3c8fe8589340b5 cmd/server/legacy_seed_credentials.go
+e6d72d81fd2d8e4089d718e1027faf214bd5791dff7f14c0eb9d821a6637ab8a internal/security/crypto.go
+RECOVERY_SOURCES
+}
+
+recovery_bundle_identity() (
+  set -euo pipefail
+  local root="$1" suffix="$2" unit="$3" version path file files bad digest
+  [ -d "$root" ] && [ ! -L "$root" ] && [ -f "$unit" ] && [ ! -L "$unit" ] || exit 1
+  cd "$root"
+  version="$(cat "VERSION$suffix")"
+  recovery_version_known "$version" || exit 1
+  for path in contabase VERSION templates assets; do
+    [ -e "$path$suffix" ] && [ ! -L "$path$suffix" ] || exit 1
+  done
+  [ -f "contabase$suffix" ] && [ -f "VERSION$suffix" ] \
+    && [ -d "templates$suffix" ] && [ -d "assets$suffix" ] || exit 1
+  set -- "contabase$suffix" "VERSION$suffix" "templates$suffix" "assets$suffix"
+  if [ -e "admin$suffix" ] || [ -L "admin$suffix" ]; then
+    [ -f "admin$suffix" ] && [ ! -L "admin$suffix" ] || exit 1
+    set -- "$@" "admin$suffix"
+  fi
+  bad="$(find "$@" ! -type f ! -type d -print)" || exit 1
+  [ -z "$bad" ] || exit 1
+  files="$(find "$@" -type f -print | LC_ALL=C sort)" || exit 1
+  # Hash a framed manifest, including logical paths, without executing old code.
+  {
+    printf 'bundle-v1\000%s\000' "$version"
+    recovery_sha256 < "$unit"
+    while IFS= read -r file; do
+      [ -f "$file" ] && [ ! -L "$file" ] || exit 1
+      if [ -n "$suffix" ]; then
+        path="${file%%"$suffix"*}${file#*"$suffix"}"
+      else
+        path="$file"
+      fi
+      digest="$(recovery_sha256 < "$file")" || exit 1
+      printf '%s\000%s\000' "$path" "$digest"
+    done <<< "$files"
+  } | recovery_sha256
+)
+
+recovery_proof_text() {
+  printf 'contabase-recovery-v1\nkind=%s\nversion=%s\nidentity=%s\n' "$1" "$2" "$3"
+}
+
+recovery_record() {
+  local directory="$1" kind="$2" version="$3" identity="$4" tmp
+  case "$kind" in bundle|docker) ;; *) return 1 ;; esac
+  recovery_version_known "$version" || return 1
+  [[ "$identity" =~ ^[0-9a-f]{64}$ ]] || return 1
+  recovery_admin_path "$(dirname "$directory")" || return 1
+  [ ! -L "$directory" ] || return 1
+  install -d -o root -g root -m 0700 "$directory" || return 1
+  recovery_admin_path "$directory" || return 1
+  tmp="$(mktemp "$directory/.proof.XXXXXX")" || return 1
+  if ! recovery_proof_text "$kind" "$version" "$identity" > "$tmp" \
+    || ! chmod 0600 "$tmp" || ! mv -f "$tmp" "$directory/$kind-$identity.proof"; then
+    rm -f "$tmp"
+    return 1
+  fi
+}
+
+recovery_verify() {
+  local directory="$1" kind="$2" version="$3" identity="$4" proof
+  case "$kind" in bundle|docker) ;; *) return 1 ;; esac
+  recovery_version_known "$version" || return 1
+  [[ "$identity" =~ ^[0-9a-f]{64}$ ]] || return 1
+  proof="$directory/$kind-$identity.proof"
+  [ -f "$proof" ] && recovery_admin_path "$proof" || return 1
+  recovery_proof_text "$kind" "$version" "$identity" | cmp -s - "$proof"
+}
+
+recovery_blocked() {
+  printf '%s\n' \
+    'RECOVERY_BLOCKED: nenhum codigo anterior sera ativado automaticamente.' \
+    'Recuperacao exige prova de codigo corrigido e nenhuma tentativa de startup da candidata.' \
+    'Mantenha o servico parado. Preserve banco, WAL, uploads, configuracao, chaves e backups.' \
+    'Repare a falha e use um artefato corrigido, verificado e compativel com o schema atual.' \
+    'Nao use downgrade como resgate. Restore de banco exige plano e decisao explicita.' >&2
+}
+# === SAFE_RECOVERY_BLOCK_END ===
 
 say() {
   printf '%s\n' "$*"
@@ -1004,6 +1126,7 @@ download_and_validate_bundle() {
   validate_tar_entries "$artifact_file"
   tar --no-same-owner --no-same-permissions -xzf "$artifact_file" -C "$EXTRACT_DIR"
   validate_extracted_bundle "${EXTRACT_DIR}/contabase"
+  RELEASE_BUNDLE_VERIFIED=true
   download_and_validate_ops_helpers
   say "Artifact validado e extraido com seguranca."
 }
@@ -1104,9 +1227,7 @@ stage_and_swap_bundle() {
   chmod 0755 "$STAGING_DIR/contabase" "$STAGING_DIR/admin"
 
   if ! mv "$STAGING_DIR" "$INSTALL_DIR"; then
-    if [ -n "$PREVIOUS_DIR" ] && [ -e "$PREVIOUS_DIR" ]; then
-      mv "$PREVIOUS_DIR" "$INSTALL_DIR" || true
-    fi
+    rollback_bundle || true
     fail "nao foi possivel ativar o bundle em staging."
   fi
   STAGING_DIR=""
@@ -1129,42 +1250,55 @@ wait_for_healthcheck() {
 }
 
 rollback_bundle() {
+  [ "${RECOVERY_COMPLETED:-false}" != true ] || return 0
+  local identity unit="${SERVICE_BACKUP:-$SERVICE_FILE}" previous_version
   say ""
   say "====================================================================="
   say "ROLLBACK: restaurando bundle anterior."
   say "Dados e configuracao NAO serao restaurados."
   say "====================================================================="
 
-  systemctl stop contabase >/dev/null 2>&1 || true
+  systemctl stop contabase || { recovery_blocked; return 1; }
+  if [ "$NEW_RUNTIME_STARTED" = true ] || [ -z "$PREVIOUS_DIR" ] || [ ! -d "$PREVIOUS_DIR" ]; then
+    recovery_blocked
+    return 1
+  fi
+  identity="$(recovery_bundle_identity "$PREVIOUS_DIR" "" "$unit")" || { recovery_blocked; return 1; }
+  previous_version="$(cat "$PREVIOUS_DIR/VERSION")" || return 1
+  recovery_verify "$CONFIG_DIR/recovery" bundle "$previous_version" "$identity" || { recovery_blocked; return 1; }
 
   if [ "$NEW_BUNDLE_ACTIVE" = true ] && [ -e "$INSTALL_DIR" ]; then
-    mv "$INSTALL_DIR" "${INSTALL_DIR}.failed.$(date +%Y%m%d-%H%M%S).$$" || true
+    mv "$INSTALL_DIR" "${INSTALL_DIR}.failed.$(date +%Y%m%d-%H%M%S).$$" || return 1
   fi
 
+  [ ! -e "$INSTALL_DIR" ] || return 1
   if [ -n "$PREVIOUS_DIR" ] && [ -e "$PREVIOUS_DIR" ]; then
     mv "$PREVIOUS_DIR" "$INSTALL_DIR" || {
       say "Erro: nao foi possivel restaurar o bundle anterior."
       return 1
     }
     say "Bundle anterior restaurado em ${INSTALL_DIR}."
+    PREVIOUS_DIR=""
+    NEW_BUNDLE_ACTIVE=false
   else
     say "Nenhum bundle anterior disponivel para rollback."
     return 1
   fi
 
   if [ -n "$SERVICE_BACKUP" ] && [ -f "$SERVICE_BACKUP" ]; then
-    cp "$SERVICE_BACKUP" "$SERVICE_FILE" || true
+    cp "$SERVICE_BACKUP" "$SERVICE_FILE" || return 1
   fi
 
   systemctl daemon-reload || return 1
-  systemctl restart contabase || return 1
-
-  if wait_for_healthcheck; then
+  NEW_RUNTIME_STARTED=true
+  if systemctl restart contabase && wait_for_healthcheck; then
+    RECOVERY_COMPLETED=true
     say "Rollback concluido. Servico saudavel com o bundle anterior."
     return 0
   fi
 
   say "ALERTA: Rollback do bundle concluido, mas healthcheck ainda falha."
+  systemctl stop contabase || true
   systemctl status contabase --no-pager || true
   journalctl -u contabase -n 100 --no-pager || true
   return 1
@@ -1181,6 +1315,21 @@ rollback_env() {
 # ==============================================================================
 # Global update command (backfill for existing installs)
 # ==============================================================================
+
+record_release_recovery() {
+  local identity expected
+  if [ "$RELEASE_BUNDLE_VERIFIED" = true ] \
+    && [ "$REPO" = https://github.com/contabase-app/contabase ] \
+    && recovery_version_known "$TAG" \
+    && expected="$(recovery_bundle_identity "$EXTRACT_DIR/contabase" "" "$SERVICE_FILE")" \
+    && identity="$(recovery_bundle_identity "$INSTALL_DIR" "" "$SERVICE_FILE")" \
+    && [ "$identity" = "$expected" ] \
+    && recovery_record "$CONFIG_DIR/recovery" bundle "$TAG" "$identity"; then
+    say "Prova administrativa de recuperacao vinculada ao bundle corrigido."
+  else
+    say "Aviso: prova de recuperacao nao emitida; retorno automatico a este bundle ficara bloqueado."
+  fi
+}
 
 write_install_state() {
   local method="$1"
@@ -1332,6 +1481,7 @@ perform_update() {
   fi
 
   NEW_BUNDLE_ACTIVE=false
+  record_release_recovery
 
   # Update VERSION in env file to track installed release tag
   env_set_key "VERSION" "$TAG" "$ENV_FILE"

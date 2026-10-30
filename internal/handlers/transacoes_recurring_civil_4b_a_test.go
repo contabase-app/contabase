@@ -1252,17 +1252,14 @@ func p1PreserveConvertTx(t *testing.T, db *sql.DB, wsID, userID, desc string) (t
 	return
 }
 
-// p1PreserveConvertExpectError performs PRESERVE conversion that should fail.
-func p1PreserveConvertExpectError(t *testing.T, db *sql.DB, wsID, userID, desc, wantErrContains string) {
+// p1PreserveConvertExpectError targets the invalid row prepared by the caller.
+// Never insert a second, valid transaction or select the target by description.
+func p1PreserveConvertExpectError(t *testing.T, db *sql.DB, wsID, userID, txID, desc, wantErrContains string) {
 	t.Helper()
 	handler := TransactionHandler{DB: db, WorkspaceID: wsID, UserID: userID, Templates: p1ToggleTemplates()}
-	_, err := handler.insertTransaction("EXPENSE", 15000, desc, "", "", MustCivilWriteDate("2026-07-10"), "acc-"+wsID[6:], "", "cat-"+wsID[6:], 1, "pending", false, "", "", MustOptionalCivilWriteDate("2026-07-20"), nil, "", false)
-	if err != nil {
-		t.Fatalf("insert non-recurring: %v", err)
-	}
-	var txID string
-	if err := db.QueryRow(`SELECT id FROM transactions WHERE workspace_id=? AND description=?`, wsID, desc).Scan(&txID); err != nil {
-		t.Fatalf("tx not found: err=%v", err)
+	var before string
+	if err := db.QueryRow(`SELECT json_array(due_date,due_date_civil,recurring_rule_id,series_id,status) FROM transactions WHERE workspace_id=? AND id=?`, wsID, txID).Scan(&before); err != nil {
+		t.Fatalf("invalid fixture row not found: %v", err)
 	}
 	req := formPostMultipart(t, "/transacoes/"+txID+"/atualizar", url.Values{
 		"lancamento_fixo":  {"on"},
@@ -1278,8 +1275,8 @@ func p1PreserveConvertExpectError(t *testing.T, db *sql.DB, wsID, userID, desc, 
 	})
 	rr := httptest.NewRecorder()
 	handler.HandleAtualizarTransacao(rr, req, txID)
-	if rr.Code == http.StatusOK {
-		t.Fatal("expected error, got 200")
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status=%d body=%q, want conflict", rr.Code, rr.Body.String())
 	}
 	if wantErrContains != "" && !strings.Contains(rr.Body.String(), wantErrContains) {
 		t.Fatalf("error body %q, want containing %q", rr.Body.String(), wantErrContains)
@@ -1288,7 +1285,13 @@ func p1PreserveConvertExpectError(t *testing.T, db *sql.DB, wsID, userID, desc, 
 		t.Fatal("no rule should be created on error")
 	}
 	var n int
-	db.QueryRow(`SELECT COUNT(1) FROM recurring_series WHERE workspace_id=?`, wsID).Scan(&n)
+	if err := db.QueryRow(`SELECT COUNT(1) FROM recurring_series WHERE workspace_id=?`, wsID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	var after string
+	if err := db.QueryRow(`SELECT json_array(due_date,due_date_civil,recurring_rule_id,series_id,status) FROM transactions WHERE workspace_id=? AND id=?`, wsID, txID).Scan(&after); err != nil || after != before {
+		t.Fatalf("rejected conversion changed source: %s -> %s (%v)", before, after, err)
+	}
 	if n > 0 {
 		t.Fatalf("%d series created, want 0", n)
 	}
@@ -1372,7 +1375,7 @@ func TestCivil4BA_ConversionBusinessPreserveRejectsInvalidDueDateCivil(t *testin
 	txID := "tx-invciv"
 	execTestSQL(t, db, `INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, date_civil, due_date, due_date_civil, description, status, installment_number, total_installments, created_at, updated_at) VALUES (?, ?, ?, 'acc-invciv', 'cat-invciv', 'EXPENSE', 15000, ?, ?, ?, '2026-02-30', ?, 'pending', 1, 1, ?, ?)`, txID, wsID, userID, MustCivilWriteDate("2026-07-10").LegacyUnix(), MustCivilWriteDate("2026-07-10").Civil(), MustCivilWriteDate("2026-07-20").LegacyUnix(), desc, now, now)
 
-	p1PreserveConvertExpectError(t, db, wsID, userID, desc, "")
+	p1PreserveConvertExpectError(t, db, wsID, userID, txID, desc, "")
 }
 
 func TestCivil4BA_ConversionBusinessPreserveRejectsDivergentDueDatePair(t *testing.T) {
@@ -1385,7 +1388,7 @@ func TestCivil4BA_ConversionBusinessPreserveRejectsDivergentDueDatePair(t *testi
 	// due_date → 2026-07-20, due_date_civil = 2026-07-21 (diverge)
 	execTestSQL(t, db, `INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, date_civil, due_date, due_date_civil, description, status, installment_number, total_installments, created_at, updated_at) VALUES (?, ?, ?, 'acc-divpair', 'cat-divpair', 'EXPENSE', 15000, ?, ?, ?, '2026-07-21', ?, 'pending', 1, 1, ?, ?)`, txID, wsID, userID, MustCivilWriteDate("2026-07-10").LegacyUnix(), MustCivilWriteDate("2026-07-10").Civil(), MustCivilWriteDate("2026-07-20").LegacyUnix(), desc, now, now)
 
-	p1PreserveConvertExpectError(t, db, wsID, userID, desc, "par divergente")
+	p1PreserveConvertExpectError(t, db, wsID, userID, txID, desc, "par divergente")
 }
 
 func TestCivil4BA_ConversionBusinessPreserveRejectsCivilWithoutInteger(t *testing.T) {
@@ -1397,7 +1400,7 @@ func TestCivil4BA_ConversionBusinessPreserveRejectsCivilWithoutInteger(t *testin
 	txID := "tx-civnoint"
 	execTestSQL(t, db, `INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, date_civil, due_date_civil, description, status, installment_number, total_installments, created_at, updated_at) VALUES (?, ?, ?, 'acc-civnoint', 'cat-civnoint', 'EXPENSE', 15000, ?, ?, '2026-07-20', ?, 'pending', 1, 1, ?, ?)`, txID, wsID, userID, MustCivilWriteDate("2026-07-10").LegacyUnix(), MustCivilWriteDate("2026-07-10").Civil(), desc, now, now)
 
-	p1PreserveConvertExpectError(t, db, wsID, userID, desc, "par inconsistente")
+	p1PreserveConvertExpectError(t, db, wsID, userID, txID, desc, "par inconsistente")
 }
 
 func TestCivil4BA_ConversionBusinessPreserveRejectsZeroDueDate(t *testing.T) {
@@ -1409,7 +1412,7 @@ func TestCivil4BA_ConversionBusinessPreserveRejectsZeroDueDate(t *testing.T) {
 	txID := "tx-zerodue"
 	execTestSQL(t, db, `INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, date_civil, due_date, description, status, installment_number, total_installments, created_at, updated_at) VALUES (?, ?, ?, 'acc-zerodue', 'cat-zerodue', 'EXPENSE', 15000, ?, ?, 0, ?, 'pending', 1, 1, ?, ?)`, txID, wsID, userID, MustCivilWriteDate("2026-07-10").LegacyUnix(), MustCivilWriteDate("2026-07-10").Civil(), desc, now, now)
 
-	p1PreserveConvertExpectError(t, db, wsID, userID, desc, "inválido")
+	p1PreserveConvertExpectError(t, db, wsID, userID, txID, desc, "inválido")
 }
 
 func TestCivil4BA_ConversionBusinessPreserveRejectsNegativeDueDate(t *testing.T) {
@@ -1421,7 +1424,7 @@ func TestCivil4BA_ConversionBusinessPreserveRejectsNegativeDueDate(t *testing.T)
 	txID := "tx-negdue"
 	execTestSQL(t, db, `INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, date_civil, due_date, description, status, installment_number, total_installments, created_at, updated_at) VALUES (?, ?, ?, 'acc-negdue', 'cat-negdue', 'EXPENSE', 15000, ?, ?, -1, ?, 'pending', 1, 1, ?, ?)`, txID, wsID, userID, MustCivilWriteDate("2026-07-10").LegacyUnix(), MustCivilWriteDate("2026-07-10").Civil(), desc, now, now)
 
-	p1PreserveConvertExpectError(t, db, wsID, userID, desc, "inválido")
+	p1PreserveConvertExpectError(t, db, wsID, userID, txID, desc, "inválido")
 }
 
 func getRuleIDForTx(t *testing.T, db *sql.DB, txID string) string {

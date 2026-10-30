@@ -66,7 +66,7 @@ func (h iconHarness) categoriesHandler(t *testing.T) ConfiguracoesHandler {
 
 func (h iconHarness) metasHandler(t *testing.T) MetasHandler {
 	t.Helper()
-	return MetasHandler{
+	return MetasHandler{ActorRole: testMetasAdminRole,
 		DB:          h.db,
 		Templates:   testMetasPageTemplates(t),
 		WorkspaceID: h.ws,
@@ -613,13 +613,13 @@ func TestDashboardShowsEveryAccountOfTheWorkspace(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPendingItemStatusOnlyFlagsRealOverdue(t *testing.T) {
-	if label, tone := pendingItemStatus("EXPENSE", true); label != "Atrasado" || tone != "danger" {
+	if label, tone := pendingItemStatus("EXPENSE", true); label != "Vencido" || tone != "danger" {
 		t.Fatalf("pagamento atrasado = %q/%q", label, tone)
 	}
-	if label, tone := pendingItemStatus("EXPENSE", false); label != "A pagar" || tone != "neutral" {
+	if label, tone := pendingItemStatus("EXPENSE", false); label != "Pendente" || tone != "neutral" {
 		t.Fatalf("pagamento no prazo = %q/%q", label, tone)
 	}
-	if label, tone := pendingItemStatus("INCOME", false); label != "A receber" || tone != "info" {
+	if label, tone := pendingItemStatus("INCOME", false); label != "Pendente" || tone != "info" {
 		t.Fatalf("recebimento no prazo = %q/%q", label, tone)
 	}
 }
@@ -874,15 +874,20 @@ func boxPickerPreviewKey(t *testing.T, body string) string {
 	return ""
 }
 
-// boxSheetIconKey extrai o ícone do cabeçalho do sheet de aporte. A primeira
-// chave do documento é o botão de fechar; a segunda é o ícone da reserva.
+// boxSheetIconKey extrai o ícone do cabeçalho do sheet de aporte. O cabeçalho
+// pode ter o botão de fechar antes ou depois do tile; a âncora é o tile da
+// reserva, não a posição do primeiro data-lucide no documento.
 func boxSheetIconKey(t *testing.T, body string) string {
 	t.Helper()
-	keys := regexp.MustCompile(`data-lucide="([^"]*)"`).FindAllStringSubmatch(body, -1)
-	if len(keys) < 2 {
-		t.Fatalf("sheet de aporte não renderizou o cabeçalho da reserva: %q", truncateForTest(body))
+	start := strings.Index(body, "metas-sheet__tile")
+	if start < 0 {
+		t.Fatalf("sheet de aporte não renderizou o tile do cabeçalho: %q", truncateForTest(body))
 	}
-	return keys[1][1]
+	match := regexp.MustCompile(`data-lucide="([^"]*)"`).FindStringSubmatch(body[start:])
+	if match == nil {
+		t.Fatalf("sheet de aporte não renderizou o ícone da reserva: %q", truncateForTest(body))
+	}
+	return match[1]
 }
 
 func truncateForTest(value string) string {

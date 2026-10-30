@@ -33,6 +33,19 @@
         return 'R$ ' + Math.floor(cents / 100).toLocaleString('pt-BR') + ',' + String(cents % 100).padStart(2, '0');
     }
 
+    function partialFeedback(modal, input, message) {
+        var errorEl = modal ? modal.querySelector('[data-partial-payment-error]') : null;
+        var touched = input && input.dataset && input.dataset.partialTouched === '1';
+        var visible = Boolean(message) && touched;
+        if (errorEl) {
+            errorEl.textContent = visible ? message : '';
+            errorEl.hidden = !visible;
+        }
+        if (input && typeof input.setAttribute === 'function') {
+            input.setAttribute('aria-invalid', (touched && message) ? 'true' : 'false');
+        }
+    }
+
     function updatePartialPaymentSummary(modal, input, output) {
         if (!modal || !input || !output) return;
 
@@ -43,19 +56,62 @@
 
         if (typeof input.setCustomValidity !== 'function') return;
 
+        var message = '';
         if (!String(input.value || '').trim()) {
-            input.setCustomValidity('Informe o valor do pagamento parcial.');
-            return;
+            message = 'Informe o valor do pagamento parcial.';
+        } else if (payment <= 0) {
+            message = 'Informe um valor maior que zero.';
+        } else if (payment > pending) {
+            message = 'Pagamento maior que o saldo pendente da fatura.';
         }
-        if (payment <= 0) {
-            input.setCustomValidity('Informe um valor maior que zero.');
-            return;
+        input.setCustomValidity(message);
+        partialFeedback(modal, input, message);
+    }
+
+    // --- Modal focus management (local to Faturas payment dialogs) ---------
+    // overlay-stack.js owns history/back/ESC; these dialogs have no shared focus
+    // manager, so this keeps keyboard focus inside the open dialog and returns
+    // it to the trigger on close. Listeners are bound once per element.
+
+    var settleReturnFocus = null;
+    var partialReturnFocus = null;
+
+    function dialogFocusables(root) {
+        if (!root || typeof root.querySelectorAll !== 'function') return [];
+        return Array.prototype.slice.call(root.querySelectorAll(
+            'a[href], button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter(function (el) {
+            return el.offsetWidth > 0 || el.offsetHeight > 0 || el === document.activeElement;
+        });
+    }
+
+    function trapDialogFocus(event) {
+        if (event.key !== 'Tab') return;
+        var root = event.currentTarget;
+        var items = dialogFocusables(root);
+        if (!items.length) return;
+        var first = items[0];
+        var last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
         }
-        if (payment > pending) {
-            input.setCustomValidity('Pagamento maior que o saldo pendente da fatura.');
-            return;
+    }
+
+    function focusDialog(root, selector) {
+        window.setTimeout(function () {
+            var target = selector && root ? root.querySelector(selector) : null;
+            if (target && typeof target.focus === 'function') target.focus();
+        }, 0);
+    }
+
+    function restoreDialogFocus(element) {
+        if (element && element.isConnected && typeof element.focus === 'function') {
+            element.focus();
         }
-        input.setCustomValidity('');
     }
 
     // --- Global functions (called by data-onclick via event-handlers.js) ---
@@ -66,6 +122,8 @@
             settleModal.classList.add('hidden');
             settleModal.classList.remove('flex');
         }
+        restoreDialogFocus(settleReturnFocus);
+        settleReturnFocus = null;
         if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
     };
 
@@ -75,15 +133,19 @@
             modal.classList.add('hidden');
             modal.classList.remove('flex');
         }
+        restoreDialogFocus(partialReturnFocus);
+        partialReturnFocus = null;
         if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
     };
 
     window.openPartialPaymentModal = function () {
         var modal = document.getElementById('invoice-partial-payment-modal');
         if (modal) {
+            partialReturnFocus = document.activeElement;
             modal.classList.remove('hidden');
             modal.classList.add('flex');
             if (typeof window.overlayDidOpen === 'function') window.overlayDidOpen('partial-payment');
+            focusDialog(modal, '[data-partial-payment-amount]');
         }
     };
 
@@ -126,6 +188,10 @@
 
         // Settle modal
         if (settleModal) {
+            if (!settleModal.dataset.faturasFocusBound) {
+                settleModal.dataset.faturasFocusBound = '1';
+                settleModal.addEventListener('keydown', trapDialogFocus);
+            }
             var settleSelect = settleModal.querySelector('[data-settle-payment-account]');
             var settleBalanceAfter = settleModal.querySelector('[data-settle-balance-after]');
 
@@ -147,15 +213,21 @@
                     var bal = settleModal.querySelector('[data-settle-balance-after]');
                     if (!sel || !sel.value) return;
                     if (sel && bal) updateSettleSummary(sel, bal);
+                    settleReturnFocus = document.activeElement;
                     settleModal.classList.remove('hidden');
                     settleModal.classList.add('flex');
                     if (typeof window.overlayDidOpen === 'function') window.overlayDidOpen('settle-payment');
+                    focusDialog(settleModal, '[data-settle-payment-account]');
                 });
             }
         }
 
         // Partial payment modal
         if (partialModal) {
+            if (!partialModal.dataset.faturasFocusBound) {
+                partialModal.dataset.faturasFocusBound = '1';
+                partialModal.addEventListener('keydown', trapDialogFocus);
+            }
             var input = partialModal.querySelector('[data-partial-payment-amount]');
             var output = partialModal.querySelector('[data-partial-payment-remaining]');
             var form = input ? input.closest('form') : null;
@@ -163,6 +235,7 @@
             if (input && output && !input.dataset.faturasPartialBound) {
                 input.dataset.faturasPartialBound = '1';
                 input.addEventListener('input', function () {
+                    input.dataset.partialTouched = '1';
                     setTimeout(function () {
                         updatePartialPaymentSummary(partialModal, input, output);
                     }, 0);
@@ -171,6 +244,7 @@
             if (form && input && output && !form.dataset.faturasPartialBound) {
                 form.dataset.faturasPartialBound = '1';
                 form.addEventListener('submit', function (e) {
+                    input.dataset.partialTouched = '1';
                     updatePartialPaymentSummary(partialModal, input, output);
                     if (typeof form.checkValidity === 'function' && !form.checkValidity()) {
                         e.preventDefault();
@@ -178,6 +252,15 @@
                         if (typeof input.reportValidity === 'function') input.reportValidity();
                     }
                 });
+            }
+            if (form && input && output && !form.dataset.faturasInvalidBound) {
+                form.dataset.faturasInvalidBound = '1';
+                // Native constraint validation blocks the submit event; reflect the
+                // same message inline without changing the validation rules.
+                form.addEventListener('invalid', function () {
+                    input.dataset.partialTouched = '1';
+                    updatePartialPaymentSummary(partialModal, input, output);
+                }, true);
             }
             if (input && output) {
                 updatePartialPaymentSummary(partialModal, input, output);
@@ -202,8 +285,10 @@
     document.body.addEventListener('htmx:afterSwap', function (e) {
         var target = e.detail && e.detail.target;
         if (!target) return;
-        // The swap target is #main-content for full-page swaps, or #faturas-content for OOB swaps
-        if (target.id === 'main-content' || target.id === 'faturas-content' || target.closest('#faturas-content')) {
+        // The swap target is #main-content for full-page swaps, #faturas-content for
+        // OOB swaps, or #faturas-index-detail when the hub loads another card.
+        if (target.id === 'main-content' || target.id === 'faturas-content' || target.id === 'faturas-index-detail' ||
+            target.closest('#faturas-content') || target.closest('#faturas-index-detail')) {
             // Use setTimeout to let Lucide icons and DOM settle before binding
             setTimeout(bindPaymentModals, 10);
         }

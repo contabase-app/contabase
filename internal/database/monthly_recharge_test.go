@@ -13,7 +13,7 @@ import (
 
 func TestMigration55BoxMonthlyRechargeIdentityFreshSchema(t *testing.T) {
 	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("open fresh database: %v", err)
 	}
@@ -47,6 +47,7 @@ func TestMigration55UpgradePreservesLedgerAndRecognizesLegacy(t *testing.T) {
 	defer db.Close()
 
 	for _, stmt := range []string{
+		`CREATE TABLE workspaces (id TEXT PRIMARY KEY)`,
 		`CREATE TABLE boxes (
 			id TEXT PRIMARY KEY,
 			workspace_id TEXT NOT NULL,
@@ -73,6 +74,9 @@ func TestMigration55UpgradePreservesLedgerAndRecognizesLegacy(t *testing.T) {
 		}
 	}
 	seedAppliedMigrationsBefore(t, db, 55)
+	if _, err := db.Exec(`INSERT INTO workspaces (id) VALUES ('ws-a')`); err != nil {
+		t.Fatalf("seed legacy workspace: %v", err)
+	}
 
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	if err != nil {
@@ -162,7 +166,7 @@ func TestMigration55UpgradePreservesLedgerAndRecognizesLegacy(t *testing.T) {
 
 func TestMaterializeMonthlyBoxRechargesDeterministicAndScoped(t *testing.T) {
 	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
@@ -270,7 +274,7 @@ func TestMaterializeMonthlyBoxRechargesConcurrentConnectionsAndRestart(t *testin
 }
 
 func TestMaterializeMonthlyBoxRechargesRollsBackOnIntermediateError(t *testing.T) {
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
@@ -425,7 +429,7 @@ func TestMaterializeMonthlyBoxRechargesInputErrors(t *testing.T) {
 	if err := materializeMonthlyBoxRecharges(context.Background(), nil, time.Now()); err == nil {
 		t.Fatal("nil database should fail")
 	}
-	db, err := Open(":memory:")
+	db, err := openLegacySQLiteFixture(t)
 	if err != nil {
 		t.Fatalf("open database: %v", err)
 	}
@@ -438,4 +442,213 @@ func TestMaterializeMonthlyBoxRechargesInputErrors(t *testing.T) {
 	if err := materializeMonthlyBoxRecharges(canceled, db, time.Now()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled context error = %v, want context.Canceled", err)
 	}
+}
+
+func TestMonthlyRechargeWorkspaceOwnershipGuards(t *testing.T) {
+	db := openMonthlyRechargeFileDB(t, filepath.Join(t.TempDir(), "ownership.db"))
+	defer db.Close()
+	seedMonthlyRechargeWorkspace(t, db, "ws-a")
+	seedMonthlyRechargeWorkspace(t, db, "ws-b")
+	insertMonthlyRechargeBox(t, db, "box-a", "ws-a", 1000, 0, 1)
+	insertMonthlyRechargeBox(t, db, "box-b", "ws-b", 1000, 0, 1)
+	for _, row := range []struct {
+		id, boxID, month string
+		amount           int64
+	}{
+		{"ledger-a", "box-a", "", 300},
+		{"ledger-b", "box-b", "2026-08", 700},
+	} {
+		var month any
+		if row.month != "" {
+			month = row.month
+		}
+		if _, err := db.Exec(`
+			INSERT INTO box_virtual_ledger (id, box_id, amount, type, automatic_recharge_month, reference_date)
+			VALUES (?, ?, ?, 'RECHARGE', ?, 1)
+		`, row.id, row.boxID, row.amount, month); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := context.Background()
+	for _, tc := range []struct {
+		workspaceID, boxID string
+		want               int64
+	}{
+		{"ws-a", "box-a", 300},
+		{"ws-b", "box-b", 700},
+	} {
+		got, err := monthlyBoxLedgerBalance(ctx, db, tc.workspaceID, tc.boxID)
+		if err != nil || got != tc.want {
+			t.Fatalf("balance %s/%s = %d, %v; want %d", tc.workspaceID, tc.boxID, got, err, tc.want)
+		}
+	}
+	for _, tc := range []struct{ workspaceID, boxID string }{
+		{"ws-a", "box-b"}, {"ws-b", "box-a"}, {"ws-a", "missing"},
+	} {
+		t.Run(tc.workspaceID+"/"+tc.boxID, func(t *testing.T) {
+			if got, err := monthlyBoxLedgerBalance(ctx, db, tc.workspaceID, tc.boxID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("foreign/missing balance = %d, %v; want ErrNoRows", got, err)
+			}
+			if exists, err := monthlyBoxRechargeExists(ctx, db, tc.workspaceID, tc.boxID, "2026-08"); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("foreign/missing identity = %v, %v; want ErrNoRows", exists, err)
+			}
+			if err := setMonthlyBoxRechargeAnchor(ctx, db, tc.workspaceID, tc.boxID, "2026-08"); err == nil {
+				t.Fatal("foreign/missing anchor accepted zero-row update")
+			}
+			if inserted, err := insertMonthlyBoxRecharge(ctx, db, tc.workspaceID, tc.boxID, 1000, "2026-09", 2); err == nil || inserted {
+				t.Fatalf("foreign/missing ledger insert = %v, %v; want error", inserted, err)
+			}
+			if changed, err := transitionBoxAutomaticContributionState(ctx, db, tc.workspaceID, tc.boxID, BoxAutomaticContributionStateBlocked, 2); changed || !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("foreign/missing state transition changed=%v err=%v", changed, err)
+			}
+			if changed, err := TransitionBoxAutomaticContributionState(ctx, db, tc.workspaceID, tc.boxID, BoxAutomaticContributionStateBlocked, time.Unix(2, 0)); changed || !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("foreign/missing public lifecycle transition changed=%v err=%v", changed, err)
+			}
+			if err := recordBoxContributionGoalReached(ctx, db, tc.workspaceID, tc.boxID, 2); err == nil {
+				t.Fatal("foreign/missing goal event was accepted")
+			}
+		})
+	}
+	if exists, err := monthlyBoxRechargeExists(ctx, db, "ws-b", "box-b", "2026-08"); err != nil || !exists {
+		t.Fatalf("valid identity = %v, %v; want true", exists, err)
+	}
+	if exists, err := monthlyBoxRechargeExists(ctx, db, "ws-a", "box-a", "2026-08"); err != nil || exists {
+		t.Fatalf("empty valid identity = %v, %v; want false", exists, err)
+	}
+	if err := setMonthlyBoxRechargeAnchor(ctx, db, "ws-a", "box-a", "2026-08"); err != nil {
+		t.Fatalf("valid anchor update: %v", err)
+	}
+	if inserted, err := insertMonthlyBoxRecharge(ctx, db, "ws-b", "box-b", 1000, "2026-08", 2); err != nil || inserted {
+		t.Fatalf("legitimate monthly duplicate inserted=%v err=%v", inserted, err)
+	}
+	if _, err := db.Exec(`
+		CREATE TRIGGER ignore_owned_recharge
+		BEFORE INSERT ON box_virtual_ledger
+		WHEN NEW.box_id = 'box-a' AND NEW.automatic_recharge_month = '2026-09'
+		BEGIN SELECT RAISE(IGNORE); END
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if inserted, err := insertMonthlyBoxRecharge(ctx, db, "ws-a", "box-a", 1000, "2026-09", 2); err == nil || inserted {
+		t.Fatalf("unexpected zero-row insert inserted=%v err=%v; want error", inserted, err)
+	}
+	assertAutomaticRechargeCount(t, db, "box-a", "2026-09", 0)
+	var anchor sql.NullString
+	var state string
+	if err := db.QueryRow(`SELECT monthly_recharge_anchor_month, automatic_contribution_state FROM boxes WHERE id = 'box-b'`).Scan(&anchor, &state); err != nil {
+		t.Fatal(err)
+	}
+	if anchor.Valid || state != "ACTIVE" {
+		t.Fatalf("foreign box mutated: anchor=%v state=%s", anchor, state)
+	}
+	if events := countRows(t, db, "box_contribution_lifecycle_events"); events != 0 {
+		t.Fatalf("foreign lifecycle events = %d", events)
+	}
+	assertMonthlyRechargeSum(t, db, "box-a", 300)
+	assertMonthlyRechargeSum(t, db, "box-b", 700)
+	assertAutomaticRechargeCount(t, db, "box-b", "2026-09", 0)
+	if err := db.QueryRow(`SELECT monthly_recharge_anchor_month FROM boxes WHERE id = 'box-a'`).Scan(&anchor); err != nil || !anchor.Valid || anchor.String != "2026-08" {
+		t.Fatalf("valid anchor = %v, %v", anchor, err)
+	}
+}
+
+func TestMonthlyRechargeGlobalWorkspacesBlockedIdempotentAndRollback(t *testing.T) {
+	t.Setenv("CONTABASE_TIMEZONE", "America/Sao_Paulo")
+	db := openMonthlyRechargeFileDB(t, filepath.Join(t.TempDir(), "global-workspaces.db"))
+	defer db.Close()
+	seedMonthlyRechargeWorkspace(t, db, "ws-a")
+	seedMonthlyRechargeWorkspace(t, db, "ws-b")
+	seedMonthlyRechargeWorkspace(t, db, "ws-empty")
+	loc, _ := time.LoadLocation("America/Sao_Paulo")
+	now := time.Date(2026, time.August, 17, 12, 0, 0, 0, loc)
+	created := time.Date(2026, time.August, 1, 12, 0, 0, 0, loc).Unix()
+	insertMonthlyRechargeBox(t, db, "box-a", "ws-a", 1000, 0, created)
+	insertMonthlyRechargeBox(t, db, "box-b", "ws-b", 2000, 0, created)
+	insertMonthlyRechargeBox(t, db, "box-zero", "ws-a", 500, 0, created)
+	for _, row := range []struct {
+		id, boxID string
+		amount    int64
+	}{
+		{"seed-a", "box-a", 300},
+		{"seed-b", "box-b", 700},
+	} {
+		if _, err := db.Exec(`INSERT INTO box_virtual_ledger (id, box_id, amount, type, reference_date) VALUES (?, ?, ?, 'RECHARGE', ?)`, row.id, row.boxID, row.amount, created); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if balance, err := monthlyBoxLedgerBalance(context.Background(), db, "ws-a", "box-zero"); err != nil || balance != 0 {
+		t.Fatalf("valid empty box balance = %d, %v; want zero", balance, err)
+	}
+	if err := materializeMonthlyBoxRecharges(context.Background(), db, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		boxID string
+		want  int64
+	}{
+		{"box-a", 1300}, {"box-b", 2700}, {"box-zero", 500},
+	} {
+		assertMonthlyRechargeSum(t, db, tc.boxID, tc.want)
+		assertAutomaticRechargeCount(t, db, tc.boxID, "2026-08", 1)
+	}
+	rows, err := db.Query(`SELECT box_id FROM box_virtual_ledger WHERE automatic_recharge_month = '2026-08' ORDER BY rowid`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var insertionOrder []string
+	for rows.Next() {
+		var boxID string
+		if err := rows.Scan(&boxID); err != nil {
+			_ = rows.Close()
+			t.Fatal(err)
+		}
+		insertionOrder = append(insertionOrder, boxID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		t.Fatal(err)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(insertionOrder, ","); got != "box-a,box-b,box-zero" {
+		t.Fatalf("global box.id insertion order = %s", got)
+	}
+	if err := materializeMonthlyBoxRecharges(context.Background(), db, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	assertAutomaticRechargeCount(t, db, "box-a", "2026-08", 1)
+	assertAutomaticRechargeCount(t, db, "box-b", "2026-08", 1)
+	assertAutomaticRechargeCount(t, db, "box-zero", "2026-08", 1)
+	if _, err := db.Exec(`UPDATE boxes SET automatic_contribution_state = 'BLOCKED' WHERE id = 'box-b'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := materializeMonthlyBoxRecharges(context.Background(), db, now.AddDate(0, 1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	assertMonthlyRechargeSum(t, db, "box-a", 2300)
+	assertMonthlyRechargeSum(t, db, "box-b", 2700)
+	assertMonthlyRechargeSum(t, db, "box-zero", 1000)
+	assertAutomaticRechargeCount(t, db, "box-b", "2026-09", 0)
+	if _, err := db.Exec(`UPDATE boxes SET automatic_contribution_state = 'ACTIVE' WHERE id = 'box-b'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		CREATE TRIGGER fail_later_workspace_recharge
+		BEFORE INSERT ON box_virtual_ledger
+		WHEN NEW.box_id = 'box-b' AND NEW.automatic_recharge_month = '2026-10'
+		BEGIN SELECT RAISE(ABORT, 'forced later workspace failure'); END
+	`); err != nil {
+		t.Fatal(err)
+	}
+	err = materializeMonthlyBoxRecharges(context.Background(), db, now.AddDate(0, 2, 0))
+	if err == nil || !strings.Contains(err.Error(), "forced later workspace failure") {
+		t.Fatalf("later workspace failure = %v", err)
+	}
+	assertMonthlyRechargeSum(t, db, "box-a", 2300)
+	assertMonthlyRechargeSum(t, db, "box-b", 2700)
+	assertMonthlyRechargeSum(t, db, "box-zero", 1000)
+	assertAutomaticRechargeCount(t, db, "box-a", "2026-10", 0)
+	assertAutomaticRechargeCount(t, db, "box-b", "2026-10", 0)
+	assertAutomaticRechargeCount(t, db, "box-zero", "2026-10", 0)
 }

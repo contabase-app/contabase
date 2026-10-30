@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"context"
 	"github.com/contabase-app/contabase/internal/auth"
 	"github.com/contabase-app/contabase/internal/database"
 	"github.com/contabase-app/contabase/internal/handlers"
@@ -197,6 +198,13 @@ func TestServerRuntimeFinalBoundaryStartsAllJobsInOrderAndPersistsPositiveEffect
 	}
 
 	waitForRuntimePersistentEffects(t, dbs.DB, "box-final-boundary")
+	before := readRuntimePersistentEffects(t, dbs.DB, "box-final-boundary")
+	if count, err := handlers.RunDueScheduledPayments(context.Background(), dbs.Immediate, time.Now()); err != nil || count != 0 {
+		t.Fatalf("scheduled replay count=%d err=%v", count, err)
+	}
+	if after := readRuntimePersistentEffects(t, dbs.DB, "box-final-boundary"); after != before {
+		t.Fatalf("scheduled replay duplicated effects: before=%+v after=%+v", before, after)
+	}
 }
 
 func TestRestoreGenerationAbandonedBeforeFinalActivationHasNoBackgroundJobEffect(t *testing.T) {
@@ -303,7 +311,7 @@ func TestServerRuntimeReplacementStartsAndStopsEachResourceExactlyOnce(t *testin
 	hooks := &serverRuntimeStartHooks{
 		onResourceStart: func(name string, db *sql.DB) {
 			wantDB := g2DBs.DB
-			if name == serverRuntimeStageFallback || name == serverRuntimeStageRecurring {
+			if name == serverRuntimeStageFallback || name == serverRuntimeStageScheduled || name == serverRuntimeStageRecurring {
 				wantDB = g2DBs.Immediate
 			}
 			if db != wantDB {
@@ -1047,7 +1055,7 @@ func openFullBindingDBs(t *testing.T, path, marker string) *database.RuntimeDBs 
 	if err != nil {
 		t.Fatalf("open full runtime DBs: %v", err)
 	}
-	if _, err := dbs.DB.Exec(`CREATE TABLE runtime_generation (value TEXT NOT NULL); CREATE TABLE runtime_writes (value TEXT NOT NULL); INSERT INTO runtime_generation (value) VALUES (?)`, marker); err != nil {
+	if _, err := serverFixtureExec(t, dbs.DB, `CREATE TABLE runtime_generation (value TEXT NOT NULL); CREATE TABLE runtime_writes (value TEXT NOT NULL); INSERT INTO runtime_generation (value) VALUES (?)`, marker); err != nil {
 		_ = dbs.Close()
 		t.Fatalf("seed runtime generation: %v", err)
 	}
@@ -1075,7 +1083,7 @@ func openDormantRuntimeWithEligibleBox(t *testing.T, path, boxID string) *databa
 		t.Fatalf("open dormant runtime DBs: %v", err)
 	}
 	createdAt := time.Now().AddDate(0, -1, 0).Unix()
-	if _, err := dbs.DB.Exec(`
+	if _, err := serverFixtureExec(t, dbs.DB, `
 		INSERT INTO workspaces (id, name, type) VALUES ('ws-runtime-jobs', 'Runtime Jobs', 'personal');
 		INSERT INTO boxes (
 			id, workspace_id, name, target_amount, monthly_recharge, created_at, updated_at
@@ -1105,7 +1113,7 @@ func openDormantRuntimeWithAllEligibleJobs(t *testing.T, path, boxID string) *da
 	now := time.Now().UTC()
 	recurringStart := now.AddDate(0, -2, 0).Unix()
 	scheduledAt := now.Add(-24 * time.Hour).Unix()
-	if _, err := dbs.DB.Exec(`
+	if _, err := serverFixtureExec(t, dbs.DB, `
 		INSERT INTO users (id, name, email, password_hash, created_at, updated_at)
 		VALUES ('user-runtime-jobs', 'Runtime Jobs', 'runtime-jobs@example.test', 'hash', ?, ?);
 		INSERT INTO workspace_members (workspace_id, user_id, role, joined_at)
@@ -1269,8 +1277,8 @@ func waitForRuntimeAutomaticRecharge(t *testing.T, db *sql.DB, boxID string, wan
 
 func seedBindingIdentity(t *testing.T, db *sql.DB) string {
 	t.Helper()
-	_, _ = db.Exec(`DELETE FROM sessions; DELETE FROM workspace_members; DELETE FROM users; DELETE FROM workspaces`)
-	if _, err := db.Exec(`
+	_, _ = serverFixtureExec(t, db, `DELETE FROM sessions; DELETE FROM workspace_members; DELETE FROM users; DELETE FROM workspaces`)
+	if _, err := serverFixtureExec(t, db, `
 		INSERT INTO users (id, name, email, password_hash, created_at, updated_at) VALUES ('user-binding', 'Binding', 'binding@example.test', 'hash', unixepoch(), unixepoch());
 		INSERT INTO workspaces (id, name, type, created_at, updated_at) VALUES ('ws-binding', 'Binding', 'personal', unixepoch(), unixepoch());
 		INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-binding', 'user-binding', 'ADMIN', unixepoch())
@@ -1308,7 +1316,7 @@ func assertBody(t *testing.T, handler http.Handler, path, want string) {
 func seedBindingInvoice(t *testing.T, db *sql.DB) {
 	t.Helper()
 	now := time.Now().Unix()
-	if _, err := db.Exec(`
+	if _, err := serverFixtureExec(t, db, `
 		INSERT INTO accounts (id, workspace_id, name, type, current_balance, created_at, updated_at)
 		VALUES ('card-binding', 'ws-binding', 'Card', 'CREDIT_CARD', 0, ?, ?),
 		       ('checking-binding', 'ws-binding', 'Checking', 'CHECKING', 500000, ?, ?);

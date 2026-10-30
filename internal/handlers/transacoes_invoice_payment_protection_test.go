@@ -221,14 +221,14 @@ func TestInvoicePaymentTransactionManualInvoiceAssignmentIsBlocked(t *testing.T)
 
 func TestInvoicePaymentTransactionProtectionDoesNotMaskSQLiteErrors(t *testing.T) {
 	db, handler := newInvoicePaymentProtectionScenario(t)
+	if _, err := fixtureHandlerExec(t, db, `DROP TABLE invoice_payments`); err != nil {
+		t.Fatalf("drop invoice_payments in isolated test database: %v", err)
+	}
 	tx, err := db.Begin()
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`DROP TABLE invoice_payments`); err != nil {
-		t.Fatalf("drop invoice_payments in isolated test database: %v", err)
-	}
 
 	err = handler.ensureTransactionsNotInvoicePaymentsTx(tx, []string{"payment-paid-invoice-08"})
 	if err == nil {

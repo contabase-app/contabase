@@ -1,171 +1,251 @@
 {{define "configuracoes-admin_users-page"}}
-{{template "configuracoes-v2-section-start" .}}
+{{template "configuracoes-admin-section-start" .}}
 {{template "configuracoes-admin_users-content" .}}
-{{template "configuracoes-v2-section-end" .}}
+<script src="{{assetPath "/assets/js/admin-user-card.js"}}"></script>
+<script src="{{assetPath "/assets/js/admin-recovery.js"}}"></script>
+<script src="{{assetPath "/assets/js/admin-user-workspace-roles.js"}}"></script>
+{{template "configuracoes-admin-section-end" .}}
 {{end}}
 
 {{define "configuracoes-admin_users-content"}}
 <div id="settings-dynamic-payload" class="w-full">
-    <!-- Header Mobile Only -->
-    <header class="sticky top-14 z-20 bg-[var(--cb-surface-overlay)] backdrop-blur-xl border-b border-[var(--cb-border-subtle)] transition-colors md:hidden w-full">
-        <div class="mx-auto flex max-w-7xl items-center gap-4 px-4 pt-4 pb-3">
-            <button type="button" hx-get="/configuracoes" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] btn-tactile">
-                <i data-lucide="arrow-left" class="h-4 w-4"></i>
-            </button>
-            <div class="min-w-0 flex-1">
-                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
-                <h1 class="mt-0.5 text-lg font-bold text-[var(--cb-text-main)] md:text-xl capitalize">admin users</h1>
+    <div class="admin-page">
+        {{if .FlashError}}<div class="admin-flash cb-flash-danger" role="alert"><i data-lucide="circle-alert" aria-hidden="true"></i><span>{{.FlashError}}</span></div>{{end}}
+        {{if .FlashSuccess}}<div class="admin-flash cb-flash-success" role="status"><i data-lucide="circle-check" aria-hidden="true"></i><span>{{.FlashSuccess}}</span></div>{{end}}
+
+        <header class="ui-page-header admin-page-header">
+            <div class="admin-page-header__copy">
+                <p class="ui-eyebrow">Administração da instância</p>
+                <h1 class="ui-page-title">Usuários</h1>
+                <p class="ui-page-description">Gerencie contas, vínculos de workspace e recuperação de acesso desta instância.</p>
+                <div class="admin-page-header__meta">
+                    <span class="ui-badge ui-badge--accent"><i data-lucide="shield-check" aria-hidden="true"></i>Acesso global</span>
+                    <span class="ui-badge ui-badge--neutral">{{len .AdminUsers}} {{if eq (len .AdminUsers) 1}}usuário{{else}}usuários{{end}}</span>
+                </div>
             </div>
-        </div>
-    </header>
+        </header>
 
-    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
-        {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-danger">{{.FlashError}}</div>{{end}}
-        {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-success">{{.FlashSuccess}}</div>{{end}}
-
-        <!-- Section header -->
-        <div class="mb-6">
-            <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Gerenciar Usuários</h1>
-            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Painel administrativo global — acesso restrito.</p>
-        </div>
-
-        <div class="cb-card-dense p-4 md:p-6">
-            <form id="admin-user-form" class="cb-card-muted mb-6 p-4 md:p-5" hx-post="/admin/usuarios/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
+        <section class="ui-panel admin-panel" aria-labelledby="adminUserCreateTitle">
+            <header class="admin-panel__head">
+                <div class="admin-panel__heading">
+                    <span class="ui-section-icon" aria-hidden="true"><i data-lucide="user-plus"></i></span>
+                    <div>
+                        <h2 id="adminUserCreateTitle" class="admin-panel__title">Novo usuário</h2>
+                        <p class="admin-panel__desc">Cadastre uma conta e defina os vínculos iniciais de workspace.</p>
+                    </div>
+                </div>
+            </header>
+            <form id="admin-user-form" class="admin-form" hx-post="/admin/usuarios/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-disabled-elt="find button[type='submit']" hx-sync="this:drop" hx-indicator="#htmx-indicator">
                 <input type="hidden" name="user_id" value="">
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
-                    <div><span class="{{template "field-label" .}}">Nome</span><input type="text" name="name" placeholder="Nome completo" class="{{template "field-class" .}}"></div>
-                    <div><span class="{{template "field-label" .}}">E-mail</span><input type="email" name="email" placeholder="email@exemplo.com" class="{{template "field-class" .}}"></div>
-                    <div><span class="{{template "field-label" .}}">Permissão</span><select name="role" class="{{template "field-class" .}}"><option value="USER">Usuário</option><option value="MANAGER">Gestor</option><option value="ADMIN">Administrador</option></select></div>
-                    <div><span class="{{template "field-label" .}}">Status</span><select name="status" class="{{template "field-class" .}}"><option value="active">Ativo</option><option value="pending">Pendente</option></select></div>
+                <div class="admin-form-grid admin-form-grid--4">
+                    <div class="admin-field">
+                        <label class="ui-label" for="adminUserName">Nome</label>
+                        <input id="adminUserName" type="text" name="name" placeholder="Nome completo" autocomplete="name" required class="ui-input">
+                    </div>
+                    <div class="admin-field">
+                        <label class="ui-label" for="adminUserEmail">E-mail</label>
+                        <input id="adminUserEmail" type="email" name="email" placeholder="email@exemplo.com" autocomplete="email" inputmode="email" required class="ui-input">
+                    </div>
+                    <div class="admin-field">
+                        <label class="ui-label" for="adminUserRole">Permissão</label>
+                        <select id="adminUserRole" name="role" required class="ui-select">
+                            <option value="USER">Usuário</option>
+                            <option value="MANAGER">Gestor</option>
+                            <option value="ADMIN">Administrador</option>
+                        </select>
+                    </div>
+                    <div class="admin-field">
+                        <label class="ui-label" for="adminUserStatus">Status inicial</label>
+                        <select id="adminUserStatus" name="status" class="ui-select">
+                            <option value="active">Ativo</option>
+                            <option value="pending">Pendente</option>
+                        </select>
+                        <p class="admin-help">Novas contas são criadas como pendentes até a ativação.</p>
+                    </div>
                 </div>
-                <div class="mt-4">
-                    <span class="{{template "field-label" .}}">Vincular aos workspaces</span>
-                    <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">{{range .SystemWorkspaces}}<label class="flex items-center gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-4 py-3 cursor-pointer transition-all has-checked:border-[var(--cb-accent)]/50 has-checked:bg-[var(--cb-accent-soft)] hover:border-[var(--cb-border-strong)]"><input type="checkbox" name="workspace_ids" value="{{.ID}}" class="sr-only peer"><span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-[var(--cb-border-strong)] transition-colors peer-checked:border-[var(--cb-accent)] peer-checked:bg-[var(--cb-accent)]"><i data-lucide="check" class="hidden h-3 w-3 text-white peer-checked:!block"></i></span><span class="text-sm text-[var(--cb-text-main)]">{{.Name}}</span></label>{{end}}</div>
+                <fieldset class="admin-subpanel">
+                    <legend class="admin-subpanel__head">
+                        <span class="admin-subpanel__title">Vincular aos workspaces</span>
+                        <span class="admin-subpanel__desc">O usuário recebe o papel escolhido em cada workspace marcado.</span>
+                    </legend>
+                    <div class="admin-check-grid">
+                        {{range .SystemWorkspaces}}
+                        <label class="admin-check-row">
+                            <input type="checkbox" name="workspace_ids" value="{{.ID}}">
+                            <span>{{.Name}}</span>
+                        </label>
+                        {{end}}
+                    </div>
+                </fieldset>
+                <div class="admin-form-actions">
+                    <button type="submit" class="ui-btn ui-btn--primary">Salvar usuário</button>
                 </div>
-                <button class="cb-button cb-button-primary h-11 px-6 text-sm mt-4">Salvar usuário</button>
             </form>
+        </section>
 
-            <div class="space-y-3">{{range .AdminUsers}}
-            <article data-admin-user-card class="cb-row-dense">
-                <div data-admin-user-view>
-                    <div class="flex items-start justify-between gap-4">
-                        <div class="min-w-0">
-                            <p class="text-sm font-semibold text-[var(--cb-text-main)]">{{.Name}} <span class="text-[var(--cb-text-muted)] font-normal">{{.Email}}</span></p>
-                            <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Status: <span class="cb-status-chip {{if eq .Status "active"}}cb-status-chip-success{{else if eq .Status "pending"}}cb-status-chip-warning{{else}}cb-status-chip-neutral{{end}}">{{if eq .Status "active"}}Ativo{{else if eq .Status "pending"}}Pendente{{else}}Inativo{{end}}</span></p>
+        <div class="admin-user-list">
+            {{range .AdminUsers}}
+            <article data-admin-user-card class="ui-panel admin-user-card" aria-labelledby="admin-user-name-{{.ID}}">
+                <div data-admin-user-view class="admin-user-card__view">
+                    <div class="admin-user-card__head">
+                        <div class="admin-user-identity">
+                            <span class="admin-user-avatar" aria-hidden="true"><i data-lucide="user-round"></i></span>
+                            <div class="admin-user-identity__body">
+                                <h2 id="admin-user-name-{{.ID}}" class="admin-user-name">{{.Name}}</h2>
+                                <p class="admin-user-email" data-sensitive>{{.Email}}</p>
+                            </div>
                         </div>
-                        <button type="button" data-admin-user-edit class="cb-button cb-button-secondary h-9 px-3 text-xs">Editar</button>
+                        <div class="admin-user-badges">
+                            <span class="ui-badge {{if eq .Status "active"}}ui-badge--success{{else if eq .Status "pending"}}ui-badge--warning{{else}}ui-badge--neutral{{end}}">{{if eq .Status "active"}}Ativo{{else if eq .Status "pending"}}Pendente{{else}}Inativo{{end}}</span>
+                            <span class="ui-badge {{if .TOTPEnabled}}ui-badge--accent{{else}}ui-badge--neutral{{end}}">2FA {{if .TOTPEnabled}}ativo{{else}}inativo{{end}}</span>
+                        </div>
+                        <button type="button" data-admin-user-edit aria-expanded="false" aria-controls="admin-user-form-{{.ID}}" class="ui-btn ui-btn--secondary ui-btn--sm">
+                            <i data-lucide="pencil" aria-hidden="true"></i>
+                            <span>Editar</span>
+                        </button>
                     </div>
-                    <div class="mt-3">
-                        <p class="text-xs text-[var(--cb-text-muted)] mb-1.5">Vínculos:</p>
-                        <div class="flex flex-wrap gap-1.5">
-                            {{range .WorkspaceRoles}}<span class="cb-status-chip cb-status-chip-neutral"><span class="text-[var(--cb-text-main)]">{{.WorkspaceName}}</span><span class="text-[var(--cb-text-muted)]">·</span><span class="text-[var(--cb-text-muted)]">{{if eq .Role "ADMIN"}}Administrador{{else if eq .Role "MANAGER"}}Gestor{{else}}Usuário{{end}}</span></span>{{else}}<span class="text-xs text-[var(--cb-text-muted)]">Sem workspaces vinculados</span>{{end}}
+
+                    <div class="admin-user-meta">
+                        <div>
+                            <p class="admin-meta-label">Workspaces e papéis</p>
+                            <div class="admin-chip-list">
+                                {{range .WorkspaceRoles}}
+                                <span class="admin-workspace-chip">
+                                    <span>{{.WorkspaceName}}</span>
+                                    <span class="admin-workspace-chip__role">{{if eq .Role "ADMIN"}}Administrador{{else if eq .Role "MANAGER"}}Gestor{{else}}Usuário{{end}}</span>
+                                </span>
+                                {{else}}
+                                <span class="admin-workspace-empty">Sem workspaces vinculados</span>
+                                {{end}}
+                            </div>
                         </div>
                     </div>
-                    <div class="mt-4 cb-card-muted p-3 md:p-4">
+
+                    <section class="admin-recovery" data-admin-recovery-root data-recovery-action="" aria-labelledby="admin-recovery-title-{{.ID}}">
                         {{if .IsAdmin}}
-                        <div data-admin-recovery-root data-recovery-action="">
-                        <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="admin-recovery__head">
                             <div>
-                                <p class="text-xs font-semibold uppercase tracking-wider text-[var(--cb-text-muted)]">Recuperação de acesso</p>
-                                <p class="mt-1 text-xs text-[var(--cb-text-muted)]">2FA: {{if .TOTPEnabled}}ativo{{else}}inativo{{end}} · revoga sessões e desafios pendentes.</p>
+                                <h3 id="admin-recovery-title-{{.ID}}" class="admin-recovery__title">Recuperação de acesso</h3>
+                                <p class="admin-recovery__desc">2FA {{if .TOTPEnabled}}ativo{{else}}inativo{{end}} · revoga sessões e desafios pendentes.</p>
                             </div>
-                            <div class="flex flex-wrap gap-2">
-                                <button type="button" data-admin-recovery-action="password" class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-accent)]/50 bg-[var(--cb-accent)] text-xs font-semibold text-white transition-all hover:bg-[var(--cb-accent-hover)] active:scale-95">Gerar senha temporária</button>
-                                <button type="button" data-admin-recovery-action="sessions" class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)] text-xs font-semibold text-[var(--cb-text-muted)] transition-all hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95">Revogar sessões</button>
-                                <button type="button" data-admin-recovery-action="2fa" class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-warning)]/30 bg-[color-mix(in srgb,var(--cb-warning) 12%,transparent)] text-xs font-semibold text-[color-mix(in srgb,var(--cb-warning) 75%,var(--cb-text-main))] transition-all hover:bg-[color-mix(in srgb,var(--cb-warning) 18%,transparent)] active:scale-95">Desativar 2FA</button>
+                            <div class="admin-recovery__actions">
+                                <button type="button" data-admin-recovery-action="password" aria-expanded="false" aria-controls="admin-recovery-panel-{{.ID}}" class="ui-btn ui-btn--secondary ui-btn--sm"><i data-lucide="key-round" aria-hidden="true"></i><span>Gerar senha temporária</span></button>
+                                <button type="button" data-admin-recovery-action="sessions" aria-expanded="false" aria-controls="admin-recovery-panel-{{.ID}}" class="ui-btn ui-btn--secondary ui-btn--sm"><i data-lucide="log-out" aria-hidden="true"></i><span>Revogar sessões</span></button>
+                                <button type="button" data-admin-recovery-action="2fa" aria-expanded="false" aria-controls="admin-recovery-panel-{{.ID}}" class="ui-btn ui-btn--secondary ui-btn--sm admin-warning-btn"><i data-lucide="shield-off" aria-hidden="true"></i><span>Desativar 2FA</span></button>
                             </div>
                         </div>
-                        <div data-admin-recovery-panel class="hidden mt-3 cb-card-muted border-[var(--cb-warning)]/30 bg-[color-mix(in srgb,var(--cb-warning) 8%,var(--cb-surface-2))]">
-                            <div class="space-y-1 text-xs text-[var(--cb-text-main)]">
-                                <p class="font-semibold">Ações em administradores exigem confirmação adicional.</p>
-                                <p>Essa ação será registrada em auditoria.</p>
-                                <p data-admin-recovery-info="password" class="hidden">A senha será exibida uma única vez e expira em 1 hora.</p>
-                                <p data-admin-recovery-info="sessions" class="hidden">O usuário precisará fazer login novamente.</p>
-                                <p data-admin-recovery-info="2fa" class="hidden">O usuário poderá entrar sem 2FA até reconfigurar o método.</p>
-                            </div>
-                            <div class="mt-3 text-xs text-[var(--cb-text-main)]">
-                                <p>Para evitar alteração acidental no administrador errado, digite o e-mail abaixo para confirmar:</p>
-                                <p class="font-semibold mt-1 select-all text-[var(--cb-warning)]">{{.Email}}</p>
-                            </div>
-                            <form data-admin-recovery-form="password" class="hidden mt-3 space-y-3" hx-post="/admin/usuarios/reset-senha" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Gerar senha temporária e revogar sessões deste administrador?">
+                        <div data-admin-recovery-panel id="admin-recovery-panel-{{.ID}}" class="hidden admin-recovery__panel" role="region" aria-labelledby="admin-recovery-title-{{.ID}}">
+                            <p class="admin-recovery__warning-title">Ações em administradores exigem confirmação adicional.</p>
+                            <p class="admin-recovery__warning-text">Essa ação será registrada em auditoria.</p>
+                            <p data-admin-recovery-info="password" class="hidden admin-recovery__warning-text">A senha será exibida uma única vez e expira em 1 hora.</p>
+                            <p data-admin-recovery-info="sessions" class="hidden admin-recovery__warning-text">O usuário precisará fazer login novamente.</p>
+                            <p data-admin-recovery-info="2fa" class="hidden admin-recovery__warning-text">O usuário poderá entrar sem 2FA até reconfigurar o método.</p>
+                            <p class="admin-recovery__warning-text admin-recovery__warning-text--target">Para evitar alteração acidental no administrador errado, digite o e-mail abaixo para confirmar:</p>
+                            <p class="admin-recovery__target">{{.Email}}</p>
+
+                            <form data-admin-recovery-form="password" class="hidden admin-recovery__form" hx-post="/admin/usuarios/reset-senha" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Gerar senha temporária e revogar sessões deste administrador?" hx-disabled-elt="find button[type='submit']" hx-indicator="#htmx-indicator">
                                 <input type="hidden" name="user_id" value="{{.ID}}">
                                 <label class="sr-only" for="confirm-reset-{{.ID}}">Digite {{.Email}} para confirmar</label>
-                                <input id="confirm-reset-{{.ID}}" type="email" name="confirm_email" placeholder="Digite {{.Email}}" autocomplete="off" required class="cb-input border-[var(--cb-warning)]/40 focus:border-[var(--cb-warning)]">
-                                <div class="flex flex-wrap gap-2">
-                                    <button class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-accent)]/50 bg-[var(--cb-accent)] text-xs font-semibold text-white transition-all hover:bg-[var(--cb-accent-hover)] active:scale-95">Confirmar geração de senha temporária</button>
-                                    <button type="button" data-admin-recovery-cancel class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)] text-xs font-semibold text-[var(--cb-text-muted)] transition-all hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95">Cancelar</button>
+                                <input id="confirm-reset-{{.ID}}" type="email" name="confirm_email" placeholder="Digite {{.Email}}" autocomplete="off" required class="ui-input">
+                                <div class="admin-recovery__form-actions">
+                                    <button type="submit" class="ui-btn ui-btn--primary">Confirmar geração de senha temporária</button>
+                                    <button type="button" data-admin-recovery-cancel class="ui-btn ui-btn--secondary">Cancelar</button>
                                 </div>
                             </form>
-                            <form data-admin-recovery-form="sessions" class="hidden mt-3 space-y-3" hx-post="/admin/usuarios/revogar-sessoes" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Revogar todas as sessões deste administrador?">
+
+                            <form data-admin-recovery-form="sessions" class="hidden admin-recovery__form" hx-post="/admin/usuarios/revogar-sessoes" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Revogar todas as sessões deste administrador?" hx-disabled-elt="find button[type='submit']" hx-indicator="#htmx-indicator">
                                 <input type="hidden" name="user_id" value="{{.ID}}">
                                 <label class="sr-only" for="confirm-sessions-{{.ID}}">Digite {{.Email}} para confirmar</label>
-                                <input id="confirm-sessions-{{.ID}}" type="email" name="confirm_email" placeholder="Digite {{.Email}}" autocomplete="off" required class="cb-input border-[var(--cb-warning)]/40 focus:border-[var(--cb-warning)]">
-                                <div class="flex flex-wrap gap-2">
-                                    <button class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)] text-xs font-semibold text-[var(--cb-text-muted)] transition-all hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95">Confirmar revogação de sessões</button>
-                                    <button type="button" data-admin-recovery-cancel class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)] text-xs font-semibold text-[var(--cb-text-muted)] transition-all hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95">Cancelar</button>
+                                <input id="confirm-sessions-{{.ID}}" type="email" name="confirm_email" placeholder="Digite {{.Email}}" autocomplete="off" required class="ui-input">
+                                <div class="admin-recovery__form-actions">
+                                    <button type="submit" class="ui-btn ui-btn--secondary">Confirmar revogação de sessões</button>
+                                    <button type="button" data-admin-recovery-cancel class="ui-btn ui-btn--secondary">Cancelar</button>
                                 </div>
                             </form>
-                            <form data-admin-recovery-form="2fa" class="hidden mt-3 space-y-3" hx-post="/admin/usuarios/desativar-2fa" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Desativar 2FA deste administrador?">
+
+                            <form data-admin-recovery-form="2fa" class="hidden admin-recovery__form" hx-post="/admin/usuarios/desativar-2fa" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Desativar 2FA deste administrador?" hx-disabled-elt="find button[type='submit']" hx-indicator="#htmx-indicator">
                                 <input type="hidden" name="user_id" value="{{.ID}}">
                                 <label class="sr-only" for="confirm-2fa-{{.ID}}">Digite {{.Email}} para confirmar</label>
-                                <input id="confirm-2fa-{{.ID}}" type="email" name="confirm_email" placeholder="Digite {{.Email}}" autocomplete="off" required class="cb-input border-[var(--cb-warning)]/40 focus:border-[var(--cb-warning)]">
-                                <div class="flex flex-wrap gap-2">
-                                    <button class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-warning)]/30 bg-[color-mix(in srgb,var(--cb-warning) 12%,transparent)] text-xs font-semibold text-[color-mix(in srgb,var(--cb-warning) 75%,var(--cb-text-main))] transition-all hover:bg-[color-mix(in srgb,var(--cb-warning) 18%,transparent)] active:scale-95">Confirmar desativação de 2FA</button>
-                                    <button type="button" data-admin-recovery-cancel class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)] text-xs font-semibold text-[var(--cb-text-muted)] transition-all hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95">Cancelar</button>
+                                <input id="confirm-2fa-{{.ID}}" type="email" name="confirm_email" placeholder="Digite {{.Email}}" autocomplete="off" required class="ui-input">
+                                <div class="admin-recovery__form-actions">
+                                    <button type="submit" class="ui-btn ui-btn--secondary admin-warning-btn">Confirmar desativação de 2FA</button>
+                                    <button type="button" data-admin-recovery-cancel class="ui-btn ui-btn--secondary">Cancelar</button>
                                 </div>
                             </form>
                         </div>
-                        </div>
                         {{else}}
-                        <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="admin-recovery__head">
                             <div>
-                                <p class="text-xs font-semibold uppercase tracking-wider text-[var(--cb-text-muted)]">Recuperação de acesso</p>
-                                <p class="mt-1 text-xs text-[var(--cb-text-muted)]">2FA: {{if .TOTPEnabled}}ativo{{else}}inativo{{end}} · revoga sessões e desafios pendentes.</p>
+                                <h3 id="admin-recovery-title-{{.ID}}" class="admin-recovery__title">Recuperação de acesso</h3>
+                                <p class="admin-recovery__desc">2FA {{if .TOTPEnabled}}ativo{{else}}inativo{{end}} · revoga sessões e desafios pendentes.</p>
                             </div>
-                            <div class="flex flex-wrap gap-2">
-                                <form hx-post="/admin/usuarios/reset-senha" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Gerar senha temporária e revogar sessões deste usuário?">
+                            <div class="admin-recovery__actions">
+                                <form class="admin-recovery__inline-form" hx-post="/admin/usuarios/reset-senha" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Gerar senha temporária e revogar sessões deste usuário?" hx-disabled-elt="find button[type='submit']" hx-indicator="#htmx-indicator">
                                     <input type="hidden" name="user_id" value="{{.ID}}">
-                                    <button class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-accent)]/50 bg-[var(--cb-accent)] text-xs font-semibold text-white transition-all hover:bg-[var(--cb-accent-hover)] active:scale-95">Gerar senha temporária</button>
+                                    <button type="submit" class="ui-btn ui-btn--secondary ui-btn--sm"><i data-lucide="key-round" aria-hidden="true"></i><span>Gerar senha temporária</span></button>
                                 </form>
-                                <form hx-post="/admin/usuarios/revogar-sessoes" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Revogar todas as sessões deste usuário?">
+                                <form class="admin-recovery__inline-form" hx-post="/admin/usuarios/revogar-sessoes" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Revogar todas as sessões deste usuário?" hx-disabled-elt="find button[type='submit']" hx-indicator="#htmx-indicator">
                                     <input type="hidden" name="user_id" value="{{.ID}}">
-                                    <button class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-2)] text-xs font-semibold text-[var(--cb-text-muted)] transition-all hover:bg-[var(--cb-surface-3)] hover:text-[var(--cb-text-main)] active:scale-95">Revogar sessões</button>
+                                    <button type="submit" class="ui-btn ui-btn--secondary ui-btn--sm"><i data-lucide="log-out" aria-hidden="true"></i><span>Revogar sessões</span></button>
                                 </form>
-                                <form hx-post="/admin/usuarios/desativar-2fa" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Desativar 2FA deste usuário?">
+                                <form class="admin-recovery__inline-form" hx-post="/admin/usuarios/desativar-2fa" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="Desativar 2FA deste usuário?" hx-disabled-elt="find button[type='submit']" hx-indicator="#htmx-indicator">
                                     <input type="hidden" name="user_id" value="{{.ID}}">
-                                    <button class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-warning)]/30 bg-[color-mix(in srgb,var(--cb-warning) 12%,transparent)] text-xs font-semibold text-[color-mix(in srgb,var(--cb-warning) 75%,var(--cb-text-main))] transition-all hover:bg-[color-mix(in srgb,var(--cb-warning) 18%,transparent)] active:scale-95">Desativar 2FA</button>
+                                    <button type="submit" class="ui-btn ui-btn--secondary ui-btn--sm admin-warning-btn"><i data-lucide="shield-off" aria-hidden="true"></i><span>Desativar 2FA</span></button>
                                 </form>
                             </div>
                         </div>
                         {{end}}
-                    </div>
+                    </section>
                 </div>
-                <div data-admin-user-form class="hidden">
-                    <form hx-post="/admin/usuarios/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
-                        <input type="hidden" name="user_id" value="{{.ID}}">
-                             <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                             <div><span class="cb-label">Nome</span><input type="text" name="name" value="{{.Name}}" class="cb-input"></div>
-                             <div><span class="cb-label">E-mail</span><input type="email" name="email" value="{{.Email}}" class="cb-input"></div>
-                              <div><span class="cb-label">Status</span><select name="status" class="cb-input"><option value="active" {{if eq .Status "active"}}selected{{end}}>Ativo</option><option value="pending" {{if eq .Status "pending"}}selected{{end}}>Pendente</option></select></div>
+
+                <div data-admin-user-form id="admin-user-form-{{.ID}}" class="hidden admin-user-card__edit">
+                    <div class="admin-edit-head">
+                        <div>
+                            <p class="ui-eyebrow">Edição</p>
+                            <h3 class="admin-edit-title">Editar usuário</h3>
+                            <p class="admin-edit-subtitle">{{.Name}} · <span data-sensitive>{{.Email}}</span></p>
                         </div>
-                        <div class="mt-3">
-                            <span class="cb-label">Vínculos de workspace</span>
-                            <p class="mt-1 text-xs text-[var(--cb-text-muted)]">Desmarque um workspace para remover o acesso do usuário a ele. Os dados financeiros já lançados continuam preservados.</p>
-                            <div class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    </div>
+                    <form hx-post="/admin/usuarios/salvar" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-disabled-elt="find button[type='submit']" hx-sync="this:drop" hx-indicator="#htmx-indicator">
+                        <input type="hidden" name="user_id" value="{{.ID}}">
+                        <div class="admin-user-edit-grid">
+                            <div class="admin-field">
+                                <label class="ui-label" for="admin-user-input-name-{{.ID}}">Nome</label>
+                                <input id="admin-user-input-name-{{.ID}}" type="text" name="name" value="{{.Name}}" autocomplete="name" required class="ui-input">
+                            </div>
+                            <div class="admin-field">
+                                <label class="ui-label" for="admin-user-email-{{.ID}}">E-mail</label>
+                                <input id="admin-user-email-{{.ID}}" type="email" name="email" value="{{.Email}}" autocomplete="email" inputmode="email" required class="ui-input">
+                            </div>
+                            <div class="admin-field">
+                                <label class="ui-label" for="admin-user-status-{{.ID}}">Status</label>
+                                <select id="admin-user-status-{{.ID}}" name="status" class="ui-select">
+                                    <option value="active" {{if eq .Status "active"}}selected{{end}}>Ativo</option>
+                                    <option value="pending" {{if eq .Status "pending"}}selected{{end}}>Pendente</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <fieldset class="admin-subpanel admin-subpanel--spaced">
+                            <legend class="admin-subpanel__head">
+                                <span class="admin-subpanel__title">Vínculos de workspace</span>
+                                <span class="admin-subpanel__desc">Desmarque um workspace para remover o acesso. Os dados financeiros já lançados continuam preservados.</span>
+                            </legend>
+                            <div class="admin-check-grid">
                                 {{$user := .}}
                                 {{range $.SystemWorkspaces}}
                                 {{$isLinked := hasString $user.WorkspaceIDList .ID}}
                                 {{$workspaceRole := mapGet $user.WorkspaceRoleMap .ID}}
                                 {{if eq $workspaceRole ""}}{{$workspaceRole = "USER"}}{{end}}
-                                <div data-admin-user-workspace-row class="group flex flex-col gap-3 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] px-4 py-3 transition-all has-checked:border-[var(--cb-accent)]/25 hover:border-[var(--cb-border-strong)] sm:flex-row sm:items-center sm:justify-between">
-                                    <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                                <div data-admin-user-workspace-row class="admin-user-workspace-row">
+                                    <label class="flex min-w-0 items-center gap-3">
                                         <input type="checkbox" name="workspace_ids" value="{{.ID}}" class="sr-only peer" data-admin-user-workspace-toggle {{if $isLinked}}checked{{end}}>
-                                        <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-[var(--cb-border-strong)] transition-colors peer-checked:border-[var(--cb-accent)] peer-checked:bg-[var(--cb-accent)]"><i data-lucide="check" class="hidden h-3 w-3 text-white peer-checked:!block"></i></span>
+                                        <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-[var(--cb-border-strong)] transition-colors peer-checked:border-[var(--cb-accent)] peer-checked:bg-[var(--cb-accent)]" aria-hidden="true"><i data-lucide="check" class="hidden h-3 w-3 text-white peer-checked:!block"></i></span>
                                         <span class="min-w-0 text-sm font-medium text-[var(--cb-text-main)]">{{.Name}}</span>
                                     </label>
-                                    <div class="sm:w-40">
+                                    <div>
                                         <label class="sr-only" for="workspace-role-{{$user.ID}}-{{.ID}}">Permissão em {{.Name}}</label>
-                                        <select id="workspace-role-{{$user.ID}}-{{.ID}}" name="workspace_roles[{{.ID}}]" data-admin-user-workspace-role class="cb-input h-9 text-xs transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed" {{if not $isLinked}}disabled{{end}}>
+                                        <select id="workspace-role-{{$user.ID}}-{{.ID}}" name="workspace_roles[{{.ID}}]" data-admin-user-workspace-role class="ui-select admin-user-role-select" {{if not $isLinked}}disabled{{end}}>
                                             <option value="USER" {{if eq $workspaceRole "USER"}}selected{{end}}>Usuário</option>
                                             <option value="MANAGER" {{if eq $workspaceRole "MANAGER"}}selected{{end}}>Gestor</option>
                                             <option value="ADMIN" {{if eq $workspaceRole "ADMIN"}}selected{{end}}>Administrador</option>
@@ -174,21 +254,30 @@
                                 </div>
                                 {{end}}
                             </div>
-                        </div>
-                        <div class="mt-4 flex flex-wrap gap-2 items-center">
-                            <button class="cb-button cb-button-primary h-9 px-3 text-xs">Salvar</button>
-                            <button type="button" data-admin-user-cancel class="cb-button cb-button-secondary h-9 px-3 text-xs">Cancelar</button>
+                        </fieldset>
+
+                        <div class="admin-form-actions">
+                            <button type="submit" class="ui-btn ui-btn--primary">Salvar alterações</button>
+                            <button type="button" data-admin-user-cancel class="ui-btn ui-btn--secondary">Cancelar</button>
                         </div>
                     </form>
-                    <div class="mt-4 border-t border-[var(--cb-border-subtle)] pt-4">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <button type="button" hx-delete="/users/{{.ID}}" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="ATENÇÃO: Esta ação remove o acesso e anonimiza dados pessoais. O histórico financeiro do workspace será preservado. Deseja continuar?" title="Remove o acesso e anonimiza dados pessoais. O histórico financeiro do workspace será preservado." class="inline-flex items-center justify-center h-9 px-3 rounded-xl border border-[var(--cb-danger)]/30 bg-[color-mix(in srgb,var(--cb-danger) 12%,transparent)] text-xs font-semibold text-[var(--cb-danger)] transition-all hover:bg-[color-mix(in srgb,var(--cb-danger) 18%,transparent)] active:scale-95">Excluir definitivamente</button>
+
+                    <div class="admin-danger-zone">
+                        <div class="admin-danger-zone__copy">
+                            <p class="admin-danger-zone__title"><i data-lucide="triangle-alert" aria-hidden="true"></i>Zona de perigo</p>
+                            <p class="admin-danger-zone__text">Excluir definitivamente remove o acesso e anonimiza os dados pessoais. Lançamentos, recorrências, faturas e relatórios do workspace continuam preservados.</p>
                         </div>
-                        <p class="mt-2 text-xs text-[var(--cb-text-muted)]">Remove o acesso do usuário e anonimiza dados pessoais. Lançamentos, recorrências, faturas e relatórios do workspace continuam preservados.</p>
+                        <button type="button" hx-delete="/users/{{.ID}}" hx-target="#settings-dynamic-payload" hx-swap="outerHTML" hx-confirm="ATENÇÃO: Esta ação remove o acesso e anonimiza dados pessoais. O histórico financeiro do workspace será preservado. Deseja continuar?" title="Remove o acesso e anonimiza dados pessoais. O histórico financeiro do workspace será preservado." class="ui-btn admin-danger-btn">Excluir definitivamente</button>
                     </div>
                 </div>
             </article>
-            {{else}}<div class="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-dashed border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)]/50"><div class="w-12 h-12 rounded-xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-3"><i data-lucide="shield" class="w-5 h-5 text-[var(--cb-text-subtle)]"></i></div><p class="text-sm text-[var(--cb-text-muted)]">Nenhum usuário cadastrado</p></div>{{end}}</div>
+            {{else}}
+            <div class="ui-empty" role="status">
+                <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="users-round"></i></span>
+                <p class="ui-empty__title">Nenhum usuário cadastrado</p>
+                <p class="ui-empty__text">Use o formulário acima para criar a primeira conta da instância.</p>
+            </div>
+            {{end}}
         </div>
     </div>
 </div>

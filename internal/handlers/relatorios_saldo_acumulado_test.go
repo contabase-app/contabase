@@ -12,7 +12,7 @@ func TestRelatoriosSaldoAcumuladoPopulated(t *testing.T) {
 
 	seedSaldoAcumuladoScenario(t, db, "2026-08-10", "2026-08-15", "2026-09-05")
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-acum", UserID: "user-acum"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-acum", UserID: "user-acum"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -29,7 +29,7 @@ func TestRelatoriosSaldoAcumuladoMatchesLancamentos(t *testing.T) {
 
 	seedSaldoAcumuladoScenario(t, db, "2026-08-10", "2026-08-15", "2026-09-05")
 
-	relHandler := RelatoriosHandler{DB: db, WorkspaceID: "ws-acum", UserID: "user-acum"}
+	relHandler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-acum", UserID: "user-acum"}
 	relData, err := relHandler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -60,7 +60,7 @@ func TestRelatoriosSaldoAcumuladoNegative(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-neg', 'user-neg', 'ADMIN', ?)`, now)
 	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-neg', 'ws-neg', 'Conta Negativa', 'CHECKING', -500000, -500000, ?, ?)`, now, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-neg", UserID: "user-neg"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-neg", UserID: "user-neg"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", int(time.Now().UTC().Month()), time.Now().UTC().Year())
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -86,13 +86,13 @@ func TestRelatoriosSaldoAcumuladoDifferentWorkspace(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('a1', 'ws1', 'Conta WS1', 'CHECKING', 100000, 100000, ?, ?)`, now, now)
 	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('a2', 'ws2', 'Conta WS2', 'CHECKING', 500000, 500000, ?, ?)`, now, now)
 
-	h1 := RelatoriosHandler{DB: db, WorkspaceID: "ws1", UserID: "u1"}
+	h1 := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws1", UserID: "u1"}
 	d1, err := h1.buildRelatoriosData("", "caixa", "movimentos", int(time.Now().UTC().Month()), time.Now().UTC().Year())
 	if err != nil {
 		t.Fatalf("ws1 buildRelatoriosData: %v", err)
 	}
 
-	h2 := RelatoriosHandler{DB: db, WorkspaceID: "ws2", UserID: "u2"}
+	h2 := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws2", UserID: "u2"}
 	d2, err := h2.buildRelatoriosData("", "caixa", "movimentos", int(time.Now().UTC().Month()), time.Now().UTC().Year())
 	if err != nil {
 		t.Fatalf("ws2 buildRelatoriosData: %v", err)
@@ -109,7 +109,7 @@ func TestRelatoriosKPIExistentsPreserved(t *testing.T) {
 
 	seedSaldoAcumuladoScenario(t, db, "2026-08-10", "2026-08-15", "2026-09-05")
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-acum", UserID: "user-acum"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-acum", UserID: "user-acum"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -140,7 +140,7 @@ func TestRelatoriosSaldoAcumuladoCurrentMonth(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-curr', 'u-curr', 'ADMIN', ?)`, ts)
 	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-curr', 'ws-curr', 'Conta', 'CHECKING', 100000, 100000, ?, ?)`, ts, ts)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-curr", UserID: "u-curr"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-curr", UserID: "u-curr"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", currentMonth, currentYear)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)

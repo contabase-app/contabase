@@ -44,6 +44,150 @@ func TestAccountBalanceFormattingRoundTripsSignedBoundaries(t *testing.T) {
 	}
 }
 
+// Every string the signed money mask can produce for a value must come back as
+// the same centavos; the mask never introduces a format the parser rejects.
+func TestReconciliationMaskOutputParsesToTheSameCents(t *testing.T) {
+	for _, tc := range []struct {
+		masked string
+		want   int64
+	}{
+		{"R$ 0,00", 0}, {"R$ 0,01", 1}, {"R$ 0,10", 10}, {"R$ 1,00", 100}, {"R$ 1,01", 101},
+		{"R$ 1.234,56", 123456}, {"R$ 139.931,00", 13993100}, {"-R$ 0,00", 0}, {"-R$ 0,01", -1},
+		{"-R$ 1.234,56", -123456}, {"R$ 1.000.000.000,00", 100000000000},
+		{"R$ 92.233.720.368.547.758,07", math.MaxInt64},
+		{"-R$ 92.233.720.368.547.758,08", math.MinInt64},
+	} {
+		got, err := parseAccountBalance(tc.masked)
+		if err != nil || got != tc.want {
+			t.Errorf("masked %q = %d/%v, want %d", tc.masked, got, err, tc.want)
+		}
+	}
+}
+
+func TestAccountAdjustmentHandlerAppliesMaskedTargetsExactly(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		balance     int64
+		submitted   string
+		wantBalance int64
+	}{
+		{"credit", 139931, "R$ 1.500,00", 150000},
+		{"negative cent", 0, "-R$ 0,01", -1},
+		{"debit one cent", 100, "R$ 0,99", 99},
+		{"zero target", 150000, "R$ 0,00", 0},
+		{"sign of current balance", 100, "-R$ 1.234,56", -123456},
+		{"int64 max", 0, "R$ 92.233.720.368.547.758,07", math.MaxInt64},
+		{"int64 min", 0, "-R$ 92.233.720.368.547.758,08", math.MinInt64},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newConfiguracoesRenderTestHandler(t)
+			execTestSQL(t, h.DB, `INSERT INTO accounts (id,workspace_id,name,type,initial_balance,current_balance)
+				VALUES ('masked',?,'Account','CHECKING',?,?)`, h.WorkspaceID, tc.balance, tc.balance)
+			get := httptest.NewRecorder()
+			h.HandleContaBalanceAdjustmentForm(get, httptest.NewRequest(http.MethodGet, "/configuracoes/contas/masked/conciliar", nil), "masked")
+			if get.Code != http.StatusOK {
+				t.Fatalf("form status=%d", get.Code)
+			}
+			values := adjustmentFormValues(t, get.Body.String())
+			values.Set("target_balance", tc.submitted)
+			values.Set("reason", "Conferência com o extrato")
+			post := httptest.NewRecorder()
+			h.HandleContaBalanceAdjustment(post, formPost("/configuracoes/contas/masked/conciliar", values), "masked")
+			if post.Code != http.StatusOK || !strings.Contains(post.Body.String(), "Conciliação registrada") {
+				t.Fatalf("post failed: %d %s", post.Code, post.Body.String())
+			}
+			var current, initial int64
+			if err := h.DB.QueryRow(`SELECT current_balance,initial_balance FROM accounts WHERE id='masked'`).Scan(&current, &initial); err != nil {
+				t.Fatal(err)
+			}
+			if current != tc.wantBalance || initial != tc.balance {
+				t.Fatalf("balances=%d/%d, want %d/%d", current, initial, tc.wantBalance, tc.balance)
+			}
+			var before, after, delta int64
+			if err := h.DB.QueryRow(`SELECT before_balance,after_balance,delta_cents FROM account_balance_adjustments WHERE account_id='masked'`).Scan(&before, &after, &delta); err != nil {
+				t.Fatal(err)
+			}
+			if before != tc.balance || after != tc.wantBalance || delta != tc.wantBalance-tc.balance {
+				t.Fatalf("adjustment=%d→%d delta %d, want %d→%d delta %d", before, after, delta, tc.balance, tc.wantBalance, tc.wantBalance-tc.balance)
+			}
+			// The re-rendered form keeps the new balance in the canonical format the
+			// mask and the parser both accept, so a second round trip cannot drift.
+			if want := `value="` + formatCurrencyLabel(tc.wantBalance) + `"`; !strings.Contains(post.Body.String(), want) {
+				t.Fatalf("form did not re-render %s: %s", want, post.Body.String())
+			}
+		})
+	}
+}
+
+// Shared separator samples with the signed money mask (assets/js/money-mask.test.js,
+// "frontend and backend share the same separator frontier"). Every origin that is
+// not a keystroke is validated against these shapes on the frontend, so the
+// accepted/rejected verdicts must match this parser.
+func TestReconciliationSeparatorContractSamples(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want int64
+	}{
+		{"1.234,56", 123456}, {"12.345,67", 1234567}, {"123.456,78", 12345678},
+		{"1.234.567,89", 123456789}, {"1234,56", 123456}, {"123456", 12345600},
+		{"0,01", 1}, {"1.234", 123400}, {"1,234.56", 123456},
+	} {
+		got, err := parseAccountBalance(tc.raw)
+		if err != nil || got != tc.want {
+			t.Errorf("parse %q = %d/%v, want %d", tc.raw, got, err, tc.want)
+		}
+	}
+	for _, raw := range []string{"1.23,45", "1.2.3", "1..234", "12.34,56", "123.45,67", "1.2345", "1.2345,67", ".123", "123.", "abc0", "1e2"} {
+		if got, err := parseAccountBalance(raw); err == nil {
+			t.Errorf("accepted %q as %d", raw, got)
+		}
+	}
+	// Documented divergence: the parser reads a lone dot as the decimal separator
+	// (so 1.23 is 123 centavos), while the signed mask only accepts a dot as a
+	// thousands group or in the US grouping shape, so these never reach the server
+	// as masked values.
+	for _, raw := range []string{"1.23", "12.34", "1234.56"} {
+		got, err := parseAccountBalance(raw)
+		if err != nil {
+			t.Fatalf("parser stopped accepting %q: %v", raw, err)
+		}
+		t.Logf("parser reads %q as %d centavos; the signed mask rejects it as a malformed thousands group", raw, got)
+	}
+}
+
+func TestAccountAdjustmentHandlerRejectsInvalidTargetsWithoutMask(t *testing.T) {
+	// The signed mask flags these before submit; the server must reject the same
+	// text when it arrives from a manual or scripted request.
+	for _, submitted := range []string{"", "-", ",", "abc", "abc0", "1e2", "1,2,3", "1..000", "R$ R$ 10,00", "1.234,567", "92233720368547758.08", "184467440737095517.00"} {
+		t.Run(submitted, func(t *testing.T) {
+			h := newConfiguracoesRenderTestHandler(t)
+			execTestSQL(t, h.DB, `INSERT INTO accounts (id,workspace_id,name,type,initial_balance,current_balance)
+				VALUES ('invalid',?,'Account','CHECKING',25000,25000)`, h.WorkspaceID)
+			get := httptest.NewRecorder()
+			h.HandleContaBalanceAdjustmentForm(get, httptest.NewRequest(http.MethodGet, "/configuracoes/contas/invalid/conciliar", nil), "invalid")
+			values := adjustmentFormValues(t, get.Body.String())
+			values.Set("target_balance", submitted)
+			values.Set("reason", "Conferência")
+			post := httptest.NewRecorder()
+			h.HandleContaBalanceAdjustment(post, formPost("/configuracoes/contas/invalid/conciliar", values), "invalid")
+			if post.Code != http.StatusOK || !strings.Contains(post.Body.String(), "Saldo inválido") {
+				t.Fatalf("invalid %q was not rejected: %d %s", submitted, post.Code, post.Body.String())
+			}
+			var current int64
+			var adjustments int
+			if err := h.DB.QueryRow(`SELECT current_balance FROM accounts WHERE id='invalid'`).Scan(&current); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.DB.QueryRow(`SELECT COUNT(*) FROM account_balance_adjustments`).Scan(&adjustments); err != nil {
+				t.Fatal(err)
+			}
+			if current != 25000 || adjustments != 0 {
+				t.Fatalf("invalid %q changed state: balance=%d adjustments=%d", submitted, current, adjustments)
+			}
+		})
+	}
+}
+
 func adjustmentFormValues(t *testing.T, body string) url.Values {
 	t.Helper()
 	form := url.Values{}
@@ -69,8 +213,14 @@ func TestAccountAdjustmentHandlerHistoryAndReports(t *testing.T) {
 				if get.Code != http.StatusOK || get.Header().Get("Cache-Control") != "no-store" {
 					t.Fatalf("form status=%d", get.Code)
 				}
-				if strings.Contains(get.Body.String(), "data-money-mask") {
-					t.Fatal("balance form must not strip signs or convert via float")
+				if !strings.Contains(get.Body.String(), `data-money-mask="signed"`) {
+					t.Fatalf("balance form must bind the signed, integer-exact mask: %s", get.Body.String())
+				}
+				if !strings.Contains(get.Body.String(), `inputmode="decimal"`) {
+					t.Fatalf("balance form must request a numeric keyboard: %s", get.Body.String())
+				}
+				if want := `value="` + formatCurrencyLabel(10000) + `"`; !strings.Contains(get.Body.String(), want) {
+					t.Fatalf("balance form must pre-fill the canonical currency string %s: %s", want, get.Body.String())
 				}
 				values := adjustmentFormValues(t, get.Body.String())
 				values.Set("target_balance", target)
@@ -100,7 +250,7 @@ func TestAccountAdjustmentHandlerHistoryAndReports(t *testing.T) {
 				if count != 1 {
 					t.Fatalf("retries created %d history rows", count)
 				}
-				report := RelatoriosHandler{DB: h.DB, WorkspaceID: h.WorkspaceID, UserID: h.UserID}
+				report := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: h.DB, WorkspaceID: h.WorkspaceID, UserID: h.UserID}
 				data, err := report.buildRelatoriosData("", "caixa", "movimentos", 9, 2026)
 				if err != nil {
 					t.Fatal(err)

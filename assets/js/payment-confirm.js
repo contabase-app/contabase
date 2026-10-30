@@ -49,6 +49,21 @@
         };
     }
 
+    function setSinglePaymentDescription(parts, description, amount) {
+        if (!parts || !parts.description) return;
+        parts.description.textContent = '';
+        if (description) {
+            parts.description.appendChild(document.createTextNode(description));
+        }
+        if (amount) {
+            parts.description.appendChild(document.createTextNode(' · '));
+            var value = document.createElement('span');
+            value.setAttribute('data-sensitive', '');
+            value.textContent = amount;
+            parts.description.appendChild(value);
+        }
+    }
+
     function selectedAction(form) {
         var checked = form && form.querySelector('input[name="payment_action"]:checked');
         return checked ? checked.value : 'paid';
@@ -208,7 +223,7 @@
             parts.clearScheduleOption.classList.toggle('flex', !!scheduledAt);
         }
         if (parts.title) parts.title.textContent = 'Confirmar pagamento';
-        if (parts.description) parts.description.textContent = amount ? desc + ' · ' + amount : desc;
+        setSinglePaymentDescription(parts, desc, amount);
 
         updateSummary();
         if (window.htmx && typeof window.htmx.process === 'function') {

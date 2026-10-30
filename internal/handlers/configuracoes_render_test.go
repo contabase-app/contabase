@@ -29,7 +29,8 @@ func TestConfiguracoesShellRenderContract(t *testing.T) {
 		`data-app-shell`,
 		`data-page-section="settings"`,
 		`/assets/css/configuracoes.css`,
-		`id="settings-dynamic-payload"`,
+		`cb-v2-hub-grid`,
+		`cb-v2-hub-card`,
 		`data-v2-nav-group-key="settings"`,
 		`data-v2-nav-group-key="administration"`,
 		`href="/configuracoes/perfil"`,
@@ -281,7 +282,7 @@ func TestConfiguracoesAdminUsersRenderWorkspaceRoleControls(t *testing.T) {
 		`value="config-workspace" class="sr-only peer" data-admin-user-workspace-toggle checked`,
 		`value="config-secondary" class="sr-only peer" data-admin-user-workspace-toggle checked`,
 		`id="workspace-role-config-target-config-third"`,
-		`data-admin-user-workspace-role class="cb-input h-9 text-xs transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed" disabled`,
+		`data-admin-user-workspace-role class="ui-select admin-user-role-select" disabled`,
 	} {
 		assertContains(t, body, want)
 	}
@@ -600,6 +601,7 @@ func testConfiguracoesRenderTemplates(t *testing.T) *template.Template {
 	files := []string{
 		"templates/components/app_shell.html",
 		"templates/components/financial-emblem.html",
+		"templates/components/investment_patrimony.html",
 		"templates/components/icon_picker.html",
 		"templates/pages/configuracoes.html",
 		"templates/pages/configuracoes_components.html",

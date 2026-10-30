@@ -1,6 +1,13 @@
 (function() {
   'use strict';
 
+  // A página de Categorias carrega este módulo uma única vez no documento
+  // completo; a reinicialização de conteúdo HTMX é feita pelo listener de
+  // htmx:afterSwap abaixo. O guard evita listeners de documento duplicados se
+  // o arquivo for incluído novamente por engano.
+  if (window.__contabaseCategoriasUIInitialized) return;
+  window.__contabaseCategoriasUIInitialized = true;
+
   function state(container) {
     if (!container._catState) {
       container._catState = {
@@ -35,6 +42,7 @@
     st.open = true;
     var panel = cb.panel;
     if (!panel) return;
+    if (cb.toggle) cb.toggle.setAttribute('aria-expanded', 'true');
     panel.classList.remove('hidden');
     requestAnimationFrame(function() {
       panel.classList.remove('opacity-0', 'scale-95');
@@ -50,6 +58,7 @@
     var st = state(cb.container);
     if (!st.open) return;
     st.open = false;
+    if (cb.toggle) cb.toggle.setAttribute('aria-expanded', 'false');
     var panel = cb.panel;
     if (!panel) return;
     panel.classList.remove('opacity-100', 'scale-100');
@@ -85,6 +94,7 @@
       } else {
         delete opt.dataset.catOptionSelected;
       }
+      opt.setAttribute('aria-selected', isSelected ? 'true' : 'false');
 
       var activeCls = (opt.dataset.catOptionActive || '').split(' ').filter(Boolean);
       var inactiveCls = (opt.dataset.catOptionInactive || '').split(' ').filter(Boolean);
@@ -102,12 +112,13 @@
   }
 
   function selectParent(cb, id, name) {
+    if (!cb) return;
     var st = state(cb.container);
     st.parentId = id;
     st.parentSearch = '';
     closeCombobox(cb);
-    updateComboboxLabel(cb);
     updateComboboxFilter(cb);
+    updateComboboxLabel(cb);
     updateConditionalSections(cb.container);
     if (cb.hidden) cb.hidden.value = st.parentId;
     if (cb.search) cb.search.value = '';
@@ -161,6 +172,7 @@
 
       activeCls.forEach(function(c) { tab.classList.toggle(c, isActive); });
       inactiveCls.forEach(function(c) { tab.classList.toggle(c, !isActive); });
+      tab.setAttribute('aria-pressed', isActive ? 'true' : 'false');
       if (icon) {
         iconActive.forEach(function(c) { icon.classList.toggle(c, isActive); });
         iconInactive.forEach(function(c) { icon.classList.toggle(c, !isActive); });
@@ -293,7 +305,12 @@
           var newTab = tab.dataset.catTab;
           if (newTab && newTab !== st.currentTab) {
             st.currentTab = newTab;
+            st.selectMacro = getDefaultMacroForType(container, newTab);
+            // Um pai de despesa não pode virar pai de receita: ao trocar de
+            // aba a seleção volta para "Nenhuma (categoria raiz)".
+            selectParent(cb, '', '');
             updateTabs(container);
+            updateConditionalSections(container);
             if (cb) updateComboboxFilter(cb);
           }
         });
@@ -331,15 +348,39 @@
           if (e.key === 'Escape') {
             closeCombobox(cb);
             if (cb.toggle) cb.toggle.focus();
+            return;
+          }
+          if (e.key === 'ArrowDown') {
+            var firstVisible = Array.prototype.filter.call(cb.options, function(opt) {
+              return !opt.classList.contains('hidden');
+            })[0];
+            if (firstVisible) {
+              e.preventDefault();
+              firstVisible.focus();
+            }
           }
         });
       }
 
-      // Combobox option clicks
+      // Combobox option selection (mouse and keyboard)
       if (cb) {
         cb.options.forEach(function(opt) {
-          opt.addEventListener('click', function() {
+          var choose = function() {
             selectParent(cb, opt.dataset.catOptionValue, opt.dataset.catOptionName);
+          };
+          opt.addEventListener('click', choose);
+          opt.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+              e.preventDefault();
+              choose();
+              if (cb.toggle) cb.toggle.focus();
+              return;
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              closeCombobox(cb);
+              if (cb.toggle) cb.toggle.focus();
+            }
           });
         });
       }

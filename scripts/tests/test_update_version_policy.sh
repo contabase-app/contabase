@@ -543,6 +543,8 @@ exit 0
 EOF
   chmod +x "$dir/scripts/build-css.sh"
   cp "$LEAF_SOURCE" "$dir/scripts/update-contabase-source.sh"
+  mkdir -p "$dir/scripts/lib"
+  cp "$REPO_DIR/scripts/lib/contabase-recovery.sh" "$dir/scripts/lib/contabase-recovery.sh"
 
   cat > "$dir/bin/id" <<'EOF'
 #!/bin/sh
@@ -858,6 +860,8 @@ u3g_init_repo() {
 
 u3g_source_commit() {
   local repo="$1" version="$2" sentinel="$3" msg="$4"
+  mkdir -p "$repo/scripts/lib"
+  cp "$REPO_DIR/scripts/lib/contabase-recovery.sh" "$repo/scripts/lib/contabase-recovery.sh"
   printf '%s\n' "$version" > "$repo/VERSION"
   printf 'module github.com/contabase-app/contabase\n\ngo 1.23\n' > "$repo/go.mod"
   mkdir -p "$repo/scripts/ops"
@@ -1299,6 +1303,8 @@ echo "=== U3G DOCKER A->B (git real) ==="
 
 u3g_docker_commit() {
   local repo="$1" version="$2" sentinel="$3" msg="$4"
+  mkdir -p "$repo/scripts/lib"
+  cp "$REPO_DIR/scripts/lib/contabase-recovery.sh" "$repo/scripts/lib/contabase-recovery.sh"
   printf '%s\n' "$version" > "$repo/VERSION"
   mkdir -p "$repo/scripts/ops"
   printf '#!/bin/sh\necho backup-helper-%s\n' "$sentinel" > "$repo/scripts/ops/backup.sh"

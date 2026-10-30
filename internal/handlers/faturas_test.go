@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contabase-app/contabase/internal/database"
 	"github.com/contabase-app/contabase/internal/models"
 )
 
@@ -61,6 +60,10 @@ func TestFaturasPageUsesGlobalAppShell(t *testing.T) {
 		`/assets/css/faturas.css?v=test`,
 		`/assets/js/payment-confirm.js?v=test`,
 		`/assets/js/faturas.js?v=test`,
+		`/assets/js/show-more.js?v=test`,
+		`/assets/js/privacy.js?v=test`,
+		`data-privacy-toggle`,
+		`data-privacy-icon`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("faturas page missing %q", expected)
@@ -226,6 +229,9 @@ func TestFaturasIndexRendersSelectedCardAndInvoiceDetail(t *testing.T) {
 		`data-faturas-content-url="/faturas/conteudo?cartao=card-1&amp;mes=9&amp;ano=2026"`,
 		`/assets/css/faturas-index.css?v=test`,
 		`/assets/js/faturas-index.js?v=test`,
+		`/assets/js/privacy.js?v=test`,
+		`data-privacy-toggle`,
+		`data-privacy-icon`,
 		`href="/configuracoes/cartoes"`,
 		`id="faturas-content"`,
 	} {
@@ -1406,7 +1412,28 @@ func TestHandleMoverFaturaParceladaMoveCadeiaFuturaEmCascata(t *testing.T) {
 
 	seedInvoicePaymentScenario(t, db)
 	seedInstallmentMoveScenario(t, db)
-	keepOpenTestInvoicesFuture(t, db, "card-test")
+	// Move the whole scenario forward: the final destination is created by the
+	// handler and must also have a closing date ahead of the real test clock.
+	now := time.Now().UTC()
+	firstReference := time.Date(now.Year()+1, now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	var references [4]string
+	for i := range references {
+		referenceDate := firstReference.AddDate(0, i, 0)
+		references[i] = referenceDate.Format("2006-01")
+		if i == len(references)-1 {
+			break // Preserve creation of the last invoice by the handler.
+		}
+		closingUnix, dueUnix := invoiceDatesForReference(referenceDate.Year(), referenceDate.Month(), 20, 10)
+		execTestSQL(t, db, `
+			UPDATE invoices SET reference = ?, closing_date = ?, due_date = ?
+			WHERE id = ? AND account_id = 'card-test'
+		`, references[i], closingUnix, dueUnix, fmt.Sprintf("invoice-2026-%02d", 8+i))
+		occurrence := time.Date(referenceDate.Year(), referenceDate.Month()-1, 5, 12, 0, 0, 0, time.UTC)
+		execTestSQL(t, db, `
+			UPDATE transactions SET date = ?, date_civil = ?
+			WHERE id = ? AND workspace_id = 'ws-test'
+		`, occurrence.Unix(), occurrence.Format("2006-01-02"), fmt.Sprintf("installment-%d", i+1))
+	}
 
 	handler := TransactionHandler{
 		DB:          db,
@@ -1423,10 +1450,10 @@ func TestHandleMoverFaturaParceladaMoveCadeiaFuturaEmCascata(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
-	assertTransactionInvoiceReference(t, db, "installment-1", "2026-08")
-	assertTransactionInvoiceReference(t, db, "installment-2", "2026-10")
-	assertTransactionInvoiceReference(t, db, "installment-3", "2026-11")
-	assertInvoiceExists(t, db, "card-test", "2026-11", "OPEN")
+	assertTransactionInvoiceReference(t, db, "installment-1", references[0])
+	assertTransactionInvoiceReference(t, db, "installment-2", references[2])
+	assertTransactionInvoiceReference(t, db, "installment-3", references[3])
+	assertInvoiceExists(t, db, "card-test", references[3], "OPEN")
 }
 
 func quickInvoiceMoveRequestForTest(t *testing.T, db *sql.DB, transactionID string) *http.Request {
@@ -2377,7 +2404,7 @@ func TestEnsureInvoiceForReferenceTxUsesSafeClampedDates(t *testing.T) {
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	db, err := database.Open(":memory:")
+	db, err := openGuardedHandlerFixture(t)
 	if err != nil {
 		t.Fatalf("open test db: %v", err)
 	}
@@ -2786,54 +2813,63 @@ func TestFaturaTemplateExpoeFluxoPagamentoParcial(t *testing.T) {
 		"R$ 750,00",
 		"Pagamento parcial",
 		"Reembolso geral",
-		"grid-cols-1 gap-2.5 pt-1",
-		"cb-invoice-action",
-		"cb-invoice-action-label",
-		"<span>Quitar</span><span>fatura</span>",
-		"<span>Pagamento</span><span>parcial</span>",
-		"<span>Reembolso</span><span>geral</span>",
+		"ui-btn ui-btn--primary cb-invoice-action-btn",
+		"ui-btn ui-btn--secondary cb-invoice-action-btn",
 		`hx-get="/cartoes/faturas/reembolso?invoice_id=invoice-2026-08"`,
 		`name="payment_mode" value="partial"`,
 		`name="payment_amount"`,
 		`name="payment_date"`,
 		"Saldo restante após este pagamento",
+		// Canonical summary composition.
+		`class="ui-panel cb-invoice-main"`,
+		`cb-invoice-hero-value`,
+		`cb-invoice-limit-progress`,
+		`data-sensitive`,
 	} {
 		if !strings.Contains(html, expected) {
 			t.Fatalf("missing %q in invoice summary html: %s", expected, html)
 		}
 	}
+	for _, legacy := range []string{
+		"cb-invoice-action-label",
+		"grid-cols-1 gap-2.5 pt-1",
+		"font-black",
+		"<span>Quitar</span>",
+	} {
+		if strings.Contains(html, legacy) {
+			t.Fatalf("summary kept legacy presentation %q", legacy)
+		}
+	}
 }
 
 func TestInvoiceActionButtonsStayFullWidthRowsAtEveryBreakpoint(t *testing.T) {
-	raw, err := os.ReadFile(resolveTemplatePath(t, "assets/css/design-system.css"))
+	raw, err := os.ReadFile(resolveTemplatePath(t, "assets/css/faturas.css"))
 	if err != nil {
-		t.Fatalf("read design system: %v", err)
+		t.Fatalf("read faturas css: %v", err)
 	}
 	stylesheet := string(raw)
-	actionStart := strings.Index(stylesheet, ".cb-invoice-action {")
-	actionEnd := strings.Index(stylesheet, ".cb-button-ghost {")
-	if actionStart < 0 || actionEnd <= actionStart {
-		t.Fatal("invoice action stylesheet section not found")
+	actionStart := strings.Index(stylesheet, ".cb-invoice-action-btn {")
+	if actionStart < 0 {
+		t.Fatal("invoice action button styles not found")
 	}
-	actionStyles := stylesheet[actionStart:actionEnd]
+	actionStyles := stylesheet[actionStart:]
 	for _, expected := range []string{
-		".cb-invoice-action {",
-		"min-height: 3.25rem",
-		"flex-direction: row",
-		"padding: 0.75rem 1rem",
-		"font-size: 0.6875rem",
-		"text-transform: none",
-		".cb-invoice-action-label",
-		"content: \" \"",
+		"width: 100%",
+		"min-height: 42px",
+		"justify-content: flex-start",
 	} {
-		if !strings.Contains(actionStyles, expected) {
-			t.Fatalf("invoice action style missing %q", expected)
+		if !strings.Contains(actionStyles[:600], expected) {
+			t.Fatalf("invoice actions must remain full-width rows, missing %q", expected)
 		}
 	}
-	for _, unexpected := range []string{"min-height: 7rem", "flex-direction: column", "md:grid-cols-3"} {
-		if strings.Contains(actionStyles, unexpected) {
-			t.Fatalf("invoice actions must remain full-width rows, found %q", unexpected)
-		}
+	if strings.Contains(actionStyles[:600], "flex-direction: column") {
+		t.Fatal("invoice actions must remain full-width rows")
+	}
+	if !strings.Contains(stylesheet, ".cb-invoice-actions-list { display: grid; gap: 8px; }") {
+		t.Fatal("invoice actions must stay in a compact stacked list")
+	}
+	if !strings.Contains(stylesheet, ".cb-invoice-actions-info summary") {
+		t.Fatal("invoice action explanations must stay collapsible")
 	}
 }
 
@@ -3204,8 +3240,7 @@ func TestBuildFaturaDataCanonicalEffectivePaidMatrix(t *testing.T) {
 
 func execTestSQL(t *testing.T, db *sql.DB, query string, args ...interface{}) {
 	t.Helper()
-
-	if _, err := db.Exec(query, args...); err != nil {
+	if _, err := fixtureHandlerExec(t, db, query, args...); err != nil {
 		t.Fatalf("exec test sql: %v\nquery: %s", err, query)
 	}
 }

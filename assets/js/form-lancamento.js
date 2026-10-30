@@ -36,10 +36,19 @@
             document.querySelectorAll('.has-error').forEach(function(el) {
                 el.classList.remove('!border-rose-500/50', '!bg-rose-500/10', 'has-error');
             });
+            ['valor', 'descricaoLancamento', 'categoriaPicker', 'contato-input'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) el.removeAttribute('aria-invalid');
+            });
+            var categoryButton = document.querySelector('#categoriaPicker button');
+            if (categoryButton) categoryButton.removeAttribute('aria-invalid');
 
             var field = event.detail && event.detail.field;
             var message = event.detail && event.detail.message;
             if (!field) return;
+
+            var scrollBody = form.closest ? form.closest('[data-form-scroll]') : null;
+            if (scrollBody) scrollBody.scrollTop = 0;
 
             var errEl = document.getElementById(field + '-error');
             if (errEl) {
@@ -50,6 +59,20 @@
             var inputEl = document.getElementById(field + '-input');
             if (inputEl) {
                 inputEl.classList.add('has-error', '!border-rose-500/50', '!bg-rose-500/10');
+                inputEl.setAttribute('aria-invalid', 'true');
+            }
+            var directInput = document.getElementById(field);
+            if (directInput && directInput.tagName !== 'DIV') {
+                directInput.setAttribute('aria-invalid', 'true');
+            }
+            if (field === 'categoria' && categoryButton) {
+                categoryButton.setAttribute('aria-invalid', 'true');
+            }
+            var focusTarget = directInput && directInput.tagName !== 'DIV' ? directInput : (field === 'categoria' ? categoryButton : null);
+            if (focusTarget && typeof focusTarget.focus === 'function') {
+                window.setTimeout(function() {
+                    focusTarget.focus({ preventScroll: true });
+                }, 0);
             }
         };
 
@@ -463,6 +486,59 @@
 
     // --- Origin selection bridge (Phase D.5.3.8.3.a) ---
 
+    // A transfer must move money between two different accounts. When the
+    // destination still mirrors the origin (server pre-selects the first
+    // account on both pickers), it is a placeholder, not a real choice:
+    // reset it so the destination requires an explicit selection.
+    ns.resetDestinationPlaceholder = function() {
+        var destId = document.getElementById('destinoContaId');
+        var destName = document.getElementById('destinoNome');
+        var destIconWrap = document.getElementById('destinoIconWrap');
+        var destIcon = document.getElementById('destinoIcon');
+        var destIconText = document.getElementById('destinoIconText');
+        var destIconImage = document.getElementById('destinoIconImage');
+
+        if (destId) destId.value = '';
+        if (destName) destName.textContent = 'Conta de destino';
+        ns.updateAccountIcon(destIconWrap, destIcon, destIconText, destIconImage, 'wallet', '', '', '');
+    };
+
+    ns.currentFormType = function() {
+        var tipoInput = document.getElementById('tipoLancamento');
+        return tipoInput ? tipoInput.value : '';
+    };
+
+    ns.destinationMirrorsOrigin = function() {
+        var origemId = document.getElementById('origemContaId');
+        var destinoId = document.getElementById('destinoContaId');
+        var origin = origemId ? origemId.value : '';
+        var destination = destinoId ? destinoId.value : '';
+        return Boolean(origin) && destination === origin;
+    };
+
+    ns.validateTransferAccounts = function() {
+        if (ns.currentFormType() !== 'transferencia') return true;
+        var origemId = document.getElementById('origemContaId');
+        var destinoId = document.getElementById('destinoContaId');
+        var destination = destinoId ? destinoId.value : '';
+        var message = '';
+        if (!destination) {
+            message = 'Selecione a conta de destino da transferência.';
+        } else if (ns.destinationMirrorsOrigin()) {
+            message = 'A conta de origem e a conta de destino devem ser diferentes para concluir a transferência.';
+        }
+        if (!message) return true;
+        var errorBox = document.getElementById('lancamento-form-error');
+        if (errorBox) {
+            errorBox.textContent = message;
+            errorBox.classList.remove('hidden');
+        }
+        var form = document.getElementById('lancamento-form');
+        var scrollBody = form && form.closest ? form.closest('[data-form-scroll]') : null;
+        if (scrollBody) scrollBody.scrollTop = 0;
+        return false;
+    };
+
     ns.applyOriginSelection = function(payload, callbacks) {
         var cb = callbacks || {};
 
@@ -498,6 +574,10 @@
 
         ns.updateAccountIcon(originIconWrap, originIcon, originIconText, originIconImage, payload.icon, payload.color, payload.providerMark, payload.providerLogoURL);
 
+        if (ns.currentFormType() === 'transferencia' && ns.destinationMirrorsOrigin()) {
+            ns.resetDestinationPlaceholder();
+        }
+
         if (typeof cb.onCardStateCaptured === 'function') cb.onCardStateCaptured(payload.closingDay, payload.dueDay);
 
         if (payload.kind === 'cartao') {
@@ -522,6 +602,8 @@
         var categoryPickerEl = document.getElementById('categoriaPicker');
         var destinationPickerEl = document.getElementById('destinoPicker');
         var cardsModalGroupEl = document.getElementById('cartoesModalGroup');
+        var transferHintEl = document.getElementById('transferDirectionHint');
+        var sheetTitleEl = document.getElementById('lancamento-sheet-title');
 
         var type = payload.type;
 
@@ -537,7 +619,17 @@
         tabs.forEach(function(t) {
             t.classList.remove('is-active-despesa', 'is-active-receita', 'is-active-transferencia');
             if (t.dataset.type === type) t.classList.add(activeClass[type]);
+            t.setAttribute('aria-pressed', t.dataset.type === type ? 'true' : 'false');
         });
+
+        if (sheetTitleEl && sheetTitleEl.getAttribute('data-sheet-title-mode') === 'create') {
+            var titles = {
+                despesa: 'Nova despesa',
+                receita: 'Nova receita',
+                transferencia: 'Nova transferência'
+            };
+            sheetTitleEl.textContent = titles[type] || 'Nova movimentação';
+        }
 
         var isTransfer = type === 'transferencia';
         var isIncome = type === 'receita';
@@ -553,7 +645,12 @@
             destinationPickerEl.classList.toggle('hidden', !isTransfer);
             destinationPickerEl.classList.toggle('flex', isTransfer);
         }
+        if (transferHintEl) transferHintEl.classList.toggle('hidden', !isTransfer);
         if (cardsModalGroupEl) cardsModalGroupEl.classList.toggle('hidden', isTransfer || isIncome);
+
+        if (isTransfer && ns.destinationMirrorsOrigin()) {
+            ns.resetDestinationPlaceholder();
+        }
 
         if (typeof cb.onUpdateTypeLabels === 'function') cb.onUpdateTypeLabels(type);
     };
@@ -624,6 +721,9 @@
         var pendingIcon = document.getElementById('statusPagamentoPendingIcon');
         if (pendingIcon) pendingIcon.classList.toggle('hidden', isPaid);
 
+        var statusLabel = document.getElementById('statusPagamentoLabel');
+        if (statusLabel) statusLabel.textContent = isPaid ? 'Pago' : 'Pendente';
+
         var dueSection = document.getElementById('dueDateSection');
         if (dueSection) {
             dueSection.classList.toggle('hidden', isPaid);
@@ -674,7 +774,7 @@
         if (!toggle || !summary || !select) return;
         if (!toggle.checked) {
             summary.textContent = 'Ative para escolher de 2x at\u00e9 12x';
-            summary.className = 'sheet-muted-text block text-xs mt-0.5';
+            summary.className = 'sheet-option__hint';
             return;
         }
         var amountCents = ns.parseMoneyCents(valueInput ? valueInput.value : '');
@@ -685,10 +785,10 @@
             : '';
         if (text) {
             summary.textContent = text;
-            summary.className = 'block text-sm font-semibold text-cyan-700 dark:text-cyan-300 mt-1';
+            summary.className = 'sheet-option__hint is-filled';
         } else {
             summary.textContent = 'Informe um valor para calcular as parcelas';
-            summary.className = 'sheet-muted-text block text-xs mt-0.5';
+            summary.className = 'sheet-option__hint';
         }
     };
 
@@ -753,15 +853,25 @@
 
     // --- Visual Modals (Phase D.5.3.9.e.1) ---
 
+    var formModalReturnFocus = null;
+
     ns.openModal = function(type, root) {
         var modalBackdrop = findInRoot(root, '#formModalBackdrop');
         var originModal = findInRoot(root, '#origemModal');
         var categoryModal = findInRoot(root, '#categoriaModal');
+        var activePanel = type === 'origin' ? originModal : categoryModal;
 
         if (modalBackdrop) modalBackdrop.classList.remove('hidden');
         if (originModal) originModal.classList.toggle('hidden', type !== 'origin');
         if (categoryModal) categoryModal.classList.toggle('hidden', type !== 'category');
+        if (!formModalReturnFocus) formModalReturnFocus = ns.rememberActiveElement();
         if (typeof window.overlayDidOpen === 'function') window.overlayDidOpen('form-lancamento:' + type);
+        if (activePanel) {
+            window.setTimeout(function() {
+                var items = dialogFocusables(activePanel);
+                if (items.length) items[0].focus({ preventScroll: true });
+            }, 0);
+        }
     };
 
     ns.closeModal = function(root) {
@@ -772,8 +882,19 @@
         if (modalBackdrop) modalBackdrop.classList.add('hidden');
         if (originModal) originModal.classList.add('hidden');
         if (categoryModal) categoryModal.classList.add('hidden');
+        if (formModalReturnFocus) {
+            ns.restoreFocus(formModalReturnFocus);
+            formModalReturnFocus = null;
+        }
         if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
     };
+
+    if (!window.__lancamentoFormModalCloseRegistered) {
+        window.__lancamentoFormModalCloseRegistered = true;
+        window.closeLancamentoFormModal = function() {
+            ns.closeModal();
+        };
+    }
 
     ns.visibleModalPanel = function(root) {
         var originModal = findInRoot(root, '#origemModal');
@@ -972,6 +1093,74 @@
         }, 0);
     };
 
+    // --- Local dialog focus scope (F7) -------------------------------------
+    // overlay-stack.js keeps owning history/back/ESC and the scroll lock. This
+    // helper only contains Tab inside the transaction sheet and its own nested
+    // dialogs, mirroring the local pattern used by the Faturas payment modals.
+
+    function dialogFocusables(root) {
+        if (!root || typeof root.querySelectorAll !== 'function') return [];
+        return Array.prototype.slice.call(root.querySelectorAll(
+            'a[href], button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter(function(el) {
+            return el.offsetWidth > 0 || el.offsetHeight > 0 || el === document.activeElement;
+        });
+    }
+
+    function bindDialogFocus(root) {
+        if (!root || root.dataset.dialogFocusBound === 'true') return;
+        root.dataset.dialogFocusBound = 'true';
+        root.addEventListener('keydown', function(event) {
+            if (event.key !== 'Tab' || event.defaultPrevented) return;
+            var items = dialogFocusables(root);
+            if (!items.length) return;
+            var first = items[0];
+            var last = items[items.length - 1];
+            // Nested dialogs stop the event so the parent sheet does not also
+            // apply its own boundary.
+            event.stopPropagation();
+            if (event.shiftKey && (document.activeElement === first || !root.contains(document.activeElement))) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        });
+    }
+
+    var sheetReturnFocus = null;
+
+    if (!window.__lancamentoSheetTriggerCapture) {
+        window.__lancamentoSheetTriggerCapture = true;
+        document.addEventListener('click', function(event) {
+            var target = event.target;
+            var trigger = target && target.closest
+                ? target.closest('[hx-target="#bottom-sheet-container"][hx-get]')
+                : null;
+            if (!trigger) return;
+            var url = trigger.getAttribute('hx-get') || '';
+            var path = url.split('?')[0];
+            if (path !== '/transacoes/nova' && !/^\/transacoes\/[^/]+$/.test(path)) return;
+            var active = document.activeElement;
+            if (active && active !== document.body) sheetReturnFocus = active;
+        }, true);
+    }
+
+    if (!window.__lancamentoSheetCloseWrapped && typeof window.closeBottomSheet === 'function') {
+        window.__lancamentoSheetCloseWrapped = true;
+        var originalCloseBottomSheet = window.closeBottomSheet;
+        window.closeBottomSheet = function() {
+            var hadLancamento = !!document.querySelector('#bottom-sheet-container .sheet-lancamento-dialog');
+            var returnFocus = sheetReturnFocus;
+            originalCloseBottomSheet.apply(this, arguments);
+            if (hadLancamento) {
+                sheetReturnFocus = null;
+                ns.restoreFocus(returnFocus);
+            }
+        };
+    }
+
     ns.focusSeriesModal = function(modal, inputName, root) {
         if (!modal) return;
         window.setTimeout(function() {
@@ -1007,6 +1196,11 @@
         if (!formEl) return;
         if (formWiringInitSet.has(formEl)) return;
         formWiringInitSet.add(formEl);
+
+        var sheetEl = formEl.closest ? formEl.closest('.sheet-lancamento-dialog') : null;
+        if (sheetEl) bindDialogFocus(sheetEl);
+        var modalBackdropEl = findInRoot(root, '#formModalBackdrop');
+        if (modalBackdropEl) bindDialogFocus(modalBackdropEl);
 
         var valueInput = findInRoot(root, '#valor');
         var descriptionInput = findInRoot(root, '#descricaoLancamento');
@@ -1050,6 +1244,15 @@
 			var message = (xhr.responseText || 'Não foi possível concluir a ação.').trim();
 			errorBox.textContent = message;
 			errorBox.classList.remove('hidden');
+			var scrollBody = formEl.closest ? formEl.closest('[data-form-scroll]') : null;
+			if (scrollBody) scrollBody.scrollTop = 0;
+		});
+
+		formEl.addEventListener('htmx:afterOnLoad', function() {
+			var errorBox = document.getElementById('lancamento-form-error');
+			if (!errorBox || errorBox.classList.contains('hidden')) return;
+			var scrollBody = formEl.closest ? formEl.closest('[data-form-scroll]') : null;
+			if (scrollBody) scrollBody.scrollTop = 0;
 		});
 
         function syncPaymentStatusUI() {
@@ -1778,6 +1981,8 @@
 
             var scopeModal = document.getElementById('seriesScopeModal');
             var deleteModal = document.getElementById('seriesDeleteModal');
+            if (scopeModal) bindDialogFocus(scopeModal);
+            if (deleteModal) bindDialogFocus(deleteModal);
             var scopeInput = document.getElementById('escopoEdicao');
             var deleteOpenButton = form.querySelector('[data-series-delete-open]');
             var scopeCancel = scopeModal ? scopeModal.querySelector('[data-series-scope-cancel]') : null;
@@ -1879,6 +2084,15 @@
             formEl.dataset.contactValidationEnhanced = 'true';
             formEl.addEventListener('submit', function(event) {
                 if (ns.validateContactSelection && !ns.validateContactSelection()) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                }
+            }, true);
+        }
+        if (formEl.dataset.transferValidationEnhanced !== 'true') {
+            formEl.dataset.transferValidationEnhanced = 'true';
+            formEl.addEventListener('submit', function(event) {
+                if (ns.validateTransferAccounts && !ns.validateTransferAccounts()) {
                     event.preventDefault();
                     event.stopImmediatePropagation();
                 }

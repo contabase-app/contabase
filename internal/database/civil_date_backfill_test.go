@@ -533,6 +533,12 @@ func TestCivilDateBackfillPreflightRejectsCivilColumnWrongType(t *testing.T) {
 		raw.Close()
 		t.Fatalf("create corrupted transactions: %v", err)
 	}
+	// Preserve the parent key required by migration 73 while deliberately
+	// keeping date_civil INTEGER for the preflight rejection under test.
+	if _, err := raw.Exec(`CREATE UNIQUE INDEX idx_transactions_funding_owner ON transactions(workspace_id,id)`); err != nil {
+		raw.Close()
+		t.Fatalf("restore transactions composite key: %v", err)
+	}
 	if _, err := raw.Exec(`INSERT INTO transactions (id, workspace_id, user_id, account_id, type, amount, date) SELECT id, workspace_id, user_id, account_id, type, amount, date FROM transactions_new`); err != nil {
 		raw.Close()
 		t.Fatalf("insert back: %v", err)

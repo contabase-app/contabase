@@ -1312,7 +1312,7 @@ func TestRelatoriosBusinessCostsByMacro(t *testing.T) {
 			('biz2-esc', 'ws-biz2', 'u-biz2', 'chk-biz2', 'biz-cat-esc', 'EXPENSE', 30000, ?, 'Aluguel', 'paid', ?, 1, 1, ?, ?)
 	`, augDate, augDate, now, now, augDate, augDate, now, now, augDate, augDate, now, now, augDate, augDate, now, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-biz2", UserID: "u-biz2"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-biz2", UserID: "u-biz2"}
 
 	costs, err := handler.queryBusinessCostsByMacro(nil, 8, 2026)
 	if err != nil {
@@ -1811,7 +1811,7 @@ func TestRelatoriosCaixaTabSemUpcomingItems(t *testing.T) {
 		augDate, due2, time.Now().Unix(), time.Now().Unix(),
 		augDate, due3, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -1838,7 +1838,7 @@ func TestRelatoriosCompetenciaTabUpcomingItemsComPendentes(t *testing.T) {
 			('up-pend-comp', 'ws-rpt', 'u-rpt', 'chk-rpt', 'cat-food', 'EXPENSE', 15000, ?, ?, 'Internet', 'pending', 1, 1, ?, ?)
 	`, augDate, due1, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
 	data, err := handler.buildRelatoriosData("", "competencia", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -1872,7 +1872,7 @@ func TestRelatoriosCashFlowTabFallbackTabInvalida(t *testing.T) {
 	seedReportHelpersScenario(t, db)
 	execTestSQL(t, db, `UPDATE workspaces SET type = 'business' WHERE id = 'ws-rpt'`)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
 
 	tabs := []string{"", "invalid", "caixa", "competencia", "extrato", "CAIXA", "Caixa"}
 
@@ -1957,7 +1957,7 @@ func TestDailySummaryAgrupaDoisMovimentosMesmoDia(t *testing.T) {
 	`, augDate, augDate, time.Now().Unix(), time.Now().Unix(),
 		augDate, augDate, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
 	data, err := handler.buildRelatoriosData("", "extrato", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -1995,7 +1995,7 @@ func TestDailySummarySeparaEntradaESaida(t *testing.T) {
 	`, sameDate, sameDate, time.Now().Unix(), time.Now().Unix(),
 		sameDate, sameDate, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
 	data, err := handler.buildRelatoriosData("", "extrato", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -2031,7 +2031,7 @@ func TestDailySummaryAcumuladoProgressivo(t *testing.T) {
 	`, day1, day1, time.Now().Unix(), time.Now().Unix(),
 		day2, day2, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
 	data, err := handler.buildRelatoriosData("", "extrato", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -2097,7 +2097,7 @@ func TestDailySummaryPagamentoFaturaComoSaida(t *testing.T) {
 		VALUES ('invp-ds', 'ws-rpt', 'inv-ds', 'chk-rpt', 'pay-ds', 35000, ?, 'manual', 'u-rpt', ?)
 	`, paymentDate, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
 	data, err := handler.buildRelatoriosData("", "extrato", "movimentos", 9, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData sept: %v", err)
@@ -2126,7 +2126,7 @@ func TestDailySummaryTransferenciaNaoDistorceConsolidado(t *testing.T) {
 		VALUES ('ds-transfer', 'ws-rpt', 'u-rpt', 'chk-rpt', 'sav-rpt', 'TRANSFER', 50000, ?, 'Transfer diaria', 'paid', ?, 1, 1, ?, ?)
 	`, transferDate, transferDate, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
 	data, err := handler.buildRelatoriosData("", "extrato", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -2156,8 +2156,8 @@ func TestDailySummaryWorkspaceIsolation(t *testing.T) {
 	`, augDate, augDate, time.Now().Unix(), time.Now().Unix(),
 		augDate, augDate, time.Now().Unix(), time.Now().Unix())
 
-	handler1 := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
-	handler2 := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt2", UserID: "u-rpt2"}
+	handler1 := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler2 := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt2", UserID: "u-rpt2"}
 
 	data1, _ := handler1.buildRelatoriosData("", "extrato", "movimentos", 8, 2026)
 	data2, _ := handler2.buildRelatoriosData("", "extrato", "movimentos", 8, 2026)
@@ -2192,7 +2192,7 @@ func TestDailySummaryTemplateRendersWithInt64Values(t *testing.T) {
 	`, augDate, augDate, time.Now().Unix(), time.Now().Unix(),
 		augDate, augDate, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
 	data, err := handler.buildRelatoriosData("", "extrato", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -2263,7 +2263,7 @@ func TestExtratoSubvisaoPadraoEMovimentos(t *testing.T) {
 		VALUES ('ext-view', 'ws-rpt', 'u-rpt', 'chk-rpt', 'cat-food', 'EXPENSE', 30000, ?, 'Mercado', 'paid', ?, 1, 1, ?, ?)
 	`, augDate, augDate, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
 
 	cases := []struct {
 		name     string
@@ -2310,7 +2310,7 @@ func TestExtratoResumoDiarioApenasConfirmados(t *testing.T) {
 			('ext-rs-pending', 'ws-rpt', 'u-rpt', 'chk-rpt', 'cat-food', 'EXPENSE', 20000, ?, 'Mercado pendente', 'pending', NULL, 1, 1, ?, ?)
 	`, augDate, augDate, time.Now().Unix(), time.Now().Unix(), augDate, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
 	data, err := handler.buildRelatoriosData("", "extrato", "diario", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -2339,7 +2339,7 @@ func TestExtratoTotalMovimentosContaApenasConfirmados(t *testing.T) {
 			('ext-tm-inc', 'ws-rpt', 'u-rpt', 'chk-rpt', 'cat-salary', 'INCOME', 100000, ?, 'Salario', 'paid', ?, 1, 1, ?, ?)
 	`, augDate, augDate, time.Now().Unix(), time.Now().Unix(), augDate, time.Now().Unix(), time.Now().Unix(), augDate, augDate, time.Now().Unix(), time.Now().Unix())
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-rpt", UserID: "u-rpt"}
 	data, err := handler.buildRelatoriosData("", "extrato", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)

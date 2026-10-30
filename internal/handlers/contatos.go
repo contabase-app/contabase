@@ -8,9 +8,11 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/contabase-app/contabase/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -19,6 +21,20 @@ type ContatosHandler struct {
 	Templates   TemplateEngine
 	WorkspaceID string
 	UserID      string
+	// Role is the fixed workspace role of the signed-in member. It feeds the
+	// same models.HasPermission matrix used by the routes; it is never read
+	// from the request payload.
+	Role string
+}
+
+// CanUpdate reports whether the current role may open the inline edit form.
+func (h *ContatosHandler) CanUpdate() bool {
+	return models.HasPermission(&models.WorkspaceMember{Role: h.Role}, "transactions:update")
+}
+
+// CanDelete reports whether the current role may delete contacts.
+func (h *ContatosHandler) CanDelete() bool {
+	return models.HasPermission(&models.WorkspaceMember{Role: h.Role}, models.PermissionContactsDelete)
 }
 
 func respondContatoFormError(w http.ResponseWriter, message string) {
@@ -55,18 +71,24 @@ type ContatoRow struct {
 	CustomClientID            string
 	CustomClientIDPlaceholder string
 	Name                      string
+	Initials                  string
 	Document                  string
 	Type                      string
 	TypeLabel                 string
 	Email                     string
 	Phone                     string
 	CreatedAt                 string
+	CanUpdate                 bool
+	CanDelete                 bool
 }
 
 func (h *ContatosHandler) HandleContatosConceito(w http.ResponseWriter, r *http.Request) {
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	tipo := strings.TrimSpace(r.URL.Query().Get("tipo"))
-	if r.URL.Query().Get("partial") == "lista" {
+	// "partial=lista" is an HTMX swap hint, not a document mode: a full
+	// navigation (reload, back/forward, shared link) must always render the
+	// page even when the URL kept the hint.
+	if r.URL.Query().Get("partial") == "lista" && r.Header.Get("HX-Request") != "" {
 		data, err := h.buildContatosListData(query, tipo, r.Header.Get("HX-Request") != "")
 		if err != nil {
 			log.Printf("build contatos list error: %v", err)
@@ -124,6 +146,7 @@ func createContactRow(tx *sql.Tx, workspaceID, name, contactType, document, emai
 		ID:             id,
 		CustomClientID: customClientID,
 		Name:           name,
+		Initials:       contactInitials(name),
 		Document:       document,
 		Type:           contactType,
 		TypeLabel:      contactTypeLabel(contactType),
@@ -168,7 +191,11 @@ func (h *ContatosHandler) HandleCriarContato(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "erro ao criar contato", http.StatusInternalServerError)
 		return
 	}
-	h.renderContatosList(w, "")
+	// A criação acontece no workspace e na seleção ativa (busca + tipo). A
+	// resposta devolve a lista nesse mesmo estado, sem duplicar a lógica de
+	// filtros no cliente.
+	query, tipo := contactListState(r)
+	h.renderContatosList(w, query, tipo)
 }
 
 func (h *ContatosHandler) HandleOptionsContato(w http.ResponseWriter, r *http.Request) {
@@ -189,6 +216,12 @@ func (h *ContatosHandler) HandleOptionsContato(w http.ResponseWriter, r *http.Re
 }
 
 func (h *ContatosHandler) HandleDetalheContato(w http.ResponseWriter, r *http.Request, id string) {
+	// Defense in depth: the route already requires transactions:update. The
+	// guard keeps the edition sheet unreachable if the route is reused.
+	if !h.CanUpdate() {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	row, err := h.queryContatoByID(id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -199,9 +232,32 @@ func (h *ContatosHandler) HandleDetalheContato(w http.ResponseWriter, r *http.Re
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+	row.CanUpdate = h.CanUpdate()
+	row.CanDelete = h.CanDelete()
 	var buf bytes.Buffer
-	if err := h.Templates.ExecuteTemplate(&buf, "contato-row-form", row); err != nil {
-		log.Printf("template contato-row-form error: %v", err)
+	if err := h.Templates.ExecuteTemplate(&buf, "contato-edit-sheet", row); err != nil {
+		log.Printf("template contato-edit-sheet error: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	buf.WriteTo(w)
+}
+
+// HandleNovoContatoSheet renders the creation sheet inside the canonical
+// #bottom-sheet-container. The POST contract is unchanged.
+func (h *ContatosHandler) HandleNovoContatoSheet(w http.ResponseWriter, r *http.Request) {
+	tipo := normalizeContatosTipo(r.URL.Query().Get("tipo"))
+	if tipo == "" || tipo == "todos" {
+		tipo = "client"
+	}
+	data := ContatosData{
+		Type:                      tipo,
+		CustomClientIDPlaceholder: "CLI-001",
+	}
+	var buf bytes.Buffer
+	if err := h.Templates.ExecuteTemplate(&buf, "contato-create-sheet", data); err != nil {
+		log.Printf("template contato-create-sheet error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -262,20 +318,11 @@ func (h *ContatosHandler) HandleAtualizarContato(w http.ResponseWriter, r *http.
 		http.Error(w, "erro ao atualizar contato", http.StatusInternalServerError)
 		return
 	}
-	row, err := h.queryContatoByID(id)
-	if err != nil {
-		log.Printf("query contact after update error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-	var buf bytes.Buffer
-	if err := h.Templates.ExecuteTemplate(&buf, "contato-row", row); err != nil {
-		log.Printf("template contato-row error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	buf.WriteTo(w)
+	// A edição pode mudar nome ou tipo: re-renderizar a listagem com o estado
+	// ativo (mesmo endpoint da C3) reflete o resultado real da consulta e
+	// evita duplicar filtros no cliente.
+	query, tipo := contactListState(r)
+	h.renderContatosList(w, query, tipo)
 }
 
 func (h *ContatosHandler) HandleExcluirContato(w http.ResponseWriter, r *http.Request, id string) {
@@ -292,8 +339,8 @@ func (h *ContatosHandler) HandleExcluirContato(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *ContatosHandler) renderContatosList(w http.ResponseWriter, query string) {
-	data, err := h.buildContatosListData(query, "", false)
+func (h *ContatosHandler) renderContatosList(w http.ResponseWriter, query, tipo string) {
+	data, err := h.buildContatosListData(query, tipo, false)
 	if err != nil {
 		log.Printf("build contatos list error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -306,8 +353,9 @@ func (h *ContatosHandler) renderContatosList(w http.ResponseWriter, query string
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// O sheet é limpo no mesmo response; o erro local vive dentro dele e não
+	// precisa de um segundo alvo OOB.
 	buf.WriteString(`<div id="bottom-sheet-container" hx-swap-oob="innerHTML"></div>`)
-	buf.WriteString(`<div id="contato-form-error" hx-swap-oob="true" class="hidden"></div>`)
 	buf.WriteTo(w)
 }
 
@@ -315,6 +363,12 @@ func (h *ContatosHandler) buildContatosListData(query, tipo string, fabOOB bool)
 	contatos, err := h.queryContatos(query)
 	if err != nil {
 		return ContatosData{}, err
+	}
+	canUpdate := h.CanUpdate()
+	canDelete := h.CanDelete()
+	for i := range contatos {
+		contatos[i].CanUpdate = canUpdate
+		contatos[i].CanDelete = canDelete
 	}
 	data := ContatosData{
 		Title:    "Contatos",
@@ -369,13 +423,15 @@ func (h *ContatosHandler) queryContatos(query string) ([]ContatoRow, error) {
 	`
 	args := []interface{}{h.WorkspaceID}
 	if query != "" {
-		like := "%" + query + "%"
+		// The term is data, never SQL: the wildcards users type are escaped so
+		// "%" and "_" are searched literally instead of widening the LIKE.
+		like := "%" + escapeLikePattern(query) + "%"
 		sqlQuery += fmt.Sprintf(`
 			AND (
-				%s LIKE UNACCENT(?)
-				OR UNACCENT(COALESCE(custom_client_id, '')) LIKE UNACCENT(?)
-				OR UNACCENT(COALESCE(document, '')) LIKE UNACCENT(?)
-				OR UNACCENT(COALESCE(phone, '')) LIKE UNACCENT(?)
+				%s LIKE UNACCENT(?) ESCAPE '\'
+				OR UNACCENT(COALESCE(custom_client_id, '')) LIKE UNACCENT(?) ESCAPE '\'
+				OR UNACCENT(COALESCE(document, '')) LIKE UNACCENT(?) ESCAPE '\'
+				OR UNACCENT(COALESCE(phone, '')) LIKE UNACCENT(?) ESCAPE '\'
 			)
 		`, nameExpr)
 		args = append(args, like, like, like, like)
@@ -394,6 +450,7 @@ func (h *ContatosHandler) queryContatos(query string) ([]ContatoRow, error) {
 			return nil, err
 		}
 		row.TypeLabel = contactTypeLabel(row.Type)
+		row.Initials = contactInitials(row.Name)
 		row.CreatedAt = formatDateTimeLabel(createdAt)
 		out = append(out, row)
 	}
@@ -412,6 +469,7 @@ func (h *ContatosHandler) queryContatoByID(id string) (ContatoRow, error) {
 		return row, err
 	}
 	row.TypeLabel = contactTypeLabel(row.Type)
+	row.Initials = contactInitials(row.Name)
 	row.CreatedAt = formatDateTimeLabel(createdAt)
 	return row, nil
 }
@@ -464,6 +522,83 @@ func contactTypeLabel(v string) string {
 		return "Cliente"
 	}
 	return "Fornecedor"
+}
+
+// contactInitials builds the avatar initials from the contact name. It walks
+// runes instead of bytes, so one-character names, accents and emoji never
+// break the rendering, and a name without usable characters falls back to "?".
+func contactInitials(name string) string {
+	fields := strings.Fields(strings.TrimSpace(name))
+	if len(fields) == 0 {
+		return "?"
+	}
+	first := firstRune(fields[0])
+	if first == "" {
+		return "?"
+	}
+	if len(fields) == 1 {
+		return strings.ToUpper(first)
+	}
+	last := firstRune(fields[len(fields)-1])
+	if last == "" {
+		return strings.ToUpper(first)
+	}
+	return strings.ToUpper(first + last)
+}
+
+func firstRune(v string) string {
+	for _, r := range v {
+		return string(r)
+	}
+	return ""
+}
+
+// escapeLikePattern neutralizes the LIKE wildcards a user may type. The search
+// keeps being a parameterized LIKE: this only makes "%" and "_" literal.
+func escapeLikePattern(v string) string {
+	var b strings.Builder
+	b.Grow(len(v) + 8)
+	for _, r := range v {
+		switch r {
+		case '\\', '%', '_':
+			b.WriteRune('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// contactListState derives the active search term and type filter for
+// responses that re-render the list (creation). HTMX sends the current
+// document URL, which the tabs and the search keep updated.
+func contactListState(r *http.Request) (query, tipo string) {
+	if r == nil {
+		return "", ""
+	}
+	query = strings.TrimSpace(r.FormValue("q"))
+	tipo = normalizeContatosTipo(r.FormValue("tipo"))
+	if query != "" || tipo != "" {
+		return query, tipo
+	}
+	current, err := url.Parse(r.Header.Get("HX-Current-URL"))
+	if err != nil {
+		return "", ""
+	}
+	values := current.Query()
+	return strings.TrimSpace(values.Get("q")), normalizeContatosTipo(values.Get("tipo"))
+}
+
+func normalizeContatosTipo(v string) string {
+	switch strings.TrimSpace(strings.ToLower(v)) {
+	case "client", "cliente":
+		return "client"
+	case "vendor", "fornecedor":
+		return "vendor"
+	case "todos":
+		return "todos"
+	default:
+		return ""
+	}
 }
 
 var errDuplicateCustomClientID = errors.New("duplicate custom client id")

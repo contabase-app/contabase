@@ -1,54 +1,52 @@
 {{define "configuracoes-cartoes-page"}}
-{{template "configuracoes-v2-section-start" .}}
+{{template "configuracoes-premium-section-start" .}}
 {{template "configuracoes-cartoes-content" .}}
-{{template "configuracoes-v2-section-end" .}}
+{{template "configuracoes-premium-section-end" .}}
 {{end}}
 
 {{define "configuracoes-cartoes-content"}}
 <div id="settings-dynamic-payload" class="w-full">
-    <!-- Header Mobile Only -->
-    <header class="sticky top-14 z-20 bg-[var(--cb-surface-overlay)] backdrop-blur-xl border-b border-[var(--cb-border-subtle)] transition-colors md:hidden w-full">
-        <div class="mx-auto flex max-w-7xl items-center gap-4 px-4 pt-4 pb-3">
-            <button type="button" hx-get="/configuracoes" hx-target="#main-content" hx-select="#main-content" hx-push-url="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)] btn-tactile">
-                <i data-lucide="arrow-left" class="h-4 w-4"></i>
-            </button>
-            <div class="min-w-0 flex-1">
-                <p class="text-[0.65rem] font-semibold uppercase tracking-[0.25em] text-[var(--cb-text-subtle)]">Configurações</p>
-                <h1 class="mt-0.5 text-lg font-bold text-[var(--cb-text-main)] md:text-xl capitalize">cartões</h1>
-            </div>
-        </div>
-    </header>
-
-    <div class="w-full px-4 pb-[9rem] pt-5 md:px-0 md:pb-0 md:pt-0 relative md:max-w-5xl">
+    <div class="cb-v2-configuracoes-body">
         {{if .FlashError}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-danger">{{.FlashError}}</div>{{end}}
         {{if .FlashSuccess}}<div class="mb-6 rounded-xl border px-4 py-3 text-sm cb-flash-success">{{.FlashSuccess}}</div>{{end}}
 
         <!-- Section header -->
-        <div class="mb-6">
-            <h1 class="text-lg font-bold text-[var(--cb-text-main)]">Cartões de Crédito</h1>
-            <p class="mt-1 text-sm text-[var(--cb-text-muted)]">Configure seus cartões com datas de fechamento e vencimento.</p>
-        </div>
+        <header class="cb-v2-configuracoes-head ui-page-header">
+            <div class="min-w-0">
+                <p class="ui-eyebrow">Configurações</p>
+                <h1 class="ui-page-title">Cartões de Crédito</h1>
+                <p class="ui-page-description">Configure seus cartões com datas de fechamento e vencimento.</p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm cb-v2-configuracoes-privacy" data-privacy-toggle aria-pressed="false" aria-label="Ocultar valores financeiros" data-tooltip-hover data-tooltip-text="Ocultar valores financeiros"><i data-lucide="eye" data-privacy-icon aria-hidden="true"></i></button>
+            </div>
+        </header>
 
-        <div class="cb-card-dense p-4 md:p-6">
-            <form data-provider-select class="cb-card-muted mb-6 p-4 md:p-5" hx-post="/configuracoes/cartoes" hx-target="#settings-dynamic-payload" hx-swap="outerHTML">
-                {{template "provider-logo-picker" .}}
-                <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div class="ui-panel p-4 md:p-6">
+            <form class="cb-v2-config-form" data-provider-select hx-post="/configuracoes/cartoes" hx-target="#settings-dynamic-payload" hx-swap="outerHTML"
+                hx-disabled-elt="find button[type='submit']" hx-sync="this:drop" hx-indicator="#htmx-indicator">
+                <div>
+                    <h2 class="cb-v2-section-title">Novo cartão</h2>
+                    <p class="cb-v2-section-desc">Cadastre o cartão com limite, fechamento e vencimento.</p>
+                </div>
+                {{template "provider-logo-picker" .ProviderPicker}}
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
-                        <span class="{{template "field-label" .}}">Limite de crédito</span>
-                        <input type="text" name="credit_limit" placeholder="R$ 0,00" inputmode="decimal" data-money-mask class="{{template "field-class" .}}">
+                        <label class="ui-label" for="createCardLimit">Limite de crédito</label>
+                        <input id="createCardLimit" type="text" name="credit_limit" placeholder="R$ 0,00" inputmode="decimal" data-money-mask class="ui-input">
                     </div>
                     <div>
-                        <span class="{{template "field-label" .}}">Dia de fechamento</span>
-                        <input type="number" min="1" max="31" name="closing_day" placeholder="1-31" class="{{template "field-class" .}}">
+                        <label class="ui-label" for="createCardClosing">Dia de fechamento</label>
+                        <input id="createCardClosing" type="number" min="1" max="31" name="closing_day" placeholder="1-31" class="ui-input" required>
                     </div>
                     <div>
-                        <span class="{{template "field-label" .}}">Dia de vencimento</span>
-                        <input type="number" min="1" max="31" name="due_day" placeholder="1-31" class="{{template "field-class" .}}">
+                        <label class="ui-label" for="createCardDue">Dia de vencimento</label>
+                        <input id="createCardDue" type="number" min="1" max="31" name="due_day" placeholder="1-31" class="ui-input" required>
                     </div>
                     {{if .ConfigPaymentAccounts}}
                     <div>
-                        <span class="{{template "field-label" .}}">Conta padrão para pagamento (opcional)</span>
-                        <select name="default_payment_account_id" class="{{template "field-class" .}}">
+                        <label class="ui-label" for="createCardPayment">Conta padrão para pagamento (opcional)</label>
+                        <select id="createCardPayment" name="default_payment_account_id" class="ui-select">
                             <option value="">Nenhuma (escolher ao pagar)</option>
                             {{range .ConfigPaymentAccounts}}
                             <option value="{{.ID}}">{{.Name}}</option>
@@ -57,14 +55,14 @@
                     </div>
                     {{end}}
                 </div>
-                <div data-provider-custom class="hidden mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div data-provider-custom class="hidden grid grid-cols-1 gap-4 md:grid-cols-3">
                     <div>
-                        <span class="{{template "field-label" .}}">Nome da instituição</span>
-                        <input type="text" name="provider_custom_name" placeholder="Ex: Cartão da Cooperativa" data-provider-custom-input disabled class="{{template "field-class" .}}">
+                        <label class="ui-label" for="createCardProvider">Nome da instituição</label>
+                        <input id="createCardProvider" type="text" name="provider_custom_name" placeholder="Ex: Cartão da Cooperativa" data-provider-custom-input disabled class="ui-input">
                     </div>
                     <div>
-                        <span class="{{template "field-label" .}}">Ícone</span>
-                        <select name="icon" class="{{template "field-class" .}}">
+                        <label class="ui-label" for="createCardIcon">Ícone</label>
+                        <select id="createCardIcon" name="icon" class="ui-select">
                             <option value="">Padrão</option>
                             <option value="credit-card">Cartão (credit-card)</option>
                             <option value="wallet-cards">Carteiras (wallet-cards)</option>
@@ -75,24 +73,31 @@
                         </select>
                     </div>
                     <div>
-                        <span class="{{template "field-label" .}}">Cor</span>
-                        <input type="color" name="color" value="#6B7280" data-provider-custom-input disabled class="h-10 w-full rounded-xl border border-[var(--cb-border-strong)] p-1.5 bg-[var(--cb-surface-2)]">
+                        <label class="ui-label" for="createCardColor">Cor</label>
+                        <input id="createCardColor" type="color" name="color" value="#6B7280" data-provider-custom-input disabled class="cb-v2-color-input">
                     </div>
                 </div>
-                <button class="cb-button cb-button-primary h-11 px-6 text-sm mt-4">Criar cartão</button>
+                <div class="cb-v2-form-actions">
+                    <button type="submit" class="ui-btn ui-btn--primary">Criar cartão</button>
+                </div>
             </form>
-            <div class="space-y-2">
-            {{range .Cartoes}}{{template "config-cartoes-row" .}}{{else}}<div class="flex flex-col items-center justify-center py-12 text-center rounded-xl border border-dashed border-[var(--cb-border-subtle)] bg-[var(--cb-surface-1)]/50"><div class="w-12 h-12 rounded-xl bg-[var(--cb-surface-2)] border border-[var(--cb-border-subtle)] flex items-center justify-center mb-3"><i data-lucide="credit-card" class="w-5 h-5 text-[var(--cb-text-subtle)]"></i></div><p class="text-sm text-[var(--cb-text-muted)]">Nenhum cartão cadastrado</p></div>{{end}}
+            <div class="cb-v2-list-head">
+                <h2 class="cb-v2-section-title">Cartões ativos</h2>
+                <span class="ui-badge ui-badge--neutral">{{len .Cartoes}}</span>
+            </div>
+            <div class="cb-v2-config-list">
+            {{range .Cartoes}}{{template "config-cartoes-row" .}}{{else}}<div class="ui-empty" role="status"><span class="ui-empty__icon"><i data-lucide="credit-card" aria-hidden="true"></i></span><p class="ui-empty__title">Nenhum cartão cadastrado</p><p class="ui-empty__text">Cadastre o primeiro cartão no formulário acima para acompanhar limites e faturas.</p></div>{{end}}
             </div>
 
             {{if .CartoesArquivados}}
-            <details class="mt-8 group/archived">
-                <summary class="cursor-pointer text-sm font-medium text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)] select-none flex items-center gap-2">
-                    <i data-lucide="archive" class="h-4 w-4"></i>
-                    Arquivados ({{len .CartoesArquivados}})
-                    <i data-lucide="chevron-down" class="h-4 w-4 transition-transform group-open/archived:rotate-180"></i>
+            <details class="cb-v2-archived mt-6">
+                <summary class="cb-v2-archived-summary">
+                    <i data-lucide="archive" aria-hidden="true"></i>
+                    <span>Arquivados</span>
+                    <span class="ui-badge ui-badge--neutral">{{len .CartoesArquivados}}</span>
+                    <i data-lucide="chevron-down" class="cb-v2-archived-chevron" aria-hidden="true"></i>
                 </summary>
-                <div class="mt-3 space-y-2">
+                <div class="cb-v2-config-list">
                     {{range .CartoesArquivados}}{{template "config-cartoes-row-archived" .}}{{end}}
                 </div>
             </details>

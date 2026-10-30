@@ -29,9 +29,15 @@ func TestDashboardRendersCanonicalData(t *testing.T) {
 		t.Fatalf("read canonical credit-card template: %v", err)
 	}
 
+	patrimonyPath := resolveTemplatePath(t, "templates/components/investment_patrimony.html")
+	patrimony, err := os.ReadFile(patrimonyPath)
+	if err != nil {
+		t.Fatalf("read investment patrimony template: %v", err)
+	}
+
 	tpl, err := template.New("dashboard").Funcs(withAppShellTestFuncs(template.FuncMap{
 		"assetPath": func(path string) string { return path + "?v=test" },
-	})).Parse(string(content) + string(shell) + string(creditCard))
+	})).Parse(string(content) + string(shell) + string(creditCard) + string(patrimony))
 	if err != nil {
 		t.Fatalf("parse dashboard V2 template: %v", err)
 	}
@@ -50,11 +56,12 @@ func TestDashboardRendersCanonicalData(t *testing.T) {
 		ActiveWorkspaceName: "Família",
 		NotificationCount:   2,
 		Balance: BalanceData{
-			Money:          MoneyMinor(31628602),
-			Reserved:       MoneyMinor(16661138),
-			Free:           MoneyMinor(14967464),
-			TrendPercent:   "+189,6%",
-			TrendDirection: "up",
+			ReserveBalanceAvailable: true,
+			Money:                   MoneyMinor(31628602),
+			Reserved:                MoneyMinor(16661138),
+			Free:                    MoneyMinor(14967464),
+			TrendPercent:            "+189,6%",
+			TrendDirection:          "up",
 		},
 		Accounts: []AccountCard{{
 			ID:               "account-1",
@@ -88,6 +95,46 @@ func TestDashboardRendersCanonicalData(t *testing.T) {
 			Limit:        MoneyMinor(180000),
 			Percent:      100,
 		}},
+		Categories: DashboardCategoriesData{
+			HasData:        true,
+			CurrentLabel:   "01/10 a 24/10",
+			PreviousLabel:  "01/09 a 24/09",
+			ComparisonNote: "01/10 a 24/10 comparado com 01/09 a 24/09",
+			Items: []DashboardCategoryItem{
+				{
+					ID:                   "cat-food",
+					Name:                 "Alimentação",
+					Icon:                 "utensils",
+					Tone:                 2,
+					Amount:               MoneyMinor(245000),
+					AmountCents:          245000,
+					SharePercent:         70,
+					ShareLabel:           "70%",
+					VariationLabel:       "+12,5%",
+					VariationClass:       "is-up",
+					VariationDescription: "Aumento de 12,5% em relação a 01/09 a 24/09.",
+					HasBase:              true,
+				},
+				{
+					ID: "cat-home", Name: "Casa", Icon: "house", Tone: 3,
+					Amount: MoneyMinor(70000), AmountCents: 70000, SharePercent: 20, ShareLabel: "20%",
+					VariationLabel: "−8,2%", VariationClass: "is-down",
+					VariationDescription: "Redução de 8,2% em relação a 01/09 a 24/09.", HasBase: true,
+				},
+				{
+					ID: "cat-transport", Name: "Transporte", Icon: "bus", Tone: 4,
+					Amount: MoneyMinor(20000), AmountCents: 20000, SharePercent: 6, ShareLabel: "6%",
+					VariationLabel: "Novo gasto", VariationClass: "is-new",
+					VariationDescription: "Novo gasto: sem despesa comparável em 01/09 a 24/09.",
+				},
+				{
+					ID: "cat-pets", Name: "Pet", Icon: "paw-print", Tone: 5,
+					Amount: MoneyMinor(15000), AmountCents: 15000, SharePercent: 4, ShareLabel: "4%",
+					VariationLabel: "0,0%", VariationClass: "is-flat",
+					VariationDescription: "Sem variação em relação a 01/09 a 24/09.", HasBase: true,
+				},
+			},
+		},
 		Boxes: []CaixinhaCard{{
 			Name:    "Trocar de carro",
 			Balance: MoneyMinor(3600000),
@@ -119,6 +166,15 @@ func TestDashboardRendersCanonicalData(t *testing.T) {
 		`href="/faturas?ano=2026&amp;cartao=card-1&amp;mes=9"`,
 		`data-v2-carousel-prev`,
 		`data-v2-card-group`,
+		`data-wallet-commitments`,
+		`data-wallet-categories`,
+		`Principais categorias`,
+		`Maiores despesas do mês`,
+		`01/10 a 24/10`,
+		`01/09 a 24/09`,
+		`Alimentação`,
+		`12,5%`,
+		`data-wallet-categories-toggle`,
 		`data-v2-action-tabs`,
 		`data-v2-global-navigation`,
 		`data-v2-nav-section="dashboard"`,
@@ -146,6 +202,7 @@ func TestDashboardRendersCanonicalData(t *testing.T) {
 		`/assets/css/dashboard.css`,
 		`/assets/js/app-shell.js`,
 		`/assets/js/event-handlers.js`,
+		`/assets/js/show-more.js`,
 		`Conta principal`,
 		`Trocar de carro`,
 		`cb-v2-credit-card--physical`,
@@ -153,7 +210,9 @@ func TestDashboardRendersCanonicalData(t *testing.T) {
 		`data-card-visual="physical"`,
 		`cb-v2-credit-card-status`,
 		`cb-v2-credit-card-status is-open`,
-		`Aberto</strong><small>fecha hoje`,
+		`Aberto</strong>`,
+		`wallet-card-closing`,
+		`fecha hoje`,
 		`src="institutions/itau.png?v=test"`,
 		`src="institutions/xp.png?v=test"`,
 		`cb-v2-provider-mark--image`,
@@ -164,7 +223,7 @@ func TestDashboardRendersCanonicalData(t *testing.T) {
 	}
 	for _, removed := range []string{`cb-v2-credit-card-black`, `cb-v2-credit-card-chip`, `cb-v2-credit-card-contactless`, `data-lucide="wifi"`} {
 		if strings.Contains(html, removed) {
-			t.Fatalf("dashboard physical card must not render removed decoration %q", removed)
+			t.Fatalf("dashboard must not render removed element %q", removed)
 		}
 	}
 	if strings.Contains(html, `cb-v2-header-profile`) {
@@ -248,6 +307,96 @@ func TestDashboardCreditCardAvailablePercentPresentation(t *testing.T) {
 	}
 }
 
+// Próximos compromissos: seção permanente, compacta (até 4 itens por aba),
+// com abas a pagar/receber e destaque de vencidos; sem sticky.
+func TestDashboardCommitmentsSection(t *testing.T) {
+	parse := func() *template.Template {
+		t.Helper()
+		tpl, err := template.New("dashboard").Funcs(withAppShellTestFuncs(template.FuncMap{
+			"assetPath": func(path string) string { return path + "?v=test" },
+		})).Parse(
+			readTemplateFile(t, "templates/pages/dashboard.html") +
+				readTemplateFile(t, "templates/components/app_shell.html") +
+				readTemplateFile(t, "templates/components/credit_card.html") +
+				readTemplateFile(t, "templates/components/investment_patrimony.html"),
+		)
+		if err != nil {
+			t.Fatalf("parse dashboard V2 template: %v", err)
+		}
+		return tpl
+	}
+
+	render := func(data DashboardData) string {
+		t.Helper()
+		var out bytes.Buffer
+		if err := parse().ExecuteTemplate(&out, "dashboard-page", data); err != nil {
+			t.Fatalf("render dashboard: %v", err)
+		}
+		return out.String()
+	}
+
+	empty := render(DashboardData{Title: "Dashboard", UserFirstName: "Vitor"})
+	if !strings.Contains(empty, `data-v2-action-tabs`) || !strings.Contains(empty, `Nenhuma conta a pagar no curto prazo.`) {
+		t.Fatal("dashboard commitments must render tabs with a discrete empty state")
+	}
+
+	full := render(DashboardData{
+		Title:              "Dashboard",
+		UserFirstName:      "Vitor",
+		Payable7dCount:     2,
+		Payable7dTotal:     MoneyMinor(243000),
+		Receivable7dCount:  1,
+		Receivable7dTotal:  MoneyMinor(50000),
+		PendingPayables:    []DashboardPayableItem{{Description: "Energia", IsOverdue: true, Amount: MoneyMinor(120000), DueDateLabel: "Venceu em 02/10", StatusLabel: "Vencido"}},
+		PendingReceivables: []DashboardPayableItem{{Description: "Freela", Amount: MoneyMinor(50000), DueDateLabel: "Vence em 05/10"}},
+	})
+	for _, expected := range []string{
+		`data-wallet-commitments`,
+		`data-v2-action-tab="payables"`,
+		`data-v2-action-tab="receivables"`,
+		`2 itens`,
+		`is-overdue`,
+		`cb-v2-action-receivable`,
+		`href="/contas"`,
+	} {
+		if !strings.Contains(full, expected) {
+			t.Fatalf("dashboard commitments missing %q", expected)
+		}
+	}
+}
+
+// Limites de valor zero não inventam percentual: exibem "Sem limite definido".
+func TestDashboardZeroLimitPresentation(t *testing.T) {
+	tpl := template.Must(template.New("dashboard").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath": func(path string) string { return path },
+	})).Parse(
+		readTemplateFile(t, "templates/pages/dashboard.html") +
+			readTemplateFile(t, "templates/components/app_shell.html") +
+			readTemplateFile(t, "templates/components/credit_card.html") +
+			readTemplateFile(t, "templates/components/investment_patrimony.html"),
+	))
+	var out bytes.Buffer
+	data := DashboardData{
+		Title:         "Dashboard",
+		UserFirstName: "Vitor",
+		Limits: []DashboardLimitCard{{
+			CategoryName: "Sem teto",
+			Spent:        MoneyMinor(50000),
+			Limit:        MoneyMinor(0),
+		}},
+	}
+	if err := tpl.ExecuteTemplate(&out, "dashboard-page", data); err != nil {
+		t.Fatalf("render dashboard: %v", err)
+	}
+	html := out.String()
+	if !strings.Contains(html, `Sem limite definido`) || !strings.Contains(html, `is-no-limit`) {
+		t.Fatal("zero limit must render the discrete undefined-limit state")
+	}
+	if strings.Contains(html, `0% de R$ 0,00`) || strings.Contains(html, `R$ 500,00 <span class="cb-v2-progress-sep">de</span> R$ 0,00`) {
+		t.Fatal("zero limit must not invent a percentage against R$ 0,00")
+	}
+}
+
 // O dataset completo permanece no rail desktop. No mobile o CSS mostra até
 // seis cartões reais e o CTA /faturas só existe quando há um sétimo cartão.
 func TestDashboardCardRailMobileSixPlusCTA(t *testing.T) {
@@ -258,7 +407,8 @@ func TestDashboardCardRailMobileSixPlusCTA(t *testing.T) {
 		})).Parse(
 			readTemplateFile(t, "templates/pages/dashboard.html") +
 				readTemplateFile(t, "templates/components/app_shell.html") +
-				readTemplateFile(t, "templates/components/credit_card.html"),
+				readTemplateFile(t, "templates/components/credit_card.html") +
+				readTemplateFile(t, "templates/components/investment_patrimony.html"),
 		)
 		if err != nil {
 			t.Fatalf("parse dashboard V2 template: %v", err)
@@ -307,7 +457,8 @@ func TestDashboardRendersEveryAccount(t *testing.T) {
 		})).Parse(
 			readTemplateFile(t, "templates/pages/dashboard.html") +
 				readTemplateFile(t, "templates/components/app_shell.html") +
-				readTemplateFile(t, "templates/components/credit_card.html"),
+				readTemplateFile(t, "templates/components/credit_card.html") +
+				readTemplateFile(t, "templates/components/investment_patrimony.html"),
 		)
 		if err != nil {
 			t.Fatalf("parse dashboard V2 template: %v", err)
@@ -333,7 +484,7 @@ func TestDashboardRendersEveryAccount(t *testing.T) {
 		return out.String()
 	}
 
-	for _, count := range []int{1, 4, 10, 100} {
+	for _, count := range []int{0, 1, 4, 10, 11, 100} {
 		html := render(count)
 		if got := strings.Count(html, `class="cb-v2-account-row"`); got != count {
 			t.Errorf("%d contas: renderizou %d linhas de conta, esperado %d", count, got, count)
@@ -341,10 +492,130 @@ func TestDashboardRendersEveryAccount(t *testing.T) {
 		if got := strings.Count(html, `href="/lancamentos?conta=`); got != count {
 			t.Errorf("%d contas: renderizou %d links de conta, esperado %d", count, got, count)
 		}
-		for _, forbidden := range []string{"oculta", "ocultas", "Mostrar mais contas", "Ver mais contas"} {
+		if count == 0 && !strings.Contains(html, `Nenhuma conta cadastrada.`) {
+			t.Error("0 contas: esperava estado vazio discreto")
+		}
+		for _, forbidden := range []string{"oculta", "ocultas"} {
 			if strings.Contains(html, forbidden) {
 				t.Errorf("%d contas: Home não pode indicar contas escondidas (%q)", count, forbidden)
 			}
 		}
+		// Desktop mostra todas; a expansão existe apenas acima de 10 (mobile/tablet).
+		hasToggle := strings.Contains(html, `data-wallet-accounts-toggle`)
+		if count > 10 && !hasToggle {
+			t.Errorf("%d contas: esperava o controle 'Mostrar mais contas'", count)
+		}
+		if count <= 10 && hasToggle {
+			t.Errorf("%d contas: não deve renderizar controle de expansão", count)
+		}
+	}
+}
+
+func TestDashboardCategoriesEmptyStateDoesNotInventRows(t *testing.T) {
+	tpl := template.Must(template.New("dashboard").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath": func(path string) string { return path },
+	})).Parse(
+		readTemplateFile(t, "templates/pages/dashboard.html") +
+			readTemplateFile(t, "templates/components/app_shell.html") +
+			readTemplateFile(t, "templates/components/credit_card.html") +
+			readTemplateFile(t, "templates/components/investment_patrimony.html"),
+	))
+	var out bytes.Buffer
+	if err := tpl.ExecuteTemplate(&out, "dashboard-page", DashboardData{Title: "Dashboard", UserFirstName: "Vitor"}); err != nil {
+		t.Fatalf("render dashboard: %v", err)
+	}
+	html := out.String()
+	if !strings.Contains(html, "Nenhuma despesa registrada neste período.") {
+		t.Fatal("empty categories must render a discrete empty state")
+	}
+	if strings.Contains(html, "wallet-category-row") || strings.Contains(html, "wallet-category-meter") {
+		t.Fatal("empty categories must not invent category rows or bars")
+	}
+}
+
+func TestDashboardAccountsExpandControlOnlyAboveTen(t *testing.T) {
+	tpl := template.Must(template.New("dashboard").Funcs(withAppShellTestFuncs(template.FuncMap{
+		"assetPath": func(path string) string { return path },
+	})).Parse(
+		readTemplateFile(t, "templates/pages/dashboard.html") +
+			readTemplateFile(t, "templates/components/app_shell.html") +
+			readTemplateFile(t, "templates/components/credit_card.html") +
+			readTemplateFile(t, "templates/components/investment_patrimony.html"),
+	))
+	for _, count := range []int{1, 2, 7, 10, 15} {
+		data := DashboardData{Title: "Dashboard", UserFirstName: "Vitor"}
+		for i := 0; i < count; i++ {
+			data.Accounts = append(data.Accounts, AccountCard{
+				ID:    fmt.Sprintf("acc-%d", i+1),
+				Name:  fmt.Sprintf("Conta %d", i+1),
+				Money: MoneyMinor(int64(10000 + i)),
+			})
+		}
+		var out bytes.Buffer
+		if err := tpl.ExecuteTemplate(&out, "dashboard-page", data); err != nil {
+			t.Fatalf("render %d accounts: %v", count, err)
+		}
+		html := out.String()
+		hasToggle := strings.Contains(html, `data-wallet-accounts-toggle`)
+		if count > 10 && !hasToggle {
+			t.Fatalf("%d accounts must render the expand control", count)
+		}
+		if count <= 10 && hasToggle {
+			t.Fatalf("%d accounts must not render the expand control", count)
+		}
+	}
+}
+
+func renderDashboardCards(t *testing.T, count int) string {
+	t.Helper()
+	tpl := template.Must(template.New("dashboard-cards").Funcs(withAppShellTestFuncs(nil)).Parse(
+		readTemplateFile(t, "templates/components/dashboard-cards.html") +
+			readTemplateFile(t, "templates/components/financial-emblem.html"),
+	))
+	cards := make([]CreditCardCard, count)
+	for i := range cards {
+		cards[i] = CreditCardCard{
+			InvoiceID:      fmt.Sprintf("invoice-%d", i+1),
+			Name:           fmt.Sprintf("Cartão %d", i+1),
+			DueDateCompact: "Dia 10",
+			Color:          "#123456",
+		}
+	}
+	var out bytes.Buffer
+	if err := tpl.ExecuteTemplate(&out, "dashboard-cards", DashboardData{Cards: cards}); err != nil {
+		t.Fatalf("render dashboard cards with %d items: %v", count, err)
+	}
+	return out.String()
+}
+
+func TestDashboardCardsShowMoreContractAboveTheLimit(t *testing.T) {
+	html := renderDashboardCards(t, 7)
+	for _, expected := range []string{
+		`data-show-more-group="cards"`,
+		`data-show-more-initial="6"`,
+		`data-show-more-item="6"`,
+		`data-show-more-toggle-container`,
+		`data-show-more-toggle`,
+		`data-onclick-ev="toggleShowMore"`,
+		`focus-visible:ring-[var(--cb-border-focus)]`,
+		`Mostrar mais (mais 1)`,
+		`Mostrar menos`,
+	} {
+		if !strings.Contains(html, expected) {
+			t.Fatalf("dashboard cards show-more markup missing %q", expected)
+		}
+	}
+	if got := strings.Count(html, `data-show-more-item=`); got != 7 {
+		t.Fatalf("dashboard cards rendered %d show-more items, want 7", got)
+	}
+}
+
+func TestDashboardCardsHideShowMoreControlAtTheLimit(t *testing.T) {
+	html := renderDashboardCards(t, 6)
+	if strings.Contains(html, `data-show-more-toggle`) {
+		t.Fatal("dashboard cards must not render the show-more control at the 6-card limit")
+	}
+	if got := strings.Count(html, `data-show-more-item=`); got != 6 {
+		t.Fatalf("dashboard cards rendered %d show-more items, want 6", got)
 	}
 }

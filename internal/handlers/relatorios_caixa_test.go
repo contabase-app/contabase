@@ -51,7 +51,7 @@ func TestCaixaNaoIncluiPending(t *testing.T) {
 	agostoDate := testUnixDate("2026-08-10")
 	insertCaixaTransaction(t, db, "exp-pending", "EXPENSE", "chk-caixa", "cat-food-caixa", 50000, agostoDate, 0, "pending")
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -72,7 +72,7 @@ func TestCaixaNaoIncluiProximosVencimentos(t *testing.T) {
 	agostoDate := testUnixDate("2026-08-10")
 	insertCaixaTransaction(t, db, "exp-future", "EXPENSE", "chk-caixa", "cat-food-caixa", 50000, agostoDate, 0, "pending")
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -93,7 +93,7 @@ func TestCaixaNaoUsaDueDateComoBase(t *testing.T) {
 	insertCaixaTransaction(t, db, "exp-due", "EXPENSE", "chk-caixa", "cat-food-caixa", 50000, julhoDate, agostoPaid, "paid")
 	execTestSQL(t, db, `UPDATE transactions SET due_date = ? WHERE id = 'exp-due'`, agostoDue)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 
 	julhoData, err := handler.buildRelatoriosData("", "caixa", "movimentos", 7, 2026)
 	if err != nil {
@@ -121,7 +121,7 @@ func TestCaixaReceitaPagaEntraEmEntradasRecebidas(t *testing.T) {
 	agostoPaid := testUnixDate("2026-08-10")
 	insertCaixaTransaction(t, db, "inc-paid", "INCOME", "chk-caixa", "cat-salary-caixa", 100000, agostoDate, agostoPaid, "paid")
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -143,7 +143,7 @@ func TestCaixaDespesaPagaEntraEmSaidasPagas(t *testing.T) {
 	agostoPaid := testUnixDate("2026-08-10")
 	insertCaixaTransaction(t, db, "exp-paid", "EXPENSE", "chk-caixa", "cat-food-caixa", 50000, agostoDate, agostoPaid, "paid")
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -184,7 +184,7 @@ func TestCaixaPagamentoFaturaEntraComoSaidaPaga(t *testing.T) {
 		VALUES ('ip-caixa', 'ws-caixa', 'inv-pay', 'chk-caixa', 'pay-tx', 30000, ?, 'manual', 'u-caixa', ?)
 	`, paymentDate, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -228,7 +228,7 @@ func TestCaixaCompraCartaoNaoEntra(t *testing.T) {
 		VALUES ('card-tx', 'ws-caixa', 'u-caixa', 'card-caixa', 'cat-card-caixa', 'inv-card', 'EXPENSE', 30000, ?, 'Compra cartao', 'paid', 1, 1, ?, ?)
 	`, purchaseDate, now, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -251,7 +251,7 @@ func TestCaixaTransferenciaNaoAlteraResultado(t *testing.T) {
 		VALUES ('transfer-caixa', 'ws-caixa', 'u-caixa', 'chk-caixa', 'sav-caixa', 'TRANSFER', 50000, ?, 'Transferencia interna', 'paid', ?, 1, 1, ?, ?)
 	`, transferDate, transferDate, now, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -274,7 +274,7 @@ func TestCaixaReceitasPorCategoriaApenasRealizado(t *testing.T) {
 	insertCaixaTransaction(t, db, "inc-cat", "INCOME", "chk-caixa", "cat-salary-caixa", 100000, agostoDate, agostoPaid, "paid")
 	insertCaixaTransaction(t, db, "inc-pending", "INCOME", "chk-caixa", "cat-salary-caixa", 50000, agostoDate, 0, "pending")
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -302,7 +302,7 @@ func TestCaixaCustosPorMacroApenasRealizado(t *testing.T) {
 	insertCaixaTransaction(t, db, "exp-macro", "EXPENSE", "chk-caixa", "cat-food-caixa", 50000, agostoDate, agostoPaid, "paid")
 	insertCaixaTransaction(t, db, "exp-pending", "EXPENSE", "chk-caixa", "cat-food-caixa", 25000, agostoDate, 0, "pending")
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -330,7 +330,7 @@ func TestCaixaGastosPorCategoriaApenasRealizado(t *testing.T) {
 	insertCaixaTransaction(t, db, "exp-gasto", "EXPENSE", "chk-caixa", "cat-food-caixa", 50000, agostoDate, agostoPaid, "paid")
 	insertCaixaTransaction(t, db, "exp-pending", "EXPENSE", "chk-caixa", "cat-food-caixa", 25000, agostoDate, 0, "pending")
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -377,7 +377,7 @@ func TestCaixaWorkspaceIsolation(t *testing.T) {
 		VALUES ('exp-other', 'ws-other', 'u-other', 'chk-other', 'cat-other', 'EXPENSE', 99900, ?, 'Outra despesa', 'paid', ?, 1, 1, ?, ?)
 	`, agostoDate, agostoPaid, now, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -398,7 +398,7 @@ func TestCaixaRealizadoCount(t *testing.T) {
 	insertCaixaTransaction(t, db, "exp-2", "EXPENSE", "chk-caixa", "cat-food-caixa", 20000, agostoDate, agostoPaid, "paid")
 	insertCaixaTransaction(t, db, "inc-1", "INCOME", "chk-caixa", "cat-salary-caixa", 50000, agostoDate, agostoPaid, "paid")
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosData("", "caixa", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -413,7 +413,7 @@ func TestCaixaModoAusenteOuInvalidoCaiEmRealizado(t *testing.T) {
 	defer db.Close()
 
 	seedCaixaRealizadoScenario(t, db)
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 
 	for _, modo := range []string{"", "errado"} {
 		data, err := handler.buildRelatoriosDataWithModo("", "caixa", "movimentos", modo, 8, 2026)
@@ -450,7 +450,7 @@ func TestCaixaPrevisaoIncluiPendentesEFaturaPorVencimentoSemDuplicarCartao(t *te
 		VALUES ('card-prev-tx', 'ws-caixa', 'u-caixa', 'card-caixa', 'cat-card-caixa', 'inv-prev', 'EXPENSE', 30000, ?, 'Compra cartao previsao', 'paid', 1, 1, ?, ?)
 	`, cardPurchaseDate, now, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosDataWithModo("", "caixa", "movimentos", "previsao", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosDataWithModo: %v", err)
@@ -512,7 +512,7 @@ func TestCaixaPrevisaoFaturaParcialUsaSaldoPendenteSemDuplicarPagamento(t *testi
 		VALUES ('ip-prev-partial', 'ws-caixa', 'inv-prev-partial', 'chk-caixa', 'pay-prev-partial-paid', 25000, ?, 'manual', 'u-caixa', ?)
 	`, paymentDate, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosDataWithModo("", "caixa", "movimentos", "previsao", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosDataWithModo: %v", err)
@@ -572,7 +572,7 @@ func TestCaixaPendingInvoiceAllReversedUsesCanonicalEffectivePaid(t *testing.T) 
 		t.Fatalf("pending invoice caixa rows = %#v, want one row of -40000", rows)
 	}
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	targets, err := handler.queryInvoiceAllocationTargets(context.Background(), testUnixDate("2026-08-01"), testUnixDate("2026-08-31")+86399, "pending")
 	if err != nil {
 		t.Fatalf("queryInvoiceAllocationTargets pending: %v", err)
@@ -624,7 +624,7 @@ func TestCaixaPrevisaoSomaRealizadoEPendenteSemDuplicarCartaoOuTransferencia(t *
 		VALUES ('mix-invoice-payment', 'ws-caixa', 'mix-invoice', 'chk-caixa', 'mix-card-payment', 100000, ?, 'manual', 'u-caixa', ?)
 	`, paidDate, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	realizado, err := handler.buildRelatoriosDataWithModo("", "caixa", "movimentos", "realizado", 8, 2026)
 	if err != nil {
 		t.Fatalf("build realizado: %v", err)
@@ -654,7 +654,10 @@ func TestCaixaPrevisaoSomaRealizadoEPendenteSemDuplicarCartaoOuTransferencia(t *
 	if len(previsao.Caixa) == 0 || previsao.Caixa[0].Vencimento != "2026-08" {
 		t.Fatalf("primeira linha previsao = %#v, want 2026-08", previsao.Caixa)
 	}
-	firstIncome, firstExpense := caixaRowIncomeExpense(previsao.Caixa[0])
+	firstIncome, firstExpense, err := caixaRowIncomeExpense(previsao.Caixa[0])
+	if err != nil {
+		t.Fatal(err)
+	}
 	if firstIncome != previsao.ProjectedIncomeTotal.rawCents() {
 		t.Fatalf("card entradas = %d, want primeira linha receitas %d", previsao.ProjectedIncomeTotal.rawCents(), firstIncome)
 	}
@@ -711,7 +714,7 @@ func TestCaixaPrevisaoRateioFaturaFechaCentavoResidual(t *testing.T) {
 		VALUES ('centavo-ip', 'ws-caixa', 'inv-centavo', 'chk-caixa', 'centavo-pay', 99, ?, 'manual', 'u-caixa', ?)
 	`, paymentDate, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosDataWithModo("", "caixa", "movimentos", "previsao", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosDataWithModo: %v", err)
@@ -752,7 +755,7 @@ func TestCaixaRealizadoDemonstrativoUsaAnoSelecionadoInteiro(t *testing.T) {
 	defer db.Close()
 
 	seedCaixaRealizadoScenario(t, db)
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosDataWithModo("", "caixa", "movimentos", "realizado", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosDataWithModo: %v", err)
@@ -770,7 +773,7 @@ func TestCaixaPrevisaoDemonstrativoUsaMesSelecionadoMaisDozeMeses(t *testing.T) 
 	defer db.Close()
 
 	seedCaixaRealizadoScenario(t, db)
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosDataWithModo("", "caixa", "movimentos", "previsao", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosDataWithModo: %v", err)
@@ -788,7 +791,7 @@ func TestCaixaPrevisaoDemonstrativoCruzaAnoNoMesDezembro(t *testing.T) {
 	defer db.Close()
 
 	seedCaixaRealizadoScenario(t, db)
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosDataWithModo("", "caixa", "movimentos", "previsao", 12, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosDataWithModo: %v", err)
@@ -828,7 +831,7 @@ func TestCaixaPrevisaoTransferenciaNaoAlteraResultado(t *testing.T) {
 		VALUES ('transfer-prev', 'ws-caixa', 'u-caixa', 'chk-caixa', 'sav-caixa', 'TRANSFER', 50000, ?, ?, 'Transferencia previsao', 'pending', NULL, 1, 1, ?, ?)
 	`, transferDate, transferDate, now, now)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosDataWithModo("", "caixa", "movimentos", "previsao", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosDataWithModo: %v", err)
@@ -1007,7 +1010,7 @@ func TestCaixaPrevisaoViewModelSaldoProjetadoFuturoEPassado(t *testing.T) {
 		VALUES ('proj-view-income', 'ws-caixa', 'u-caixa', 'chk-caixa', 'cat-salary-caixa', 'INCOME', 25000, ?, ?, 'Receita viewmodel', 'pending', 1, 1, ?, ?)
 	`, futureDue, futureDue, nowUnix, nowUnix)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	futureData, err := handler.buildRelatoriosDataWithModo("", "caixa", "movimentos", "previsao", int(future.Month()), future.Year())
 	if err != nil {
 		t.Fatalf("build future previsao: %v", err)
@@ -1056,7 +1059,7 @@ func TestCaixaPrevisaoSaldoProjetadoPorLinhaAcumulaMesAMes(t *testing.T) {
 			('proj-row-exp', 'ws-caixa', 'u-caixa', 'chk-caixa', 'cat-food-caixa', 'EXPENSE', 15000, ?, ?, 'Despesa linha', 'pending', 1, 1, ?, ?)
 	`, selectedDue, selectedDue, nowUnix, nowUnix, nextDue, nextDue, nowUnix, nowUnix)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosDataWithModo("", "caixa", "movimentos", "previsao", int(selected.Month()), selected.Year())
 	if err != nil {
 		t.Fatalf("build previsao: %v", err)
@@ -1077,7 +1080,7 @@ func TestCaixaSubmodosDisponiveisBusinessEPersonal(t *testing.T) {
 	defer db.Close()
 
 	seedCaixaRealizadoScenario(t, db)
-	handlerBusiness := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handlerBusiness := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	for _, modo := range []string{"realizado", "previsao"} {
 		data, err := handlerBusiness.buildRelatoriosDataWithModo("", "caixa", "movimentos", modo, 8, 2026)
 		if err != nil {
@@ -1089,7 +1092,7 @@ func TestCaixaSubmodosDisponiveisBusinessEPersonal(t *testing.T) {
 	}
 
 	execTestSQL(t, db, `UPDATE workspaces SET type = 'personal' WHERE id = 'ws-caixa'`)
-	handlerPersonal := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handlerPersonal := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	for _, modo := range []string{"realizado", "previsao"} {
 		data, err := handlerPersonal.buildRelatoriosDataWithModo("", "caixa", "movimentos", modo, 8, 2026)
 		if err != nil {
@@ -1108,7 +1111,7 @@ func TestRelatoriosPersonalCompetenciaFallbackParaCaixa(t *testing.T) {
 	seedCaixaRealizadoScenario(t, db)
 	execTestSQL(t, db, `UPDATE workspaces SET type = 'personal' WHERE id = 'ws-caixa'`)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-caixa", UserID: "u-caixa"}
 	data, err := handler.buildRelatoriosDataWithModo("", "competencia", "movimentos", "previsao", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosDataWithModo: %v", err)

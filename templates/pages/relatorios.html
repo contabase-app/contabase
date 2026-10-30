@@ -1,21 +1,27 @@
 {{define "relatorios-page"}}
 {{template "app-v2-document-head-start" .}}
-<link rel="stylesheet" href="/assets/css/relatorios.css">
+<link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
+<link rel="stylesheet" href="{{assetPath "/assets/css/relatorios.css"}}">
 {{template "app-v2-document-head-end" .}}
-<main id="main-content" class="cb-v2-main cb-v2-relatorios-main" data-page-section="reports" data-page-title="{{.Title}}">
+<main id="main-content" class="cb-v2-main cb-v2-relatorios-main" data-page-section="reports" data-page-title="{{.Title}}" data-ui="premium">
     {{template "app-v2-appbar" .}}
     <div class="cb-v2-content cb-v2-relatorios-content">
-        <header class="cb-v2-relatorios-header">
-            <div>
-                <p class="cb-v2-eyebrow">Análises</p>
-                <h1>Relatórios</h1>
-                <p>Visualize o desempenho financeiro por período, com os critérios de cada demonstrativo preservados.</p>
+        <header class="cb-v2-relatorios-header ui-page-header">
+            <div class="min-w-0">
+                <p class="ui-eyebrow">Análises</p>
+                <h1 class="ui-page-title">Relatórios</h1>
+                <p class="ui-page-description">Visualize o desempenho financeiro por período, com os critérios de cada demonstrativo preservados.</p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-privacy-toggle aria-pressed="false" aria-label="Ocultar valores financeiros" data-tooltip-hover data-tooltip-text="Ocultar valores financeiros"><i data-lucide="eye" data-privacy-icon aria-hidden="true"></i></button>
             </div>
         </header>
         {{template "relatorios-content" .}}
     </div>
 </main>
 {{template "app-v2-shell-after-main" .}}
+<script src="{{assetPath "/assets/js/dropdown.js"}}"></script>
+<script src="{{assetPath "/assets/js/relatorios-scroll.js"}}"></script>
 {{template "app-v2-document-end" .}}
 {{end}}
 
@@ -32,36 +38,32 @@
     {{template "seletor_meses" .}}
 
     <!-- Tab Navigation -->
-    <nav class="mt-6 sm:mt-5 flex gap-1 mb-5 border-b border-[var(--cb-border-subtle)] pb-0">
+    <nav class="reports-main-tabs" aria-label="Seções de relatórios">
         {{if .IsBusiness}}<a href="?tab=contabil&mes={{.MesAtual}}&ano={{.AnoAtual}}"
             hx-get="/relatorios?tab=contabil&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
             hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
-            class="px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-colors whitespace-nowrap
-            {{if eq .ActiveTab "contabil"}}bg-[var(--cb-accent)] border-[var(--cb-accent)] text-white shadow-sm{{else}}border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
+            class="reports-main-tab {{if eq .ActiveTab "contabil"}}reports-main-tab--active{{else}}reports-main-tab--inactive{{end}}">
             <span class="sm:hidden">Contábil</span>
             <span class="hidden sm:inline">Relatório Contábil</span>
         </a>{{end}}
         <a href="?tab=caixa{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&mes={{.MesAtual}}&ano={{.AnoAtual}}"
             hx-get="/relatorios?tab=caixa{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
             hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
-            class="px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-colors whitespace-nowrap
-            {{if eq .ActiveTab "caixa"}}bg-[var(--cb-accent)] border-[var(--cb-accent)] text-white shadow-sm{{else}}border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
+            class="reports-main-tab {{if eq .ActiveTab "caixa"}}reports-main-tab--active{{else}}reports-main-tab--inactive{{end}}">
             <span class="sm:hidden">Fluxo</span>
             <span class="hidden sm:inline">Fluxo de Caixa</span>
         </a>
         {{if .IsBusiness}}<a href="?tab=competencia{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&mes={{.MesAtual}}&ano={{.AnoAtual}}"
             hx-get="/relatorios?tab=competencia{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
             hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
-            class="px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-colors whitespace-nowrap
-            {{if eq .ActiveTab "competencia"}}bg-[var(--cb-accent)] border-[var(--cb-accent)] text-white shadow-sm{{else}}border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
+            class="reports-main-tab {{if eq .ActiveTab "competencia"}}reports-main-tab--active{{else}}reports-main-tab--inactive{{end}}">
             <span class="sm:hidden">Compet.</span>
             <span class="hidden sm:inline">Competência</span>
         </a>{{end}}
         <a href="?tab=extrato{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&mes={{.MesAtual}}&ano={{.AnoAtual}}"
             hx-get="/relatorios?tab=extrato{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
             hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
-            class="px-4 py-2 text-xs font-semibold rounded-t-lg border border-b-0 transition-colors whitespace-nowrap
-            {{if eq .ActiveTab "extrato"}}bg-[var(--cb-accent)] border-[var(--cb-accent)] text-white shadow-sm{{else}}border-transparent text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
+            class="reports-main-tab {{if eq .ActiveTab "extrato"}}reports-main-tab--active{{else}}reports-main-tab--inactive{{end}}">
             <span class="sm:hidden">Extrato</span>
             <span class="hidden sm:inline">Extrato</span>
         </a>
@@ -75,132 +77,136 @@
         </div>
 
         <div class="mb-4">
-            <nav class="flex flex-wrap items-center gap-2" aria-label="Modos do fluxo de caixa">
+            <nav class="cb-tabs cb-v2-relatorios-modes" aria-label="Modos do fluxo de caixa">
                 <a href="?tab=caixa&modo=realizado&mes={{.MesAtual}}&ano={{.AnoAtual}}"
                     hx-get="/relatorios?tab=caixa&modo=realizado&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
                     hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
-                    class="cb-button h-9 px-4 text-xs font-semibold {{if .IsCaixaRealizado}}bg-[var(--cb-accent)] border border-[var(--cb-accent)] text-white shadow-sm{{else}}cb-button-secondary text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
+                    class="cb-tab {{if .IsCaixaRealizado}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
                     Realizado
                 </a>
                 <a href="?tab=caixa&modo=previsao&mes={{.MesAtual}}&ano={{.AnoAtual}}"
                     hx-get="/relatorios?tab=caixa&modo=previsao&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
                     hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
-                    class="cb-button h-9 px-4 text-xs font-semibold {{if .IsCaixaPrevisao}}bg-[var(--cb-accent)] border border-[var(--cb-accent)] text-white shadow-sm{{else}}cb-button-secondary text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
+                    class="cb-tab {{if .IsCaixaPrevisao}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
                     Previsão
                 </a>
             </nav>
         </div>
 
         <!-- KPIs -->
-        <section class="mb-5 grid grid-cols-1 min-[390px]:grid-cols-2 sm:grid-cols-4 gap-3">
+        <section class="ui-kpi-grid cb-v2-relatorios-kpis cb-v2-relatorios-kpis--4" aria-label="{{if .IsCaixaPrevisao}}Indicadores do caixa previsto{{else}}Indicadores do caixa realizado{{end}}">
             {{if .IsCaixaPrevisao}}
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Entradas previstas</span>
-                    <i data-lucide="arrow-down-left" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi ui-kpi--success">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Entradas previstas</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="arrow-down-left"></i></span>
                 </div>
-                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-success)] whitespace-nowrap" data-sensitive>R$ {{.ProjectedIncomeTotal.Reais}}{{.ProjectedIncomeTotal.Cents}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Realizadas + pendentes</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.ProjectedIncomeTotal.Reais}}{{.ProjectedIncomeTotal.Cents}}</strong>
+                <span class="ui-kpi__meta">Realizadas + pendentes</span>
             </div>
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Saídas previstas</span>
-                    <i data-lucide="arrow-up-right" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi ui-kpi--danger">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Saídas previstas</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="arrow-up-right"></i></span>
                 </div>
-                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-danger)] whitespace-nowrap" data-sensitive>R$ {{.ProjectedExpenseTotal.Reais}}{{.ProjectedExpenseTotal.Cents}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Pendentes e faturas</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.ProjectedExpenseTotal.Reais}}{{.ProjectedExpenseTotal.Cents}}</strong>
+                <span class="ui-kpi__meta">Pendentes e faturas</span>
             </div>
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Resultado previsto</span>
-                    <i data-lucide="calendar-days" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi {{if .CashMonthResultNegative}}ui-kpi--danger{{else if eq .CashMonthResultTotal.Reais "0"}}{{else}}ui-kpi--success{{end}}">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Resultado previsto</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="calendar-days"></i></span>
                 </div>
-                <span class="text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap {{if .CashMonthResultNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-accent)]{{end}}" data-sensitive>R$ {{.CashMonthResultTotal.Reais}}{{.CashMonthResultTotal.Cents}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Por vencimento</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.CashMonthResultTotal.Reais}}{{.CashMonthResultTotal.Cents}}</strong>
+                <span class="ui-kpi__meta">Por vencimento</span>
             </div>
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">SALDO PROJETADO</span>
-                    <i data-lucide="landmark" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi {{if not .ShowProjectedEndingBalance}}{{else if .ProjectedEndingBalanceNegative}}ui-kpi--danger{{else}}ui-kpi--info{{end}}">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Saldo projetado</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="landmark"></i></span>
                 </div>
                 {{if .ShowProjectedEndingBalance}}
-                <span class="text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap {{if .ProjectedEndingBalanceNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-info)]{{end}}" data-sensitive>R$ {{.ProjectedEndingBalance.Reais}}{{.ProjectedEndingBalance.Cents}}</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.ProjectedEndingBalance.Reais}}{{.ProjectedEndingBalance.Cents}}</strong>
                 {{else}}
-                <span class="text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap text-[var(--cb-text-subtle)]" data-sensitive>—</span>
+                <strong class="ui-kpi__value" data-sensitive>—</strong>
                 {{end}}
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Saldo estimado no fim do mês</span>
+                <span class="ui-kpi__meta">Saldo estimado no fim do mês</span>
             </div>
             {{else}}
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Entradas recebidas</span>
-                    <i data-lucide="arrow-down-left" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi ui-kpi--success">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Entradas recebidas</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="arrow-down-left"></i></span>
                 </div>
-                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-success)] whitespace-nowrap" data-sensitive>R$ {{.RealizedIncomeTotal.Reais}}{{.RealizedIncomeTotal.Cents}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Dinheiro entrou</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.RealizedIncomeTotal.Reais}}{{.RealizedIncomeTotal.Cents}}</strong>
+                <span class="ui-kpi__meta">Dinheiro entrou</span>
             </div>
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Saídas pagas</span>
-                    <i data-lucide="arrow-up-right" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi ui-kpi--danger">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Saídas pagas</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="arrow-up-right"></i></span>
                 </div>
-                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-danger)] whitespace-nowrap" data-sensitive>R$ {{.RealizedExpenseTotal.Reais}}{{.RealizedExpenseTotal.Cents}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Dinheiro saiu</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.RealizedExpenseTotal.Reais}}{{.RealizedExpenseTotal.Cents}}</strong>
+                <span class="ui-kpi__meta">Dinheiro saiu</span>
             </div>
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Resultado realizado</span>
-                    <i data-lucide="wallet" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi {{if .CashMonthResultNegative}}ui-kpi--danger{{else if eq .CashMonthResultTotal.Reais "0"}}{{else}}ui-kpi--success{{end}}">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Resultado realizado</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="wallet"></i></span>
                 </div>
-                <span class="text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap {{if .CashMonthResultNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-accent)]{{end}}" data-sensitive>R$ {{.CashMonthResultTotal.Reais}}{{.CashMonthResultTotal.Cents}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Entradas - saídas</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.CashMonthResultTotal.Reais}}{{.CashMonthResultTotal.Cents}}</strong>
+                <span class="ui-kpi__meta">Entradas - saídas</span>
             </div>
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Movimentos confirmados</span>
-                    <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Movimentos confirmados</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="check-circle-2"></i></span>
                 </div>
-                <span class="text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap text-[var(--cb-info)]">{{.RealizedCashCount}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Registros liquidados</span>
+                <strong class="ui-kpi__value">{{.RealizedCashCount}}</strong>
+                <span class="ui-kpi__meta">Registros liquidados</span>
             </div>
             {{end}}
         </section>
 
         <!-- Demonstrativo de Caixa Realizado -->
-        <section class="cb-card-dense p-4 md:p-5 mb-5">
-            <div class="flex items-center justify-between mb-4">
-                <div>
+        <section class="ui-panel reports-table-panel mb-5">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div class="min-w-0">
                     <p class="cb-section-title">{{if .IsCaixaPrevisao}}Demonstrativo de Caixa Previsto{{else}}Demonstrativo de Caixa Realizado{{end}}</p>
                     <h2 class="text-xs font-bold text-[var(--cb-text-main)] mt-0.5">{{if .IsCaixaPrevisao}}Por vencimento — próximos 12 meses{{else}}Por data de pagamento — {{.AnoAtual}}{{end}}</h2>
                 </div>
-                <div class="flex items-center gap-2">
-                    <a href="/relatorios/caixa.pdf?modo={{.CaixaModo}}&mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-button cb-button-secondary h-8 px-3 text-[10px]">
-                        <i data-lucide="file-text" class="w-3 h-3"></i>PDF
-                    </a>
-                    <a href="/relatorios/export.csv?tipo=caixa&modo={{.CaixaModo}}&mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-button cb-button-secondary h-8 px-3 text-[10px]">
-                        <i data-lucide="download" class="w-3 h-3"></i>CSV
-                    </a>
+                <div class="reports-export-cluster">
+                    <div class="reports-export-buttons">
+                        <a href="/relatorios/caixa.pdf?modo={{.CaixaModo}}&mes={{.MesAtual}}&ano={{.AnoAtual}}" class="ui-btn ui-btn--secondary ui-btn--sm">
+                            <i data-lucide="file-text"></i><span>PDF</span>
+                        </a>
+                        <a href="/relatorios/export.csv?tipo=caixa&modo={{.CaixaModo}}&mes={{.MesAtual}}&ano={{.AnoAtual}}" class="ui-btn ui-btn--secondary ui-btn--sm">
+                            <i data-lucide="download"></i><span>CSV</span>
+                        </a>
+                    </div>
+                    <p class="reports-export-hint">Inclui os valores completos.</p>
                 </div>
             </div>
             {{if .Caixa}}
-            <div class="reports-dre-scroll w-full overflow-x-auto" role="region" aria-label="{{if .IsCaixaPrevisao}}Tabela Demonstrativo de Caixa Previsto{{else}}Tabela Demonstrativo de Caixa Realizado{{end}} (rolável horizontalmente)" tabindex="0">
-                <table class="min-w-full text-xs border-separate border-spacing-y-1.5">
+            <p id="reports-caixa-scroll-hint" class="reports-scroll-hint" data-scroll-hint hidden>Deslize para ver mais colunas <span aria-hidden="true">→</span></p>
+            <div class="reports-dre-scroll w-full overflow-x-auto" role="region" aria-describedby="reports-caixa-scroll-hint" aria-label="{{if .IsCaixaPrevisao}}Tabela Demonstrativo de Caixa Previsto{{else}}Tabela Demonstrativo de Caixa Realizado{{end}} (rolável horizontalmente)" tabindex="0">
+                <table class="reports-dre w-full">
                     <thead>
-                        <tr class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">
-                            <th class="rounded-l-xl reports-dre-th text-left">Mês</th>
-                            {{range .CaixaMacroGroups}}<th class="reports-dre-th text-right">{{.}}</th>{{end}}
-                            <th class="{{if .IsCaixaPrevisao}}reports-dre-th{{else}}rounded-r-xl border border-[var(--cb-border-subtle)] bg-violet-500/10 dark:border-violet-500/20 px-3 py-2{{end}} text-right whitespace-nowrap text-violet-600 dark:text-violet-400">Resultado</th>
-                            {{if .IsCaixaPrevisao}}<th class="rounded-r-xl border border-[var(--cb-border-subtle)] bg-sky-500/10 dark:border-sky-500/20 px-3 py-2 text-right whitespace-nowrap text-sky-600 dark:text-sky-400">Saldo Projetado</th>{{end}}
+                        <tr>
+                            <th scope="col" class="reports-dre-th text-left">Mês</th>
+                            {{range .CaixaMacroGroups}}<th scope="col" class="reports-dre-th text-right">{{.}}</th>{{end}}
+                            <th scope="col" class="reports-dre-th reports-col-result text-right whitespace-nowrap">Resultado</th>
+                            {{if .IsCaixaPrevisao}}<th scope="col" class="reports-dre-th reports-col-projected text-right whitespace-nowrap">Saldo Projetado</th>{{end}}
                         </tr>
                     </thead>
                     <tbody>
                         {{range .Caixa}}
                         {{$row := .}}
                         <tr class="group">
-                            <td class="rounded-l-xl reports-dre-td text-[var(--cb-text-main)] font-medium">{{.Vencimento}}</td>
+                            <td class="reports-dre-td text-[var(--cb-text-main)] font-medium">{{.Vencimento}}</td>
                             {{range $macro := $.CaixaMacroGroups}}{{ $val := caixaMacroValue $row.MacroGroups $macro }}<td class="reports-dre-td text-right {{caixaMacroClass $row.MacroGroups $macro}}" data-sensitive>R$ {{$val.Reais}}{{$val.Cents}}</td>{{end}}
-                            <td class="{{if $.IsCaixaPrevisao}}reports-dre-td{{else}}rounded-r-xl border border-[var(--cb-border-subtle)] bg-violet-500/5 dark:bg-violet-500/5 px-3 py-2.5{{end}} text-right font-bold whitespace-nowrap {{if .ResultadoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.Resultado.Reais}}{{.Resultado.Cents}}</td>
-                            {{if $.IsCaixaPrevisao}}<td class="rounded-r-xl border border-[var(--cb-border-subtle)] bg-sky-500/5 dark:bg-sky-500/5 px-3 py-2.5 text-right font-bold whitespace-nowrap {{if .ProjectedBalanceNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-info)]{{end}}" data-sensitive>{{if .HasProjectedEndingBalance}}R$ {{.ProjectedBalance.Reais}}{{.ProjectedBalance.Cents}}{{else}}—{{end}}</td>{{end}}
+                            <td class="reports-dre-td reports-col-result text-right font-semibold whitespace-nowrap {{if .ResultadoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.Resultado.Reais}}{{.Resultado.Cents}}</td>
+                            {{if $.IsCaixaPrevisao}}<td class="reports-dre-td reports-col-projected text-right font-semibold whitespace-nowrap {{if .ProjectedBalanceNegative}}text-[var(--cb-danger)]{{else}}text-[var(--cb-info)]{{end}}" data-sensitive>{{if .HasProjectedEndingBalance}}R$ {{.ProjectedBalance.Reais}}{{.ProjectedBalance.Cents}}{{else}}—{{end}}</td>{{end}}
                         </tr>
                         {{end}}
                     </tbody>
@@ -220,23 +226,23 @@
             {{if .IsBusiness}}
             <section class="cb-card-dense p-4 md:p-5">
                 <p class="cb-section-title mb-1">Distribuição</p>
-                <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">{{if .IsCaixaPrevisao}}Receitas previstas por Categoria{{else}}Receitas pagas por Categoria{{end}}</h2>
-                <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">{{if .IsCaixaPrevisao}}Receitas recebidas por data efetiva e pendentes por vencimento.{{else}}Apenas receitas com status pago no período (por data de pagamento).{{end}}</p>
+                <h2 class="reports-chart-title">{{if .IsCaixaPrevisao}}Receitas previstas por Categoria{{else}}Receitas pagas por Categoria{{end}}</h2>
+                <p class="reports-chart-caption">{{if .IsCaixaPrevisao}}Receitas recebidas por data efetiva e pendentes por vencimento.{{else}}Apenas receitas com status pago no período (por data de pagamento).{{end}}</p>
                 {{if .RevenueByCategoryCaixa}}
-                <div class="flex flex-col sm:flex-row items-center gap-6">
-                    <svg viewBox="0 0 42 42" class="h-36 w-36 -rotate-90 shrink-0">
-                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(228 228 231)" stroke-width="4.5" class="dark:stroke-zinc-700/80"></circle>
+                <div class="reports-chart-body">
+                    <svg viewBox="0 0 42 42" class="reports-donut" aria-hidden="true">
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke-width="4.5" class="reports-donut-track"></circle>
                         {{range .RevenueByCategoryCaixa}}
                         <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="{{.Stroke}}" stroke-width="4.5"
                             stroke-dasharray="{{.Percent}} {{sub 100 .Percent}}" stroke-dashoffset="{{.DashOffset}}"
                             class="donut-segment" stroke-linecap="round"></circle>
                         {{end}}
                     </svg>
-                    <div class="space-y-2.5 text-xs flex-1 w-full">
+                    <div class="reports-chart-legend">
                         {{range .RevenueByCategoryCaixa}}
                         <div class="flex items-center justify-between gap-3">
                             <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10 cb-report-stroke-dot" data-report-stroke="{{.Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.Name}}</span></div>
-                            <span class="whitespace-nowrap cb-report-stroke-text" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            <span class="reports-chart-legend-value" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                         </div>
                         {{end}}
                     </div>
@@ -251,23 +257,23 @@
 
             <section class="cb-card-dense p-4 md:p-5">
                 <p class="cb-section-title mb-1">Custos</p>
-                <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">Custos por Grupo Macro</h2>
-                <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">{{if .IsCaixaPrevisao}}Despesas realizadas, pendentes e itens de fatura por vencimento.{{else}}Despesas pagas por data de pagamento.{{end}}</p>
+                <h2 class="reports-chart-title">Custos por Grupo Macro</h2>
+                <p class="reports-chart-caption">{{if .IsCaixaPrevisao}}Despesas realizadas, pendentes e itens de fatura por vencimento.{{else}}Despesas pagas por data de pagamento.{{end}}</p>
                 {{if .BusinessCostsCaixa}}
-                <div class="flex flex-col sm:flex-row items-center gap-6">
-                    <svg viewBox="0 0 42 42" class="h-36 w-36 -rotate-90 shrink-0">
-                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(228 228 231)" stroke-width="4.5" class="dark:stroke-zinc-700/80"></circle>
+                <div class="reports-chart-body">
+                    <svg viewBox="0 0 42 42" class="reports-donut" aria-hidden="true">
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke-width="4.5" class="reports-donut-track"></circle>
                         {{range .BusinessCostsCaixa}}
                         <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="{{.Stroke}}" stroke-width="4.5"
                             stroke-dasharray="{{.Percent}} {{sub 100 .Percent}}" stroke-dashoffset="{{.DashOffset}}"
                             class="donut-segment" stroke-linecap="round"></circle>
                         {{end}}
                     </svg>
-                    <div class="space-y-2.5 text-xs flex-1 w-full">
+                    <div class="reports-chart-legend">
                         {{range .BusinessCostsCaixa}}
                         <div class="flex items-center justify-between gap-3">
                             <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10 cb-report-stroke-dot" data-report-stroke="{{.Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
-                            <span class="whitespace-nowrap cb-report-stroke-text" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            <span class="reports-chart-legend-value" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                         </div>
                         {{end}}
                     </div>
@@ -282,26 +288,26 @@
             {{else}}
             <section class="cb-card-dense p-4 md:p-5 lg:col-span-2">
                 <p class="cb-section-title mb-1">Composição</p>
-                <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">Composição das Saídas</h2>
-                <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">Despesas e itens de fatura que explicam as saídas do período.</p>
-                <div class="flex flex-col sm:flex-row items-center gap-6">
-                    <svg viewBox="0 0 42 42" class="h-36 w-36 -rotate-90 shrink-0">
-                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(228 228 231)" stroke-width="4.5" class="dark:stroke-zinc-700/80"></circle>
-                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(0, 212, 146)" stroke-width="4.5"
+                <h2 class="reports-chart-title">Composição das Saídas</h2>
+                <p class="reports-chart-caption">Despesas e itens de fatura que explicam as saídas do período.</p>
+                <div class="reports-chart-body">
+                    <svg viewBox="0 0 42 42" class="reports-donut" aria-hidden="true">
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke-width="4.5" class="reports-donut-track"></circle>
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke-width="4.5"
                             stroke-dasharray="{{.DonutCaixaEssentialPercent}} {{sub 100 .DonutCaixaEssentialPercent}}" stroke-dashoffset="25"
-                            class="donut-segment" stroke-linecap="round"></circle>
-                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(103, 68, 241)" stroke-width="4.5"
+                            class="donut-segment reports-donut-essential" stroke-linecap="round"></circle>
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke-width="4.5"
                             stroke-dasharray="{{.DonutCaixaLifestylePercent}} {{sub 100 .DonutCaixaLifestylePercent}}" stroke-dashoffset="{{sub 25 .DonutCaixaEssentialPercent}}"
-                            class="donut-segment donut-delay-1" stroke-linecap="round"></circle>
+                            class="donut-segment reports-donut-lifestyle donut-delay-1" stroke-linecap="round"></circle>
                     </svg>
-                    <div class="space-y-3 text-xs flex-1 w-full">
+                    <div class="reports-chart-legend">
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full reports-legend-essential reports-legend-dot"></span><span class="font-semibold reports-legend-essential">Essencial</span></div>
-                            <span class="reports-legend-essential" data-sensitive>{{if .DonutCaixaEssentialPercentLabel}}{{.DonutCaixaEssentialPercentLabel}}{{else}}{{.DonutCaixaEssentialPercent}}%{{end}} · R$ {{.DonutCaixaEssentialTotal.Reais}}{{.DonutCaixaEssentialTotal.Cents}}</span>
+                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full reports-legend-essential reports-legend-dot"></span><span class="text-[var(--cb-text-muted)] font-semibold">Essencial</span></div>
+                            <span class="reports-chart-legend-value" data-sensitive>{{if .DonutCaixaEssentialPercentLabel}}{{.DonutCaixaEssentialPercentLabel}}{{else}}{{.DonutCaixaEssentialPercent}}%{{end}} · R$ {{.DonutCaixaEssentialTotal.Reais}}{{.DonutCaixaEssentialTotal.Cents}}</span>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full reports-legend-lifestyle reports-legend-dot"></span><span class="font-semibold reports-legend-lifestyle">Estilo de Vida</span></div>
-                            <span class="reports-legend-lifestyle" data-sensitive>{{if .DonutCaixaLifestylePercentLabel}}{{.DonutCaixaLifestylePercentLabel}}{{else}}{{.DonutCaixaLifestylePercent}}%{{end}} · R$ {{.DonutCaixaLifestyleTotal.Reais}}{{.DonutCaixaLifestyleTotal.Cents}}</span>
+                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full reports-legend-lifestyle reports-legend-dot"></span><span class="text-[var(--cb-text-muted)] font-semibold">Estilo de Vida</span></div>
+                            <span class="reports-chart-legend-value" data-sensitive>{{if .DonutCaixaLifestylePercentLabel}}{{.DonutCaixaLifestylePercentLabel}}{{else}}{{.DonutCaixaLifestylePercent}}%{{end}} · R$ {{.DonutCaixaLifestyleTotal.Reais}}{{.DonutCaixaLifestyleTotal.Cents}}</span>
                         </div>
                     </div>
                 </div>
@@ -363,66 +369,70 @@
         </div>
 
         <!-- KPIs -->
-        <section class="mb-5 grid grid-cols-1 min-[390px]:grid-cols-2 sm:grid-cols-3 gap-3">
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Receitas</span>
-                    <i data-lucide="arrow-down-left" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+        <section class="ui-kpi-grid cb-v2-relatorios-kpis cb-v2-relatorios-kpis--3" aria-label="Indicadores de competência">
+            <div class="ui-kpi ui-kpi--success">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Receitas</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="arrow-down-left"></i></span>
                 </div>
-                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-success)] whitespace-nowrap" data-sensitive>R$ {{.TotalReceitas.Reais}}{{.TotalReceitas.Cents}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Entradas do mês</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.TotalReceitas.Reais}}{{.TotalReceitas.Cents}}</strong>
+                <span class="ui-kpi__meta">Entradas do mês</span>
             </div>
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Despesas</span>
-                    <i data-lucide="arrow-up-right" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi ui-kpi--danger">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Despesas</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="arrow-up-right"></i></span>
                 </div>
-                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-danger)] whitespace-nowrap" data-sensitive>R$ {{.TotalDespesas.Reais}}{{.TotalDespesas.Cents}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Saídas do mês</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.TotalDespesas.Reais}}{{.TotalDespesas.Cents}}</strong>
+                <span class="ui-kpi__meta">Saídas do mês</span>
             </div>
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Resultado</span>
-                    <i data-lucide="scale" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi {{if .SaldoNegativo}}ui-kpi--danger{{else if eq .SaldoLiquido.Reais "0"}}{{else}}ui-kpi--success{{end}}">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Resultado</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="scale"></i></span>
                 </div>
-                <span class="text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap {{if .SaldoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-accent)]{{end}}" data-sensitive>R$ {{.SaldoLiquido.Reais}}{{.SaldoLiquido.Cents}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Receitas menos despesas</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.SaldoLiquido.Reais}}{{.SaldoLiquido.Cents}}</strong>
+                <span class="ui-kpi__meta">Receitas menos despesas</span>
             </div>
         </section>
 
         <!-- DRE Table -->
-        <section class="cb-card-dense p-4 md:p-5 mb-5">
-            <div class="flex items-center justify-between mb-4">
-                <div>
+        <section class="ui-panel reports-table-panel mb-5">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div class="min-w-0">
                     <p class="cb-section-title">Demonstrativo de Resultados</p>
                     <h2 class="text-xs font-bold text-[var(--cb-text-main)] mt-0.5">DRE Simplificada — Competência</h2>
                 </div>
-                <div class="flex items-center gap-2">
-                    <a href="/relatorios/dre.pdf?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-button cb-button-secondary h-8 px-3 text-[10px]">
-                        <i data-lucide="file-text" class="w-3 h-3"></i>PDF
-                    </a>
-                    <a href="/relatorios/export.csv?tipo=dre&ano={{.AnoAtual}}" class="cb-button cb-button-secondary h-8 px-3 text-[10px]">
-                        <i data-lucide="download" class="w-3 h-3"></i>CSV
-                    </a>
+                <div class="reports-export-cluster">
+                    <div class="reports-export-buttons">
+                        <a href="/relatorios/dre.pdf?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="ui-btn ui-btn--secondary ui-btn--sm">
+                            <i data-lucide="file-text"></i><span>PDF</span>
+                        </a>
+                        <a href="/relatorios/export.csv?tipo=dre&ano={{.AnoAtual}}" class="ui-btn ui-btn--secondary ui-btn--sm">
+                            <i data-lucide="download"></i><span>CSV</span>
+                        </a>
+                    </div>
+                    <p class="reports-export-hint">Inclui os valores completos.</p>
                 </div>
             </div>
             {{if .DRE}}
-            <div class="reports-dre-scroll w-full overflow-x-auto" role="region" aria-label="Tabela DRE Simplificada (rolável horizontalmente)" tabindex="0">
-                <table class="min-w-full text-xs border-separate border-spacing-y-1.5">
+            <p id="reports-dre-scroll-hint" class="reports-scroll-hint" data-scroll-hint hidden>Deslize para ver mais colunas <span aria-hidden="true">→</span></p>
+            <div class="reports-dre-scroll w-full overflow-x-auto" role="region" aria-describedby="reports-dre-scroll-hint" aria-label="Tabela DRE Simplificada (rolável horizontalmente)" tabindex="0">
+                <table class="reports-dre w-full">
                     <thead>
-                        <tr class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">
-                            <th class="rounded-l-xl reports-dre-th text-left">Competência</th>
-                            {{range .DREMacroGroups}}<th class="reports-dre-th text-right">{{.}}</th>{{end}}
-                            <th class="rounded-r-xl border border-[var(--cb-border-subtle)] bg-violet-500/10 dark:border-violet-500/20 px-3 py-2 text-right whitespace-nowrap text-violet-600 dark:text-violet-400">Resultado</th>
+                        <tr>
+                            <th scope="col" class="reports-dre-th text-left">Competência</th>
+                            {{range .DREMacroGroups}}<th scope="col" class="reports-dre-th text-right">{{.}}</th>{{end}}
+                            <th scope="col" class="reports-dre-th reports-col-result text-right whitespace-nowrap">Resultado</th>
                         </tr>
                     </thead>
                     <tbody>
                         {{range .DRE}}
                         {{$row := .}}
                         <tr class="group">
-                            <td class="rounded-l-xl reports-dre-td text-[var(--cb-text-main)] font-medium">{{.Competencia}}</td>
+                            <td class="reports-dre-td text-[var(--cb-text-main)] font-medium">{{.Competencia}}</td>
                             {{range $macro := $.DREMacroGroups}}{{ $val := dreMacroValue $row.MacroGroups $macro }}<td class="reports-dre-td text-right {{dreMacroClass $row.MacroGroups $macro}}" data-sensitive>R$ {{$val.Reais}}{{$val.Cents}}</td>{{end}}
-                            <td class="rounded-r-xl border border-[var(--cb-border-subtle)] bg-violet-500/5 dark:bg-violet-500/5 px-3 py-2.5 text-right font-bold whitespace-nowrap {{if .ResultadoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.Resultado.Reais}}{{.Resultado.Cents}}</td>
+                            <td class="reports-dre-td reports-col-result text-right font-semibold whitespace-nowrap {{if .ResultadoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-text-main)]{{end}}" data-sensitive>R$ {{.Resultado.Reais}}{{.Resultado.Cents}}</td>
                         </tr>
                         {{end}}
                     </tbody>
@@ -441,23 +451,23 @@
             {{if .IsBusiness}}
             <section class="cb-card-dense p-4 md:p-5">
                 <p class="cb-section-title mb-1">Distribuição</p>
-                <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">Receitas pagas por Categoria</h2>
-                <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">Apenas receitas com status pago no período.</p>
+                <h2 class="reports-chart-title">Receitas pagas por Categoria</h2>
+                <p class="reports-chart-caption">Apenas receitas com status pago no período.</p>
                 {{if .RevenueByCategory}}
-                <div class="flex flex-col sm:flex-row items-center gap-6">
-                    <svg viewBox="0 0 42 42" class="h-36 w-36 -rotate-90 shrink-0">
-                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(228 228 231)" stroke-width="4.5" class="dark:stroke-zinc-700/80"></circle>
+                <div class="reports-chart-body">
+                    <svg viewBox="0 0 42 42" class="reports-donut" aria-hidden="true">
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke-width="4.5" class="reports-donut-track"></circle>
                         {{range .RevenueByCategory}}
                         <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="{{.Stroke}}" stroke-width="4.5"
                             stroke-dasharray="{{.Percent}} {{sub 100 .Percent}}" stroke-dashoffset="{{.DashOffset}}"
                             class="donut-segment" stroke-linecap="round"></circle>
                         {{end}}
                     </svg>
-                    <div class="space-y-2.5 text-xs flex-1 w-full">
+                    <div class="reports-chart-legend">
                         {{range .RevenueByCategory}}
                         <div class="flex items-center justify-between gap-3">
                             <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10 cb-report-stroke-dot" data-report-stroke="{{.Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.Name}}</span></div>
-                            <span class="whitespace-nowrap cb-report-stroke-text" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            <span class="reports-chart-legend-value" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                         </div>
                         {{end}}
                     </div>
@@ -472,23 +482,23 @@
 
             <section class="cb-card-dense p-4 md:p-5">
                 <p class="cb-section-title mb-1">Custos</p>
-                <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">Custos por Grupo Macro</h2>
-                <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">Despesas operacionais por competência.</p>
+                <h2 class="reports-chart-title">Custos por Grupo Macro</h2>
+                <p class="reports-chart-caption">Despesas operacionais por competência.</p>
                 {{if .BusinessCosts}}
-                <div class="flex flex-col sm:flex-row items-center gap-6">
-                    <svg viewBox="0 0 42 42" class="h-36 w-36 -rotate-90 shrink-0">
-                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(228 228 231)" stroke-width="4.5" class="dark:stroke-zinc-700/80"></circle>
+                <div class="reports-chart-body">
+                    <svg viewBox="0 0 42 42" class="reports-donut" aria-hidden="true">
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke-width="4.5" class="reports-donut-track"></circle>
                         {{range .BusinessCosts}}
                         <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="{{.Stroke}}" stroke-width="4.5"
                             stroke-dasharray="{{.Percent}} {{sub 100 .Percent}}" stroke-dashoffset="{{.DashOffset}}"
                             class="donut-segment" stroke-linecap="round"></circle>
                         {{end}}
                     </svg>
-                    <div class="space-y-2.5 text-xs flex-1 w-full">
+                    <div class="reports-chart-legend">
                         {{range .BusinessCosts}}
                         <div class="flex items-center justify-between gap-3">
                             <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10 cb-report-stroke-dot" data-report-stroke="{{.Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
-                            <span class="whitespace-nowrap cb-report-stroke-text" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            <span class="reports-chart-legend-value" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                         </div>
                         {{end}}
                     </div>
@@ -503,26 +513,26 @@
             {{else}}
             <section class="cb-card-dense p-4 md:p-5 lg:col-span-2">
                 <p class="cb-section-title mb-1">Composição</p>
-                <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">Custo de Vida</h2>
-                <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">Despesas por competência registrada.</p>
-                <div class="flex flex-col sm:flex-row items-center gap-6">
-                    <svg viewBox="0 0 42 42" class="h-36 w-36 -rotate-90 shrink-0">
-                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(228 228 231)" stroke-width="4.5" class="dark:stroke-zinc-700/80"></circle>
-                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(0, 212, 146)" stroke-width="4.5"
+                <h2 class="reports-chart-title">Custo de Vida</h2>
+                <p class="reports-chart-caption">Despesas por competência registrada.</p>
+                <div class="reports-chart-body">
+                    <svg viewBox="0 0 42 42" class="reports-donut" aria-hidden="true">
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke-width="4.5" class="reports-donut-track"></circle>
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke-width="4.5"
                             stroke-dasharray="{{.DonutEssentialPercent}} {{sub 100 .DonutEssentialPercent}}" stroke-dashoffset="25"
-                            class="donut-segment" stroke-linecap="round"></circle>
-                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(103, 68, 241)" stroke-width="4.5"
+                            class="donut-segment reports-donut-essential" stroke-linecap="round"></circle>
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke-width="4.5"
                             stroke-dasharray="{{.DonutLifestylePercent}} {{sub 100 .DonutLifestylePercent}}" stroke-dashoffset="{{sub 25 .DonutEssentialPercent}}"
-                            class="donut-segment donut-delay-1" stroke-linecap="round"></circle>
+                            class="donut-segment reports-donut-lifestyle donut-delay-1" stroke-linecap="round"></circle>
                     </svg>
-                    <div class="space-y-3 text-xs flex-1 w-full">
+                    <div class="reports-chart-legend">
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full reports-legend-essential reports-legend-dot"></span><span class="font-semibold reports-legend-essential">Essencial</span></div>
-                            <span class="reports-legend-essential" data-sensitive>{{if .DonutEssentialPercentLabel}}{{.DonutEssentialPercentLabel}}{{else}}{{.DonutEssentialPercent}}%{{end}} · R$ {{.DonutEssentialTotal.Reais}}{{.DonutEssentialTotal.Cents}}</span>
+                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full reports-legend-essential reports-legend-dot"></span><span class="text-[var(--cb-text-muted)] font-semibold">Essencial</span></div>
+                            <span class="reports-chart-legend-value" data-sensitive>{{if .DonutEssentialPercentLabel}}{{.DonutEssentialPercentLabel}}{{else}}{{.DonutEssentialPercent}}%{{end}} · R$ {{.DonutEssentialTotal.Reais}}{{.DonutEssentialTotal.Cents}}</span>
                         </div>
                         <div class="flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full reports-legend-lifestyle reports-legend-dot"></span><span class="font-semibold reports-legend-lifestyle">Estilo de Vida</span></div>
-                            <span class="reports-legend-lifestyle" data-sensitive>{{if .DonutLifestylePercentLabel}}{{.DonutLifestylePercentLabel}}{{else}}{{.DonutLifestylePercent}}%{{end}} · R$ {{.DonutLifestyleTotal.Reais}}{{.DonutLifestyleTotal.Cents}}</span>
+                            <div class="flex items-center gap-2"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full reports-legend-lifestyle reports-legend-dot"></span><span class="text-[var(--cb-text-muted)] font-semibold">Estilo de Vida</span></div>
+                            <span class="reports-chart-legend-value" data-sensitive>{{if .DonutLifestylePercentLabel}}{{.DonutLifestylePercentLabel}}{{else}}{{.DonutLifestylePercent}}%{{end}} · R$ {{.DonutLifestyleTotal.Reais}}{{.DonutLifestyleTotal.Cents}}</span>
                         </div>
                     </div>
                 </div>
@@ -583,79 +593,82 @@
                 <h2 class="text-sm font-bold text-[var(--cb-text-main)]">Relatório Contábil — {{.MonthLabel}}</h2>
                 <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">Central de fechamento mensal por Natureza Econômica (Grupo Macro). Resumo por competência, caixa realizado, tributos, retiradas e conferências.</p>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-                <a href="/relatorios/contabil.pdf?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-button cb-button-secondary h-8 px-3 text-[10px]">
-                    <i data-lucide="file-text" class="w-3 h-3"></i>PDF
-                </a>
-                <div class="cb-meta-menu relative z-20 pointer-events-auto" data-dropdown aria-expanded="false">
-                    <button type="button" data-dropdown-toggle class="cb-button cb-button-secondary h-8 px-3 text-[10px]" aria-label="Exportar relatório contábil em CSV">
-                        <i data-lucide="download" class="w-3 h-3"></i>
-                        <span>CSV</span>
-                        <i data-lucide="chevron-down" data-dropdown-chevron class="w-3 h-3 text-[var(--cb-text-subtle)] transition-transform duration-200"></i>
-                    </button>
-                    <div data-dropdown-panel class="cb-meta-menu-panel reports-export-menu hidden right-0">
-                        <a href="/relatorios/contabil-resumo.csv?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item" title="Baixa um CSV com resultado operacional, caixa realizado e totais do período.">
-                            <i data-lucide="clipboard-list" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
-                            <span>Resumo do mês</span>
-                        </a>
-                        <a href="/relatorios/contabil-macros.csv?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item" title="Baixa um CSV com valores por Grupo Macro/Natureza Econômica.">
-                            <i data-lucide="layers" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
-                            <span>Naturezas</span>
-                        </a>
-                        <a href="/relatorios/contabil-saldos.csv?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item" title="Baixa um CSV com saldos reconstruídos por conta na data de referência.">
-                            <i data-lucide="wallet" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
-                            <span>Saldos por conta</span>
-                        </a>
-                        <a href="/relatorios/contabil.zip?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item" title="Baixa um pacote ZIP com o PDF e os 3 CSVs do relatório contábil.">
-                            <i data-lucide="package" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
-                            <span>Pacote ZIP</span>
-                        </a>
+            <div class="reports-export-cluster">
+                <div class="reports-export-buttons">
+                    <a href="/relatorios/contabil.pdf?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="ui-btn ui-btn--secondary ui-btn--sm">
+                        <i data-lucide="file-text"></i><span>PDF</span>
+                    </a>
+                    <div class="cb-meta-menu relative z-20 pointer-events-auto" data-dropdown>
+                        <button type="button" data-dropdown-toggle class="ui-btn ui-btn--secondary ui-btn--sm reports-export-toggle" aria-expanded="false" aria-controls="reports-contabil-csv-menu" aria-label="Exportar relatório contábil em CSV">
+                            <i data-lucide="download"></i>
+                            <span>CSV</span>
+                            <i data-lucide="chevron-down" data-dropdown-chevron class="transition-transform duration-200"></i>
+                        </button>
+                        <div data-dropdown-panel id="reports-contabil-csv-menu" class="cb-meta-menu-panel reports-export-menu hidden right-0">
+                            <a href="/relatorios/contabil-resumo.csv?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item" title="Baixa um CSV com resultado operacional, caixa realizado e totais do período.">
+                                <i data-lucide="clipboard-list" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
+                                <span>Resumo do mês</span>
+                            </a>
+                            <a href="/relatorios/contabil-macros.csv?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item" title="Baixa um CSV com valores por Grupo Macro/Natureza Econômica.">
+                                <i data-lucide="layers" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
+                                <span>Naturezas</span>
+                            </a>
+                            <a href="/relatorios/contabil-saldos.csv?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item" title="Baixa um CSV com saldos reconstruídos por conta na data de referência.">
+                                <i data-lucide="wallet" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
+                                <span>Saldos por conta</span>
+                            </a>
+                            <a href="/relatorios/contabil.zip?mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item" title="Baixa um pacote ZIP com o PDF e os 3 CSVs do relatório contábil.">
+                                <i data-lucide="package" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
+                                <span>Pacote ZIP</span>
+                            </a>
+                        </div>
                     </div>
                 </div>
+                <p class="reports-export-hint">Inclui os valores completos.</p>
             </div>
         </div>
 
         <!-- KPIs -->
-        <section class="mb-5 grid grid-cols-1 min-[390px]:grid-cols-2 sm:grid-cols-4 gap-3">
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Competência</span>
-                    <i data-lucide="scale" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+        <section class="ui-kpi-grid cb-v2-relatorios-kpis cb-v2-relatorios-kpis--4" aria-label="Indicadores contábeis">
+            <div class="ui-kpi {{if not .HasContabilDREOperacional}}{{else if .ContabilDREOperacional.ResultadoNegativo}}ui-kpi--danger{{else if eq .ContabilDREOperacional.Resultado.Reais "0"}}{{else}}ui-kpi--success{{end}}">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Competência</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="scale"></i></span>
                 </div>
                 {{if .HasContabilDREOperacional}}
-                <span class="text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap {{if .ContabilDREOperacional.ResultadoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-accent)]{{end}}" data-sensitive>R$ {{.ContabilDREOperacional.Resultado.Reais}}{{.ContabilDREOperacional.Resultado.Cents}}</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.ContabilDREOperacional.Resultado.Reais}}{{.ContabilDREOperacional.Resultado.Cents}}</strong>
                 {{else}}
-                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-text-subtle)] whitespace-nowrap">-</span>
+                <strong class="ui-kpi__value ui-kpi__value--empty">-</strong>
                 {{end}}
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Resultado operacional</span>
+                <span class="ui-kpi__meta">Resultado operacional</span>
             </div>
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Caixa realizado</span>
-                    <i data-lucide="wallet" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi {{if not .HasContabilCaixaAtual}}{{else if .ContabilCaixaAtual.ResultadoNegativo}}ui-kpi--danger{{else if eq .ContabilCaixaAtual.Resultado.Reais "0"}}{{else}}ui-kpi--success{{end}}">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Caixa realizado</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="wallet"></i></span>
                 </div>
                 {{if .HasContabilCaixaAtual}}
-                <span class="text-xl sm:text-2xl font-black tracking-tight whitespace-nowrap {{if .ContabilCaixaAtual.ResultadoNegativo}}text-[var(--cb-danger)]{{else}}text-[var(--cb-accent)]{{end}}" data-sensitive>R$ {{.ContabilCaixaAtual.Resultado.Reais}}{{.ContabilCaixaAtual.Resultado.Cents}}</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.ContabilCaixaAtual.Resultado.Reais}}{{.ContabilCaixaAtual.Resultado.Cents}}</strong>
                 {{else}}
-                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-text-subtle)] whitespace-nowrap">-</span>
+                <strong class="ui-kpi__value ui-kpi__value--empty">-</strong>
                 {{end}}
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Movimentos confirmados</span>
+                <span class="ui-kpi__meta">Movimentos confirmados</span>
             </div>
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Movimentos</span>
-                    <i data-lucide="list-checks" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Movimentos</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="list-checks"></i></span>
                 </div>
-                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-text-main)] whitespace-nowrap">{{.ContabilExtratoMovementCount}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">Confirmados no mês</span>
+                <strong class="ui-kpi__value">{{.ContabilExtratoMovementCount}}</strong>
+                <span class="ui-kpi__meta">Confirmados no mês</span>
             </div>
-            <div class="cb-card-dense min-h-[7rem] flex flex-col justify-center gap-2">
-                <div class="flex items-center justify-between gap-1.5">
-                    <span class="cb-section-title">Retiradas</span>
-                    <i data-lucide="user" class="w-3.5 h-3.5 text-[var(--cb-text-subtle)] shrink-0"></i>
+            <div class="ui-kpi ui-kpi--warning">
+                <div class="ui-kpi__head">
+                    <span class="ui-kpi__label">Retiradas</span>
+                    <span class="ui-kpi__icon" aria-hidden="true"><i data-lucide="user"></i></span>
                 </div>
-                <span class="text-xl sm:text-2xl font-black tracking-tight text-[var(--cb-warning)] whitespace-nowrap" data-sensitive>R$ {{.ContabilProLabore.Reais}}{{.ContabilProLabore.Cents}}</span>
-                <span class="cb-text-micro text-[var(--cb-text-subtle)]">{{if .HasRetiradasDistribuicao}}Macro Retiradas/Distribuição{{else}}Sem retiradas no período{{end}}</span>
+                <strong class="ui-kpi__value" data-sensitive>R$ {{.ContabilProLabore.Reais}}{{.ContabilProLabore.Cents}}</strong>
+                <span class="ui-kpi__meta">{{if .HasRetiradasDistribuicao}}Macro Retiradas/Distribuição{{else}}Sem retiradas no período{{end}}</span>
             </div>
         </section>
 
@@ -726,23 +739,23 @@
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
             <section class="cb-card-dense p-4 md:p-5">
                 <p class="cb-section-title mb-1">Receitas</p>
-                <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">Entradas por Macro/Categoria</h2>
-                <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">Receitas por competência no mês.</p>
+                <h2 class="reports-chart-title">Entradas por Macro/Categoria</h2>
+                <p class="reports-chart-caption">Receitas por competência no mês.</p>
                 {{if .ContabilReceitasMacro}}
-                <div class="flex flex-col sm:flex-row items-center gap-6">
-                    <svg viewBox="0 0 42 42" class="h-36 w-36 -rotate-90 shrink-0">
-                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(228 228 231)" stroke-width="4.5" class="dark:stroke-zinc-700/80"></circle>
+                <div class="reports-chart-body">
+                    <svg viewBox="0 0 42 42" class="reports-donut" aria-hidden="true">
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke-width="4.5" class="reports-donut-track"></circle>
                         {{range .ContabilReceitasMacro}}
                         <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="{{.Stroke}}" stroke-width="4.5"
                             stroke-dasharray="{{.Percent}} {{sub 100 .Percent}}" stroke-dashoffset="{{.DashOffset}}"
                             class="donut-segment" stroke-linecap="round"></circle>
                         {{end}}
                     </svg>
-                    <div class="space-y-2.5 text-xs flex-1 w-full">
+                    <div class="reports-chart-legend">
                         {{range .ContabilReceitasMacro}}
                         <div class="flex items-center justify-between gap-3">
                             <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10 cb-report-stroke-dot" data-report-stroke="{{.Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
-                            <span class="whitespace-nowrap cb-report-stroke-text" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            <span class="reports-chart-legend-value" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                         </div>
                         {{end}}
                     </div>
@@ -757,23 +770,23 @@
 
             <section class="cb-card-dense p-4 md:p-5">
                 <p class="cb-section-title mb-1">Despesas</p>
-                <h2 class="text-xs font-bold text-[var(--cb-text-main)] mb-1">Saídas por Macro/Categoria</h2>
-                <p class="cb-text-micro text-[var(--cb-text-muted)] -mt-0.5 mb-4">Despesas por competência no mês.</p>
+                <h2 class="reports-chart-title">Saídas por Macro/Categoria</h2>
+                <p class="reports-chart-caption">Despesas por competência no mês.</p>
                 {{if .ContabilDespesasMacro}}
-                <div class="flex flex-col sm:flex-row items-center gap-6">
-                    <svg viewBox="0 0 42 42" class="h-36 w-36 -rotate-90 shrink-0">
-                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="rgb(228 228 231)" stroke-width="4.5" class="dark:stroke-zinc-700/80"></circle>
+                <div class="reports-chart-body">
+                    <svg viewBox="0 0 42 42" class="reports-donut" aria-hidden="true">
+                        <circle cx="21" cy="21" r="15.915" fill="transparent" stroke-width="4.5" class="reports-donut-track"></circle>
                         {{range .ContabilDespesasMacro}}
                         <circle cx="21" cy="21" r="15.915" fill="transparent" stroke="{{.Stroke}}" stroke-width="4.5"
                             stroke-dasharray="{{.Percent}} {{sub 100 .Percent}}" stroke-dashoffset="{{.DashOffset}}"
                             class="donut-segment" stroke-linecap="round"></circle>
                         {{end}}
                     </svg>
-                    <div class="space-y-2.5 text-xs flex-1 w-full">
+                    <div class="reports-chart-legend">
                         {{range .ContabilDespesasMacro}}
                         <div class="flex items-center justify-between gap-3">
                             <div class="flex items-center gap-2 min-w-0"><span class="inline-flex flex-shrink-0 w-2.5 h-2.5 rounded-full border border-white/10 cb-report-stroke-dot" data-report-stroke="{{.Stroke}}"></span><span class="text-[var(--cb-text-muted)] truncate font-medium">{{.MacroGroup}}</span></div>
-                            <span class="whitespace-nowrap cb-report-stroke-text" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                            <span class="reports-chart-legend-value" data-report-stroke="{{.Stroke}}" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}} · R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
                         </div>
                         {{end}}
                     </div>
@@ -946,22 +959,32 @@
             </div>
         </div>
 
-        <section class="cb-card-dense p-4 md:p-5 mb-5">
-            <div class="flex flex-col gap-4 mb-5 xl:flex-row xl:items-start xl:justify-between">
-                <div>
-                    <p class="cb-section-title">Extrato</p>
-                    <h2 class="text-sm font-bold text-[var(--cb-text-main)] mt-0.5">Consolidação do período</h2>
-                    <p class="cb-text-micro text-[var(--cb-text-muted)] mt-1 max-w-[44rem]">Compare movimentos confirmados, contas impactadas e o fechamento diário dentro da mesma superfície, sem trocar de rota nem perder o contexto do mês.</p>
-                </div>
-                <div class="reports-export-toolbar xl:min-w-[17rem]">
+        <section class="ui-panel reports-table-panel mb-5">
+            <div class="reports-extrato-toolbar">
+                <nav class="cb-tabs reports-view-tabs" aria-label="Visualizações do extrato">
+                    <a href="?tab=extrato{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&view=movimentos&mes={{.MesAtual}}&ano={{.AnoAtual}}"
+                        hx-get="/relatorios?tab=extrato{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&view=movimentos&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
+                        hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
+                        class="cb-tab {{if eq .ExtratoView "movimentos"}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
+                        Movimentos
+                    </a>
+                    <a href="?tab=extrato{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&view=diario&mes={{.MesAtual}}&ano={{.AnoAtual}}"
+                        hx-get="/relatorios?tab=extrato{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&view=diario&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
+                        hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
+                        class="cb-tab {{if eq .ExtratoView "diario"}}cb-tab-active{{else}}cb-tab-inactive{{end}}">
+                        <span class="sm:hidden">Diário</span>
+                        <span class="hidden sm:inline">Resumo diário</span>
+                    </a>
+                </nav>
+                <div class="reports-export-cluster">
                     <div class="reports-export-buttons">
-                        <div class="cb-meta-menu relative z-20 pointer-events-auto" data-dropdown aria-expanded="false">
-                            <button type="button" data-dropdown-toggle class="cb-button cb-button-secondary reports-export-toggle h-9 px-3.5 text-xs font-semibold" aria-label="Exportar extrato em PDF">
-                                <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+                        <div class="cb-meta-menu relative z-20 pointer-events-auto" data-dropdown>
+                            <button type="button" data-dropdown-toggle class="ui-btn ui-btn--secondary ui-btn--sm reports-export-toggle" aria-expanded="false" aria-controls="reports-extrato-pdf-menu" aria-label="Exportar extrato em PDF">
+                                <i data-lucide="file-text"></i>
                                 <span>PDF</span>
-                                <i data-lucide="chevron-down" data-dropdown-chevron class="w-3 h-3 text-[var(--cb-text-subtle)] transition-transform duration-200"></i>
+                                <i data-lucide="chevron-down" data-dropdown-chevron class="transition-transform duration-200"></i>
                             </button>
-                            <div data-dropdown-panel class="cb-meta-menu-panel reports-export-menu hidden">
+                            <div data-dropdown-panel id="reports-extrato-pdf-menu" class="cb-meta-menu-panel reports-export-menu hidden">
                                 <a href="/relatorios/export.pdf?tipo=extrato-movimentos&mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item">
                                     <i data-lucide="list" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
                                     <span>Movimento</span>
@@ -972,13 +995,13 @@
                                 </a>
                             </div>
                         </div>
-                        <div class="cb-meta-menu relative z-20 pointer-events-auto" data-dropdown aria-expanded="false">
-                            <button type="button" data-dropdown-toggle class="cb-button cb-button-secondary reports-export-toggle h-9 px-3.5 text-xs font-semibold" aria-label="Exportar extrato em CSV">
-                                <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                        <div class="cb-meta-menu relative z-20 pointer-events-auto" data-dropdown>
+                            <button type="button" data-dropdown-toggle class="ui-btn ui-btn--secondary ui-btn--sm reports-export-toggle" aria-expanded="false" aria-controls="reports-extrato-csv-menu" aria-label="Exportar extrato em CSV">
+                                <i data-lucide="download"></i>
                                 <span>CSV</span>
-                                <i data-lucide="chevron-down" data-dropdown-chevron class="w-3 h-3 text-[var(--cb-text-subtle)] transition-transform duration-200"></i>
+                                <i data-lucide="chevron-down" data-dropdown-chevron class="transition-transform duration-200"></i>
                             </button>
-                            <div data-dropdown-panel class="cb-meta-menu-panel reports-export-menu hidden">
+                            <div data-dropdown-panel id="reports-extrato-csv-menu" class="cb-meta-menu-panel reports-export-menu hidden">
                                 <a href="/relatorios/export.csv?tipo=extrato-movimentos&mes={{.MesAtual}}&ano={{.AnoAtual}}" class="cb-meta-menu-item">
                                     <i data-lucide="list" class="w-4 h-4 text-[var(--cb-text-subtle)]"></i>
                                     <span>Movimento</span>
@@ -990,59 +1013,36 @@
                             </div>
                         </div>
                     </div>
-                    <p class="cb-text-micro text-[var(--cb-text-subtle)] reports-export-note">Transferências internas aparecem no extrato de movimentos e ficam fora do fechamento diário.</p>
+                    <p class="reports-export-hint">Inclui os valores completos.</p>
                 </div>
-            </div>
-
-            <div class="mb-4">
-                <nav class="flex flex-wrap items-center gap-2" aria-label="Visualizações do extrato">
-                    <a href="?tab=extrato{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&view=movimentos&mes={{.MesAtual}}&ano={{.AnoAtual}}"
-                        hx-get="/relatorios?tab=extrato{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&view=movimentos&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
-                        hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
-                        class="cb-button h-9 px-4 text-xs font-semibold {{if eq .ExtratoView "movimentos"}}bg-[var(--cb-accent)] border border-[var(--cb-accent)] text-white shadow-sm{{else}}cb-button-secondary text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
-                        Movimentos
-                    </a>
-                    <a href="?tab=extrato{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&view=diario&mes={{.MesAtual}}&ano={{.AnoAtual}}"
-                        hx-get="/relatorios?tab=extrato{{if .IsCaixaPrevisao}}&modo=previsao{{end}}&view=diario&mes={{.MesAtual}}&ano={{.AnoAtual}}&partial=content"
-                        hx-target="#relatorios-body" hx-swap="outerHTML" hx-push-url="true"
-                        class="cb-button h-9 px-4 text-xs font-semibold {{if eq .ExtratoView "diario"}}bg-[var(--cb-accent)] border border-[var(--cb-accent)] text-white shadow-sm{{else}}cb-button-secondary text-[var(--cb-text-muted)] hover:text-[var(--cb-text-main)]{{end}}">
-                        Resumo diário
-                    </a>
-                </nav>
             </div>
 
             {{if .ExtratoRows}}
             <!-- Subvisao: Movimentos -->
             <div class="reports-extrato-panel {{if eq .ExtratoView "movimentos"}}block{{else}}hidden{{end}}">
-                <div class="reports-extrato-panel-head">
-                    <div>
-                        <p class="cb-section-title">Lançamentos</p>
-                        <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">Descrição do lançamento e cliente vinculado, quando houver, com os demais dados organizados por coluna.</p>
-                    </div>
-                    <span class="cb-status-chip cb-status-chip-info">Entradas e saídas por conta</span>
-                </div>
-                <div class="reports-table-scroll w-full overflow-x-auto" role="region" aria-label="Tabela de movimentos do extrato" tabindex="0">
-                    <table class="reports-table reports-table-compact w-full text-xs border-separate border-spacing-y-1.5">
+                <p id="reports-extrato-scroll-hint" class="reports-scroll-hint" data-scroll-hint hidden>Deslize para ver mais colunas <span aria-hidden="true">→</span></p>
+                <div class="reports-table-scroll w-full overflow-x-auto" role="region" aria-describedby="reports-extrato-scroll-hint" aria-label="Tabela de movimentos do extrato" tabindex="0">
+                    <table class="reports-table reports-table--extrato w-full">
                         <thead>
-                            <tr class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">
-                                <th class="reports-table-th rounded-l-xl text-left">Data</th>
-                                <th class="reports-table-th text-left">Descrição</th>
-                                <th class="reports-table-th text-left">Movimento</th>
-                                <th class="reports-table-th text-left">Conta</th>
-                                <th class="reports-table-th text-left">Categoria</th>
-                                <th class="reports-table-th text-right">Entrada</th>
-                                <th class="reports-table-th rounded-r-xl text-right">Saída</th>
+                            <tr>
+                                <th scope="col" class="reports-table-th text-left">Data</th>
+                                <th scope="col" class="reports-table-th text-left">Descrição</th>
+                                <th scope="col" class="reports-table-th text-left">Movimento</th>
+                                <th scope="col" class="reports-table-th text-left">Conta</th>
+                                <th scope="col" class="reports-table-th text-left">Categoria</th>
+                                <th scope="col" class="reports-table-th text-right">Entrada</th>
+                                <th scope="col" class="reports-table-th text-right">Saída</th>
                             </tr>
                         </thead>
                         <tbody>
                             {{range .ExtratoRows}}
                             <tr class="group">
-                                <td class="reports-table-td rounded-l-xl whitespace-nowrap"><span class="reports-cell-date">{{.DateLabel}}</span></td>
-                                <td class="reports-table-td text-[var(--cb-text-main)] min-w-[16rem] max-w-[20rem]">
+                                <td class="reports-table-td whitespace-nowrap"><span class="reports-cell-date">{{.DateLabel}}</span></td>
+                                <td class="reports-table-td reports-cell-description-cell">
                                     <div class="reports-cell-stack">
-                                        <span class="block truncate font-semibold" title="{{.Description}}">{{.Description}}</span>
+                                        <span class="block reports-cell-description">{{.Description}}</span>
                                         {{if .ContactName}}
-                                        <span class="block truncate text-[11px] text-[var(--cb-text-muted)]" title="{{.ContactName}}">{{.ContactName}}</span>
+                                        <span class="block reports-cell-description reports-cell-meta">{{.ContactName}}</span>
                                         {{end}}
                                     </div>
                                 </td>
@@ -1053,14 +1053,14 @@
                                 </td>
                                 <td class="reports-table-td text-[var(--cb-text-muted)] whitespace-nowrap min-w-[9.5rem]">{{if .AccountName}}{{.AccountName}}{{else}}-{{end}}</td>
                                 <td class="reports-table-td text-[var(--cb-text-muted)] whitespace-nowrap min-w-[8.5rem]">{{if .CategoryName}}{{.CategoryName}}{{else if eq .Tipo "TRANSFER"}}Interna{{else if .MacroGroup}}{{.MacroGroup}}{{else}}-{{end}}</td>
-                                <td class="reports-table-td text-right whitespace-nowrap">
+                                <td class="reports-table-td reports-cell-amount text-right whitespace-nowrap">
                                     {{if .Entrada.Reais}}
                                     <span class="reports-cell-value text-[var(--cb-success)]" data-sensitive>R$ {{.Entrada.Reais}}{{.Entrada.Cents}}</span>
                                     {{else}}
                                     <span class="text-[var(--cb-text-subtle)]">-</span>
                                     {{end}}
                                 </td>
-                                <td class="reports-table-td rounded-r-xl text-right whitespace-nowrap">
+                                <td class="reports-table-td reports-cell-amount text-right whitespace-nowrap">
                                     {{if .Saida.Reais}}
                                     <span class="reports-cell-value text-[var(--cb-danger)]" data-sensitive>R$ {{.Saida.Reais}}{{.Saida.Cents}}</span>
                                     {{else}}
@@ -1076,51 +1076,46 @@
 
             <!-- Subvisao: Resumo diario -->
             <div class="reports-extrato-panel {{if eq .ExtratoView "diario"}}block{{else}}hidden{{end}}">
-                <div class="reports-extrato-panel-head">
-                    <div>
-                        <p class="cb-section-title">Fechamento diário</p>
-                        <p class="cb-text-micro text-[var(--cb-text-muted)] mt-0.5">Entradas, saídas, resultado e acumulado do período em sequência cronológica, sem considerar transferências internas.</p>
-                    </div>
-                    <span class="cb-status-chip cb-status-chip-neutral">Fechamento sem transferências</span>
-                </div>
                 {{if .DailySummary}}
-                <div class="reports-table-scroll w-full overflow-x-auto" role="region" aria-label="Tabela de resumo diário do extrato" tabindex="0">
-                    <table class="reports-table reports-table-compact min-w-full text-xs border-separate border-spacing-y-1.5">
+                <p id="reports-diario-scroll-hint" class="reports-scroll-hint" data-scroll-hint hidden>Deslize para ver mais colunas <span aria-hidden="true">→</span></p>
+                <div class="reports-table-scroll w-full overflow-x-auto" role="region" aria-describedby="reports-diario-scroll-hint" aria-label="Tabela de resumo diário do extrato" tabindex="0">
+                    <table class="reports-table reports-table--daily w-full">
                         <thead>
-                            <tr class="text-[10px] font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">
-                                <th class="reports-table-th rounded-l-xl text-left">Dia</th>
-                                <th class="reports-table-th text-right">Entradas</th>
-                                <th class="reports-table-th text-right">Saídas</th>
-                                <th class="reports-table-th text-right">Resultado</th>
-                                <th class="reports-table-th rounded-r-xl text-right">Acumulado do período</th>
+                            <tr>
+                                <th scope="col" class="reports-table-th text-left">Dia</th>
+                                <th scope="col" class="reports-table-th text-right">Entradas</th>
+                                <th scope="col" class="reports-table-th text-right">Saídas</th>
+                                <th scope="col" class="reports-table-th text-right">Resultado</th>
+                                <th scope="col" class="reports-table-th text-right">Acumulado do período</th>
                             </tr>
                         </thead>
                         <tbody>
                             {{range .DailySummary}}
                             <tr class="group">
-                                <td class="reports-table-td rounded-l-xl whitespace-nowrap"><span class="reports-cell-date">{{.DateLabel}}</span></td>
-                                <td class="reports-table-td text-right text-[var(--cb-success)] whitespace-nowrap" data-sensitive>{{if .HasIncome}}<span class="reports-cell-value">R$ {{.IncomeTotal.Reais}}{{.IncomeTotal.Cents}}</span>{{else}}<span class="text-[var(--cb-text-subtle)]">-</span>{{end}}</td>
-                                <td class="reports-table-td text-right text-[var(--cb-danger)] whitespace-nowrap" data-sensitive>{{if .HasExpense}}<span class="reports-cell-value">R$ {{.ExpenseTotal.Reais}}{{.ExpenseTotal.Cents}}</span>{{else}}<span class="text-[var(--cb-text-subtle)]">-</span>{{end}}</td>
-                                <td class="reports-table-td text-right whitespace-nowrap {{.NetClass}}" data-sensitive><span class="reports-cell-value">{{if .NetPositive}}+{{end}}R$ {{.NetTotal.Reais}}{{.NetTotal.Cents}}</span></td>
-                                <td class="reports-table-td rounded-r-xl text-right whitespace-nowrap {{.AccumulatedClass}}" data-sensitive><span class="reports-cell-value">R$ {{.AccumulatedBalance.Reais}}{{.AccumulatedBalance.Cents}}</span></td>
+                                <td class="reports-table-td whitespace-nowrap"><span class="reports-cell-date">{{.DateLabel}}</span></td>
+                                <td class="reports-table-td reports-cell-amount text-right text-[var(--cb-success)] whitespace-nowrap" data-sensitive>{{if .HasIncome}}<span class="reports-cell-value">R$ {{.IncomeTotal.Reais}}{{.IncomeTotal.Cents}}</span>{{else}}<span class="text-[var(--cb-text-subtle)]">-</span>{{end}}</td>
+                                <td class="reports-table-td reports-cell-amount text-right text-[var(--cb-danger)] whitespace-nowrap" data-sensitive>{{if .HasExpense}}<span class="reports-cell-value">R$ {{.ExpenseTotal.Reais}}{{.ExpenseTotal.Cents}}</span>{{else}}<span class="text-[var(--cb-text-subtle)]">-</span>{{end}}</td>
+                                <td class="reports-table-td reports-cell-amount text-right whitespace-nowrap {{.NetClass}}" data-sensitive><span class="reports-cell-value">{{if .NetPositive}}+{{end}}R$ {{.NetTotal.Reais}}{{.NetTotal.Cents}}</span></td>
+                                <td class="reports-table-td reports-cell-amount reports-cell-total text-right whitespace-nowrap {{.AccumulatedClass}}" data-sensitive><span class="reports-cell-value">R$ {{.AccumulatedBalance.Reais}}{{.AccumulatedBalance.Cents}}</span></td>
                             </tr>
                             {{end}}
                         </tbody>
                     </table>
                 </div>
                 {{else}}
-                <div class="cb-empty-state py-6">
+                <div class="cb-empty-state reports-table-empty">
                     <i data-lucide="calendar-x" class="w-5 h-5 text-[var(--cb-text-subtle)] mb-2"></i>
                     <p class="text-xs text-[var(--cb-text-subtle)]">Nenhum dia com movimentos confirmados no período.</p>
                 </div>
                 {{end}}
             </div>
             {{else}}
-            <div class="cb-empty-state py-6">
+            <div class="cb-empty-state reports-table-empty">
                 <i data-lucide="list" class="w-5 h-5 text-[var(--cb-text-subtle)] mb-2"></i>
                 <p class="text-xs text-[var(--cb-text-subtle)]">Nenhum movimento confirmado neste período.</p>
             </div>
             {{end}}
+            <p class="reports-extrato-note">Transferências internas aparecem no extrato de movimentos e ficam fora do fechamento diário.</p>
         </section>
     </div>
 {{end}}

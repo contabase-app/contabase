@@ -14,7 +14,7 @@ func newContabilCSVBusinessHandler(t *testing.T) (*RelatoriosHandler, contabilSm
 	db := openTestDB(t)
 	t.Cleanup(func() { db.Close() })
 	want := seedRelatoriosContabilSmokeBusinessJuly2026(t, db)
-	return &RelatoriosHandler{DB: db, WorkspaceID: "ws-contabil-smoke", UserID: "u-contabil-smoke"}, want
+	return &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-contabil-smoke", UserID: "u-contabil-smoke"}, want
 }
 
 func newContabilCSVPersonalHandler(t *testing.T) *RelatoriosHandler {
@@ -25,7 +25,7 @@ func newContabilCSVPersonalHandler(t *testing.T) *RelatoriosHandler {
 	execTestSQL(t, db, `INSERT INTO users (id, name, email, password_hash, created_at, updated_at) VALUES ('u-ccsv-pers', 'Pers', 'ccsvpers@t.com', 'hash', ?, ?)`, now, now)
 	execTestSQL(t, db, `INSERT INTO workspaces (id, name, type, created_at, updated_at) VALUES ('ws-ccsv-pers', 'WS Pers CSV', 'personal', ?, ?)`, now, now)
 	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-ccsv-pers', 'u-ccsv-pers', 'ADMIN', ?)`, now)
-	return &RelatoriosHandler{DB: db, WorkspaceID: "ws-ccsv-pers", UserID: "u-ccsv-pers"}
+	return &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-ccsv-pers", UserID: "u-ccsv-pers"}
 }
 
 func TestHandleExportarContabilResumoCSV_Business(t *testing.T) {
@@ -195,7 +195,7 @@ func TestHandleExportarContabilCSV_SanitizaInjecao(t *testing.T) {
 	execTestSQL(t, db, `INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES ('ws-inj', 'u-inj', 'ADMIN', ?)`, now)
 	execTestSQL(t, db, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('acc-inj', 'ws-inj', '=SUM(A1:A2)', 'CHECKING', 1000, 1000, ?, ?)`, now, now)
 
-	handler := &RelatoriosHandler{DB: db, WorkspaceID: "ws-inj", UserID: "u-inj"}
+	handler := &RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-inj", UserID: "u-inj"}
 	req := httptest.NewRequest(http.MethodGet, "/relatorios/contabil-saldos.csv?mes=8&ano=2026", nil)
 	rr := httptest.NewRecorder()
 	handler.HandleExportarContabilSaldosCSV(rr, req)

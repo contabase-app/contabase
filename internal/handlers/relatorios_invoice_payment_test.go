@@ -12,7 +12,7 @@ func TestRelatoriosCompetenciaExcluiPagamentoFaturaMesmoMes(t *testing.T) {
 
 	seedInvoicePaymentCompetenceScenario(t, db, "2026-08-05", "2026-08-10")
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
 	data, err := handler.buildRelatoriosData("", "competencia", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -39,7 +39,7 @@ func TestRelatoriosCompetenciaExcluiPagamentoFaturaCategorizado(t *testing.T) {
 	seedInvoicePaymentCompetenceScenario(t, db, "2026-08-05", "2026-08-10")
 	execTestSQL(t, db, `UPDATE transactions SET category_id = 'cat-card-purchase' WHERE id = 'payment-test'`)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
 	data, err := handler.buildRelatoriosData("", "competencia", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -64,7 +64,7 @@ func TestRelatoriosCompetenciaExcluiPagamentoFaturaDescricaoAlterada(t *testing.
 		WHERE id = 'payment-test'
 	`)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
 	data, err := handler.buildRelatoriosData("", "competencia", "movimentos", 8, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
@@ -84,7 +84,7 @@ func TestRelatoriosCompetenciaExcluiPagamentoFaturaMesDiferente(t *testing.T) {
 
 	seedInvoicePaymentCompetenceScenario(t, db, "2026-07-05", "2026-08-10")
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
 	july, err := handler.buildRelatoriosData("", "competencia", "movimentos", 7, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData july: %v", err)
@@ -155,7 +155,7 @@ func TestRelatoriosNaoIncluiTransacoesDeletadas(t *testing.T) {
 
 	seedRelatoriosDeletedTransactionsScenario(t, db)
 
-	handler := RelatoriosHandler{DB: db, WorkspaceID: "ws-del", UserID: "user-del"}
+	handler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-del", UserID: "user-del"}
 	data, err := handler.buildRelatoriosData("", "competencia", "movimentos", 6, 2026)
 	if err != nil {
 		t.Fatalf("buildRelatoriosData: %v", err)
