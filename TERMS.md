@@ -8,7 +8,7 @@ O ContaBase **não é um serviço em nuvem hospedado por nós (SaaS)**. É um co
 ## 2. Responsabilidades do Operador
 Ao decidir operar uma instância do ContaBase e abri-la para uso por você, seus clientes, fornecedores ou equipe interna, você atesta que:
 - É o único responsável pelo provisionamento da infraestrutura (servidor, rede, proxy reverso, domínio).
-- Adotará as práticas de segurança operacionais listadas em `docs/seguranca-deploy.md` (como certificado HTTPS válido, backups rotineiros, senhas fortes e gestão segura dos secrets).
+- Adotará as práticas de segurança operacionais listadas em `https://github.com/contabase-app/contabase/blob/beta/docs/seguranca-deploy.md` (como certificado HTTPS válido, backups rotineiros, senhas fortes e gestão segura dos secrets).
 - Assume integralmente o ônus pela conformidade com a legislação aplicável (fiscal, trabalhista, LGPD), pois a aplicação é agnóstica a jurisdições.
 
 ## 3. Ausência de Garantias

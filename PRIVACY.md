@@ -19,12 +19,12 @@ Na sua operação normal, a aplicação requer e armazena os seguintes dados:
 - **Dados Técnicos/Operacionais:** Endereço de IP em logs de auditoria, User-Agent, Dados de Sessão (cookies hashados para manter o login), Segredos de Autenticação de Dois Fatores (TOTP) e histórico de ações críticas.
 
 ## 4. Retenção e Exclusão
-Os dados persistem no banco de dados SQLite local na máquina do Operador. Atualmente, o software não conta com rotinas de deleção cronológica automática. Os dados permanecem até que o Operador ou o Usuário os excluam via interface. Para mais informações sobre como os backups devem ser geridos, consulte `docs/retencao-de-dados.md`.
+Os dados persistem no banco de dados SQLite local na máquina do Operador. Atualmente, o software não conta com rotinas de deleção cronológica automática. Os dados permanecem até que o Operador ou o Usuário os excluam via interface. Para mais informações sobre como os backups devem ser geridos, consulte `https://github.com/contabase-app/contabase/blob/beta/docs/retencao-de-dados.md`.
 
 ## 5. Exportação de Dados
 O sistema possibilita que os relatórios e registros financeiros sejam exportados pelos usuários autenticados (ex: via CSV). É dever do Operador estabelecer políticas de uso aceitável para garantir que essas extrações trafeguem de forma segura e restrita.
 
 ## 6. Resposta a Incidentes
-Em caso de violação de dados ou acessos maliciosos à instância, a responsabilidade primária pela contenção, investigação e notificação à Autoridade Nacional de Proteção de Dados (ANPD) ou aos titulares afetados é do Operador da Instância. Sugerimos a consulta do guia em `docs/resposta-a-incidentes.md`.
+Em caso de violação de dados ou acessos maliciosos à instância, a responsabilidade primária pela contenção, investigação e notificação à Autoridade Nacional de Proteção de Dados (ANPD) ou aos titulares afetados é do Operador da Instância. Sugerimos a consulta do guia em `https://github.com/contabase-app/contabase/blob/beta/docs/resposta-a-incidentes.md`.
 
 Se você acredita ter encontrado uma vulnerabilidade diretamente no código-fonte ou arquitetura base do ContaBase, reporte isso de forma privada (consulte `SECURITY.md`).
