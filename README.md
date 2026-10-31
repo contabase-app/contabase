@@ -32,7 +32,11 @@ O ContaBase está em **Beta pública controlada**. Ainda não existe versão Sta
 
 ## Instalação pela Beta
 
-O instalador guiado consulta o canal Beta e permite escolher Docker, binário de release ou source.
+**[Acessar a página oficial de instalação do ContaBase](https://get-contabase.pages.dev/)**
+
+A página oficial apresenta os métodos de instalação disponíveis, os comandos atualizados e permite consultar o código do instalador antes de executá-lo.
+
+O instalador guiado consulta o canal Beta e encaminha para Docker, binário de release ou source.
 
 ```bash
 curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/beta/install.sh && bash /tmp/contabase-install.sh
