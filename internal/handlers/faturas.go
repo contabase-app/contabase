@@ -1180,6 +1180,7 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 			a.name,
 			COALESCE(u.name, 'Usuário removido'),
 			CASE WHEN t.total_installments > 1 OR t.recurring_rule_id IS NOT NULL THEN 1 ELSE 0 END,
+			CASE WHEN t.total_installments > 1 AND t.recurring_rule_id IS NULL THEN 1 ELSE 0 END,
 			(t.amount - (`+transactionNetAmountTSQL+`)),
 			COALESCE((
 				SELECT GROUP_CONCAT(r.description, ' • ') FROM transaction_refunds r
@@ -1625,7 +1626,7 @@ func scanInvoiceTransactionRows(rows *sql.Rows) ([]TransactionRow, error) {
 		var amount int64
 		var dateUnix int64
 		var catName, catIcon, catColor sql.NullString
-		var isSeries int64
+		var isSeries, isInstallmentSeries int64
 
 		if err := rows.Scan(
 			&row.ID,
@@ -1644,6 +1645,7 @@ func scanInvoiceTransactionRows(rows *sql.Rows) ([]TransactionRow, error) {
 			&row.AccountName,
 			&row.Author,
 			&isSeries,
+			&isInstallmentSeries,
 			&row.RefundedAmount,
 			&row.RefundDescriptions,
 		); err != nil {
@@ -1661,6 +1663,7 @@ func scanInvoiceTransactionRows(rows *sql.Rows) ([]TransactionRow, error) {
 		}
 		row.IsPending = row.PaymentStatus == "pending"
 		row.IsSeries = isSeries == 1
+		row.IsInstallmentSeries = isInstallmentSeries == 1
 		row.HasInstallmentInfo = row.IsSeries || row.TotalInstallments > 1
 
 		t := time.Unix(dateUnix, 0).UTC()

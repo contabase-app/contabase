@@ -40,15 +40,20 @@ Acesse o canal público de instalação em https://get-contabase.pages.dev/ e si
 - [Segurança](SECURITY.md)
 - [Privacidade](PRIVACY.md)
 - [Termos de uso](TERMS.md)
-- [Candidata v1.0.0-beta.6 — preparação local](docs/releases/v1.0.0-beta.6.md)
-- [Última beta publicada — v1.0.0-beta.5](docs/releases/v1.0.0-beta.5.md)
+- [Última beta publicada — v1.0.0-beta.7](docs/releases/v1.0.0-beta.7.md)
+- [Beta publicada anterior — v1.0.0-beta.6](docs/releases/v1.0.0-beta.6.md)
+- [Beta publicada anterior — v1.0.0-beta.5](docs/releases/v1.0.0-beta.5.md)
 - [Beta publicada anterior — v1.0.0-beta.4](docs/releases/v1.0.0-beta.4.md)
 - [Histórico da beta.3](docs/releases/v1.0.0-beta.3.md)
 - [Notas da Beta.9 publicada](docs/releases/v0.1.0-beta.9.md)
 - [Histórico da beta.2](docs/releases/v1.0.0-beta.2.md)
 - [Histórico da primeira beta](docs/releases/v0.1.0-beta.1.md)
 
-## Destaques da candidata v1.0.0-beta.6
+## Destaques da Beta v1.0.0-beta.7
+
+A Beta 7 conclui o ciclo de Investimentos: cancelamento integral de lotes com transferências, estorno individual de compras adicionais, cancelamento de registro inicial record-only e aplicações sem transferência automática. A migration 82 corrige o bloqueio de contas e lotes após um estorno individual. A entrada monetária de criação, reaplicação e posição passa a usar os dois últimos dígitos digitados como centavos: `1644041` exibe `R$ 16.440,41`. A correção de valores já registrados exige uma operação financeira própria. Instalações novas começam com Investimentos desativado; atualizações preservam a configuração existente. Lançamentos, Contas a pagar/receber e Lançamentos das faturas ganharam cards individuais, logos das instituições nas transferências e dica de swipe no mobile. Consulte as [notas da versão](docs/releases/v1.0.0-beta.7.md).
+
+## Destaques da Beta v1.0.0-beta.6
 
 - Investimentos disponíveis por padrão quando a flag do módulo está ausente, em instalações novas e atualizadas. Desativações explícitas são preservadas.
 - Aplicações com conta de origem, transferência atômica e histórico vinculado; adoção histórica e resgates financeiros das novas aplicações permanecem indisponíveis. Consulte [Investimentos](docs/investimentos.md).
@@ -57,7 +62,7 @@ Acesse o canal público de instalação em https://get-contabase.pages.dev/ e si
 - O menu de ações em Metas e Reservas permanece acima dos cartões vizinhos.
 - Faturas abre no próximo mês com fatura em aberto quando o mês atual já está pago.
 
-Essas mudanças pertencem à candidata local; sua presença neste checkout não indica publicação no canal de instalação.
+Esses destaques pertencem à Beta 6. A Beta 7 é a versão publicada mais recente; a promoção do canal de instalação depende do smoke real de instalação e atualização da tag.
 
 ## Avisos da Beta
 

@@ -405,6 +405,10 @@ func UpdateInvestment(ctx context.Context, db *sql.DB, input UpdateInvestmentInp
 	if err != nil {
 		return err
 	}
+	// A cancelled lot stays ATIVA, so only the receipt can refuse the edit.
+	if err := rejectCancelledInvestmentTx(ctx, tx, input.WorkspaceID, input.InvestmentID); err != nil {
+		return err
+	}
 	applied, err := civildate.ParseCivilDateInput(appliedDate)
 	if err != nil {
 		// Corrupted stored date: refuse to reason about it.
@@ -486,6 +490,9 @@ func RedeemInvestment(ctx context.Context, db *sql.DB, input RedeemInvestmentInp
 		return err
 	}
 	defer tx.Rollback()
+	if err := rejectCancelledInvestmentTx(ctx, tx, input.WorkspaceID, input.InvestmentID); err != nil {
+		return err
+	}
 	if err := rejectFundedInvestmentTx(ctx, tx, input.WorkspaceID, input.InvestmentID); err != nil {
 		return err
 	}
@@ -564,6 +571,9 @@ func ArchiveInvestment(ctx context.Context, db *sql.DB, input ArchiveInvestmentI
 		return err
 	}
 	defer tx.Rollback()
+	if err := rejectCancelledInvestmentTx(ctx, tx, input.WorkspaceID, input.InvestmentID); err != nil {
+		return err
+	}
 	result, err := tx.ExecContext(ctx, `UPDATE investments
 		SET archived_at = unixepoch(), updated_at = unixepoch()
 		WHERE id = ? AND workspace_id = ? AND status = 'RESGATADA' AND archived_at IS NULL`,
@@ -656,6 +666,11 @@ func UpsertInvestmentValuation(ctx context.Context, db *sql.DB, input UpsertInve
 		return models.InvestmentValuation{}, ErrInvestmentNotFound
 	}
 	if err != nil {
+		return models.InvestmentValuation{}, err
+	}
+	// Position upserts are child writes of the lot: a cancelled receipt must
+	// refuse them before the trigger turns the UPSERT into a raw abort.
+	if err := rejectCancelledInvestmentTx(ctx, tx, input.WorkspaceID, input.InvestmentID); err != nil {
 		return models.InvestmentValuation{}, err
 	}
 	if status != models.InvestmentStatusAtiva {

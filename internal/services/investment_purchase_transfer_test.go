@@ -73,7 +73,7 @@ func TestInvestmentBeta6FundedSchema77AtomicReplayAndHistory(t *testing.T) {
 	if err := p.DB.QueryRow(`SELECT COUNT(*),COALESCE(SUM(amount),0) FROM transactions WHERE workspace_id='ws-a' AND type='TRANSFER'`).Scan(&transfers, &sum); err != nil || transfers != 2 || sum != 700000 {
 		t.Fatalf("transfers=%d sum=%d %v", transfers, sum, err)
 	}
-	if err := p.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 77 {
+	if err := p.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 82 {
 		t.Fatalf("schema=%d %v", version, err)
 	}
 	if err := p.DB.QueryRow(`SELECT COUNT(*) FROM sqlite_schema WHERE name='investment_adoption_admissions'`).Scan(&experimental); err != nil || experimental != 0 {

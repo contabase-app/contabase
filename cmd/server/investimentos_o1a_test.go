@@ -128,6 +128,10 @@ func o1aWorkspaceSnapshot(t *testing.T, h *investimentosRoutesHarness, workspace
 		if table == "box_virtual_ledger" {
 			query = `SELECT l.* FROM box_virtual_ledger l JOIN boxes b ON b.id=l.box_id WHERE b.workspace_id=? ORDER BY l.rowid`
 		}
+		if table == "investment_purchase_reversals" {
+			// Schema 80 receipts are WITHOUT ROWID: order by the primary key.
+			query = `SELECT * FROM investment_purchase_reversals WHERE workspace_id=? ORDER BY id`
+		}
 		rows, err := h.db.Query(query, workspace)
 		if err != nil {
 			t.Fatal(err)

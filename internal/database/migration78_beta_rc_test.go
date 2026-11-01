@@ -1,3 +1,5 @@
+//go:build contabase_legacy_fixtures
+
 package database
 
 import (
@@ -269,7 +271,10 @@ func TestBetaRCMigrationResources(t *testing.T) {
 	if err = maintenance.Close(); err != nil {
 		t.Fatal(err)
 	}
-	pools, err := OpenRuntimeDBs(path)
+	if err := RegisterLegacyInvestmentFixture(path); err != nil {
+		t.Fatal(err)
+	}
+	pools, err := OpenLegacyInvestmentFixtureDBs(path)
 	if err != nil {
 		t.Fatal(err)
 	}

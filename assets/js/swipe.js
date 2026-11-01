@@ -39,6 +39,12 @@ function runSwipeAction(row, side) {
         url = row.dataset.swipeRightUrl;
     }
     if (!url || !window.htmx) return;
+    if (side === 'right' && row.dataset.swipeRightMoveScope === 'true') {
+        if (typeof window.openInvoiceMoveScopeFromRow === 'function') {
+            window.openInvoiceMoveScopeFromRow(row);
+        }
+        return;
+    }
     if (side === 'left' && row.dataset.isSeries === 'true') {
         window.openSwipeDeleteModal(txId, row);
         return;
@@ -57,7 +63,11 @@ function runSwipeAction(row, side) {
             swap = row.dataset.swipeRightSwap || (txId ? 'outerHTML' : 'none');
         }
         var target = side === 'left' ? row.dataset.swipeLeftTarget : row.dataset.swipeRightTarget;
-        if (!target && txId) target = '#tx-' + txId;
+        if (!target && row.id) {
+            target = '#' + row.id;
+        } else if (!target && txId) {
+            target = '#tx-' + txId;
+        }
         var options = { swap: swap };
         if (target) options.target = target;
         var valuesRaw = side === 'left' ? row.dataset.swipeLeftVals : row.dataset.swipeRightVals;

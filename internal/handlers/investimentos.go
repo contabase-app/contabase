@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -28,6 +29,17 @@ type InvestimentosHandler struct {
 	CSRFToken   string
 	WorkspaceID string
 	UserID      string
+	// cancellationPreview carries a native POST preview into the shared detail
+	// renderer. Route binding copies the handler per request, so the pointer is
+	// never shared between requests.
+	cancellationPreview *investmentCancellationPreviewView
+	// reversalPreview carries a native POST reversal preview the same way,
+	// bound to the purchase the form targeted.
+	reversalPreview    *investmentReversalPreviewView
+	reversalPurchaseID string
+	// recordCancellationPreview carries a native POST record-only cancellation
+	// preview into the shared detail renderer, mirroring the funded flow.
+	recordCancellationPreview *investmentRecordCancellationPreviewView
 }
 
 // mapInvestmentError converts domain errors into HTTP semantics. Validation
@@ -38,7 +50,10 @@ func mapInvestmentError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, services.ErrInvestmentNotFound):
 		http.NotFound(w, r)
-	case errors.Is(err, services.ErrInvestmentInvalidStatus), errors.Is(err, services.ErrInvestmentConflict):
+	case errors.Is(err, services.ErrInvestmentInvalidStatus), errors.Is(err, services.ErrInvestmentConflict),
+		errors.Is(err, services.ErrInvestmentCancellationPreview), errors.Is(err, services.ErrInvestmentReversalPreview),
+		errors.Is(err, services.ErrInvestmentRecordCancellationPreview),
+		errors.Is(err, services.ErrBalanceAdjustmentConflict), errors.Is(err, services.ErrBalanceOutOfRange):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, services.ErrInvestmentValidation), errors.Is(err, services.ErrInvestmentInvalidAccount):
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -131,12 +146,26 @@ func (h *InvestimentosHandler) parseInvestmentUpdateForm(r *http.Request, invest
 	return input, nil
 }
 
+// applyInvestmentFundingMode translates the interface's explicit funding
+// choice into the service contract, which stays the single source of truth:
+// an empty SourceAccountID is the record-only representation. Mode "record"
+// declares the money is already in the investment account, so any submitted
+// origin is discarded and a transfer with source == destination is never
+// built. Any other value (including legacy forms without the field) keeps the
+// established semantics of the source field itself.
+func applyInvestmentFundingMode(r *http.Request, sourceAccountID *string) {
+	if r.PostForm.Get("funding_mode") == "record" {
+		*sourceAccountID = ""
+	}
+}
+
 // createInvestment parses the creation form and persists the lot.
 func (h *InvestimentosHandler) createInvestment(r *http.Request) (models.Investment, error) {
 	input, err := h.parseInvestmentCreateForm(r)
 	if err != nil {
 		return models.Investment{}, err
 	}
+	applyInvestmentFundingMode(r, &input.SourceAccountID)
 	if r.PostForm.Get("funding_mode") == "transfer" && input.SourceAccountID == "" {
 		return models.Investment{}, fmt.Errorf("%w: selecione a conta de origem", services.ErrInvestmentValidation)
 	}
@@ -192,7 +221,7 @@ func (h *InvestimentosHandler) HandleCriarInvestimento(w http.ResponseWriter, r 
 			return
 		}
 		form := investmentFormData{Action: "/investimentos", CSRFToken: h.CSRFToken,
-			SourceAccountID: r.PostForm.Get("source_account_id"), PrincipalInput: r.PostForm.Get("principal_amount"), RequestID: r.PostForm.Get("request_id"), Error: err.Error(),
+			SourceAccountID: r.PostForm.Get("source_account_id"), FundingMode: r.PostForm.Get("funding_mode"), PrincipalInput: r.PostForm.Get("principal_amount"), RequestID: r.PostForm.Get("request_id"), Error: err.Error(),
 			Investment: models.Investment{AccountID: r.PostForm.Get("account_id"), Name: r.PostForm.Get("name"),
 				Institution: r.PostForm.Get("institution"), Kind: r.PostForm.Get("kind"), TaxRegime: r.PostForm.Get("tax_regime"),
 				AppliedDate: r.PostForm.Get("applied_date"), YieldNote: r.PostForm.Get("yield_note")}}
@@ -327,13 +356,20 @@ func respondInvestmentSaved(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/investimentos", http.StatusSeeOther)
 }
 
-type investmentAccountOption struct{ ID, Name string }
+type investmentAccountOption struct {
+	ID, Name     string
+	Archived     bool
+	BalanceCents int64
+}
 
 type investmentRow struct {
 	models.Investment
 	Principal, CurrentValue, PositionDate, PositionDateISO, MaturityLabel, MaturityDateLabel, MaturityDateISO string
 	PurchaseCount                                                                                             int
 	PositionStale                                                                                             bool
+	Cancelled                                                                                                 bool
+	AccountName                                                                                               string
+	AccountArchived                                                                                           bool
 }
 
 type investmentPurchaseRow struct {
@@ -342,6 +378,11 @@ type investmentPurchaseRow struct {
 	Closed                          bool
 	RemainingPrincipal              string
 	TransferID, SourceAccountName   string
+	// Reversal display and action state (schema 80). A reversed purchase
+	// stays in the history; only the active principal left the totals.
+	ReversalDate, ReversalTime string
+	ReversalCandidate          bool
+	ReversalTransactionID      string
 }
 
 type investmentValuationRow struct {
@@ -351,8 +392,17 @@ type investmentValuationRow struct {
 type investmentSummary struct {
 	ActiveCount, WithoutPosition                    int
 	StalePositions                                  int
+	KnownCount                                      int
+	KnownTotalCents                                 int64
 	KnownTotal, LatestDate, LatestDateISO           string
 	NextMaturity, NextMaturityISO, NextMaturityName string
+	AccountSelected                                 bool
+	AccountName                                     string
+	AccountArchived                                 bool
+	AccountBalance, PrincipalTotal                  string
+	NominalYield, NominalYieldTone                  string
+	NominalYieldAvailable                           bool
+	NominalYieldReason                              string
 }
 
 type investmentFormData struct {
@@ -360,6 +410,7 @@ type investmentFormData struct {
 	Accounts                         []investmentAccountOption
 	SourceAccounts                   []investmentAccountOption
 	SourceAccountID                  string
+	FundingMode                      string
 	IsEdit                           bool
 	Action                           string
 	CSRFToken                        string
@@ -373,6 +424,11 @@ type investimentosPageData struct {
 	NotificationCount                                                   int
 	IsBusiness                                                          bool
 	Filter                                                              string
+	AccountFilters                                                      []investmentAccountOption
+	SelectedAccountID                                                   string
+	ListQuery, BackURL                                                  string
+	InvestmentAccountName                                               string
+	InvestmentAccountArchived                                           bool
 	Investments                                                         []investmentRow
 	Detail                                                              services.InvestmentDetail
 	Principal, CurrentValue                                             string
@@ -395,6 +451,20 @@ type investimentosPageData struct {
 	Success                                                             string
 	StatusCode                                                          int
 	Funded                                                              bool
+	Cancelled                                                           bool
+	Cancellation                                                        investmentCancellationReceiptView
+	CancellationRecord                                                  bool
+	CancellationEligible                                                bool
+	CancellationBlockers                                                []string
+	CancellationNote                                                    string
+	CancellationForm                                                    investmentCancellationFormView
+	CancellationPreview                                                 *investmentCancellationPreviewView
+	RecordCancellationEligible                                          bool
+	RecordCancellationBlockers                                          []string
+	RecordCancellationForm                                              investmentCancellationFormView
+	RecordCancellationPreview                                           *investmentRecordCancellationPreviewView
+	ReversalPreview                                                     *investmentReversalPreviewView
+	ReversalPurchaseID                                                  string
 }
 
 func (h *InvestimentosHandler) investmentPageData() investimentosPageData {
@@ -426,22 +496,44 @@ func (h *InvestimentosHandler) HandleInvestimentos(w http.ResponseWriter, r *htt
 }
 
 func (h *InvestimentosHandler) renderInvestimentos(w http.ResponseWriter, r *http.Request, submitted *investmentFormData, status int) {
+	statusValue := "ATIVAS"
 	filter, label := services.InvestmentListActive, "ATIVAS"
 	switch r.URL.Query().Get("status") {
 	case "RESGATADAS":
-		filter, label = services.InvestmentListRedeemed, "RESGATADAS"
+		statusValue, filter, label = "RESGATADAS", services.InvestmentListRedeemed, "RESGATADAS"
 	case "ARQUIVADAS":
-		filter, label = services.InvestmentListArchived, "ARQUIVADAS"
+		statusValue, filter, label = "ARQUIVADAS", services.InvestmentListArchived, "ARQUIVADAS"
 	case "TODAS":
-		filter, label = services.InvestmentListAll, "TODAS"
+		statusValue, filter, label = "TODAS", services.InvestmentListAll, "TODAS"
 	}
 	investments, err := h.listInvestments(r.Context(), filter)
 	if err != nil {
 		mapInvestmentError(w, r, err)
 		return
 	}
+	accounts, err := h.investmentAccounts(r.Context())
+	if err != nil {
+		mapInvestmentError(w, r, err)
+		return
+	}
+	accountByID := make(map[string]investmentAccountOption, len(accounts))
+	for _, account := range accounts {
+		accountByID[account.ID] = account
+	}
+	selectedID := strings.TrimSpace(r.URL.Query().Get("conta"))
+	selected, selectedOK := accountByID[selectedID]
+	if !selectedOK {
+		// Unknown and foreign ids are indistinguishable: no scope is applied
+		// and the selection falls back to all accounts of this workspace.
+		selectedID = ""
+	}
 	data := h.investmentPageData()
 	data.Filter = label
+	data.AccountFilters = accounts
+	data.ListQuery = investmentListQuery(statusValue, selectedID)
+	if selectedOK {
+		data.SelectedAccountID = selected.ID
+	}
 	// Read only the latest recorded positions. Principal is not a known
 	// position, and neither accounts nor ledger amounts enter this total.
 	positions, err := h.latestInvestmentPositions(r.Context())
@@ -454,18 +546,43 @@ func (h *InvestimentosHandler) renderInvestimentos(w http.ResponseWriter, r *htt
 		mapInvestmentError(w, r, err)
 		return
 	}
-	active := investments
+	cancelled, err := h.cancelledInvestmentIDs(r.Context())
+	if err != nil {
+		mapInvestmentError(w, r, err)
+		return
+	}
+	active := listedInvestmentsWithoutReceipt(investments, cancelled)
 	if filter != services.InvestmentListActive {
 		active, err = h.listInvestments(r.Context(), services.InvestmentListActive)
 		if err != nil {
 			mapInvestmentError(w, r, err)
 			return
 		}
+		active = listedInvestmentsWithoutReceipt(active, cancelled)
+	}
+	display := investments
+	if filter == services.InvestmentListActive {
+		display = active
+	}
+	if selectedID != "" {
+		active = investmentsForAccount(active, selectedID)
+		display = investmentsForAccount(display, selectedID)
 	}
 	data.Summary, err = summarizeInvestmentPositions(active, positions, purchases)
 	if err != nil {
 		mapInvestmentError(w, r, err)
 		return
+	}
+	if selectedOK {
+		withdrawn, err := h.withdrawnInvestmentIDs(r.Context())
+		if err != nil {
+			mapInvestmentError(w, r, err)
+			return
+		}
+		if err := applyInvestmentAccountIndicators(&data.Summary, selected, active, purchases, withdrawn); err != nil {
+			mapInvestmentError(w, r, err)
+			return
+		}
 	}
 	today := civildate.CivilDateToday(appTimeLocation())
 	for _, inv := range active {
@@ -476,7 +593,7 @@ func (h *InvestimentosHandler) renderInvestimentos(w http.ResponseWriter, r *htt
 			data.Summary.NextMaturityName = inv.Name
 		}
 	}
-	for _, inv := range investments {
+	for _, inv := range display {
 		maturity, err := investmentMaturityLabel(inv, today)
 		if err != nil {
 			mapInvestmentError(w, r, err)
@@ -487,7 +604,11 @@ func (h *InvestimentosHandler) renderInvestimentos(w http.ResponseWriter, r *htt
 			mapInvestmentError(w, r, errors.New("missing investment purchases"))
 			return
 		}
-		row := investmentRow{Investment: inv, Principal: formatCurrencyLabel(total.TotalCents), PurchaseCount: total.Count, CurrentValue: "Sem posição registrada", MaturityLabel: maturity}
+		row := investmentRow{Investment: inv, Principal: formatCurrencyLabel(total.TotalCents), PurchaseCount: total.Count, CurrentValue: "Sem posição registrada", MaturityLabel: maturity, Cancelled: cancelled[inv.ID], AccountName: "Conta não disponível"}
+		if account, ok := accountByID[inv.AccountID]; ok {
+			row.AccountName = account.Name
+			row.AccountArchived = account.Archived
+		}
 		if position, ok := positions[inv.ID]; ok {
 			row.CurrentValue = formatCurrencyLabel(position.AmountCents)
 			row.PositionDate = investmentDateLabel(position.ValuationDate)
@@ -500,30 +621,16 @@ func (h *InvestimentosHandler) renderInvestimentos(w http.ResponseWriter, r *htt
 		}
 		data.Investments = append(data.Investments, row)
 	}
-	accounts, err := h.DB.QueryContext(r.Context(), `SELECT id, name FROM accounts WHERE workspace_id = ? AND type = 'INVESTMENT' AND archived_at IS NULL ORDER BY name, id`, h.WorkspaceID)
-	if err != nil {
-		mapInvestmentError(w, r, err)
-		return
-	}
-	defer accounts.Close()
 	data.Form = investmentFormData{Action: "/investimentos", CSRFToken: h.CSRFToken, RequestID: uuid.NewString()}
 	if submitted != nil {
 		data.Form = *submitted
 	}
 	data.StatusCode = status
-	for accounts.Next() {
-		var account investmentAccountOption
-		if err := accounts.Scan(&account.ID, &account.Name); err != nil {
-			mapInvestmentError(w, r, err)
-			return
+	for _, account := range accounts {
+		if !account.Archived {
+			data.Form.Accounts = append(data.Form.Accounts, account)
 		}
-		data.Form.Accounts = append(data.Form.Accounts, account)
 	}
-	if err := accounts.Err(); err != nil {
-		mapInvestmentError(w, r, err)
-		return
-	}
-	accounts.Close()
 	data.Form.SourceAccounts, err = h.investmentSourceAccounts(r.Context())
 	if err != nil {
 		mapInvestmentError(w, r, err)
@@ -544,11 +651,39 @@ func (h *InvestimentosHandler) renderInvestmentDetail(w http.ResponseWriter, r *
 	}
 	data := h.investmentPageData()
 	data.Detail = detail
+	account, accountFound, err := h.investmentAccount(r.Context(), detail.Investment.AccountID)
+	if err != nil {
+		mapInvestmentError(w, r, err)
+		return
+	}
+	data.InvestmentAccountName = "Conta não disponível"
+	if accountFound {
+		data.InvestmentAccountName = account.Name
+		data.InvestmentAccountArchived = account.Archived
+	}
+	data.BackURL = investmentBackURL(r, detail.Investment.AccountID)
+	if err := h.applyCancellationState(r.Context(), id, &data); err != nil {
+		mapInvestmentError(w, r, err)
+		return
+	}
+	if data.Cancelled && r.URL.Query().Get("cancelada") == "1" {
+		if data.CancellationRecord {
+			data.Success = "Cancelamento do registro confirmado. Nenhuma movimentação financeira foi realizada e o recibo está registrado abaixo."
+		} else {
+			data.Success = "Cancelamento confirmado. O recibo e a transferência compensatória estão registrados abaixo."
+		}
+	}
+	data.CancellationPreview = h.cancellationPreview
+	data.RecordCancellationPreview = h.recordCancellationPreview
+	data.ReversalPreview, data.ReversalPurchaseID = h.reversalPreview, h.reversalPurchaseID
 	if r.URL.Query().Get("created") == "1" {
 		data.Success = "Investimento cadastrado com sucesso."
 	}
 	if r.URL.Query().Get("purchased") == "1" {
 		data.Success = "Reaplicação registrada com sucesso."
+	}
+	if r.URL.Query().Get("estornada") == "1" {
+		data.Success = "Estorno de compra confirmado. A compra permanece no histórico com status Estornada e o recibo está registrado."
 	}
 	if mode := r.URL.Query().Get("withdrawn"); mode == services.InvestmentWithdrawalPartial {
 		data.Success = "Retirada parcial registrada"
@@ -634,6 +769,11 @@ func (h *InvestimentosHandler) renderInvestmentDetail(w http.ResponseWriter, r *
 	}
 	data.Funded = len(detail.PurchaseTransfers) > 0
 
+	reversals, err := services.GetInvestmentPurchaseReversals(r.Context(), h.DB, h.WorkspaceID, id)
+	if err != nil {
+		mapInvestmentError(w, r, err)
+		return
+	}
 	for purchaseIndex, purchase := range detail.Purchases {
 		row := investmentPurchaseRow{InvestmentPurchase: purchase, Date: investmentDateLabel(purchase.PurchaseDate), Value: formatCurrencyLabel(purchase.PrincipalCents)}
 		if receipt, ok := detail.PurchaseTransfers[purchase.ID]; ok {
@@ -659,12 +799,21 @@ func (h *InvestimentosHandler) renderInvestmentDetail(w http.ResponseWriter, r *
 		if !state.PrincipalUnknown {
 			row.RemainingPrincipal = formatCurrencyLabel(purchase.PrincipalCents - state.KnownPrincipalWithdrawn)
 		}
+		if reversal, reversed := reversals[purchase.ID]; reversed {
+			row.ReversalDate = investmentDateLabel(reversal.EconomicDate)
+			row.ReversalTransactionID = reversal.CompensationTransactionID
+		}
+		// The per-purchase reversal action follows the same lifecycle rules as
+		// the other operations; the preview service stays the only eligibility
+		// authority and explains any remaining blocker in the drawer.
+		row.ReversalCandidate = detail.Investment.Status == models.InvestmentStatusAtiva && detail.Investment.ArchivedAt == nil &&
+			!data.Cancelled && !purchase.IsInitial && !purchase.Reversed && !state.Closed
 		label := "Compra " + strconv.Itoa(purchaseIndex+1) + " · " + row.Date + " · " + row.Value
 		if purchase.NoteReference != "" {
 			label += " · " + purchase.NoteReference
 		}
 		labels[purchase.ID] = label
-		if !state.Closed {
+		if !state.Closed && !purchase.Reversed {
 			option := investmentWithdrawalOption{ID: purchase.ID, Label: label, Selected: detail.MaintainedPurchaseCount == 1 && len(withdrawalSubmitted) == 0}
 			for _, previous := range submittedOptions {
 				if previous.ID == purchase.ID {
@@ -690,6 +839,230 @@ func (h *InvestimentosHandler) renderInvestmentDetail(w http.ResponseWriter, r *
 		data.Withdrawals = append(data.Withdrawals, row)
 	}
 	h.renderInvestmentPage(w, r, "investimento-detalhe-page", data)
+}
+
+// cancelledInvestmentIDs derives the visual CANCELADA state from the durable
+// receipts only, funded (schema 79) and record-only (schema 81) alike.
+// investments.status is never rewritten by either cancellation.
+func (h *InvestimentosHandler) cancelledInvestmentIDs(ctx context.Context) (map[string]bool, error) {
+	cancelled := make(map[string]bool)
+	rows, err := h.DB.QueryContext(ctx, `SELECT investment_id FROM investment_cancellations WHERE workspace_id=?`, h.WorkspaceID)
+	if err != nil {
+		if !services.IsMissingInvestmentCancellationsTable(err) {
+			return nil, err
+		}
+	} else {
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return nil, err
+			}
+			cancelled[id] = true
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		rows.Close()
+	}
+	recordRows, err := h.DB.QueryContext(ctx, `SELECT investment_id FROM investment_record_cancellations WHERE workspace_id=?`, h.WorkspaceID)
+	if err != nil {
+		if !services.IsMissingInvestmentRecordCancellationsTable(err) {
+			return nil, err
+		}
+		return cancelled, nil
+	}
+	defer recordRows.Close()
+	for recordRows.Next() {
+		var id string
+		if err := recordRows.Scan(&id); err != nil {
+			return nil, err
+		}
+		cancelled[id] = true
+	}
+	return cancelled, recordRows.Err()
+}
+
+func listedInvestmentsWithoutReceipt(investments []models.Investment, cancelled map[string]bool) []models.Investment {
+	if len(cancelled) == 0 {
+		return investments
+	}
+	filtered := make([]models.Investment, 0, len(investments))
+	for _, inv := range investments {
+		if !cancelled[inv.ID] {
+			filtered = append(filtered, inv)
+		}
+	}
+	return filtered
+}
+
+// investmentAccounts loads every investment account of the authenticated
+// workspace once. The listing uses the same slice for the filter options, the
+// row names and the create form, so archived accounts linked to old
+// applications stay visible without per-row queries.
+func (h *InvestimentosHandler) investmentAccounts(ctx context.Context) ([]investmentAccountOption, error) {
+	rows, err := h.DB.QueryContext(ctx, `SELECT id,name,archived_at,current_balance FROM accounts
+		WHERE workspace_id=? AND type='INVESTMENT' ORDER BY name,id`, h.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var accounts []investmentAccountOption
+	for rows.Next() {
+		var account investmentAccountOption
+		var archived sql.NullInt64
+		if err := rows.Scan(&account.ID, &account.Name, &archived, &account.BalanceCents); err != nil {
+			return nil, err
+		}
+		account.Archived = archived.Valid
+		accounts = append(accounts, account)
+	}
+	return accounts, rows.Err()
+}
+
+func (h *InvestimentosHandler) investmentAccount(ctx context.Context, id string) (investmentAccountOption, bool, error) {
+	var account investmentAccountOption
+	var archived sql.NullInt64
+	err := h.DB.QueryRowContext(ctx, `SELECT id,name,archived_at,current_balance FROM accounts
+		WHERE workspace_id=? AND id=? AND type='INVESTMENT'`, h.WorkspaceID, id).
+		Scan(&account.ID, &account.Name, &archived, &account.BalanceCents)
+	if errors.Is(err, sql.ErrNoRows) {
+		return investmentAccountOption{}, false, nil
+	}
+	if err != nil {
+		return investmentAccountOption{}, false, err
+	}
+	account.Archived = archived.Valid
+	return account, true, nil
+}
+
+// withdrawnInvestmentIDs is one workspace-scoped read. A withdrawal makes the
+// purchase total incomparable to the remaining position, so the account-level
+// nominal yield must be unavailable instead of estimated.
+func (h *InvestimentosHandler) withdrawnInvestmentIDs(ctx context.Context) (map[string]bool, error) {
+	rows, err := h.DB.QueryContext(ctx, `SELECT DISTINCT investment_id FROM investment_withdrawals WHERE workspace_id=?`, h.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	withdrawn := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		withdrawn[id] = true
+	}
+	return withdrawn, rows.Err()
+}
+
+func investmentsForAccount(investments []models.Investment, accountID string) []models.Investment {
+	if accountID == "" {
+		return investments
+	}
+	filtered := make([]models.Investment, 0, len(investments))
+	for _, inv := range investments {
+		if inv.AccountID == accountID {
+			filtered = append(filtered, inv)
+		}
+	}
+	return filtered
+}
+
+// applyInvestmentAccountIndicators adds the readings that only make sense for
+// a selected account. Principal comes from recorded purchases; the updated
+// value keeps the existing latest-position rule. Nominal yield is shown only
+// when every relevant active application has a valid, non-stale position and
+// no withdrawal, so it is never inferred from missing data.
+func applyInvestmentAccountIndicators(summary *investmentSummary, account investmentAccountOption, active []models.Investment, purchases map[string]services.InvestmentPurchaseTotal, withdrawn map[string]bool) error {
+	summary.AccountSelected = true
+	summary.AccountName = account.Name
+	summary.AccountArchived = account.Archived
+	summary.AccountBalance = formatCurrencyLabel(account.BalanceCents)
+	var principal int64
+	for _, inv := range active {
+		total, ok := purchases[inv.ID]
+		if !ok {
+			return errors.New("missing investment purchases")
+		}
+		if total.TotalCents < 0 || principal > math.MaxInt64-total.TotalCents {
+			return errors.New("investment principal total outside supported range")
+		}
+		principal += total.TotalCents
+	}
+	summary.PrincipalTotal = formatCurrencyLabel(principal)
+
+	reason := ""
+	switch {
+	case summary.ActiveCount == 0:
+		reason = "Nenhuma aplicação ativa nesta conta."
+	case summary.WithoutPosition > 0 && summary.StalePositions > 0:
+		reason = "Há aplicação com posição desatualizada em relação às operações."
+	case summary.WithoutPosition > 0:
+		reason = "Há aplicação ativa sem posição registrada."
+	case summary.KnownCount != summary.ActiveCount:
+		reason = "Nem todas as aplicações ativas têm posição válida."
+	case principal <= 0:
+		reason = "Principal aplicado não disponível."
+	default:
+		for _, inv := range active {
+			if withdrawn[inv.ID] {
+				reason = "Há retiradas registradas nas aplicações desta conta."
+				break
+			}
+		}
+	}
+	summary.NominalYield = "Não disponível"
+	if reason != "" {
+		summary.NominalYieldReason = reason
+		return nil
+	}
+	if principal > 0 && summary.KnownTotalCents < math.MinInt64+principal {
+		return errors.New("investment nominal yield outside supported range")
+	}
+	yield := summary.KnownTotalCents - principal
+	switch {
+	case yield > 0:
+		summary.NominalYield = "+ " + formatCurrencyLabel(yield)
+		summary.NominalYieldTone = "text-emerald-700 dark:text-emerald-400"
+	case yield < 0:
+		summary.NominalYield = "- " + strings.TrimPrefix(formatCurrencyLabel(yield), "-")
+		summary.NominalYieldTone = "text-red-700 dark:text-red-400"
+	default:
+		summary.NominalYield = formatCurrencyLabel(0)
+	}
+	summary.NominalYieldAvailable = true
+	return nil
+}
+
+// investmentListQuery keeps the selected filters in detail links and in the
+// back link. Default Ativas with no account stays a clean /investimentos URL.
+func investmentListQuery(status, account string) string {
+	values := url.Values{}
+	if status != "" && status != "ATIVAS" {
+		values.Set("status", status)
+	}
+	if account != "" {
+		values.Set("conta", account)
+	}
+	if len(values) == 0 {
+		return ""
+	}
+	return "?" + values.Encode()
+}
+
+func investmentBackURL(r *http.Request, accountID string) string {
+	status := r.URL.Query().Get("status")
+	switch status {
+	case "RESGATADAS", "ARQUIVADAS", "TODAS":
+	default:
+		status = ""
+	}
+	account := strings.TrimSpace(r.URL.Query().Get("conta"))
+	if account != accountID {
+		account = ""
+	}
+	return "/investimentos" + investmentListQuery(status, account)
 }
 
 func (h *InvestimentosHandler) latestInvestmentPositions(ctx context.Context) (map[string]models.InvestmentValuation, error) {
@@ -737,11 +1110,13 @@ func summarizeInvestmentPositions(active []models.Investment, positions map[stri
 			return investmentSummary{}, errors.New("investment position total outside supported range")
 		}
 		total += position.AmountCents
+		summary.KnownCount++
 		if position.ValuationDate > latest {
 			latest = position.ValuationDate
 		}
 	}
-	if summary.ActiveCount > summary.WithoutPosition {
+	if summary.KnownCount > 0 {
+		summary.KnownTotalCents = total
 		summary.KnownTotal = formatCurrencyLabel(total)
 		summary.LatestDate = investmentDateLabel(latest)
 		summary.LatestDateISO = latest

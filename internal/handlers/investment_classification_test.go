@@ -73,7 +73,8 @@ func c2bHandlerFixture(t *testing.T, economicDate string, net int64) (*sql.DB, s
 // cross-table triggers. Production guards remain byte-for-byte identical.
 func suspendClassificationReserveTriggersForFixture(t *testing.T, db *sql.DB) func() {
 	t.Helper()
-	rows, err := db.Query(`SELECT name,sql FROM sqlite_schema WHERE type='trigger' AND name IN ('trg_c2b_reserve','trg_c2b_reserve_update') ORDER BY name`)
+	rows, err := db.Query(`SELECT name,sql FROM sqlite_schema WHERE type='trigger' AND
+ (name IN ('trg_c2b_reserve','trg_c2b_reserve_update') OR name LIKE 'trg_cancellation79_%' OR name LIKE 'trg_reversal80_%') ORDER BY name`)
 	if err != nil {
 		t.Fatal(err)
 	}

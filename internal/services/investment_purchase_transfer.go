@@ -17,6 +17,15 @@ import (
 // these IDs. Historical record-only purchases never acquire this receipt.
 const InvestmentPurchaseTransferPrefix = "investment-purchase:"
 
+// The compensating transfer of a confirmed cancellation mirrors the purchase
+// receipt: its ID is the prefix plus the immutable cancellation receipt id,
+// and schema 79 pins it to the reversal of the original purchase transfer.
+const InvestmentCancellationTransferPrefix = "investment-cancellation:"
+
+// The compensating transfer of a confirmed individual purchase reversal
+// (schema 80). Reserved for this writer exactly like the family above.
+const InvestmentReversalTransferPrefix = "investment-reversal:"
+
 func createInvestmentPurchaseTransferTx(ctx context.Context, tx *sql.Tx, workspace, purchase, source, destination, user, date string, amount int64) error {
 	if source == "" || source == destination || amount <= 0 {
 		return ErrInvestmentInvalidAccount

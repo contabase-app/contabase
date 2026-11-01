@@ -1,3 +1,5 @@
+//go:build contabase_legacy_fixtures
+
 package database
 
 import (
@@ -14,7 +16,7 @@ import (
 func brelLegacy(t *testing.T) *sql.DB {
 	t.Helper()
 	db := referenceLegacy71(t)
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 77); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range []int64{math.MinInt64, -1, 0, 99, math.MaxInt64} {

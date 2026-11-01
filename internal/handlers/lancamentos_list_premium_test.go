@@ -286,6 +286,96 @@ func TestLancamentosTransactionRowSeriesAndReceiptConditions(t *testing.T) {
 	}
 }
 
+func TestLancamentosTransactionRowUsesAccountProviderIdentity(t *testing.T) {
+	row := TransactionRow{
+		ID:               "tx-logo",
+		Description:      "Mercado",
+		Type:             "EXPENSE",
+		AmountDisplay:    "- R$ 10,00",
+		DateLabel:        "5 OUT",
+		AccountName:      "Nubank",
+		AccountColor:     "#820AD1",
+		ProviderMark:     "Nu",
+		ProviderLogoPath: "institutions/nubank.png",
+		PaymentStatus:    "paid",
+		PaymentTone:      "success",
+		PaymentIcon:      "check-circle-2",
+		PaymentTitle:     "Pago",
+	}
+	html := renderLancamentoRowHTML(t, row)
+	for _, want := range []string{
+		`class="ui-row__account"`,
+		`class="ui-row__account-logo" src="institutions/nubank.png"`,
+		`data-avatar-fallback`,
+		`data-cb-color="#820AD1"`,
+	} {
+		assertContains(t, html, want)
+	}
+
+	row.ProviderLogoPath = ""
+	fallback := renderLancamentoRowHTML(t, row)
+	assertContains(t, fallback, `class="ui-row__account-mark" data-cb-color="#820AD1">Nu</span>`)
+	if strings.Contains(fallback, `ui-row__account-logo`) {
+		t.Fatal("account without logo must use the existing mark fallback")
+	}
+
+	transfer := TransactionRow{
+		ID:                          "tx-logo-transfer",
+		Description:                 "Transferência",
+		Type:                        "TRANSFER",
+		AmountDisplay:               "R$ 10,00",
+		DateLabel:                   "5 OUT",
+		AccountName:                 "Nubank",
+		AccountColor:                "#820AD1",
+		ProviderMark:                "Nu",
+		ProviderLogoPath:            "institutions/nubank.png",
+		DestinationAccountName:      "Itaú",
+		DestinationAccountColor:     "#EC7000",
+		DestinationProviderMark:     "Itaú",
+		DestinationProviderLogoPath: "institutions/itau.png",
+		PaymentStatus:               "paid",
+	}
+	transferHTML := renderLancamentoRowHTML(t, transfer)
+	for _, want := range []string{
+		`title="Nubank">Nubank</span>`,
+		`title="Itaú">Itaú</span>`,
+		`src="institutions/nubank.png"`,
+		`src="institutions/itau.png"`,
+	} {
+		assertContains(t, transferHTML, want)
+	}
+}
+
+func TestLancamentosListSwipeHintMatchesActions(t *testing.T) {
+	html := renderLancamentosListHTML(t, LancamentosData{
+		Transactions: []TransactionRow{{
+			ID:            "tx-hint",
+			Description:   "Conta de energia",
+			Type:          "EXPENSE",
+			AmountDisplay: "- R$ 125,00",
+			DateLabel:     "5 OUT",
+			AccountName:   "Conta Principal",
+			PaymentStatus: "paid",
+		}},
+	})
+	for _, want := range []string{
+		`class="cb-v2-swipe-hint"`,
+		`confirmar ou desfazer o pagamento/recebimento`,
+		`para excluir`,
+		`séries permitem escolher o escopo`,
+	} {
+		assertContains(t, html, want)
+	}
+	if got := strings.Count(html, `class="cb-v2-swipe-hint"`); got != 1 {
+		t.Fatalf("swipe hint count = %d, want 1", got)
+	}
+
+	empty := renderLancamentosListHTML(t, LancamentosData{})
+	if strings.Contains(empty, `cb-v2-swipe-hint`) {
+		t.Fatal("empty transaction list must not render the swipe hint")
+	}
+}
+
 func TestLancamentosListPanelDateGroupsAndBulkContracts(t *testing.T) {
 	data := LancamentosData{
 		Transactions: []TransactionRow{

@@ -3168,6 +3168,9 @@ func validateSQLiteBackupCandidate(path string) error {
 }
 
 func validateContaBaseBackupCandidate(path string) error {
+	if err := database.ValidateSQLiteRuntimeSchema(path); err != nil {
+		return fmt.Errorf("incompatible SQLite backup schema: %w", err)
+	}
 	db, err := openSQLiteCandidateForValidation(path)
 	if err != nil {
 		return err
@@ -4618,6 +4621,34 @@ func registerInvestimentosRoutes(mux *http.ServeMux, authService *auth.Service, 
 	}))
 	mux.HandleFunc("/investimentos/", withAuth(authService, signer, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/investimentos/"), "/")
+		if len(parts) == 3 && parts[0] != "" && parts[1] == "cancelamento" && parts[2] == "previa" {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			if !models.HasPermission(&ctx.Member, models.PermissionInvestmentsWrite) {
+				respondForbidden(w, r)
+				return
+			}
+			h := bind(ctx)
+			h.HandlePreviewInvestmentCancellation(w, r, parts[0])
+			return
+		}
+		// Record-only registration cancellation (schema 81): the same drawer
+		// family with its own endpoints and no financial write at all.
+		if len(parts) == 3 && parts[0] != "" && parts[1] == "cancelamento-registro" && parts[2] == "previa" {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			if !models.HasPermission(&ctx.Member, models.PermissionInvestmentsWrite) {
+				respondForbidden(w, r)
+				return
+			}
+			h := bind(ctx)
+			h.HandlePreviewInvestmentRecordCancellation(w, r, parts[0])
+			return
+		}
 		if len(parts) == 3 && parts[0] != "" && parts[1] == "financeiro" {
 			if !features.FromEnv().InvestmentOperations {
 				http.NotFound(w, r)
@@ -4644,13 +4675,38 @@ func registerInvestimentosRoutes(mux *http.ServeMux, authService *auth.Service, 
 			h.HandleInvestmentOperation(w, r, parts[0], parts[2])
 			return
 		}
-		if parts[0] == "" || (len(parts) != 1 && !(len(parts) == 2 && (parts[1] == "editar" || parts[1] == "valuations" || parts[1] == "resgatar" || parts[1] == "arquivar" || parts[1] == "compras" || parts[1] == "retiradas"))) {
+		// Individual purchase reversal (schema 80): preview and confirmation
+		// are both authenticated writes gated by the investments permission.
+		// The purchase identity travels in the POST body: the drawer form is
+		// shared by every purchase of the page.
+		if parts[0] != "" && len(parts) == 3 && parts[1] == "compras" && parts[2] == "estorno" ||
+			parts[0] != "" && len(parts) == 4 && parts[1] == "compras" && parts[2] == "estorno" && parts[3] == "previa" {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			if !models.HasPermission(&ctx.Member, models.PermissionInvestmentsWrite) {
+				respondForbidden(w, r)
+				return
+			}
+			h := bind(ctx)
+			if len(parts) == 4 {
+				h.HandlePreviewInvestmentPurchaseReversal(w, r, parts[0])
+			} else {
+				h.HandleConfirmInvestmentPurchaseReversal(w, r, parts[0])
+			}
+			return
+		}
+		if parts[0] == "" || (len(parts) != 1 && !(len(parts) == 2 && (parts[1] == "editar" || parts[1] == "valuations" || parts[1] == "resgatar" || parts[1] == "arquivar" || parts[1] == "compras" || parts[1] == "retiradas" || parts[1] == "cancelamento" || parts[1] == "cancelamento-registro"))) {
 			http.NotFound(w, r)
 			return
 		}
 		method, permission := http.MethodGet, models.PermissionInvestmentsRead
 		if len(parts) == 2 {
 			method, permission = http.MethodPost, models.PermissionInvestmentsWrite
+			if parts[1] == "cancelamento" && r.Method == http.MethodGet {
+				method, permission = http.MethodGet, models.PermissionInvestmentsRead
+			}
 		}
 		if r.Method != method {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -4661,8 +4717,14 @@ func registerInvestimentosRoutes(mux *http.ServeMux, authService *auth.Service, 
 			return
 		}
 		h := bind(ctx)
-		if method == http.MethodGet {
+		if method == http.MethodGet && len(parts) == 2 && parts[1] == "cancelamento" {
+			h.HandleInvestmentCancellationReceipt(w, r, parts[0])
+		} else if method == http.MethodGet {
 			h.HandleDetalheInvestimento(w, r, parts[0])
+		} else if parts[1] == "cancelamento" {
+			h.HandleConfirmInvestmentCancellation(w, r, parts[0])
+		} else if parts[1] == "cancelamento-registro" {
+			h.HandleConfirmInvestmentRecordCancellation(w, r, parts[0])
 		} else if parts[1] == "valuations" {
 			h.HandleValuation(w, r, parts[0])
 		} else if parts[1] == "retiradas" {

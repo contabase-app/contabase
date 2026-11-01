@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"html"
 	"html/template"
 	"io"
@@ -31,9 +32,13 @@ func newInvestimentosRoutesHarness(t *testing.T) *investimentosRoutesHarness {
 }
 
 func newInvestimentosRoutesHarnessWithFlag(t *testing.T, flag string) *investimentosRoutesHarness {
+	return newInvestimentosRoutesHarnessWithDB(t, flag, nil)
+}
+
+func newInvestimentosRoutesHarnessWithDB(t *testing.T, flag string, db *sql.DB) *investimentosRoutesHarness {
 	t.Helper()
 	t.Setenv("CONTABASE_FEATURE_INVESTMENTS", flag)
-	auth := newInvestmentsRBACHarness(t, nil)
+	auth := newInvestmentsRBACHarness(t, db)
 	auth.exec(t, `INSERT INTO workspaces (id, name) VALUES ('workspace-b', 'B')`)
 	auth.exec(t, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ('workspace-b', 'admin-user', 'ADMIN')`)
 	auth.exec(t, `INSERT INTO accounts (id, workspace_id, name, type, archived_at) VALUES
@@ -942,7 +947,8 @@ func TestInvestimentosLifecycleRenderedFormsHistoryAndFilters(t *testing.T) {
 		rr := h.request(t, "GET", "/investimentos?status="+filter, h.admin, nil, false, false)
 		requireInvestimentosStatus(t, rr, 200)
 		want := filter == "ARQUIVADAS" || filter == "TODAS"
-		if strings.Contains(rr.Body.String(), `href="`+base+`"`) != want {
+		hasLink := strings.Contains(rr.Body.String(), `href="`+base+`"`) || strings.Contains(rr.Body.String(), `href="`+base+`?`)
+		if hasLink != want {
 			t.Fatalf("filter %s visibility", filter)
 		}
 	}

@@ -14,9 +14,23 @@
                 <button type="button" class="cb-button cb-button-primary" data-investment-open="investment-create-panel"><span aria-hidden="true">＋</span> Novo investimento</button>
             </div>
         </header>
-        {{if .Summary.ActiveCount}}
+        {{if or .Summary.ActiveCount .SelectedAccountID}}
         <section aria-labelledby="investment-summary-title">
-            <h2 id="investment-summary-title" class="investment-section-title">Resumo das aplicações ativas</h2>
+            <h2 id="investment-summary-title" class="investment-section-title">{{if .Summary.AccountSelected}}Resumo da conta {{.Summary.AccountName}}{{else}}Resumo das aplicações ativas{{end}}</h2>
+            {{if .Summary.AccountSelected}}
+            <dl class="investment-metrics investment-account-metrics">
+                <div data-investment-indicator="account-balance"><dt>Saldo da conta de investimento</dt><dd data-sensitive>{{.Summary.AccountBalance}}</dd><p>Saldo bancário da conta{{if .Summary.AccountArchived}} · arquivada{{end}}. Não é o patrimônio das aplicações.</p></div>
+                <div data-investment-indicator="principal"><dt>Principal aplicado</dt><dd data-sensitive>{{.Summary.PrincipalTotal}}</dd><p>Soma das compras registradas nas aplicações ativas desta conta.</p></div>
+                <div data-investment-indicator="positions"><dt>Posições conhecidas</dt><dd{{if not .Summary.LatestDateISO}} class="is-unknown"{{end}} data-sensitive>{{.Summary.KnownTotal}}</dd>{{if .Summary.LatestDateISO}}<p>Última posição em <time datetime="{{.Summary.LatestDateISO}}">{{.Summary.LatestDate}}</time></p>{{else}}<p>Nenhum valor informado ainda</p>{{end}}</div>
+                <div data-investment-indicator="nominal-yield"><dt>Rendimento nominal</dt><dd{{if or (not .Summary.NominalYieldAvailable) .Summary.NominalYieldTone}} class="{{if not .Summary.NominalYieldAvailable}}is-unknown {{end}}{{.Summary.NominalYieldTone}}"{{end}} data-sensitive>{{.Summary.NominalYield}}</dd><p>{{if .Summary.NominalYieldAvailable}}Posições válidas em todas as aplicações ativas; as datas podem variar e não é retorno líquido.{{else}}{{.Summary.NominalYieldReason}}{{end}}</p></div>
+                <div data-investment-indicator="active-count"><dt>Aplicações ativas</dt><dd>{{.Summary.ActiveCount}}</dd><p>Em acompanhamento</p></div>
+                <div data-investment-indicator="next-maturity"><dt>Próximo vencimento</dt><dd>{{if .Summary.NextMaturityISO}}<time datetime="{{.Summary.NextMaturityISO}}">{{.Summary.NextMaturity}}</time>{{else}}Sem data{{end}}</dd><p>{{if .Summary.NextMaturityName}}{{.Summary.NextMaturityName}}{{else}}Nenhum vencimento futuro{{end}}</p></div>
+            </dl>
+            <p class="investment-note">Aplicações canceladas e encerradas ficam fora dos indicadores. Posições conhecidas somam a última posição válida de cada aplicação ativa, mesmo em datas diferentes. Saldo da conta, principal aplicado e posições conhecidas são leituras distintas e não devem ser somados.</p>
+            {{if .Summary.StalePositions}}<p class="investment-note">{{.Summary.StalePositions}} {{if eq .Summary.StalePositions 1}}aplicação tem posição anterior à última operação e fica{{else}}aplicações têm posições anteriores à última operação e ficam{{end}} fora da soma.</p>{{end}}
+            {{if .Summary.WithoutPosition}}<p class="investment-note">{{.Summary.WithoutPosition}} {{if eq .Summary.WithoutPosition 1}}aplicação ativa está{{else}}aplicações ativas estão{{end}} sem posição válida e ficam fora da soma e do rendimento nominal.</p>{{end}}
+            <p class="investment-note" data-investment-indicator="return-percent"><strong>Rentabilidade percentual:</strong> Não disponível. Não há regra homologada para agregar percentuais por conta; consulte cada aplicação.</p>
+            {{else}}
             <dl class="investment-metrics">
                 <div><dt>Posições conhecidas</dt><dd data-sensitive>{{.Summary.KnownTotal}}</dd>{{if .Summary.LatestDateISO}}<p>Última posição em <time datetime="{{.Summary.LatestDateISO}}">{{.Summary.LatestDate}}</time></p>{{else}}<p>Nenhum valor informado ainda</p>{{end}}</div>
                 <div><dt>Aplicações ativas</dt><dd>{{.Summary.ActiveCount}}</dd><p>Em acompanhamento</p></div>
@@ -26,6 +40,7 @@
             <p class="investment-note">Total parcial: soma das últimas posições informadas de cada aplicação ativa, mesmo em datas diferentes. Não movimenta o saldo das contas.</p>
             {{if .Summary.StalePositions}}<p class="investment-note">{{.Summary.StalePositions}} {{if eq .Summary.StalePositions 1}}aplicação tem posição anterior à última operação e fica{{else}}aplicações têm posições anteriores à última operação e ficam{{end}} fora da soma.</p>{{end}}
             {{if .Summary.WithoutPosition}}<p class="investment-note">Aplicações sem posição atualizada ficam fora dessa soma.</p>{{end}}
+            {{end}}
         </section>
         {{end}}
         <div class="investment-toolbar">
@@ -35,6 +50,10 @@
                     <option value="RESGATADAS" {{if eq .Filter "RESGATADAS"}}selected{{end}}>Encerradas</option>
                     <option value="ARQUIVADAS" {{if eq .Filter "ARQUIVADAS"}}selected{{end}}>Arquivadas</option>
                     <option value="TODAS" {{if eq .Filter "TODAS"}}selected{{end}}>Todas</option>
+                </select></div>
+                <div><label class="cb-label" for="investment-account-filter">Conta de investimento</label><select id="investment-account-filter" name="conta" class="cb-input" data-investment-filter>
+                    <option value="">Todas as contas</option>
+                    {{range .AccountFilters}}<option value="{{.ID}}" {{if eq .ID $.SelectedAccountID}}selected{{end}}>{{.Name}}{{if .Archived}} (arquivada){{end}}</option>{{end}}
                 </select></div><button class="cb-button cb-button-secondary" type="submit" data-investment-filter-submit>Filtrar</button>
             </form>
             {{if .Investments}}<div class="investment-search" data-investment-search-control hidden><label class="cb-label" for="investment-search">Buscar nesta lista</label><input type="search" id="investment-search" class="cb-input" placeholder="Nome, instituição ou tipo" data-investment-search aria-controls="investment-list"></div>{{end}}
@@ -43,11 +62,11 @@
             {{if .Investments}}
             <ul class="investment-list">
                 {{range .Investments}}<li class="investment-row" data-investment-row>
-                    <div class="investment-identity"><a href="/investimentos/{{.ID}}" class="investment-name">{{.Name}}</a><p>{{if .Institution}}{{.Institution}}{{else}}Instituição não informada{{end}} · {{.Kind}}</p><span class="investment-status {{if and (eq .Status "ATIVA") (not .ArchivedAt)}}is-active{{end}}">{{if .ArchivedAt}}Arquivada{{else if eq .Status "ATIVA"}}Ativa{{else}}Encerrada{{end}}</span></div>
+                    <div class="investment-identity"><a href="/investimentos/{{.ID}}{{$.ListQuery}}" class="investment-name">{{.Name}}</a><p>{{if .Institution}}{{.Institution}}{{else}}Instituição não informada{{end}} · {{.Kind}}</p><p class="investment-account-name">Conta de investimento: {{if .AccountName}}{{.AccountName}}{{else}}Não disponível{{end}}{{if .AccountArchived}} · arquivada{{end}}</p><span class="investment-status {{if .Cancelled}}is-cancelled{{else if and (eq .Status "ATIVA") (not .ArchivedAt)}}is-active{{end}}">{{if .Cancelled}}Cancelada{{else if .ArchivedAt}}Arquivada{{else if eq .Status "ATIVA"}}Ativa{{else}}Encerrada{{end}}</span></div>
                     <dl><dt>Total de compras</dt><dd data-sensitive>{{.Principal}}</dd><p>{{.PurchaseCount}} {{if eq .PurchaseCount 1}}compra{{else}}compras{{end}}</p></dl>
                     <dl><dt>Última posição</dt><dd{{if not .PositionDate}} class="is-unknown"{{end}} data-sensitive>{{.CurrentValue}}</dd>{{if .PositionDate}}<p>Em <time datetime="{{.PositionDateISO}}">{{.PositionDate}}</time></p>{{end}}{{if .PositionStale}}<p>Desatualizada em relação às operações</p>{{end}}</dl>
                     <dl><dt>Vencimento</dt><dd{{if not .MaturityDateLabel}} class="is-unknown"{{end}}>{{if .MaturityDateLabel}}<time datetime="{{.MaturityDateISO}}">{{.MaturityDateLabel}}</time>{{else}}Sem data{{end}}</dd>{{if .MaturityDateLabel}}<p>{{.MaturityLabel}}</p>{{end}}</dl>
-                    <a class="investment-detail-link" href="/investimentos/{{.ID}}" aria-label="Ver detalhes de {{.Name}}">Ver detalhes <span aria-hidden="true">→</span></a>
+                    <a class="investment-detail-link" href="/investimentos/{{.ID}}{{$.ListQuery}}" aria-label="Ver detalhes de {{.Name}}">Ver detalhes <span aria-hidden="true">→</span></a>
                 </li>{{end}}
             </ul>
             <p class="investment-empty-search" data-investment-search-empty role="status" hidden>Nenhuma aplicação encontrada nesta lista.</p>

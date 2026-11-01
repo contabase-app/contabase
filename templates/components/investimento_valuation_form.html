@@ -5,7 +5,7 @@
         <legend>Posição observada</legend>
         <div class="investment-field-grid">
             <div><label class="cb-label" for="investment-valuation-date">Data da posição</label><input id="investment-valuation-date" type="date" name="valuation_date" min="{{.Investment.AppliedDate}}" class="cb-input" required><p class="investment-help">Informe a data em que este valor foi observado. Mesma data corrige o valor anterior.</p></div>
-            <div><label class="cb-label" for="investment-valuation-amount">Valor atual (R$)</label><input id="investment-valuation-amount" type="text" inputmode="decimal" name="amount" data-investment-money="zero" placeholder="R$ 1.234,56" class="cb-input" aria-describedby="investment-valuation-help" required><p id="investment-valuation-help" class="investment-help">Digite em reais, com até duas casas decimais. Zero indica perda total.</p></div>
+            <div><label class="cb-label" for="investment-valuation-amount">Valor atual (R$)</label><input id="investment-valuation-amount" type="text" inputmode="decimal" name="amount" data-investment-money="zero" data-investment-money-dial placeholder="R$ 1.234,56" class="cb-input" aria-describedby="investment-valuation-help" required><p id="investment-valuation-help" data-investment-dial-help="zero" class="investment-help">Digite em reais, com até duas casas decimais. Zero indica perda total.</p></div>
         </div>
     </fieldset>
     <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm">Salvar posição</button>

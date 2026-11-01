@@ -162,6 +162,9 @@ type FormTransacaoData struct {
 	DestinoProviderMark     string
 	DestinoProviderLogoPath string
 	IsSeriesEdit            bool
+	IsInstallmentSeriesEdit bool
+	InstallmentNumber       int64
+	TotalInstallments       int64
 	FixoInicial             bool
 	RecorrenciaInicial      string
 	DueDatePreenchida       string
@@ -5279,7 +5282,13 @@ type TransactionRow struct {
 	CategoryColor               string
 	CategoryName                string
 	AccountName                 string
+	AccountColor                string
+	ProviderMark                string
+	ProviderLogoPath            string
 	DestinationAccountName      string
+	DestinationAccountColor     string
+	DestinationProviderMark     string
+	DestinationProviderLogoPath string
 	PaymentAccountID            string
 	PaymentAccountChangeAllowed bool
 	ContactName                 string
@@ -5299,6 +5308,7 @@ type TransactionRow struct {
 	TotalInstallments           int64
 	HasInstallmentInfo          bool
 	IsSeries                    bool
+	IsInstallmentSeries         bool
 	IsProjected                 bool
 	CanGenerateReceipt          bool
 	HasRefund                   bool
@@ -6002,7 +6012,7 @@ type invoiceAssignmentResult struct {
 	Changed              bool
 }
 
-func (h *TransactionHandler) assignTransactionInvoiceTx(tx *sql.Tx, transactionID, destinationInvoiceID, expectedSourceInvoiceID string, expectedUpdatedAt *int64, persistOverride bool, transitionAt int64) (invoiceAssignmentResult, error) {
+func (h *TransactionHandler) assignTransactionInvoiceTx(tx *sql.Tx, transactionID, destinationInvoiceID, expectedSourceInvoiceID string, expectedUpdatedAt *int64, persistOverride bool, transitionAt int64, reconcile bool) (invoiceAssignmentResult, error) {
 	var result invoiceAssignmentResult
 	if err := h.ensureTransactionsNotInvoicePaymentsTx(tx, []string{transactionID}); err != nil {
 		return result, err
@@ -6125,12 +6135,14 @@ func (h *TransactionHandler) assignTransactionInvoiceTx(tx *sql.Tx, transactionI
 		}
 	}
 
-	if err := reconcileInvoiceAfterCompositionMutationTx(tx, h.WorkspaceID, currentInvoiceID.String, transitionAt); err != nil {
-		return result, err
-	}
-	if currentInvoiceID.String != destinationInvoiceID {
-		if err := reconcileInvoiceAfterCompositionMutationTx(tx, h.WorkspaceID, destinationInvoiceID, transitionAt); err != nil {
+	if reconcile {
+		if err := reconcileInvoiceAfterCompositionMutationTx(tx, h.WorkspaceID, currentInvoiceID.String, transitionAt); err != nil {
 			return result, err
+		}
+		if currentInvoiceID.String != destinationInvoiceID {
+			if err := reconcileInvoiceAfterCompositionMutationTx(tx, h.WorkspaceID, destinationInvoiceID, transitionAt); err != nil {
+				return result, err
+			}
 		}
 	}
 	return result, nil
@@ -6168,7 +6180,7 @@ func (h *TransactionHandler) handleExplicitInvoiceAssignment(w http.ResponseWrit
 	defer tx.Rollback()
 
 	transitionAt := time.Now().Unix()
-	result, err := h.assignTransactionInvoiceTx(tx, id, destinationInvoiceID, expectedSourceInvoiceID, nil, persistOverride, transitionAt)
+	result, err := h.assignTransactionInvoiceTx(tx, id, destinationInvoiceID, expectedSourceInvoiceID, nil, persistOverride, transitionAt, true)
 	if err != nil {
 		respondInvoiceAssignmentError(w, err)
 		return
@@ -6227,7 +6239,7 @@ func (h *TransactionHandler) handleAutomaticInvoiceAssignment(w http.ResponseWri
 		return
 	}
 	transitionAt := time.Now().Unix()
-	result, err := h.assignTransactionInvoiceTx(tx, id, destinationInvoiceID, invoiceID.String, &updatedAt, false, transitionAt)
+	result, err := h.assignTransactionInvoiceTx(tx, id, destinationInvoiceID, invoiceID.String, &updatedAt, false, transitionAt, true)
 	if err != nil {
 		respondInvoiceAssignmentError(w, err)
 		return
@@ -6291,10 +6303,41 @@ func (h *TransactionHandler) HandleMoverFatura(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	items, err := h.invoiceMoveQueueTx(tx, current)
+	isInstallmentSeries := current.totalInstallments > 1 && !current.recurringRuleID.Valid
+	if isInstallmentSeries && (current.installmentNumber < 1 || current.installmentNumber > current.totalInstallments) {
+		http.Error(w, "parcelamento sem numeração de parcela válida", http.StatusConflict)
+		return
+	}
+	requestedMoveScope := strings.ToLower(strings.TrimSpace(r.FormValue("move_scope")))
+	if requestedMoveScope != "" {
+		if requestedMoveScope != "single" && requestedMoveScope != "future" {
+			http.Error(w, "escopo de movimentação inválido", http.StatusBadRequest)
+			return
+		}
+		// Recorrências mantêm o contrato existente: o escopo explícito deste
+		// fluxo pertence apenas ao parcelamento.
+		if current.recurringRuleID.Valid {
+			http.Error(w, "escopo explícito não se aplica a recorrências", http.StatusBadRequest)
+			return
+		}
+		if !isInstallmentSeries && requestedMoveScope != "single" {
+			http.Error(w, "escopo futuro exige um lançamento parcelado", http.StatusBadRequest)
+			return
+		}
+	}
+	queueScope := requestedMoveScope
+	if queueScope == "" {
+		if current.parentID.Valid || current.recurringRuleID.Valid || current.totalInstallments > 1 {
+			queueScope = "future"
+		} else {
+			queueScope = "single"
+		}
+	}
+
+	items, err := h.invoiceMoveQueueTx(tx, current, queueScope)
 	if err != nil {
 		log.Printf("move invoice queue error: %v", err)
-		http.Error(w, "erro ao montar cadeia de faturas", http.StatusInternalServerError)
+		respondInvoiceAssignmentError(w, err)
 		return
 	}
 	if len(items) == 0 {
@@ -6302,16 +6345,26 @@ func (h *TransactionHandler) HandleMoverFatura(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	plans, err := h.prepareInvoiceMoveTx(tx, items)
+	if err != nil {
+		log.Printf("move invoice preflight error: %v", err)
+		respondInvoiceAssignmentError(w, err)
+		return
+	}
+
 	transitionAt := time.Now().Unix()
-	for _, item := range items {
-		nextInvoiceID, err := ensureInvoiceAfterReferenceTx(tx, h.WorkspaceID, item.accountID, item.reference)
-		if err != nil {
-			log.Printf("ensure next invoice error: %v", err)
-			http.Error(w, "erro ao localizar próxima fatura", http.StatusInternalServerError)
+	affectedInvoiceIDs := make([]string, 0, len(plans)*2)
+	for _, plan := range plans {
+		if _, err := h.assignTransactionInvoiceTx(tx, plan.item.id, plan.destinationInvoiceID, plan.item.invoiceID, &plan.item.updatedAt, true, transitionAt, false); err != nil {
+			log.Printf("move invoice update error: %v", err)
+			respondInvoiceAssignmentError(w, err)
 			return
 		}
-		if _, err := h.assignTransactionInvoiceTx(tx, item.id, nextInvoiceID, item.invoiceID, &item.updatedAt, true, transitionAt); err != nil {
-			log.Printf("move invoice update error: %v", err)
+		affectedInvoiceIDs = append(affectedInvoiceIDs, plan.item.invoiceID, plan.destinationInvoiceID)
+	}
+	for _, invoiceID := range dedupeIDs(affectedInvoiceIDs) {
+		if err := reconcileInvoiceAfterCompositionMutationTx(tx, h.WorkspaceID, invoiceID, transitionAt); err != nil {
+			log.Printf("move invoice reconcile error: %v", err)
 			respondInvoiceAssignmentError(w, err)
 			return
 		}
@@ -6339,23 +6392,28 @@ type invoiceMoveCandidate struct {
 	parentID          sql.NullString
 	recurringRuleID   sql.NullString
 	totalInstallments int64
+	installmentNumber int64
+	amount            int64
 	date              int64
 	updatedAt         int64
 }
 
 type invoiceMoveItem struct {
-	id        string
-	accountID string
-	invoiceID string
-	reference string
-	updatedAt int64
+	id                string
+	accountID         string
+	invoiceID         string
+	reference         string
+	installmentNumber int64
+	amount            int64
+	updatedAt         int64
 }
 
 func (h *TransactionHandler) fetchInvoiceMoveCandidateTx(tx *sql.Tx, id string) (invoiceMoveCandidate, error) {
 	var item invoiceMoveCandidate
 	err := tx.QueryRow(`
 		SELECT t.id, t.account_id, t.invoice_id, i.reference, i.status,
-		       t.parent_id, t.recurring_rule_id, t.total_installments, t.date, t.updated_at
+		       t.parent_id, t.recurring_rule_id, t.total_installments, t.installment_number,
+		       t.amount, t.date, t.updated_at
 		FROM transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		JOIN invoices i ON i.id = t.invoice_id AND EXISTS (
@@ -6376,17 +6434,108 @@ func (h *TransactionHandler) fetchInvoiceMoveCandidateTx(tx *sql.Tx, id string) 
 		&item.parentID,
 		&item.recurringRuleID,
 		&item.totalInstallments,
+		&item.installmentNumber,
+		&item.amount,
 		&item.date,
 		&item.updatedAt,
 	)
 	return item, err
 }
 
-func (h *TransactionHandler) invoiceMoveQueueTx(tx *sql.Tx, current invoiceMoveCandidate) ([]invoiceMoveItem, error) {
-	if !current.parentID.Valid && !current.recurringRuleID.Valid && current.totalInstallments <= 1 {
-		return []invoiceMoveItem{{id: current.id, accountID: current.accountID, invoiceID: current.invoiceID, reference: current.reference, updatedAt: current.updatedAt}}, nil
+func (h *TransactionHandler) invoiceMoveQueueTx(tx *sql.Tx, current invoiceMoveCandidate, scope string) ([]invoiceMoveItem, error) {
+	currentItem := invoiceMoveItem{
+		id:                current.id,
+		accountID:         current.accountID,
+		invoiceID:         current.invoiceID,
+		reference:         current.reference,
+		installmentNumber: current.installmentNumber,
+		amount:            current.amount,
+		updatedAt:         current.updatedAt,
+	}
+	if scope == "single" || (!current.parentID.Valid && !current.recurringRuleID.Valid && current.totalInstallments <= 1) {
+		return []invoiceMoveItem{currentItem}, nil
+	}
+	if scope == "" {
+		return h.invoiceMoveQueueLegacyTx(tx, current)
 	}
 
+	var rows *sql.Rows
+	var err error
+	if current.recurringRuleID.Valid {
+		rows, err = tx.Query(`
+			SELECT t.id, t.account_id, t.invoice_id, i.reference, t.installment_number, t.amount, t.updated_at
+			FROM transactions t
+			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+			JOIN invoices i ON i.id = t.invoice_id AND EXISTS (
+				SELECT 1 FROM accounts invoice_owner
+				WHERE invoice_owner.id = i.account_id AND invoice_owner.workspace_id = t.workspace_id
+			)
+			WHERE t.workspace_id = ?
+			  AND a.workspace_id = ?
+			  AND a.type = ?
+			  AND t.type = ?
+			  AND t.recurring_rule_id = ?
+			  AND t.date >= ?
+			  AND i.status IN ('OPEN', 'CLOSED')
+			ORDER BY t.date ASC, t.created_at ASC
+		`, h.WorkspaceID, h.WorkspaceID, models.AccountTypeCreditCard, models.TransactionTypeExpense, current.recurringRuleID.String, current.date)
+	} else {
+		rootID := current.id
+		if current.parentID.Valid {
+			rootID = current.parentID.String
+		}
+		// Include every occurrence from the requested installment onward,
+		// regardless of invoice status. Paid/frozen invoices are rejected by
+		// the preflight instead of being silently skipped.
+		rows, err = tx.Query(`
+			SELECT t.id, t.account_id, t.invoice_id, i.reference, t.installment_number, t.amount, t.updated_at
+			FROM transactions t
+			JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+			JOIN invoices i ON i.id = t.invoice_id AND EXISTS (
+				SELECT 1 FROM accounts invoice_owner
+				WHERE invoice_owner.id = i.account_id AND invoice_owner.workspace_id = t.workspace_id
+			)
+			WHERE t.workspace_id = ?
+			  AND a.workspace_id = ?
+			  AND a.type = ?
+			  AND t.type = ?
+			  AND (t.id = ? OR t.parent_id = ?)
+			  AND t.installment_number >= ?
+			  AND t.total_installments = ?
+			ORDER BY t.installment_number ASC, t.date ASC
+		`, h.WorkspaceID, h.WorkspaceID, models.AccountTypeCreditCard, models.TransactionTypeExpense, rootID, rootID, current.installmentNumber, current.totalInstallments)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []invoiceMoveItem
+	for rows.Next() {
+		var item invoiceMoveItem
+		if err := rows.Scan(&item.id, &item.accountID, &item.invoiceID, &item.reference, &item.installmentNumber, &item.amount, &item.updatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if !current.recurringRuleID.Valid && current.totalInstallments > 1 {
+		expected := current.totalInstallments - current.installmentNumber + 1
+		if int64(len(items)) != expected {
+			return nil, fmt.Errorf("%w: installment queue incomplete", errInvoiceMoveConflict)
+		}
+		for i, item := range items {
+			if item.installmentNumber != current.installmentNumber+int64(i) {
+				return nil, fmt.Errorf("%w: installment queue has a gap", errInvoiceMoveConflict)
+			}
+		}
+	}
+	return items, nil
+}
+
+func (h *TransactionHandler) invoiceMoveQueueLegacyTx(tx *sql.Tx, current invoiceMoveCandidate) ([]invoiceMoveItem, error) {
 	var rows *sql.Rows
 	var err error
 	if current.recurringRuleID.Valid {
@@ -6447,6 +6596,81 @@ func (h *TransactionHandler) invoiceMoveQueueTx(tx *sql.Tx, current invoiceMoveC
 		return nil, err
 	}
 	return items, nil
+}
+
+type invoiceMovePlan struct {
+	item                 invoiceMoveItem
+	destinationInvoiceID string
+}
+
+// prepareInvoiceMoveTx validates every source and destination before the first
+// update. Destinations are ensured inside the same transaction; any refusal
+// rolls the creation back with the rest of the move.
+func (h *TransactionHandler) prepareInvoiceMoveTx(tx *sql.Tx, items []invoiceMoveItem) ([]invoiceMovePlan, error) {
+	type sourceState struct {
+		total         int64
+		effectivePaid int64
+	}
+	sources := make(map[string]sourceState, len(items))
+	movedBySource := make(map[string]int64, len(items))
+	for _, item := range items {
+		if _, ok := sources[item.invoiceID]; !ok {
+			snapshot, err := loadInvoiceFinancialSnapshotTx(tx, h.WorkspaceID, item.invoiceID)
+			if err != nil {
+				if err == sql.ErrNoRows {
+					return nil, errInvoiceMoveNotFound
+				}
+				return nil, err
+			}
+			if snapshot.AccountID != item.accountID {
+				return nil, errInvoiceMoveWrongCard
+			}
+			if snapshot.Status == models.InvoiceStatusPaid {
+				return nil, errInvoiceMoveFinancial
+			}
+			if snapshot.Status != models.InvoiceStatusOpen && snapshot.Status != models.InvoiceStatusClosed {
+				return nil, errInvoiceMoveFinancial
+			}
+			sources[item.invoiceID] = sourceState{
+				total:         snapshot.Total,
+				effectivePaid: snapshot.EffectivePaid,
+			}
+		}
+		movedBySource[item.invoiceID] += item.amount
+	}
+	for invoiceID, moved := range movedBySource {
+		source := sources[invoiceID]
+		newSourceTotal := source.total - moved
+		if newSourceTotal < 0 || source.effectivePaid > newSourceTotal {
+			return nil, errInvoiceMoveFinancial
+		}
+	}
+
+	plans := make([]invoiceMovePlan, 0, len(items))
+	for _, item := range items {
+		destinationInvoiceID, err := ensureInvoiceAfterReferenceTx(tx, h.WorkspaceID, item.accountID, item.reference)
+		if err != nil {
+			return nil, err
+		}
+		destination, err := loadInvoiceFinancialSnapshotTx(tx, h.WorkspaceID, destinationInvoiceID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return nil, errInvoiceMoveNotFound
+			}
+			return nil, err
+		}
+		if destination.AccountID != item.accountID {
+			return nil, errInvoiceMoveWrongCard
+		}
+		if destination.Status != models.InvoiceStatusOpen && destination.Status != models.InvoiceStatusClosed && destination.Status != models.InvoiceStatusPaid {
+			return nil, fmt.Errorf("%w: unsupported invoice status", errInvoiceStateStructural)
+		}
+		if destination.blocksIncomingTransaction() {
+			return nil, errInvoiceMoveFinancial
+		}
+		plans = append(plans, invoiceMovePlan{item: item, destinationInvoiceID: destinationInvoiceID})
+	}
+	return plans, nil
 }
 
 func ensureInvoiceAfterReferenceTx(tx *sql.Tx, workspaceID, accountID string, reference string) (string, error) {
@@ -6582,7 +6806,7 @@ func (h *TransactionHandler) HandleDetalheTransacao(w http.ResponseWriter, r *ht
 	var paidAt sql.NullInt64
 	var scheduledPaymentAt sql.NullInt64
 	if err := h.DB.QueryRow(`
-		SELECT t.account_id, t.destination_account_id, t.category_id, t.total_installments, t.recurring_rule_id, rr.frequency, t.invoice_id, i.reference, t.invoice_override_id, t.notes, t.attachment_path, t.due_date, t.contact_id, t.updated_at, COALESCE(u.name, 'Usuário removido'), t.date, t.paid_at, t.scheduled_payment_at
+		SELECT t.account_id, t.destination_account_id, t.category_id, t.total_installments, t.recurring_rule_id, rr.frequency, t.invoice_id, i.reference, t.invoice_override_id, t.notes, t.attachment_path, t.due_date, t.contact_id, t.updated_at, COALESCE(u.name, 'Usuário removido'), t.date, t.paid_at, t.scheduled_payment_at, t.installment_number
 		FROM transactions t
 		LEFT JOIN users u ON u.id = t.user_id
 		LEFT JOIN recurring_rules rr ON rr.id = t.recurring_rule_id AND rr.workspace_id = t.workspace_id
@@ -6591,7 +6815,7 @@ func (h *TransactionHandler) HandleDetalheTransacao(w http.ResponseWriter, r *ht
 			WHERE invoice_owner.id = i.account_id AND invoice_owner.workspace_id = t.workspace_id
 		)
 		WHERE t.id = ? AND t.workspace_id = ?
-	`, id, h.WorkspaceID).Scan(&accountID, &destinationAccountID, &categoryID, &totalInstallments, &recurringRuleID, &recurrenceFrequency, &invoiceID, &invoiceReference, &invoiceOverrideID, &notes, &attachmentPath, &dueDate, &contactID, &updatedAt, &authorName, &txDate, &paidAt, &scheduledPaymentAt); err == nil {
+	`, id, h.WorkspaceID).Scan(&accountID, &destinationAccountID, &categoryID, &totalInstallments, &recurringRuleID, &recurrenceFrequency, &invoiceID, &invoiceReference, &invoiceOverrideID, &notes, &attachmentPath, &dueDate, &contactID, &updatedAt, &authorName, &txDate, &paidAt, &scheduledPaymentAt, &data.InstallmentNumber); err == nil {
 		data.AnotacoesPreenchidas = notes
 		if attachmentPath != "" {
 			data.AttachmentViewURL = "/transacoes/" + id + "/anexo"
@@ -6600,6 +6824,8 @@ func (h *TransactionHandler) HandleDetalheTransacao(w http.ResponseWriter, r *ht
 		data.AuditCreatedBy = authorName
 		data.AuditUpdatedAt = formatDateTimeLabel(updatedAt)
 		data.TransactionUpdatedAt = updatedAt
+		data.TotalInstallments = totalInstallments
+		data.IsInstallmentSeriesEdit = totalInstallments > 1 && !recurringRuleID.Valid
 		data.QuickMoveScope = "single"
 		if recurringRuleID.Valid || totalInstallments > 1 {
 			data.QuickMoveScope = "chain"
@@ -11837,7 +12063,7 @@ func (h *TransactionHandler) ensureTransactionsMutableByInvoiceStatusTx(tx *sql.
 }
 
 func (h *TransactionHandler) ensureTransactionsNotInvoicePaymentsTx(tx *sql.Tx, ids []string) error {
-	if err := classificationMutationGuard(tx, h.WorkspaceID, ids); err != nil {
+	if err := protectedTransactionMutationGuard(tx, h.WorkspaceID, ids); err != nil {
 		return err
 	}
 	ids = dedupeIDs(ids)
@@ -11940,7 +12166,11 @@ func (h *TransactionHandler) fetchTransactionRow(id string) (TransactionRow, err
 			t.invoice_id,
 			t.destination_account_id,
 			COALESCE(destination_account.name, '') AS destination_account_name,
-			CASE WHEN t.recurring_rule_id IS NOT NULL THEN 1 ELSE 0 END AS has_recurring_rule
+			CASE WHEN t.recurring_rule_id IS NOT NULL THEN 1 ELSE 0 END AS has_recurring_rule,
+			COALESCE(NULLIF(a.provider_slug, ''), 'custom') AS account_provider_slug,
+			a.color AS account_color,
+			COALESCE(NULLIF(destination_account.provider_slug, ''), 'custom') AS destination_account_provider_slug,
+			COALESCE(destination_account.color, '') AS destination_account_color
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN contacts ct ON ct.id = t.contact_id AND ct.workspace_id = t.workspace_id
@@ -12109,7 +12339,11 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 			t.invoice_id,
 			t.destination_account_id,
 			COALESCE(destination_account.name, '') AS destination_account_name,
-			CASE WHEN t.recurring_rule_id IS NOT NULL THEN 1 ELSE 0 END AS has_recurring_rule
+			CASE WHEN t.recurring_rule_id IS NOT NULL THEN 1 ELSE 0 END AS has_recurring_rule,
+			COALESCE(NULLIF(a.provider_slug, ''), 'custom') AS account_provider_slug,
+			a.color AS account_color,
+			COALESCE(NULLIF(destination_account.provider_slug, ''), 'custom') AS destination_account_provider_slug,
+			COALESCE(destination_account.color, '') AS destination_account_color
 		FROM transactions t
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN contacts ct ON ct.id = t.contact_id AND ct.workspace_id = t.workspace_id
@@ -13086,13 +13320,21 @@ func scanLancamentosRowsWithWorkspace(rows *sql.Rows, isBusiness bool) []Transac
 		var accountType string
 		var invoiceID, destinationAccountID sql.NullString
 		var hasRecurringRule int64
+		var accountProviderSlug, destinationProviderSlug string
 
 		if err := rows.Scan(&row.ID, &trType, &amount, &dateUnix, &dueDate, &row.CreatedAt, &row.Description, &row.PaymentStatus,
 			&catName, &catIcon, &catColor,
 			&row.InstallmentNumber, &row.TotalInstallments,
 			&row.AccountName, &row.ContactName, &row.Author, &hasDueDate, &isSeries, &paidAt, &scheduledPaymentAt,
-			&row.PaymentAccountID, &accountType, &invoiceID, &destinationAccountID, &row.DestinationAccountName, &hasRecurringRule); err != nil {
+			&row.PaymentAccountID, &accountType, &invoiceID, &destinationAccountID, &row.DestinationAccountName, &hasRecurringRule,
+			&accountProviderSlug, &row.AccountColor, &destinationProviderSlug, &row.DestinationAccountColor); err != nil {
 			continue
+		}
+		row.ProviderMark = accountProviderMark(accountProviderSlug, row.AccountName)
+		row.ProviderLogoPath = accountProviderLogoPathForAccount(accountProviderSlug, row.AccountName)
+		if row.DestinationAccountName != "" {
+			row.DestinationProviderMark = accountProviderMark(destinationProviderSlug, row.DestinationAccountName)
+			row.DestinationProviderLogoPath = accountProviderLogoPathForAccount(destinationProviderSlug, row.DestinationAccountName)
 		}
 
 		row.IsBusiness = isBusiness

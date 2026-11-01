@@ -151,7 +151,14 @@ func createSQLiteBackupFile(ctx context.Context, db *sql.DB, dbPath, destPath st
 }
 
 func sqliteBackupURI(path string, query string) string {
-	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: query}).String()
+	u := &url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: query}
+	// A relative path would otherwise render as file://data/db, and SQLite
+	// reads the first segment as an URI authority. Keeping the host omitted
+	// yields file:data/db, which resolves against the working directory.
+	if !filepath.IsAbs(path) {
+		u.OmitHost = true
+	}
+	return u.String()
 }
 
 func captureSQLiteSnapshot(ctx context.Context, sourcePath, destPath string, hooks *sqliteBackupHooks) error {

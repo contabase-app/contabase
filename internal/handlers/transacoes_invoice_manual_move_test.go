@@ -629,7 +629,7 @@ func TestManualInvoiceMoveTwoConnectionsCAS(t *testing.T) {
 
 		bothReady <- struct{}{}
 		<-startRace
-		result, err := h.assignTransactionInvoiceTx(tx, "purchase-test", "invoice-2026-08", sourceInvoice, &snap.updatedAt, true, time.Now().Unix())
+		result, err := h.assignTransactionInvoiceTx(tx, "purchase-test", "invoice-2026-08", sourceInvoice, &snap.updatedAt, true, time.Now().Unix(), true)
 
 		changed := err == nil && result.Changed
 		if changed {

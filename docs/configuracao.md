@@ -59,9 +59,23 @@ docker compose up -d --build
 
 ## Disponibilidade de Investimentos
 
-Na candidata `v1.0.0-beta.6`, `CONTABASE_FEATURE_INVESTMENTS` ausente habilita o módulo em instalações novas e atualizadas. Não é preciso acrescentar configuração. Valores explícitos mantêm o contrato anterior: somente `true` ou `1` habilitam; `false`, `0`, vazio ou valor desconhecido desabilitam. As três flags de operações financeiras controladas continuam opt-in. Consulte [Investimentos](investimentos.md) para hierarquia e limites.
+`CONTABASE_FEATURE_INVESTMENTS` controla o módulo por instância (processo), não por workspace. A configuração vale para todos os workspaces atendidos pela mesma instância.
 
-No Compose do projeto, configure essa flag em `.env.docker`; ela deixa de ser repassada implicitamente pelo shell. Se antes a desativação existia somente no shell, transfira `CONTABASE_FEATURE_INVESTMENTS=false` para o arquivo antes de atualizar. Um `environment` explícito no override local continua tendo precedência. Sem a flag no arquivo ou no override, vale o padrão habilitado do app.
+Nas instalações novas feitas pelos instaladores oficiais (`install-contabase-docker.sh`, `install-contabase-source.sh` e `install-contabase-release.sh`), o arquivo de ambiente nasce com `CONTABASE_FEATURE_INVESTMENTS=false`; o módulo começa desativado.
+
+Instalações existentes são preservadas: os scripts de atualização não acrescentam a variável. Se ela estiver ausente, o comportamento legado continua valendo (módulo habilitado). Se estiver explícita, o valor existente é mantido.
+
+Para ativar manualmente, defina no arquivo de ambiente da instância:
+
+```env
+CONTABASE_FEATURE_INVESTMENTS=true
+```
+
+No Docker, o arquivo é `.env.docker`. Em binário/systemd, é `/etc/contabase/contabase.env`. Depois da alteração, reinicie ou recrie o serviço: a flag é lida no startup, durante o registro das rotas, e não é aplicada em tempo real.
+
+Somente `true` ou `1` habilitam o módulo. `false`, `0`, vazio ou valor desconhecido desabilitam. Desativar não exclui investimentos, compras, recibos nem históricos; apenas oculta o módulo e suas rotas. As três flags de operações financeiras controladas continuam opt-in e dependentes desta.
+
+No Compose do projeto, `.env.docker` é a fonte da flag, sem repasse implícito pelo shell. Um `environment` explícito em `docker-compose.override.yml` continua tendo precedência. Se a desativação era feita somente prefixando o comando do shell, registre `CONTABASE_FEATURE_INVESTMENTS=false` no arquivo antes de atualizar.
 
 ## APP_BASE_URL
 

@@ -1026,7 +1026,8 @@ func TestCaixaPrevisaoViewModelSaldoProjetadoFuturoEPassado(t *testing.T) {
 		t.Fatalf("card saldo projetado = %d, want primeira linha %d", futureData.ProjectedEndingBalance.rawCents(), futureData.Caixa[0].RawProjectedBalance)
 	}
 
-	past := time.Now().UTC().AddDate(0, -1, 0)
+	pastRef := time.Now().UTC()
+	past := time.Date(pastRef.Year(), pastRef.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -1, 0)
 	pastData, err := handler.buildRelatoriosDataWithModo("", "caixa", "movimentos", "previsao", int(past.Month()), past.Year())
 	if err != nil {
 		t.Fatalf("build past previsao: %v", err)

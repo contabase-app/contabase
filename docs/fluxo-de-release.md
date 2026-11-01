@@ -17,11 +17,13 @@ O ContaBase usa SemVer. A tag pública, o arquivo `VERSION`, o changelog e a not
 - `v1.0.0-beta.2` — segunda candidata da linha 1.0, materializada como prerelease pública com artifacts, GHCR e canal Beta.
 - `v1.0.0-beta.3` — terceira candidata da linha 1.0, materializada como prerelease pública com artifacts, GHCR e canal Beta.
 - `v1.0.0-beta.4` — quarta candidata da linha 1.0, materializada como prerelease pública.
-- `v1.0.0-beta.5` — quinta candidata da linha 1.0, publicada como prerelease; versão atual do canal Beta e da imagem GHCR `:beta`.
+- `v1.0.0-beta.5` — quinta candidata da linha 1.0, publicada como prerelease.
+- `v1.0.0-beta.6` — sexta candidata da linha 1.0, publicada como prerelease.
+- `v1.0.0-beta.7` — sétima candidata da linha 1.0, publicada como prerelease com artifacts Linux amd64/arm64, checksums e imagem GHCR; a promoção do canal Beta depende do smoke real de instalação e atualização.
 
-## Candidata em publicação
+## Candidata em preparação
 
-- `v1.0.0-beta.6` — candidata local em preparação; os gates públicos continuam separados e dependem de revisão e autorização.
+- Nenhuma candidata em preparação após a publicação da `v1.0.0-beta.7`.
 
 ## Processo de publicação
 

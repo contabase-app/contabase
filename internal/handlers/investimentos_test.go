@@ -38,6 +38,8 @@ func TestInvestimentosI1ConsolidationHistoryAndReadOnly(t *testing.T) {
 		resolveTemplatePath(t, "templates/components/investimento_form.html"),
 		resolveTemplatePath(t, "templates/components/investimento_valuation_form.html"),
 		resolveTemplatePath(t, "templates/components/investimento_retirada_form.html"),
+		resolveTemplatePath(t, "templates/components/investimento_cancelamento.html"),
+		resolveTemplatePath(t, "templates/components/investimento_estorno.html"),
 		resolveTemplatePath(t, "templates/components/app_shell.html"),
 	))
 	other.Templates = h.Templates

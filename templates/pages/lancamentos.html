@@ -334,6 +334,10 @@
                     </div>
                 </div>
                 {{template "lancamentos-table-body" .}}
+                <aside class="cb-v2-swipe-hint">
+                    <i data-lucide="help-circle" class="cb-v2-swipe-hint-icon" aria-hidden="true"></i>
+                    <span><strong>Dica de navegação:</strong> Arraste para a Esquerda (&larr;) para confirmar ou desfazer o pagamento/recebimento. Arraste para a Direita (&rarr;) para excluir (séries permitem escolher o escopo).</span>
+                </aside>
             </section>
             <div class="bulk-action-bar" data-bulk-bar>
                 <div class="flex items-center justify-between gap-2">
@@ -448,6 +452,14 @@
 </div>
 {{end}}
 
+{{define "lancamentos-account-logo"}}
+{{if .ProviderLogoPath}}<img class="ui-row__account-logo" src="{{assetPath .ProviderLogoPath}}" alt="" width="16" height="16" data-avatar-fallback><span class="ui-row__account-mark hidden" data-avatar-text data-cb-color="{{.AccountColor}}">{{if .ProviderMark}}{{.ProviderMark}}{{else}}•{{end}}</span>{{else}}<span class="ui-row__account-mark" data-cb-color="{{.AccountColor}}">{{if .ProviderMark}}{{.ProviderMark}}{{else}}•{{end}}</span>{{end}}
+{{end}}
+
+{{define "lancamentos-destination-account-logo"}}
+{{if .DestinationProviderLogoPath}}<img class="ui-row__account-logo" src="{{assetPath .DestinationProviderLogoPath}}" alt="" width="16" height="16" data-avatar-fallback><span class="ui-row__account-mark hidden" data-avatar-text data-cb-color="{{.DestinationAccountColor}}">{{if .DestinationProviderMark}}{{.DestinationProviderMark}}{{else}}•{{end}}</span>{{else}}<span class="ui-row__account-mark" data-cb-color="{{.DestinationAccountColor}}">{{if .DestinationProviderMark}}{{.DestinationProviderMark}}{{else}}•{{end}}</span>{{end}}
+{{end}}
+
 {{define "lancamento-row"}}
 <article id="tx-{{.ID}}" class="tx-row{{if .IsScheduled}} scheduled{{else if .IsOverdue}} overdue{{else if .IsPending}} pending{{end}}"
     data-tx-id="{{.ID}}"
@@ -496,20 +508,35 @@
                 {{if eq .Type "TRANSFER"}}
                     {{if .DestinationAccountName}}
                     <span class="lancamentos-row-transfer">
-                        <span class="lancamentos-row-transfer__account" title="{{.AccountName}}">{{.AccountName}}</span>
+                        <span class="ui-row__account">
+                            {{template "lancamentos-account-logo" .}}
+                            <span class="lancamentos-row-transfer__account" title="{{.AccountName}}">{{.AccountName}}</span>
+                        </span>
                         <span class="shrink-0" aria-hidden="true">&rarr;</span>
                         <span class="sr-only">para</span>
-                        <span class="lancamentos-row-transfer__account" title="{{.DestinationAccountName}}">{{.DestinationAccountName}}</span>
+                        <span class="ui-row__account">
+                            {{template "lancamentos-destination-account-logo" .}}
+                            <span class="lancamentos-row-transfer__account" title="{{.DestinationAccountName}}">{{.DestinationAccountName}}</span>
+                        </span>
                     </span>
                     {{else}}
-                    {{.AccountName}}
+                    <span class="ui-row__account">
+                        {{template "lancamentos-account-logo" .}}
+                        <span>{{.AccountName}}</span>
+                    </span>
                     {{end}}
                 {{else if .IsBusiness}}
                     {{if .ContactName}}<span>{{.ContactName}}</span><span aria-hidden="true">·</span>{{end}}
-                    <span>{{.AccountName}}</span>
+                    <span class="ui-row__account">
+                        {{template "lancamentos-account-logo" .}}
+                        <span>{{.AccountName}}</span>
+                    </span>
                     {{if .CategoryName}}<span aria-hidden="true">·</span><span class="lancamentos-row-category" data-cb-color="{{.CategoryColor}}" title="{{.CategoryName}}"><i data-lucide="{{.CategoryIcon}}" class="icon-colored" aria-hidden="true"></i><span>{{.CategoryName}}</span></span>{{end}}
                 {{else}}
-                    <span>{{.AccountName}}</span>
+                    <span class="ui-row__account">
+                        {{template "lancamentos-account-logo" .}}
+                        <span>{{.AccountName}}</span>
+                    </span>
                     {{if .CategoryName}}<span aria-hidden="true">·</span><span class="lancamentos-row-category" data-cb-color="{{.CategoryColor}}" title="{{.CategoryName}}"><i data-lucide="{{.CategoryIcon}}" class="icon-colored" aria-hidden="true"></i><span>{{.CategoryName}}</span></span>{{end}}
                 {{end}}
                 {{if .UsesDueDate}}<span class="lancamentos-row-competence">Comp. {{.CompetenciaDateLabel}}</span>{{end}}

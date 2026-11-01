@@ -39,9 +39,11 @@
     }, true);
 }());
 
-// Local to investments: integers typed here are reais, never a cents dial.
+// Legacy operations retain reais entry; the three opted-in fields dial cents.
 (function () {
     var rejected = new WeakSet();
+    var dialValues = new WeakMap();
+    var dialEdits = new WeakMap();
     var openers = new WeakMap();
     var maxCents = BigInt('9223372036854775807');
 
@@ -60,6 +62,10 @@
     }
 
     function formatField(el, event, complete) {
+        if (el.hasAttribute('data-investment-money-dial')) {
+            formatDialField(el, event);
+            return;
+        }
         var before = el.value;
         var cursor = el.selectionStart;
         var end = el.selectionEnd;
@@ -88,6 +94,62 @@
             el.setSelectionRange(position(offset), position(endOffset));
         }
     }
+
+    function formatDialField(el, event) {
+        var before = el.value;
+        var cursor = el.selectionStart;
+        var end = el.selectionEnd;
+        var edit = dialEdits.get(el);
+        dialEdits.delete(el);
+        var digit = event && /^(insertText|insertCompositionText)$/.test(event.inputType || '') && /^[0-9]$/.test(event.data || '');
+        var deletion = event && /^delete/.test(event.inputType || '');
+        var replacedAll = edit && edit.start === 0 && edit.end === edit.value.length;
+        var owned = edit && (edit.value === '' || edit.value === dialValues.get(el));
+        var dial = (digit || deletion) && (owned || replacedAll);
+        var raw = before.trim().replace(/^R\$[\u00a0\u202f]/, 'R$ ');
+        if (dial) {
+            var body = /^R\$\s*$/.test(before) ? '' : rawAmount(raw);
+            if (/^[0-9.,]*$/.test(body)) {
+                var digits = body.replace(/[.,]/g, '');
+                var padded = digits.padStart(3, '0');
+                raw = digits === '' || deletion && /^0+$/.test(digits) ? '' : padded.slice(0, -2) + ',' + padded.slice(-2);
+            }
+        }
+        // Paste, autofill and server-restored text are explicit reais amounts.
+        // Only edits to our own display may strip its generated separators.
+        var state = amountState(raw, true, true);
+        if (!state.valid) state.value = before;
+        if (state.valid) dialValues.set(el, state.value);
+        var zero = state.value === 'R$ 0,00' && el.dataset.investmentMoney !== 'zero';
+        el.setCustomValidity(state.valid && !zero ? '' : zero ? 'O valor aplicado deve ser maior que zero.' : 'Use um valor brasileiro com até duas casas decimais (ex.: R$ 16.440,41), dentro do limite permitido.');
+        el.value = state.value;
+        if (!event || state.value === before || cursor === null || !state.valid) return;
+        function position(offset) {
+            var remaining = (before.slice(offset).match(/[0-9]/g) || []).length;
+            var total = (state.value.match(/[0-9]/g) || []).length;
+            var target = Math.max(0, total - remaining);
+            if (!target) return Math.min(3, state.value.length);
+            var seen = 0;
+            for (var i = 0; i < state.value.length; i++) {
+                if (/[0-9]/.test(state.value[i]) && ++seen === target) {
+                    var at = i + 1;
+                    if (event.inputType === 'deleteContentForward') {
+                        while (/[.,]/.test(state.value.charAt(at)) && at < state.value.length) at++;
+                    }
+                    return at;
+                }
+            }
+            return state.value.length;
+        }
+        el.setSelectionRange(position(cursor), position(end));
+    }
+
+    document.addEventListener('beforeinput', function (event) {
+        var el = event.target;
+        if (el && el.matches && el.matches('[data-investment-money-dial]')) {
+            dialEdits.set(el, { value: el.value, start: el.selectionStart, end: el.selectionEnd });
+        }
+    });
 
     document.addEventListener('input', function (event) {
         var el = event.target;
@@ -129,6 +191,20 @@
     document.addEventListener('click', function (event) {
         var opener = event.target.closest('[data-investment-open]');
         if (opener) openPanel(document.getElementById(opener.dataset.investmentOpen), opener);
+        // The reversal drawer is shared by every purchase of the page: the
+        // opener carries the target identity and the drawer resets any
+        // preview left by a previously opened purchase.
+        var reversalOpener = event.target.closest('[data-investment-reversal-open]');
+        if (reversalOpener) {
+            var panel = document.getElementById('investment-reversal-panel');
+            var purchase = panel && panel.querySelector('input[name="purchase_id"]');
+            var label = panel && panel.querySelector('[data-investment-reversal-label]');
+            var preview = panel && panel.querySelector('#investment-reversal-preview');
+            if (purchase) purchase.value = reversalOpener.dataset.reversalPurchaseId || '';
+            if (label) label.textContent = reversalOpener.dataset.reversalPurchaseLabel || '—';
+            if (preview) preview.textContent = '';
+            openPanel(panel, reversalOpener);
+        }
         var closer = event.target.closest('[data-investment-close]');
         if (closer) closer.closest('dialog').close();
         if (event.target.matches('dialog[data-investment-panel]')) {
@@ -142,7 +218,34 @@
             if (opener && opener.isConnected) opener.focus();
         });
     });
+    // Funding mode: "record" is the explicit no-transfer choice (money already
+    // in the investment account). The server renders the submitted mode after
+    // validation errors; scripting keeps required/disabled in sync with the
+    // visible choice so a hidden select never blocks submission.
+    function syncFundingMode(el) {
+        var form = el.form;
+        if (!form) return;
+        var record = el.value === 'record';
+        var source = form.querySelector('[data-investment-funding-source]');
+        var note = form.querySelector('[data-investment-funding-note]');
+        var select = source ? source.querySelector('select[name="source_account_id"]') : null;
+        if (source) source.hidden = record;
+        if (note) note.hidden = !record;
+        if (select) {
+            select.disabled = record;
+            select.required = !record;
+        }
+    }
+    document.addEventListener('change', function (event) {
+        var el = event.target;
+        if (el && el.matches && el.matches('[data-investment-funding-mode]')) syncFundingMode(el);
+    });
+    document.querySelectorAll('[data-investment-funding-mode]:checked').forEach(syncFundingMode);
+
     document.querySelectorAll('[data-investment-money]').forEach(function (el) { formatField(el, null, true); });
+    document.querySelectorAll('[data-investment-dial-help]').forEach(function (el) {
+        el.textContent = 'Ao digitar, os dois últimos números são centavos (1644041 = R$ 16.440,41). Cole valores em reais, como 16.440,41.' + (el.dataset.investmentDialHelp === 'zero' ? ' Zero é permitido.' : ' O valor deve ser positivo.');
+    });
     document.querySelectorAll('[data-investment-search-control]').forEach(function (el) { el.hidden = false; });
     var failedPanel = document.querySelector('[data-investment-reopen]');
     if (failedPanel) openPanel(failedPanel, document.querySelector('[data-investment-open]'));

@@ -1,0 +1,67 @@
+{{define "investment-cancellation-preview"}}
+<div class="investment-cancellation-preview" data-investment-cancellation-preview>
+    {{if .Eligible}}
+    <h3>Prévia do cancelamento</h3>
+    <p>Confira as contas e o impacto financeiro antes de confirmar. A compensação é integral e acontece em uma única transação.</p>
+    <dl class="investment-cancellation-terms">
+        <div><dt>Investimento</dt><dd>{{.InvestmentName}}</dd></div>
+        <div><dt>Valor integral da compensação</dt><dd data-sensitive>{{.Amount}}</dd></div>
+        <div><dt>Data econômica</dt><dd>{{.EconomicDate}}</dd></div>
+        <div><dt>Conta de investimento (origem da compensação)</dt><dd>{{.InvestmentAccountName}}</dd></div>
+        <div><dt>Conta de origem (destino da compensação)</dt><dd>{{.OriginAccountName}}</dd></div>
+        <div><dt>Saldo do investimento</dt><dd><span data-sensitive>{{.InvestmentBefore}}</span> → <span data-sensitive>{{.InvestmentAfter}}</span></dd></div>
+        <div><dt>Saldo da conta de origem</dt><dd><span data-sensitive>{{.OriginBefore}}</span> → <span data-sensitive>{{.OriginAfter}}</span></dd></div>
+    </dl>
+    <p class="investment-note">O cancelamento preserva o histórico original e registra um recibo imutável. Nenhuma alteração é feita antes da confirmação.</p>
+    <form method="post" action="/investimentos/{{.InvestmentID}}/cancelamento" hx-post="/investimentos/{{.InvestmentID}}/cancelamento" hx-swap="none" hx-indicator="#htmx-indicator" data-investment-operation hx-sync="this:drop" hx-disabled-elt="find button[type='submit']" class="space-y-4">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="request_id" value="{{.RequestID}}">
+        <input type="hidden" name="reason" value="{{.Reason}}">
+        <input type="hidden" name="preview_token" value="{{.PreviewToken}}">
+        <input type="hidden" name="expected_source_version" value="{{.ExpectedSourceVersion}}">
+        <input type="hidden" name="expected_investment_version" value="{{.ExpectedInvestmentVersion}}">
+        <p role="alert" tabindex="-1" class="investment-feedback" data-investment-operation-feedback hidden></p>
+        <label class="investment-confirm-field" for="investment-cancel-confirm"><input type="checkbox" id="investment-cancel-confirm" required> Confirmo o cancelamento desta aplicação e a compensação integral entre as contas indicadas.</label>
+        <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm">Confirmar cancelamento</button>
+    </form>
+    {{else}}
+    <div class="investment-feedback" role="alert" tabindex="-1">
+        <p><strong>Cancelamento indisponível</strong></p>
+        {{if .Blockers}}<ul>{{range .Blockers}}<li>{{.}}</li>{{end}}</ul>{{else}}<p>Esta aplicação não atende aos requisitos para cancelamento.</p>{{end}}
+        <p>Nenhuma alteração financeira foi feita. Ajuste a situação e solicite uma nova prévia.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}
+{{define "investment-record-cancellation-preview"}}
+<div class="investment-cancellation-preview" data-investment-cancellation-preview>
+    {{if .Eligible}}
+    <h3>Prévia do cancelamento do registro</h3>
+    <p>Esta aplicação foi registrada sem transferência automática. O cancelamento é apenas administrativo.</p>
+    <dl class="investment-cancellation-terms">
+        <div><dt>Investimento</dt><dd>{{.InvestmentName}}</dd></div>
+        <div><dt>Valor do registro</dt><dd data-sensitive>{{.Amount}}</dd></div>
+        <div><dt>Data econômica</dt><dd>{{.EconomicDate}}</dd></div>
+        <div><dt>Conta de investimento</dt><dd>{{.InvestmentAccountName}}</dd></div>
+        <div><dt>Saldo da conta de investimento</dt><dd><span data-sensitive>{{.InvestmentBalance}}</span> (permanece)</dd></div>
+    </dl>
+    <p class="investment-note" role="alert"><strong>Nenhuma movimentação financeira será realizada.</strong> O registro original permanece no histórico e o recibo é imutável. Nenhuma alteração é feita antes da confirmação.</p>
+    <form method="post" action="/investimentos/{{.InvestmentID}}/cancelamento-registro" hx-post="/investimentos/{{.InvestmentID}}/cancelamento-registro" hx-swap="none" hx-indicator="#htmx-indicator" data-investment-operation hx-sync="this:drop" hx-disabled-elt="find button[type='submit']" class="space-y-4">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="request_id" value="{{.RequestID}}">
+        <input type="hidden" name="reason" value="{{.Reason}}">
+        <input type="hidden" name="preview_token" value="{{.PreviewToken}}">
+        <input type="hidden" name="expected_investment_version" value="{{.ExpectedInvestmentVersion}}">
+        <p role="alert" tabindex="-1" class="investment-feedback" data-investment-operation-feedback hidden></p>
+        <label class="investment-confirm-field" for="investment-cancel-record-confirm"><input type="checkbox" id="investment-cancel-record-confirm" required> Confirmo o cancelamento deste registro e que nenhuma movimentação financeira será realizada.</label>
+        <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm">Confirmar cancelamento do registro</button>
+    </form>
+    {{else}}
+    <div class="investment-feedback" role="alert" tabindex="-1">
+        <p><strong>Cancelamento do registro indisponível</strong></p>
+        {{if .Blockers}}<ul>{{range .Blockers}}<li>{{.}}</li>{{end}}</ul>{{else}}<p>Esta aplicação não atende aos requisitos para o cancelamento do registro.</p>{{end}}
+        <p>Nenhuma alteração financeira foi feita. Ajuste a situação e solicite uma nova prévia.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}

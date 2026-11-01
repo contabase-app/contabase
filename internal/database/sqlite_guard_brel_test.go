@@ -1,3 +1,5 @@
+//go:build contabase_legacy_fixtures
+
 package database
 
 import (
@@ -17,7 +19,10 @@ func TestBRelBothPoolsConnectionIntegrity(t *testing.T) {
 			mustExecOK(t, fixture, admissionTxNULLFixture, -1, "ws-1", "user-1", "acc-inv", nil, "EXPENSE", "2026-01-05", "2026-01-05")
 			admitDefault(t, fixture)
 			mustExecOK(t, fixture, `VACUUM INTO ?`, path)
-			p, err := OpenRuntimeDBs(path + "?_pragma=foreign_keys(0)&_pragma=defer_foreign_keys(1)")
+			if err := RegisterLegacyInvestmentFixture(path); err != nil {
+				t.Fatal(err)
+			}
+			p, err := OpenLegacyInvestmentFixtureDBs(path + "?_pragma=foreign_keys(0)&_pragma=defer_foreign_keys(1)")
 			if err != nil {
 				t.Fatal(err)
 			}

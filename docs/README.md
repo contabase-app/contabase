@@ -15,7 +15,7 @@ Se você está começando, leia nesta ordem:
 - [Instalação em LXC/VPS](instalacao-lxc-vps.md) — instalação sem Docker, com binário pronto e systemd.
 - [Instalação com Docker](instalacao-docker.md) — Docker Compose, Docker guiado e Docker manual com GHCR.
 - [Configuração](configuracao.md) — variáveis como `APP_BASE_URL`, `ALLOWED_HOSTS`, `TRUSTED_PROXIES`, `CONTABASE_ACCESS_MODE` e secrets.
-- [Investimentos](investimentos.md) — disponibilidade padrão, aplicações, posição conhecida e limites da candidata Beta 6.
+- [Investimentos](investimentos.md) — disponibilidade padrão, aplicações, posição conhecida e limites da Beta 7.
 - [Atualização](atualizacao.md) — como trocar de versão.
 - [Backup e restauração](backup-restauracao.md) — como proteger os dados.
 - [Solução de problemas](solucao-de-problemas.md) — erros comuns.
@@ -65,7 +65,8 @@ Não use `latest`.
 
 ## Notas de versão
 
-- [v1.0.0-beta.6 — preparação local](releases/v1.0.0-beta.6.md)
+- [v1.0.0-beta.7 — Beta pública publicada](releases/v1.0.0-beta.7.md)
+- [v1.0.0-beta.6 — Beta pública publicada](releases/v1.0.0-beta.6.md)
 - [v1.0.0-beta.5 — Beta pública publicada](releases/v1.0.0-beta.5.md)
 - [v1.0.0-beta.4 — Beta pública publicada](releases/v1.0.0-beta.4.md)
 - [v1.0.0-beta.3 — Beta pública publicada](releases/v1.0.0-beta.3.md)

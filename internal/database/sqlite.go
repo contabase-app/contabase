@@ -649,7 +649,14 @@ func prepareSQLiteOpenConfig(dbURL string, withImmediate bool) (sqliteOpenConfig
 		dbURL = paths.DefaultDatabaseURL()
 	}
 	normalized := normalizeSQLiteDSN(dbURL)
-	dbPath := sqliteFilePath(normalized)
+	dbPath, err := sqlite79Path(normalized)
+	if err != nil {
+		return sqliteOpenConfig{}, err
+	}
+	normalized, err = sqlite79OpeningDSN(normalized)
+	if err != nil {
+		return sqliteOpenConfig{}, err
+	}
 	if isSQLiteMemoryDSN(normalized) {
 		dbPath = ":memory:"
 	}
@@ -666,6 +673,11 @@ func prepareSQLiteOpenConfig(dbURL string, withImmediate bool) (sqliteOpenConfig
 		normalDSN:      normalized,
 		dbPath:         dbPath,
 		existedAtStart: sqliteDatabaseFileExists(dbPath),
+	}
+	if config.existedAtStart {
+		if err := validateSQLiteRuntimePath(config.dbPath); err != nil {
+			return sqliteOpenConfig{}, fmt.Errorf("SQLite read-only preflight: %w", err)
+		}
 	}
 	if withImmediate {
 		config.normalDSN = sqliteDSNWithTxLock(normalized, "deferred")
@@ -708,10 +720,16 @@ func openSQLitePool(dbURL string) (*sql.DB, error) {
 }
 
 func initializeSQLiteDatabase(db *sql.DB, config sqliteOpenConfig) error {
+	if _, err := sqlite79Inspect(db); err != nil {
+		return fmt.Errorf("SQLite pre-write revalidation: %w", err)
+	}
 	if config.existedAtStart {
 		if _, err := createPreMigrationBackup(db, config.dbPath); err != nil {
 			return fmt.Errorf("failed to create pre-migration backup: %w", err)
 		}
+	}
+	if _, err := sqlite79Inspect(db); err != nil {
+		return fmt.Errorf("SQLite revalidation after backup: %w", err)
 	}
 	if _, err := db.Exec(ddl); err != nil {
 		return fmt.Errorf("failed to execute DDL: %w", err)
@@ -743,7 +761,7 @@ func openSinglePool(dbURL string, jobHooks *sqliteRuntimeJobHooks) (*sql.DB, *sq
 		_ = db.Close()
 		return nil, nil, err
 	}
-	if err := publishSQLiteGuard(db, guard); err != nil {
+	if err := publishSQLiteRuntime79(db, guard); err != nil {
 		_ = db.Close()
 		return nil, nil, err
 	}
@@ -813,10 +831,10 @@ func openRuntimeDBs(dbURL string, hooks *sqliteRuntimeOpenTestHooks) (*RuntimeDB
 	if hooks != nil && hooks.afterInitialize != nil {
 		hooks.afterInitialize()
 	}
-	if err := publishSQLiteGuard(normalDB, normalGuard); err != nil {
+	if err := publishSQLiteRuntime79(normalDB, normalGuard); err != nil {
 		return nil, err
 	}
-	if err := publishSQLiteGuard(immediateDB, immediateGuard); err != nil {
+	if err := publishSQLiteRuntime79(immediateDB, immediateGuard); err != nil {
 		return nil, err
 	}
 	var beforeJobsStart func() error

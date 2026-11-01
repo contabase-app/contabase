@@ -268,6 +268,28 @@
 <div id="global-delete-scope-modal" data-contabase-overlay data-overlay-priority="219" data-overlay-close-method="hidden" class="fixed inset-0 z-[220] hidden flex-col items-center justify-center bg-black/50 backdrop-blur-sm p-4 dark:bg-black/70" role="dialog" aria-modal="true" aria-labelledby="global-delete-scope-title" data-onclick-self="cancelGlobalDelete">
     <div class="cb-modal w-full max-w-sm rounded-2xl p-5 shadow-xl"><p class="text-xs font-semibold uppercase tracking-wide text-[var(--cb-danger)]">Recorrência detectada</p><h3 id="global-delete-scope-title" class="mt-2 text-sm font-bold text-[var(--cb-text-main)]">Este lançamento faz parte de uma série.</h3><p class="mt-1 text-xs text-[var(--cb-text-muted)]">Como deseja excluir?</p><div class="mt-4 space-y-2"><label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3"><input type="radio" name="gdel_choice" value="single" checked class="mt-0.5 h-4 w-4"><span class="text-xs text-[var(--cb-text-main)]">Apenas este lançamento</span></label><label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3"><input type="radio" name="gdel_choice" value="future" class="mt-0.5 h-4 w-4"><span class="text-xs text-[var(--cb-text-main)]">Este e os próximos</span></label><label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3"><input type="radio" name="gdel_choice" value="all" class="mt-0.5 h-4 w-4"><span class="text-xs text-[var(--cb-text-main)]">Toda a série</span></label></div><div class="mt-4 flex items-center justify-end gap-2"><button type="button" class="cb-button cb-button-secondary btn-tactile h-9 rounded-xl px-3 text-xs font-semibold" data-onclick="cancelGlobalDelete">Cancelar</button><button type="button" data-onclick="submitGlobalDelete" class="cb-button btn-tactile h-9 rounded-xl bg-[var(--cb-danger)] px-4 text-xs font-bold text-white">Confirmar exclusão</button></div></div>
 </div>
+
+<div id="invoice-move-scope-modal" data-contabase-overlay data-overlay-priority="218" data-overlay-close="cancelInvoiceMoveScope" data-overlay-close-method="hidden" class="fixed inset-0 z-[220] hidden flex-col items-center justify-center bg-black/50 p-4 backdrop-blur-sm dark:bg-black/70" role="dialog" aria-modal="true" aria-labelledby="invoice-move-scope-title" aria-describedby="invoice-move-scope-description" data-onclick-self="cancelInvoiceMoveScope">
+    <div class="cb-modal w-full max-w-sm rounded-2xl p-5 shadow-xl">
+        <p class="text-xs font-semibold uppercase tracking-wide text-[var(--cb-accent)]">Parcelamento detectado</p>
+        <h3 id="invoice-move-scope-title" class="mt-2 text-sm font-bold text-[var(--cb-text-main)]">Mover parcela</h3>
+        <p id="invoice-move-scope-description" class="mt-1 text-xs text-[var(--cb-text-muted)]"><span data-invoice-move-scope-label></span>Escolha o alcance da movimentação para a próxima fatura.</p>
+        <div class="mt-4 space-y-2" role="radiogroup" aria-labelledby="invoice-move-scope-title">
+            <label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3">
+                <input type="radio" name="invoice_move_scope" value="single" checked class="mt-0.5 h-4 w-4">
+                <span class="text-xs text-[var(--cb-text-main)]"><strong class="block">Apenas esta parcela</strong><small class="text-[var(--cb-text-muted)]">Move somente a ocorrência escolhida.</small></span>
+            </label>
+            <label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3">
+                <input type="radio" name="invoice_move_scope" value="future" class="mt-0.5 h-4 w-4">
+                <span class="text-xs text-[var(--cb-text-main)]"><strong class="block">Esta e as futuras</strong><small class="text-[var(--cb-text-muted)]">Move esta parcela e as seguintes da mesma série.</small></span>
+            </label>
+        </div>
+        <div class="mt-4 flex items-center justify-end gap-2">
+            <button type="button" class="cb-button cb-button-secondary btn-tactile h-9 rounded-xl px-3 text-xs font-semibold" data-onclick="cancelInvoiceMoveScope">Cancelar</button>
+            <button type="button" id="invoice-move-scope-submit" data-onclick="submitInvoiceMoveScope" class="cb-button cb-button-primary btn-tactile h-9 rounded-xl px-4 text-xs font-bold">Mover</button>
+        </div>
+    </div>
+</div>
 {{end}}
 
 {{define "app-v2-document-end"}}

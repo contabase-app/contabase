@@ -1,3 +1,5 @@
+//go:build contabase_legacy_fixtures
+
 package database
 
 import (

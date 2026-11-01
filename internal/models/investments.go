@@ -76,6 +76,10 @@ type InvestmentPurchase struct {
 	IsInitial                                                  bool
 	CreatedBy                                                  string
 	CreatedAt                                                  int64
+	// Reversed reports a confirmed schema 80 individual reversal receipt.
+	// It is derived at read time and never scanned from or persisted on the
+	// row: the purchase itself stays immutable and in the history.
+	Reversed bool
 }
 
 // TaxEstimate carries an IR estimate with explicit availability. When

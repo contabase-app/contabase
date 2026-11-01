@@ -158,13 +158,17 @@ func TestFaturasIndexOmiteCabecalhoDuplicadoEEscondeDicaDeSwipeEmDesktop(t *test
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		".cb-v2-swipe-hint { display: none; }",
-		"@media (any-pointer: coarse)",
+		".cb-v2-swipe-hint {",
+		"display: none;",
+		"@media (max-width: 767px)",
 		".cb-v2-swipe-hint { display: flex; }",
 	} {
 		if !strings.Contains(string(styles), expected) {
-			t.Fatalf("missing touch-only swipe hint style %q", expected)
+			t.Fatalf("missing mobile-only swipe hint style %q", expected)
 		}
+	}
+	if strings.Contains(string(styles), "@media (any-pointer: coarse)") {
+		t.Fatal("swipe hint must be hidden on desktop and tablet, not only on fine pointers")
 	}
 }
 

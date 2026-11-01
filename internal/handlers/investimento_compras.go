@@ -23,6 +23,7 @@ func (h *InvestimentosHandler) HandleCompraInvestimento(w http.ResponseWriter, r
 		SourceAccountID: strings.TrimSpace(r.PostForm.Get("source_account_id")), RequestID: strings.TrimSpace(r.PostForm.Get("request_id")), PurchaseDate: strings.TrimSpace(r.PostForm.Get("purchase_date")), PrincipalCents: cents,
 		NoteReference: r.PostForm.Get("note_reference"), Kind: r.PostForm.Get("kind"), Institution: r.PostForm.Get("institution"),
 		TaxRegime: strings.TrimSpace(r.PostForm.Get("tax_regime")), ConditionsNote: r.PostForm.Get("conditions_note")}
+	applyInvestmentFundingMode(r, &input.SourceAccountID)
 	if maturity := strings.TrimSpace(r.PostForm.Get("maturity_date")); maturity != "" {
 		input.MaturityDate = &maturity
 	}
@@ -43,7 +44,7 @@ func (h *InvestimentosHandler) HandleCompraInvestimento(w http.ResponseWriter, r
 			return
 		}
 		form := investmentFormData{Action: "/investimentos/" + id + "/compras", CSRFToken: h.CSRFToken, RequestID: input.RequestID, Error: err.Error(),
-			SourceAccountID: input.SourceAccountID, PrincipalInput: r.PostForm.Get("principal_amount"), NoteReference: input.NoteReference,
+			SourceAccountID: input.SourceAccountID, FundingMode: r.PostForm.Get("funding_mode"), PrincipalInput: r.PostForm.Get("principal_amount"), NoteReference: input.NoteReference,
 			Investment: models.Investment{ID: id, AppliedDate: input.PurchaseDate, Kind: input.Kind, Institution: input.Institution, TaxRegime: input.TaxRegime, MaturityDate: input.MaturityDate, YieldNote: input.ConditionsNote}}
 		status := http.StatusBadRequest
 		if errors.Is(err, services.ErrInvestmentConflict) {

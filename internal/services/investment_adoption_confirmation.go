@@ -447,6 +447,11 @@ func confirmInvestmentAdoptionTx(ctx context.Context, tx *sql.Tx, in ConfirmInve
 	if archived {
 		return empty, ErrInvestmentInvalidStatus
 	}
+	// Schema 79 keeps the account usable but forbids adoption declarations
+	// about the investment account of an already cancelled lot.
+	if err = rejectCancelledAdoptionAccountTx(ctx, tx, in.WorkspaceID, in.AccountID); err != nil {
+		return empty, err
+	}
 	c, err := adoptionConfirmationCandidateTx(ctx, tx, in.WorkspaceID, in.AccountID, in.CutDate)
 	if err != nil {
 		return empty, err

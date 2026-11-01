@@ -498,6 +498,28 @@ func createLegacyBootstrapRestoreCandidate(t *testing.T, dbPath string) {
 			t.Fatalf("seed raw legacy db: %v", err)
 		}
 	}
+	frozen, err := os.ReadFile("../../internal/database/testdata/investment_schema77.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Add missing bootstrap tables without changing any historical definition.
+	baseline := map[string]bool{}
+	for _, name := range []string{"users", "workspaces", "workspace_members", "accounts", "credit_cards", "categories", "invoices", "transactions", "boxes", "box_virtual_ledger", "recurring_rules", "sessions", "contacts"} {
+		baseline[name] = true
+	}
+	for _, stmt := range strings.Split(string(frozen), ";") {
+		stmt = strings.TrimSpace(stmt)
+		if start := strings.Index(stmt, "CREATE TABLE "); start >= 0 && !strings.Contains(stmt[:start], "CREATE TRIGGER") {
+			name := strings.Fields(stmt[start:])[2]
+			if !baseline[name] {
+				continue
+			}
+			stmt = strings.Replace(stmt[start:], "CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", 1)
+			if _, err := db.Exec(stmt); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	if err := db.Close(); err != nil {
 		t.Fatalf("close raw legacy db: %v", err)
 	}

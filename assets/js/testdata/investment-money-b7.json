@@ -1,0 +1,8 @@
+[
+  {"typed":"1", "display":"R$ 0,01", "cents":1},
+  {"typed":"12", "display":"R$ 0,12", "cents":12},
+  {"typed":"123", "display":"R$ 1,23", "cents":123},
+  {"typed":"1234", "display":"R$ 12,34", "cents":1234},
+  {"typed":"1644041", "display":"R$ 16.440,41", "cents":1644041},
+  {"typed":"3573922", "display":"R$ 35.739,22", "cents":3573922}
+]

@@ -17,7 +17,7 @@ import (
 
 // A real loopback HTTP listener over a disposable schema-77 database. Uses the
 // actual investment routes, session cookies, CSRF guard and Immediate writer.
-func TestInvestimentosBeta6Schema77HTTPSmoke(t *testing.T) {
+func TestInvestimentosBeta7Schema79HTTPSmoke(t *testing.T) {
 	h := newInvestimentosI22Harness(t)
 	for _, flag := range []string{"CONTABASE_FEATURE_INVESTMENTS", "CONTABASE_FEATURE_INVESTMENT_OPERATIONS", "CONTABASE_FEATURE_INVESTMENT_SETTLEMENTS", "CONTABASE_FEATURE_INVESTMENT_SETTLEMENT_EFFECTS"} {
 		t.Setenv(flag, "")
@@ -120,14 +120,17 @@ func TestInvestimentosBeta6Schema77HTTPSmoke(t *testing.T) {
 	mustStatus(404, "POST", path, foreign, purchase, true)
 	mustStatus(403, "POST", path, regular, purchase, true)
 	mustStatus(403, "POST", path, h.admin, purchase, false)
-	// Neither omitting funding from an already funded inventory nor using an
-	// unhomologated exit may change money or manufacture patrimonial coverage.
-	mustStatus(409, "POST", path, h.admin, investmentI21Form(), true)
+	// F1: omitting the origin on a funded inventory records an explicit
+	// record-only purchase — history only. Neither money nor patrimonial
+	// coverage changes, and unhomologated exits stay refused.
+	mustStatus(303, "POST", path, h.admin, investmentI21Form(), true)
+	balances(300000, 700000)
+	before = o1aSnapshot(t, h, "accounts", "transactions", "investments", "investment_purchases")
 	mustStatus(409, "POST", "/investimentos/"+id+"/resgatar", h.admin, url.Values{"redeemed_date": {"2026-04-01"}, "final_amount": {"7000,00"}}, true)
 	mustStatus(409, "POST", "/investimentos/"+id+"/retiradas", h.admin, investmentI22Form("initial:"+id), true)
 	mustStatus(404, "POST", "/investimentos/"+id+"/financeiro/retiradas/nope/liquidacao/aplicar", h.admin, url.Values{}, true)
 	body, _ = mustStatus(200, "GET", "/investimentos/"+id, h.admin, nil, false)
-	for _, want := range []string{"R$ 7.000,00", "2 compras", "Corrente A", "Origem da aplicação", "Consultar lançamento"} {
+	for _, want := range []string{"R$ 9.000,00", "3 compras", "Corrente A", "Origem da aplicação", "Consultar lançamento", "Transferência automática", "Sem movimentação automática"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("history missing %s", want)
 		}
@@ -164,8 +167,8 @@ func TestInvestimentosBeta6Schema77HTTPSmoke(t *testing.T) {
 		t.Fatal("generic mutations changed funded inventory")
 	}
 	var version int
-	if err := h.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 77 {
+	if err := h.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 82 {
 		t.Fatal("wrong schema", version, err)
 	}
-	t.Log("HTTP_SMOKE schema=77 checking=1000000->500000->300000 investment=0->500000->700000 purchases=2 transfers=2 same_day=yes replay=exact RBAC=403 CSRF=403 workspace=404 funded_exits=409 generic_mutations=409")
+	t.Log("HTTP_SMOKE schema=82 checking=1000000->500000->300000 investment=0->500000->700000 purchases=3 record_only=1 transfers=2 same_day=yes replay=exact RBAC=403 CSRF=403 workspace=404 funded_exits=409 generic_mutations=409")
 }

@@ -276,7 +276,7 @@ func TestOpenRuntimeDBsPartialFailuresClosePoolsAndStartNoJobs(t *testing.T) {
 		}
 	})
 
-	t.Run("migration execution", func(t *testing.T) {
+	t.Run("read-only preflight", func(t *testing.T) {
 		dataDir := t.TempDir()
 		t.Setenv("DATA_DIR", dataDir)
 		dbPath := filepath.Join(dataDir, "migration.db")
@@ -302,8 +302,8 @@ func TestOpenRuntimeDBsPartialFailuresClosePoolsAndStartNoJobs(t *testing.T) {
 		if err == nil || owner != nil || starts != 0 {
 			t.Fatalf("migration failure owner=%v err=%v starts=%d", owner, err, starts)
 		}
-		if normal == nil || normal.Ping() == nil || immediate == nil || immediate.Ping() == nil {
-			t.Fatal("both pools were not closed after migration failure")
+		if normal != nil || immediate != nil {
+			t.Fatal("invalid source reached operational pools before read-only preflight")
 		}
 	})
 

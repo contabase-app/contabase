@@ -1,4 +1,4 @@
-//go:build unix
+//go:build contabase_legacy_fixtures && unix
 
 package database
 

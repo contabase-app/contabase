@@ -253,7 +253,7 @@ func TestMigration59CanonicalUpgradeZeroBackfillAndReopen(t *testing.T) {
 		t.Fatalf("seed canonical v58 data: %v", err)
 	}
 
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 77); err != nil {
 		t.Fatalf("upgrade canonical v58 to v59: %v", err)
 	}
 	assertMigrationApplied(t, db, 59)
@@ -280,7 +280,7 @@ func TestMigration59CanonicalUpgradeZeroBackfillAndReopen(t *testing.T) {
 	}
 	defer reopened.Close()
 	reopened.SetMaxOpenConns(1)
-	if err := runMigrations(reopened); err != nil {
+	if err := runMigrationsThroughVersionForTest(reopened, 77); err != nil {
 		t.Fatalf("rerun migrations on v59 database: %v", err)
 	}
 	assertMigration59SchemaCanonical(t, reopened)
@@ -326,7 +326,7 @@ func TestMigration59PreflightIsWorkspaceScoped(t *testing.T) {
 		t.Fatalf("seed cross-workspace terminal identities: %v", err)
 	}
 
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 77); err != nil {
 		t.Fatalf("workspace-isolated v59 upgrade: %v", err)
 	}
 	assertMigrationApplied(t, db, 59)
@@ -593,7 +593,7 @@ func TestMigration49RepairsBusinessCanonicalCategories(t *testing.T) {
 	insertReseedTransaction(t, db, "tx-mig49-invest-old", "ws-mig49-business", "mig49-invest-old")
 	insertReseedCategory(t, db, "mig49-personal-custom", "ws-mig49-personal", "Categoria Personal", "EXPENSE", "Estilo de Vida", "")
 
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 77); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
 	assertMigrationApplied(t, db, 49)
@@ -612,7 +612,7 @@ func TestMigration49RepairsBusinessCanonicalCategories(t *testing.T) {
 	}
 
 	countAfterFirstRun := countReseedCategories(t, db, "ws-mig49-business")
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 77); err != nil {
 		t.Fatalf("rerun migrations: %v", err)
 	}
 	countAfterSecondRun := countReseedCategories(t, db, "ws-mig49-business")
@@ -864,6 +864,7 @@ func TestOpenCreatesPreMigrationBackupForExistingFileDatabase(t *testing.T) {
 	if _, err := rawDB.Exec(`INSERT INTO legacy_marker (note) VALUES ('before migrations')`); err != nil {
 		t.Fatalf("insert legacy marker: %v", err)
 	}
+	completeHistoricalBaselineForTest(t, rawDB)
 	if err := rawDB.Close(); err != nil {
 		t.Fatalf("close raw existing database: %v", err)
 	}
@@ -1034,6 +1035,7 @@ func TestMigration22UpdatesInvoiceReferenceAfterClosingRows(t *testing.T) {
 }
 
 func TestOpenMigratesLegacyDatabaseAndReopenIsIdempotent(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
 	dbPath := filepath.Join(t.TempDir(), "legacy.db")
 	rawDB, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -1133,6 +1135,7 @@ func TestOpenMigratesLegacyDatabaseAndReopenIsIdempotent(t *testing.T) {
 			t.Fatalf("seed legacy DDL: %v", err)
 		}
 	}
+	completeHistoricalBaselineForTest(t, rawDB)
 	if err := rawDB.Close(); err != nil {
 		t.Fatalf("close raw legacy database: %v", err)
 	}
@@ -1273,6 +1276,7 @@ func TestMigration28RegistersWhenCustomPermissionsAlreadyExists(t *testing.T) {
 }
 
 func TestOpenMigratesLegacyContactsWithoutCustomClientID(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
 	dbPath := filepath.Join(t.TempDir(), "legacy-contacts.db")
 	rawDB, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -1301,6 +1305,7 @@ func TestOpenMigratesLegacyContactsWithoutCustomClientID(t *testing.T) {
 			t.Fatalf("seed legacy contacts DDL: %v", err)
 		}
 	}
+	completeHistoricalBaselineForTest(t, rawDB)
 	if err := rawDB.Close(); err != nil {
 		t.Fatalf("close raw legacy contacts database: %v", err)
 	}
@@ -2043,7 +2048,7 @@ func TestMigration58PreservesExistingInvoicePaymentAndIsIdempotent(t *testing.T)
 		t.Fatalf("seed existing invoice payment: %v", err)
 	}
 
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 77); err != nil {
 		t.Fatalf("run migration 58: %v", err)
 	}
 	assertMigrationApplied(t, db, 58)
@@ -2080,7 +2085,7 @@ func TestMigration58PreservesExistingInvoicePaymentAndIsIdempotent(t *testing.T)
 	}
 	assertIntColumnValue(t, db, "invoices", "paid_amount", "id = 'invoice-a'", 4321)
 
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 77); err != nil {
 		t.Fatalf("rerun migrations: %v", err)
 	}
 	assertMigrationApplied(t, db, 58)
@@ -2104,7 +2109,7 @@ func TestMigration58EnforcesWorkspacePaymentIdentities(t *testing.T) {
 			t.Fatalf("seed identity fixture: %v", err)
 		}
 	}
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 77); err != nil {
 		t.Fatalf("run migration 58: %v", err)
 	}
 
@@ -3166,7 +3171,7 @@ func TestMigration54RecurringOccurrenceSkips(t *testing.T) {
 			t.Fatalf("open v53 for migration: %v", err)
 		}
 		opened.SetMaxOpenConns(1)
-		if err := runMigrations(opened); err != nil {
+		if err := runMigrationsThroughVersionForTest(opened, 77); err != nil {
 			t.Fatalf("upgrade v53 to v54: %v", err)
 		}
 		assertMigrationApplied(t, opened, 54)
@@ -3188,12 +3193,12 @@ func TestMigration54RecurringOccurrenceSkips(t *testing.T) {
 		}
 		defer reopened.Close()
 		reopened.SetMaxOpenConns(1)
-		if err := runMigrations(reopened); err != nil {
+		if err := runMigrationsThroughVersionForTest(reopened, 77); err != nil {
 			t.Fatalf("rerun migrations after reopen: %v", err)
 		}
 		assertMigrationApplied(t, reopened, 54)
 		assertSchema(t, reopened)
-		if err := runMigrations(reopened); err != nil {
+		if err := runMigrationsThroughVersionForTest(reopened, 77); err != nil {
 			t.Fatalf("repeat migrations: %v", err)
 		}
 	})
@@ -3418,7 +3423,7 @@ func TestMigration54RecurringOccurrenceSkips(t *testing.T) {
 			t.Fatalf("reopen: %v", err)
 		}
 		opened.SetMaxOpenConns(1)
-		migrationErr := runMigrations(opened)
+		migrationErr := runMigrationsThroughVersionForTest(opened, 77)
 		opened.Close()
 		if migrationErr == nil {
 			t.Fatal("migration 54 should reject table with trigger")
@@ -3486,7 +3491,7 @@ func TestMigration54RecurringOccurrenceSkips(t *testing.T) {
 			t.Fatalf("open for migration: %v", err)
 		}
 		opened.SetMaxOpenConns(1)
-		if err := runMigrations(opened); err == nil {
+		if err := runMigrationsThroughVersionForTest(opened, 77); err == nil {
 			opened.Close()
 			t.Fatal("migration 54 should reject incompatible pre-existing table")
 		}
@@ -3776,7 +3781,7 @@ func TestMigration54RecurringOccurrenceSkips(t *testing.T) {
 			t.Fatalf("reopen: %v", err)
 		}
 		opened.SetMaxOpenConns(1)
-		migrationErr := runMigrations(opened)
+		migrationErr := runMigrationsThroughVersionForTest(opened, 77)
 		opened.Close()
 		if migrationErr == nil {
 			t.Fatal("migration 54 should reject table with BEFORE trigger")
@@ -3811,7 +3816,7 @@ func TestMigration54RecurringOccurrenceSkips(t *testing.T) {
 			t.Fatalf("reopen: %v", err)
 		}
 		opened.SetMaxOpenConns(1)
-		migrationErr := runMigrations(opened)
+		migrationErr := runMigrationsThroughVersionForTest(opened, 77)
 		opened.Close()
 		if migrationErr == nil {
 			t.Fatal("migration 54 should reject table with AFTER trigger")
@@ -3845,7 +3850,7 @@ func TestMigration54RecurringOccurrenceSkips(t *testing.T) {
 			t.Fatalf("reopen: %v", err)
 		}
 		opened.SetMaxOpenConns(1)
-		migrationErr := runMigrations(opened)
+		migrationErr := runMigrationsThroughVersionForTest(opened, 77)
 		opened.Close()
 		if migrationErr == nil {
 			t.Fatal("migration 54 should reject table with partial index")
@@ -3879,7 +3884,7 @@ func TestMigration54RecurringOccurrenceSkips(t *testing.T) {
 			t.Fatalf("reopen: %v", err)
 		}
 		opened.SetMaxOpenConns(1)
-		migrationErr := runMigrations(opened)
+		migrationErr := runMigrationsThroughVersionForTest(opened, 77)
 		opened.Close()
 		if migrationErr == nil {
 			t.Fatal("migration 54 should reject table with expression index")
@@ -3917,7 +3922,7 @@ func TestMigration54RecurringOccurrenceSkips(t *testing.T) {
 			t.Fatalf("reopen: %v", err)
 		}
 		opened.SetMaxOpenConns(1)
-		migrationErr := runMigrations(opened)
+		migrationErr := runMigrationsThroughVersionForTest(opened, 77)
 		opened.Close()
 		if migrationErr == nil {
 			t.Fatal("migration 54 should reject table with extra generated column")
@@ -4186,7 +4191,10 @@ func TestMigration53ActiveLeafInvariantValidAndIncompatibleChain(t *testing.T) {
 			db.Close()
 			t.Fatalf("execute ddl fixture: %v", err)
 		}
-		seedAppliedMigrationsBefore(t, db, 53)
+		seedAppliedMigrationsBefore(t, db, 1)
+		if err := runMigrationsThroughVersionForTest(db, 52); err != nil {
+			t.Fatal(err)
+		}
 
 		for _, s := range []string{
 			`INSERT OR IGNORE INTO users (id, name, email, password_hash) VALUES ('u-mig53', 'User Mig53', 'mig53@e.com', 'hash')`,

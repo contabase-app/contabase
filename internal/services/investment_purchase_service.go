@@ -114,6 +114,11 @@ func CreateInvestmentPurchase(ctx context.Context, db *sql.DB, in CreateInvestme
 	if !errors.Is(err, sql.ErrNoRows) {
 		return models.InvestmentPurchase{}, err
 	}
+	// A later purchase of a cancelled lot is a child write blocked by schema
+	// 79; refuse it here with the typed reason while the lot still reads ATIVA.
+	if err := rejectCancelledInvestmentTx(ctx, tx, in.WorkspaceID, in.InvestmentID); err != nil {
+		return models.InvestmentPurchase{}, err
+	}
 	if status != models.InvestmentStatusAtiva || archived.Valid {
 		return models.InvestmentPurchase{}, ErrInvestmentInvalidStatus
 	}
@@ -143,9 +148,11 @@ func CreateInvestmentPurchase(ctx context.Context, db *sql.DB, in CreateInvestme
 		if err := createInvestmentPurchaseTransferTx(ctx, tx, in.WorkspaceID, p.ID, in.SourceAccountID, account, in.CreatedBy, p.PurchaseDate, p.PrincipalCents); err != nil {
 			return models.InvestmentPurchase{}, err
 		}
-	} else if err := rejectFundedInvestmentTx(ctx, tx, in.WorkspaceID, in.InvestmentID); err != nil {
-		return models.InvestmentPurchase{}, err
 	}
+	// An empty source is the explicit record-only representation: the money is
+	// already in the investment account, so no receipt is created and no
+	// balance moves — on funded lots too. Every other funded hold (withdrawal,
+	// redeem, adoption, settlement) keeps calling rejectFundedInvestmentTx.
 	if err := tx.Commit(); err != nil {
 		return models.InvestmentPurchase{}, &InvestmentCommitError{err: err}
 	}
@@ -206,6 +213,20 @@ func GetInvestmentPurchaseDetail(ctx context.Context, db *sql.DB, workspace, id 
 	if err != nil {
 		return InvestmentDetail{}, err
 	}
+	reversed, err := readInvestmentReversalPurchaseIDsTx(ctx, tx, workspace, id)
+	if err != nil {
+		return InvestmentDetail{}, err
+	}
+	// Reversed purchases stay in the history but never enter the active
+	// principal: the pure builder and the variation basis only see the
+	// purchases still in force.
+	active := make([]models.InvestmentPurchase, 0, len(purchases))
+	for i := range purchases {
+		purchases[i].Reversed = reversed[purchases[i].ID]
+		if !purchases[i].Reversed {
+			active = append(active, purchases[i])
+		}
+	}
 	detail, err := BuildInvestmentPurchaseDetail(inv, valuations, purchases)
 	if err != nil {
 		return InvestmentDetail{}, err
@@ -217,7 +238,7 @@ func GetInvestmentPurchaseDetail(ctx context.Context, db *sql.DB, workspace, id 
 	if err := enrichInvestmentWithdrawals(&detail, history); err != nil {
 		return InvestmentDetail{}, err
 	}
-	detail.AdjustedVariation = investments.AdjustedPositionVariation(inv, valuations, purchases, history)
+	detail.AdjustedVariation = investments.AdjustedPositionVariation(inv, valuations, active, history)
 	detail.PurchaseTransfers, err = readInvestmentPurchaseTransfersTx(ctx, tx, workspace, id, inv.AccountID)
 	if err != nil {
 		return InvestmentDetail{}, err
@@ -239,6 +260,11 @@ func BuildInvestmentPurchaseDetail(inv models.Investment, valuations []models.In
 		}
 		if _, err := civildate.ParseCivilDateInput(p.PurchaseDate); err != nil {
 			return InvestmentDetail{}, err
+		}
+		// A reversed purchase keeps its validated history row but leaves the
+		// active principal: totals, counts and staleness ignore it.
+		if p.Reversed {
+			continue
 		}
 		if p.IsInitial {
 			initials++
@@ -277,9 +303,20 @@ func BuildInvestmentPurchaseDetail(inv models.Investment, valuations []models.In
 }
 
 func GetWorkspaceInvestmentPurchaseTotals(ctx context.Context, db *sql.DB, workspace string) (map[string]InvestmentPurchaseTotal, error) {
-	rows, err := db.QueryContext(ctx, `SELECT investment_id, purchase_date, principal_cents FROM investment_purchases WHERE workspace_id = ? ORDER BY investment_id, purchase_date, id`, workspace)
+	// The list consolidation mirrors the detail totals: reversed purchases
+	// leave the active principal. A pre-80 database has no reversal by
+	// construction and falls back to the plain scan.
+	rows, err := db.QueryContext(ctx, `SELECT p.investment_id, p.purchase_date, p.principal_cents FROM investment_purchases p
+ WHERE p.workspace_id = ? AND NOT EXISTS(SELECT 1 FROM investment_purchase_reversals r WHERE r.workspace_id = p.workspace_id AND r.purchase_id = p.id)
+ ORDER BY p.investment_id, p.purchase_date, p.id`, workspace)
 	if err != nil {
-		return nil, err
+		if !IsMissingInvestmentPurchaseReversalsTable(err) {
+			return nil, err
+		}
+		rows, err = db.QueryContext(ctx, `SELECT investment_id, purchase_date, principal_cents FROM investment_purchases WHERE workspace_id = ? ORDER BY investment_id, purchase_date, id`, workspace)
+		if err != nil {
+			return nil, err
+		}
 	}
 	defer rows.Close()
 	totals := make(map[string]InvestmentPurchaseTotal)

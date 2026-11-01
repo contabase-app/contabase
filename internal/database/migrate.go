@@ -1919,8 +1919,12 @@ END`,
 	{version: 75, name: "investment_settlement_financial", up: migrateInvestmentSettlementFinancial},
 	{version: 76, name: "investment_result_classification", up: migrateInvestmentClassification},
 	{version: 77, name: "investment_adoption_confirmation", up: migrateInvestmentAdoption},
+	{version: 79, name: "investment_cancellation", up: migrateInvestmentCancellations},
+	{version: 80, name: "investment_purchase_reversal", up: migrateInvestmentPurchaseReversals},
+	{version: 81, name: "investment_record_cancellation", up: migrateInvestmentRecordCancellations},
+	{version: 82, name: "investment_purchase_reversal_operability", up: migrateInvestmentPurchaseReversals82},
 	// Experimental migration 78 is not homologated. Apply it explicitly in
-	// candidate tests only; normal startup must remain at schema 77.
+	// candidate tests only; normal startup skips it and applies schema 79.
 }
 
 func migrateTransactionRefunds(tx *sql.Tx) error {

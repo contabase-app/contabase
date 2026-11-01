@@ -10,14 +10,16 @@
         <header class="investment-heading">
             <div>
                 <div class="investment-header-top">
-                    <a href="/investimentos" class="investment-back">← Investimentos</a>
+                    <a href="{{if .BackURL}}{{.BackURL}}{{else}}/investimentos{{end}}" class="investment-back">← Investimentos</a>
                     <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-privacy-toggle aria-pressed="false" aria-label="Ocultar valores financeiros" data-tooltip-hover data-tooltip-text="Ocultar valores financeiros"><i data-lucide="eye" data-privacy-icon aria-hidden="true"></i></button>
                 </div>
                 <h1>{{.Detail.Investment.Name}}</h1>
-                <p>{{with .Detail.Investment.Institution}}{{.}} · {{end}}{{.Detail.Investment.Kind}} <span class="investment-status {{if and (eq .Detail.Investment.Status "ATIVA") (not .Detail.Investment.ArchivedAt)}}is-active{{end}}">{{if .Detail.Investment.ArchivedAt}}Arquivada{{else if eq .Detail.Investment.Status "ATIVA"}}Ativa{{else}}Encerrada{{end}}</span></p>
+                <p>{{with .Detail.Investment.Institution}}{{.}} · {{end}}{{.Detail.Investment.Kind}} <span class="investment-status {{if .Cancelled}}is-cancelled{{else if and (eq .Detail.Investment.Status "ATIVA") (not .Detail.Investment.ArchivedAt)}}is-active{{end}}">{{if .Cancelled}}Cancelada{{else if .Detail.Investment.ArchivedAt}}Arquivada{{else if eq .Detail.Investment.Status "ATIVA"}}Ativa{{else}}Encerrada{{end}}</span></p>
+                <p class="investment-account-context">Conta de investimento: <strong>{{.InvestmentAccountName}}</strong>{{if .InvestmentAccountArchived}} · arquivada{{end}}</p>
             </div>
         </header>
         {{if .Success}}<p role="status" class="investment-note is-confirm">{{.Success}}</p>{{end}}
+        {{if .Cancelled}}{{with .PurchaseForm.Error}}<p role="alert" class="investment-feedback">{{.}}</p>{{end}}{{with .WithdrawalForm.Error}}<p role="alert" class="investment-feedback">{{.}}</p>{{end}}{{end}}
         <section aria-label="Resumo financeiro do investimento">
             <dl class="investment-metrics investment-detail-metrics">
                 <div><dt>Total de compras realizadas</dt><dd data-sensitive>{{.Principal}}</dd><p>{{.Detail.PurchaseCount}} {{if eq .Detail.PurchaseCount 1}}compra{{else}}compras{{end}} · {{.Detail.MaintainedPurchaseCount}} em carteira · Inicial em <time datetime="{{.Detail.Investment.AppliedDate}}">{{.AppliedDateLabel}}</time></p></div>
@@ -25,16 +27,48 @@
                 <div>{{if .Detail.Withdrawals}}<dt>Total recebido em retiradas</dt><dd data-sensitive>{{.TotalWithdrawn}}</dd><p>Recebimentos registrados, sem somar à posição</p>{{else}}<dt>Diferença patrimonial</dt><dd class="{{.ReturnTone}}" data-sensitive>{{.GrossYield}}</dd><p>{{if .Detail.DifferenceAvailable}}Em relação ao total de compras{{else if .Detail.PositionStale}}A posição é anterior à última compra{{else}}Indisponível{{end}}</p>{{end}}</div>
                 <div><dt>Vencimento</dt><dd>{{if .MaturityDateLabel}}<time datetime="{{.MaturityDateISO}}">{{.MaturityDateLabel}}</time>{{else}}Sem data{{end}}</dd><p>{{.MaturityLabel}}</p></div>
             </dl>
-            <p class="investment-note">Valores informados manualmente. A diferença patrimonial não representa lucro realizado, retorno líquido ou rentabilidade. {{if .Funded}}Aplicações financeiras transferem o valor da origem para a conta de investimento. O total aplicado não é uma cotação de mercado.{{else}}Registros anteriores sem transferência vinculada não movimentam o saldo das contas.{{end}}</p>
+            <p class="investment-note">Valores informados manualmente. A diferença patrimonial não representa lucro realizado, retorno líquido ou rentabilidade. {{if .Funded}}Compras com transferência automática movem o valor da origem para a conta de investimento; compras sem movimentação automática não alteram o saldo das contas. O total aplicado não é uma cotação de mercado.{{else}}Registros anteriores sem transferência vinculada não movimentam o saldo das contas.{{end}}</p>
         </section>
         {{if eq .Detail.MaintainedPurchaseCount 0}}<p class="investment-note">Nenhuma compra atualmente em carteira</p>{{end}}
-        {{if eq .Detail.Investment.Status "ATIVA"}}
+        {{if .Cancelled}}
+        <section class="cb-panel investment-history investment-cancellation-receipt" aria-labelledby="investment-cancellation-title">
+            <h2 id="investment-cancellation-title">Cancelamento confirmado</h2>
+            {{if .CancellationRecord}}
+            <p>O recibo abaixo é imutável e registra o cancelamento administrativo do registro. Nenhuma movimentação financeira foi realizada e o histórico original desta aplicação foi preservado.</p>
+            <dl class="investment-cancellation-terms">
+                <div><dt>Valor do registro cancelado</dt><dd data-sensitive>{{.Cancellation.Amount}}</dd></div>
+                <div><dt>Data econômica</dt><dd><time datetime="{{.Cancellation.EconomicDateISO}}">{{.Cancellation.EconomicDate}}</time></dd></div>
+                <div><dt>Confirmado em</dt><dd>{{.Cancellation.ConfirmedAt}}</dd></div>
+                <div><dt>Motivo</dt><dd>{{.Cancellation.Reason}}</dd></div>
+                <div><dt>Conta de investimento</dt><dd>{{.Cancellation.InvestmentAccountName}}</dd></div>
+                <div><dt>Saldo da conta de investimento</dt><dd><span data-sensitive>{{.Cancellation.InvestmentBefore}}</span> (permanece inalterado)</dd></div>
+            </dl>
+            <p><strong>Nenhuma movimentação financeira foi realizada.</strong> <a class="underline" href="/investimentos/{{.Detail.Investment.ID}}/cancelamento">Consultar recibo</a></p>
+            {{else}}
+            <p>O recibo abaixo é imutável e registra a compensação integral entre as contas. O histórico original desta aplicação foi preservado.</p>
+            <dl class="investment-cancellation-terms">
+                <div><dt>Valor integral da compensação</dt><dd data-sensitive>{{.Cancellation.Amount}}</dd></div>
+                <div><dt>Data econômica</dt><dd><time datetime="{{.Cancellation.EconomicDateISO}}">{{.Cancellation.EconomicDate}}</time></dd></div>
+                <div><dt>Confirmado em</dt><dd>{{.Cancellation.ConfirmedAt}}</dd></div>
+                <div><dt>Motivo</dt><dd>{{.Cancellation.Reason}}</dd></div>
+                <div><dt>Conta de investimento (origem da compensação)</dt><dd>{{.Cancellation.InvestmentAccountName}}</dd></div>
+                <div><dt>Conta de origem (destino da compensação)</dt><dd>{{.Cancellation.OriginAccountName}}</dd></div>
+                <div><dt>Saldo do investimento</dt><dd><span data-sensitive>{{.Cancellation.InvestmentBefore}}</span> → <span data-sensitive>{{.Cancellation.InvestmentAfter}}</span></dd></div>
+                <div><dt>Saldo da conta de origem</dt><dd><span data-sensitive>{{.Cancellation.OriginBefore}}</span> → <span data-sensitive>{{.Cancellation.OriginAfter}}</span></dd></div>
+            </dl>
+            <p><a class="underline" href="/transacoes/{{.Cancellation.CompensationTransactionID}}">Consultar transferência compensatória</a> · <a class="underline" href="/investimentos/{{.Detail.Investment.ID}}/cancelamento">Consultar recibo</a></p>
+            {{end}}
+        </section>
+        {{end}}
+        {{if and (eq .Detail.Investment.Status "ATIVA") (not .Cancelled)}}
         <nav class="investment-actions" aria-label="Ações do investimento">
             {{if not .Detail.Investment.ArchivedAt}}<button type="button" class="cb-button cb-button-primary" data-investment-open="investment-purchase-panel"><span aria-hidden="true">+</span> Reaplicar</button>{{end}}
             {{if and (not .Funded) (not .Detail.Investment.ArchivedAt) .WithdrawalForm.Options}}<button type="button" class="cb-button cb-button-secondary" data-investment-open="investment-withdrawal-panel">Retirar</button>{{end}}
             <button type="button" class="cb-button cb-button-primary" data-investment-open="investment-position-panel"><span aria-hidden="true">＋</span> Atualizar posição</button>
             <button type="button" class="cb-button cb-button-secondary" data-investment-open="investment-edit-panel">Editar dados</button>
             {{if not .Funded}}<button type="button" class="cb-button cb-button-ghost investment-action-admin" data-investment-open="investment-redeem-panel">Finalizar acompanhamento</button>{{end}}
+            {{if .CancellationEligible}}<button type="button" class="cb-button cb-button-secondary" data-investment-open="investment-cancel-panel">Cancelar aplicação</button>{{else if .CancellationBlockers}}<div class="investment-cancel-unavailable" data-investment-cancel-unavailable><button type="button" class="cb-button cb-button-secondary" disabled aria-describedby="investment-cancel-blockers">Cancelar aplicação</button><div id="investment-cancel-blockers" class="investment-cancel-blockers"><p><strong>Cancelamento indisponível</strong></p><ul>{{range .CancellationBlockers}}<li>{{.}}</li>{{end}}</ul>{{if .CancellationNote}}<p>{{.CancellationNote}}</p>{{end}}</div></div>{{end}}
+            {{if .RecordCancellationEligible}}<button type="button" class="cb-button cb-button-secondary" data-investment-open="investment-cancel-record-panel">Cancelar registro</button>{{else if .RecordCancellationBlockers}}<div class="investment-cancel-unavailable" data-investment-cancel-unavailable><button type="button" class="cb-button cb-button-secondary" disabled aria-describedby="investment-cancel-record-blockers">Cancelar registro</button><div id="investment-cancel-record-blockers" class="investment-cancel-blockers"><p><strong>Cancelamento do registro indisponível</strong></p><ul>{{range .RecordCancellationBlockers}}<li>{{.}}</li>{{end}}</ul></div></div>{{end}}
         </nav>
         {{end}}
         <section id="investment-adjusted-variation" class="cb-panel investment-history" aria-labelledby="investment-adjusted-title">
@@ -52,11 +86,13 @@
         <section class="cb-panel investment-history" aria-labelledby="investment-purchases-title">
             <h2 id="investment-purchases-title">Compras e reaplicações</h2>
             <p>Cada compra preserva seu valor, nota e condições. Histórico em ordem cronológica.</p>
+            {{if .Cancelled}}{{if .CancellationRecord}}<p class="investment-note">Histórico original preservado. O cancelamento do registro está no recibo acima e nenhuma movimentação financeira foi realizada.</p>{{else}}<p class="investment-note">Histórico original preservado. O cancelamento e a transferência compensatória estão registrados no recibo acima.</p>{{end}}{{end}}
             <ol class="investment-purchases">
-                {{range .Purchases}}<li>
-                    <div class="investment-purchase-heading"><div><time datetime="{{.PurchaseDate}}">{{.Date}}</time> <span class="investment-status">{{if .IsInitial}}Inicial{{else}}Reaplicação{{end}}</span></div><strong data-sensitive>{{.Value}}</strong></div>
+                {{range .Purchases}}<li{{if .Reversed}} class="is-reversed"{{end}}>
+                    <div class="investment-purchase-heading"><div><time datetime="{{.PurchaseDate}}">{{.Date}}</time> <span class="investment-status{{if .Reversed}} is-reversed{{end}}">{{if .Reversed}}Estornada{{else if .IsInitial}}Inicial{{else}}Reaplicação{{end}}</span></div><strong data-sensitive>{{.Value}}</strong></div>
                     <dl class="investment-purchase-terms">
-                        <div><dt>Composição atual</dt><dd>{{if .Closed}}Integralmente retirada{{else}}Em carteira · Principal remanescente: <span data-sensitive>{{.RemainingPrincipal}}</span>{{end}}</dd></div>
+                        {{if .Reversed}}<div><dt>Composição atual</dt><dd>Estornada · fora do principal ativo</dd></div>{{else}}<div><dt>Composição atual</dt><dd>{{if .Closed}}Integralmente retirada{{else}}Em carteira · Principal remanescente: <span data-sensitive>{{.RemainingPrincipal}}</span>{{end}}</dd></div>{{end}}
+                        <div><dt>Movimentação</dt><dd>{{if .TransferID}}Transferência automática{{else}}Sem movimentação automática{{end}}</dd></div>
                         {{if .TransferID}}<div><dt>Origem da aplicação</dt><dd>{{.SourceAccountName}}</dd></div><div><dt>Transferência</dt><dd><a class="underline" href="/transacoes/{{.TransferID}}">Consultar lançamento</a></dd></div>{{end}}
                         <div><dt>Nota de negociação</dt><dd>{{if .NoteReference}}{{.NoteReference}}{{else}}Não informada{{end}}</dd></div>
                         {{if eq .ConditionsSource "LEGACY_UNKNOWN"}}<div><dt>Condições originais</dt><dd>Não disponíveis no registro legado. Os dados atuais do investimento podem ter sido editados.</dd></div>
@@ -68,6 +104,9 @@
                         {{with .ConditionsNote}}<div><dt>Condições específicas</dt><dd>{{.}}</dd></div>{{end}}
                         {{end}}
                     </dl>
+                    {{if .Reversed}}<p class="investment-purchase-reversal-note">Estornada em {{.ReversalDate}}. O histórico da compra foi preservado e o valor não integra o total de compras em carteira.{{if .ReversalTransactionID}} <a class="underline" href="/transacoes/{{.ReversalTransactionID}}">Consultar transferência compensatória</a>.{{end}}</p>
+                    {{else if .ReversalCandidate}}<p class="investment-purchase-actions"><button type="button" class="cb-button cb-button-ghost ui-btn--sm" data-investment-reversal-open data-reversal-purchase-id="{{.ID}}" data-reversal-purchase-label="{{.Date}} · {{.Value}}{{if .TransferID}} · Transferência automática{{else}} · Sem movimentação automática{{end}}">Estornar compra</button></p>
+                    {{end}}
                 </li>{{end}}
             </ol>
         </section>
@@ -85,22 +124,23 @@
         <section class="cb-panel investment-history" aria-labelledby="investment-history-title"><h2 id="investment-history-title" class="text-lg font-semibold">Histórico e evolução das posições</h2>
             <p class="text-sm">Somente posições registradas, em ordem de data. Datas sem registro não têm valor conhecido.</p>
             {{if .Valuations}}<div class="investment-history-scroll"><table class="investment-history-table"><thead><tr><th scope="col" class="p-3">Data</th><th scope="col" class="p-3 text-right">Valor informado</th></tr></thead><tbody>{{range .Valuations}}<tr><td class="p-3"><time datetime="{{.DateISO}}">{{.Date}}</time></td><td class="p-3 text-right" data-sensitive>{{.Value}}</td></tr>{{end}}</tbody></table></div>
-            {{else}}<div class="investment-history-empty"><p>Você ainda não informou o valor atual desta aplicação.</p>{{if eq .Detail.Investment.Status "ATIVA"}}<button type="button" class="cb-button cb-button-primary" data-investment-open="investment-position-panel">Atualizar posição</button>{{end}}</div>{{end}}
+            {{else}}<div class="investment-history-empty"><p>Você ainda não informou o valor atual desta aplicação.</p>{{if and (eq .Detail.Investment.Status "ATIVA") (not .Cancelled)}}<button type="button" class="cb-button cb-button-primary" data-investment-open="investment-position-panel">Atualizar posição</button>{{end}}</div>{{end}}
         </section>
         <section class="cb-panel investment-information" aria-label="Dados do investimento">
             <h2>Informações do investimento</h2>
             <dl>
+                <div><dt>Conta de investimento</dt><dd>{{.InvestmentAccountName}}{{if .InvestmentAccountArchived}} · arquivada{{end}}</dd></div>
                 <div><dt>Instituição</dt><dd>{{with .Detail.Investment.Institution}}{{.}}{{else}}Não informada{{end}}</dd></div>
                 <div><dt>Tipo</dt><dd>{{.Detail.Investment.Kind}}</dd></div>
                 <div><dt>Data da aplicação</dt><dd><time datetime="{{.Detail.Investment.AppliedDate}}">{{.AppliedDateLabel}}</time></dd></div>
                 <div><dt>Vencimento</dt><dd>{{if .MaturityDateLabel}}<time datetime="{{.MaturityDateISO}}">{{.MaturityDateLabel}}</time> · {{end}}{{.MaturityLabel}}</dd></div>
                 <div><dt>Regime de tributação</dt><dd>{{if eq .Detail.Investment.TaxRegime "IR_REGRESSIVO"}}IR regressivo{{else if eq .Detail.Investment.TaxRegime "ISENTO_PF"}}Isento para pessoa física{{else}}Manual{{end}}</dd></div>
-                <div><dt>Status</dt><dd>{{if .Detail.Investment.ArchivedAt}}Arquivada{{else if eq .Detail.Investment.Status "ATIVA"}}Ativa{{else}}Encerrada{{end}}</dd></div>
+                <div><dt>Status</dt><dd>{{if .Cancelled}}Cancelada{{else if .Detail.Investment.ArchivedAt}}Arquivada{{else if eq .Detail.Investment.Status "ATIVA"}}Ativa{{else}}Encerrada{{end}}</dd></div>
             </dl>
             <div class="investment-information-note"><h3>Observações de rentabilidade</h3><p>{{with .Detail.Investment.YieldNote}}{{.}}{{else}}Não informadas{{end}}</p></div>
         </section>
         </div>
-        {{if eq .Detail.Investment.Status "ATIVA"}}
+        {{if and (eq .Detail.Investment.Status "ATIVA") (not .Cancelled)}}
         {{if not .Detail.Investment.ArchivedAt}}
         {{if .WithdrawalForm.Options}}
         <dialog id="investment-withdrawal-panel" class="investment-drawer" aria-labelledby="investment-withdrawal-title" data-investment-panel {{if .WithdrawalForm.Error}}data-investment-reopen{{end}}>
@@ -121,7 +161,7 @@
             <div class="investment-drawer-heading"><div><h2 id="investment-edit-title">Editar dados</h2><p>Altere nome, instituição, tipo e observações deste investimento.</p></div><button type="button" class="cb-button cb-button-secondary investment-close" data-investment-close aria-label="Fechar edição">✕</button></div>{{template "investimento-form" .Form}}
         </dialog>
         {{end}}
-        {{if eq .Detail.Investment.Status "ATIVA"}}
+        {{if and (eq .Detail.Investment.Status "ATIVA") (not .Cancelled)}}
         <dialog id="investment-redeem-panel" class="investment-drawer" aria-labelledby="investment-redeem-title" data-investment-panel>
             <div class="investment-drawer-heading"><div><h2 id="investment-redeem-title">Finalizar acompanhamento</h2><p>Encerre o acompanhamento e informe o valor final.</p></div><button type="button" class="cb-button cb-button-secondary investment-close" data-investment-close aria-label="Fechar finalização do acompanhamento">✕</button></div>
             <p class="investment-note is-confirm">Encerra o acompanhamento no ContaBase e preserva o histórico. Não registra retirada nem movimenta dinheiro.</p>
@@ -135,7 +175,7 @@
                 <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm">Finalizar acompanhamento</button>
             </form>
         </dialog>
-        {{else if not .Detail.Investment.ArchivedAt}}
+        {{else if and (not .Detail.Investment.ArchivedAt) (not .Cancelled)}}
         <section class="cb-panel space-y-4" aria-labelledby="investment-archive-title">
             <h2 id="investment-archive-title" class="text-lg font-semibold">Arquivar investimento</h2>
             <p class="text-sm">O histórico é preservado em Arquivadas. O arquivamento não pode ser desfeito e não movimenta o saldo das contas.</p>
@@ -144,6 +184,46 @@
                 <button type="submit" class="cb-button cb-button-secondary h-11 px-6 text-sm">Arquivar investimento</button>
             </form>
         </section>
+        {{end}}
+        {{if and .CancellationEligible (not .Cancelled)}}
+        <dialog id="investment-cancel-panel" class="investment-drawer" aria-labelledby="investment-cancel-title" data-investment-panel {{if .CancellationPreview}}data-investment-reopen{{end}}>
+            <div class="investment-drawer-heading"><div><h2 id="investment-cancel-title">Cancelar aplicação</h2><p>Revise as contas e o impacto financeiro antes de confirmar.</p></div><button type="button" class="cb-button cb-button-secondary investment-close" data-investment-close aria-label="Fechar cancelamento">✕</button></div>
+            <form method="post" action="/investimentos/{{.Detail.Investment.ID}}/cancelamento/previa" hx-post="/investimentos/{{.Detail.Investment.ID}}/cancelamento/previa" hx-target="#investment-cancel-preview" hx-swap="innerHTML" hx-indicator="#htmx-indicator" data-investment-operation hx-sync="this:drop" hx-disabled-elt="find button[type='submit']" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{.CancellationForm.CSRFToken}}">
+                <input type="hidden" name="request_id" value="{{.CancellationForm.RequestID}}">
+                <div><label class="cb-label" for="investment-cancel-reason">Motivo do cancelamento</label><textarea id="investment-cancel-reason" name="reason" rows="4" minlength="1" maxlength="500" class="cb-input" required aria-describedby="investment-cancel-reason-help"></textarea><p id="investment-cancel-reason-help" class="investment-help">Obrigatório, até 500 caracteres. O motivo fica registrado no recibo imutável.</p></div>
+                <p role="alert" tabindex="-1" class="investment-feedback" data-investment-operation-feedback hidden></p>
+                <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm">Revisar cancelamento</button>
+            </form>
+            <div id="investment-cancel-preview" aria-live="polite">{{if .CancellationPreview}}{{template "investment-cancellation-preview" .CancellationPreview}}{{end}}</div>
+        </dialog>
+        {{end}}
+        {{if and .RecordCancellationEligible (not .Cancelled)}}
+        <dialog id="investment-cancel-record-panel" class="investment-drawer" aria-labelledby="investment-cancel-record-title" data-investment-panel {{if .RecordCancellationPreview}}data-investment-reopen{{end}}>
+            <div class="investment-drawer-heading"><div><h2 id="investment-cancel-record-title">Cancelar registro</h2><p>Cancelamento administrativo do registro inicial. Nenhuma movimentação financeira será realizada.</p></div><button type="button" class="cb-button cb-button-secondary investment-close" data-investment-close aria-label="Fechar cancelamento do registro">✕</button></div>
+            <form method="post" action="/investimentos/{{.Detail.Investment.ID}}/cancelamento-registro/previa" hx-post="/investimentos/{{.Detail.Investment.ID}}/cancelamento-registro/previa" hx-target="#investment-cancel-record-preview" hx-swap="innerHTML" hx-indicator="#htmx-indicator" data-investment-operation hx-sync="this:drop" hx-disabled-elt="find button[type='submit']" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{.RecordCancellationForm.CSRFToken}}">
+                <input type="hidden" name="request_id" value="{{.RecordCancellationForm.RequestID}}">
+                <div><label class="cb-label" for="investment-cancel-record-reason">Motivo do cancelamento do registro</label><textarea id="investment-cancel-record-reason" name="reason" rows="4" minlength="1" maxlength="500" class="cb-input" required aria-describedby="investment-cancel-record-reason-help"></textarea><p id="investment-cancel-record-reason-help" class="investment-help">Obrigatório, até 500 caracteres. O motivo fica registrado no recibo imutável.</p></div>
+                <p role="alert" tabindex="-1" class="investment-feedback" data-investment-operation-feedback hidden></p>
+                <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm">Revisar cancelamento do registro</button>
+            </form>
+            <div id="investment-cancel-record-preview" aria-live="polite">{{if .RecordCancellationPreview}}{{template "investment-record-cancellation-preview" .RecordCancellationPreview}}{{end}}</div>
+        </dialog>
+        {{end}}
+        {{if and (eq .Detail.Investment.Status "ATIVA") (not .Cancelled)}}
+        <dialog id="investment-reversal-panel" class="investment-drawer" aria-labelledby="investment-reversal-title" data-investment-panel {{if .ReversalPreview}}data-investment-reopen{{end}}>
+            <div class="investment-drawer-heading"><div><h2 id="investment-reversal-title">Estornar compra</h2><p>Revise a compra e o impacto antes de confirmar. As demais compras não são afetadas.</p></div><button type="button" class="cb-button cb-button-secondary investment-close" data-investment-close aria-label="Fechar estorno">✕</button></div>
+            <form method="post" action="/investimentos/{{.Detail.Investment.ID}}/compras/estorno/previa" hx-post="/investimentos/{{.Detail.Investment.ID}}/compras/estorno/previa" hx-target="#investment-reversal-preview" hx-swap="innerHTML" hx-indicator="#htmx-indicator" data-investment-operation hx-sync="this:drop" hx-disabled-elt="find button[type='submit']" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{.Form.CSRFToken}}">
+                <input type="hidden" name="purchase_id" value="{{.ReversalPurchaseID}}">
+                <p class="investment-reversal-target" data-investment-reversal-target>Compra selecionada: <strong data-investment-reversal-label>—</strong></p>
+                <div><label class="cb-label" for="investment-reversal-reason">Motivo do estorno</label><textarea id="investment-reversal-reason" name="reason" rows="4" minlength="1" maxlength="500" class="cb-input" required aria-describedby="investment-reversal-reason-help"></textarea><p id="investment-reversal-reason-help" class="investment-help">Obrigatório, até 500 caracteres. O motivo fica registrado no recibo imutável.</p></div>
+                <p role="alert" tabindex="-1" class="investment-feedback" data-investment-operation-feedback hidden></p>
+                <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm">Revisar estorno</button>
+            </form>
+            <div id="investment-reversal-preview" aria-live="polite">{{if .ReversalPreview}}{{template "investment-reversal-preview" .ReversalPreview}}{{end}}</div>
+        </dialog>
         {{end}}
     </div>
 </main>

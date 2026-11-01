@@ -403,11 +403,30 @@
 .cb-invoice-action-label > span { display: inline; }
 .cb-invoice-action-label > span + span::before { content: " "; }
 
-/* Swipe is a touch interaction. Keep this guidance out of pointer-only UIs. */
-.cb-v2-swipe-hint { display: none; }
-@media (any-pointer: coarse) {
+/* Swipe guidance is a mobile footer, never a card. It stays out of desktop,
+   tablet and pointer-only layouts. */
+.cb-v2-swipe-hint {
+  display: none;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--cb-border-subtle);
+  background: var(--cb-surface-2);
+  color: var(--cb-text-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+@media (max-width: 767px) {
   .cb-v2-swipe-hint { display: flex; }
 }
+.cb-v2-swipe-hint-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--cb-text-subtle);
+}
+.cb-v2-swipe-hint strong { color: var(--cb-text-main); font-weight: 620; }
 .cb-button-ghost {
   background-color: transparent;
   color: var(--cb-text-muted);

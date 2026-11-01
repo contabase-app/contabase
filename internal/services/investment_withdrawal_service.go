@@ -75,6 +75,11 @@ func CreateInvestmentWithdrawal(ctx context.Context, db *sql.DB, in CreateInvest
 		return empty, err
 	}
 	defer tx.Rollback()
+	// Cancellation is the more specific refusal: report it before the funded
+	// homologation hold that would otherwise shadow it for the same lot.
+	if err := rejectCancelledInvestmentTx(ctx, tx, in.WorkspaceID, in.InvestmentID); err != nil {
+		return models.InvestmentWithdrawal{}, err
+	}
 	if err := rejectFundedInvestmentTx(ctx, tx, in.WorkspaceID, in.InvestmentID); err != nil {
 		return models.InvestmentWithdrawal{}, err
 	}
@@ -231,7 +236,9 @@ func enrichInvestmentWithdrawals(detail *InvestmentDetail, history []models.Inve
 	detail.Withdrawals, detail.PurchaseStates = history, states
 	detail.TotalWithdrawnCents, detail.LatestWithdrawalDate = total, latest
 	for _, p := range detail.Purchases {
-		if !states[p.ID].Closed {
+		// A reversed purchase no longer carries active principal and never
+		// re-enters the maintained count.
+		if !p.Reversed && !states[p.ID].Closed {
 			detail.MaintainedPurchaseCount++
 		}
 	}

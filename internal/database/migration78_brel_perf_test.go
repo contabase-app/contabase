@@ -1,3 +1,5 @@
+//go:build contabase_legacy_fixtures
+
 package database
 
 import (
@@ -20,7 +22,7 @@ func brelPerfDisk(t *testing.T, n int, candidate bool) (*sql.DB, string) {
 		fixture = admissionCandidateDB(t)
 	} else {
 		fixture = referenceLegacy71(t)
-		if err := runMigrations(fixture); err != nil {
+		if err := runMigrationsThroughVersionForTest(fixture, 77); err != nil {
 			t.Fatal(err)
 		}
 		mustExecOK(t, fixture, `INSERT INTO accounts(id,workspace_id,name,type) VALUES('acc-inv2','ws-2','Second','INVESTMENT')`)

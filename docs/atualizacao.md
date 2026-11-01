@@ -283,9 +283,21 @@ A atualização não deve:
 
 Se precisar restaurar backup, faça isso manualmente e com cuidado.
 
-## Candidata v1.0.0-beta.6: Investimentos, credenciais e recuperação
+## Beta 7 publicada: Investimentos, cancelamentos e schema 82
 
-Esta candidata ainda não foi publicada. Ao atualizar para seu código, a ausência de `CONTABASE_FEATURE_INVESTMENTS` disponibiliza o módulo sem alteração manual de configuração. Uma desativação explícita, inclusive valor vazio, permanece respeitada; não há reconciliação ou débito retroativo. As operações financeiras controladas continuam opt-in. Veja [Investimentos](investimentos.md) para limites e compatibilidade.
+A Beta 7 foi publicada como prerelease. Ao atualizar para seu código, o ContaBase aplica as migrations `79`, `80`, `81` e `82` (schema `77` → `82`). A migration `78` experimental não integra o startup. Faça backup antes da atualização.
+
+As migrations são transacionais e não reconstroem as tabelas financeiras. A `82` substitui dois triggers de UPDATE para devolver operabilidade a contas e lotes após um estorno individual; recibos, compras e transferências históricas continuam protegidos. Bancos já em `80` ou `81` são suportados, inclusive com recibos existentes e saldos movimentados.
+
+Instalações existentes preservam `CONTABASE_FEATURE_INVESTMENTS`. Instalações novas pelos instaladores oficiais nascem com a flag `false`; a ausência da variável em instalação atualizada mantém o comportamento legado habilitado. Veja [Investimentos](investimentos.md).
+
+A política de recuperação automática continua restrita à Beta 6. Não há downgrade automático para a Beta 7 nem restore automático de banco; preserve banco, WAL, uploads, configuração, chaves e backups e use procedimento manual autorizado. A recuperação automática da linha Beta 7 exige revisão específica em versão futura.
+
+P2 conhecido: a movimentação de recorrências legadas pode ignorar ocorrências em faturas PAID. Não corrigido nesta versão.
+
+## Beta 6 publicada: Investimentos, credenciais e recuperação
+
+A Beta 6 foi publicada. Ao atualizar para seu código, a ausência de `CONTABASE_FEATURE_INVESTMENTS` disponibiliza o módulo sem alteração manual de configuração. Uma desativação explícita, inclusive valor vazio, permanece respeitada; não há reconciliação ou débito retroativo. As operações financeiras controladas continuam opt-in. Veja [Investimentos](investimentos.md) para limites e compatibilidade.
 
 No Compose fornecido pelo projeto, `.env.docker` passa a ser a fonte dessa flag, sem repasse implícito do shell. Se você desabilitava Investimentos apenas prefixando o comando Docker com a variável, registre a desativação no arquivo antes de atualizar. Configurações explícitas no override local continuam prevalecendo.
 

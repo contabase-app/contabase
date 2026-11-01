@@ -135,8 +135,10 @@
             <strong>{{if $isPagar}}A pagar{{else}}A receber{{end}}</strong>
             <span>{{len $items}} {{if eq (len $items) 1}}item{{else}}itens{{end}} · ordenado por vencimento</span>
         </div>
+        {{$hasSwipeable := false}}
         <div class="ui-list">
         {{range $items}}
+        {{if not .IsInvoice}}{{$hasSwipeable = true}}{{end}}
         {{if .IsInvoice}}
         <a id="invoice-{{.ID}}" href="/cartoes/faturas/{{.ID}}" class="ui-row ui-row--link{{if .IsOverdue}} is-overdue{{end}}">
             <span class="ui-avatar{{if and (not .ProviderLogoPath) (not .ProviderMark)}} ui-avatar--warning{{end}}" data-cb-color="{{.AccountColor}}">
@@ -227,6 +229,12 @@
         {{end}}
         {{end}}
         </div>
+        {{if $hasSwipeable}}
+        <aside class="cb-v2-swipe-hint">
+            <i data-lucide="help-circle" class="cb-v2-swipe-hint-icon" aria-hidden="true"></i>
+            <span><strong>Dica de navegação:</strong> Arraste para a Esquerda (&larr;) para confirmar pagamento/recebimento. Arraste para a Direita (&rarr;) para excluir.</span>
+        </aside>
+        {{end}}
     </section>
 {{else}}
     <div class="ui-empty">

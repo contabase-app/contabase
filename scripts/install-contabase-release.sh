@@ -916,6 +916,7 @@ env_create_initial() {
       printf 'ALLOWED_HOSTS=%s\n' "$ALLOWED_HOSTS_VALUE"
       printf 'TRUSTED_PROXIES=%s\n' "$TRUSTED_PROXIES_VALUE"
       printf 'CONTABASE_ACCESS_MODE=%s\n' "$CONTABASE_ACCESS_MODE_VALUE"
+      printf 'CONTABASE_FEATURE_INVESTMENTS=false\n'
       printf 'VERSION=%s\n' "$TAG"
       printf 'CONTABASE_CHANNEL=%s\n' "$INSTALL_CHANNEL"
       printf 'CONTABASE_INSTALLED_VERSION=%s\n' "$TAG"

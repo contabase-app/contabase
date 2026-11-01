@@ -54,7 +54,7 @@ Para fixar uma versão específica, informe `CONTABASE_VERSION` ao executar o in
 curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh && CONTABASE_VERSION=vX.Y.Z bash /tmp/contabase-install.sh
 ```
 
-Exemplo: substitua `vX.Y.Z` por uma tag publicada, como `v0.1.0-beta.7`.
+Exemplo: substitua `vX.Y.Z` por uma tag publicada, como `v1.0.0-beta.7`.
 
 Não use `main`.
 

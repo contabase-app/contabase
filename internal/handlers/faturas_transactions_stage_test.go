@@ -153,11 +153,15 @@ func TestInvoiceTransactionsUseCanonicalListAndPreserveContracts(t *testing.T) {
 		`data-sensitive`,
 		// Swipe hint text (gesture mapping contract).
 		"para a Esquerda (&larr;) para mover",
+		"parcelas permitem escolher o escopo",
 		"para a Direita (&rarr;) para apagar",
 	} {
 		if !strings.Contains(rendered, expected) && !strings.Contains(unescaped, expected) {
 			t.Fatalf("transactions missing %q", expected)
 		}
+	}
+	if got := strings.Count(rendered, `class="cb-v2-swipe-hint`); got != 1 {
+		t.Fatalf("swipe hint count = %d, want 1", got)
 	}
 
 	// Amount semantics come from the transaction type, not the legacy hex class.
@@ -215,5 +219,8 @@ func TestInvoiceTransactionsEmptyStateAndOOB(t *testing.T) {
 	}
 	if strings.Contains(html, `data-show-more-toggle`) {
 		t.Fatal("empty transactions must not render the expansion control")
+	}
+	if strings.Contains(html, `cb-v2-swipe-hint`) {
+		t.Fatal("empty transactions must not render the swipe hint")
 	}
 }

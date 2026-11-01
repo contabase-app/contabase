@@ -124,6 +124,9 @@ func TestContasListPartialRendersWithMinimalData(t *testing.T) {
 				`data-swipe-right-payment-confirm="true"`,
 				`ui-row__account-logo`,
 				`src="institutions/nubank.png"`,
+				`class="cb-v2-swipe-hint"`,
+				`confirmar pagamento/recebimento`,
+				`para excluir`,
 			},
 			notWant: []string{`id="tx-rec-1"`, `hx-push-url="/contas?aba=`, `data-swipe-right-url="/transacoes/pay-1/status-pagamento"`},
 		},
@@ -139,6 +142,9 @@ func TestContasListPartialRendersWithMinimalData(t *testing.T) {
 				`data-payment-confirm`,
 				`data-payment-id="rec-1"`,
 				`data-swipe-right-payment-confirm="true"`,
+				`class="cb-v2-swipe-hint"`,
+				`confirmar pagamento/recebimento`,
+				`para excluir`,
 			},
 			notWant: []string{`id="tx-pay-1"`, `hx-push-url="/contas?aba=`, `data-swipe-right-url="/transacoes/rec-1/status-pagamento"`},
 		},
@@ -149,7 +155,7 @@ func TestContasListPartialRendersWithMinimalData(t *testing.T) {
 				`id="contas-list"`,
 				`Sem contas pendentes`,
 			},
-			notWant: []string{`id="tx-`, `Sem recebíveis pendentes`},
+			notWant: []string{`id="tx-`, `Sem recebíveis pendentes`, `cb-v2-swipe-hint`},
 		},
 		{
 			name: "invoice row keeps the card link and provider identity",
@@ -166,7 +172,7 @@ func TestContasListPartialRendersWithMinimalData(t *testing.T) {
 				`ui-badge--warning`,
 				`Fatura`,
 			},
-			notWant: []string{`data-payment-confirm`, `data-swipe-row="true"`},
+			notWant: []string{`data-payment-confirm`, `data-swipe-row="true"`, `cb-v2-swipe-hint`},
 		},
 		{
 			name: "aba=receber empty list shows empty state",
@@ -175,7 +181,7 @@ func TestContasListPartialRendersWithMinimalData(t *testing.T) {
 				`id="contas-list"`,
 				`Sem recebíveis pendentes`,
 			},
-			notWant: []string{`id="tx-`, `Sem contas pendentes`},
+			notWant: []string{`id="tx-`, `Sem contas pendentes`, `cb-v2-swipe-hint`},
 		},
 	}
 	for _, tt := range tests {

@@ -68,7 +68,7 @@
 
 .metas-overview__metric.ui-kpi {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: baseline;
   gap: 2px 16px;
   min-width: 0;
@@ -89,10 +89,10 @@
 }
 
 .metas-overview__metric .ui-kpi__value {
-  grid-column: 2;
-  justify-self: end;
+  grid-column: 1;
+  justify-self: start;
   overflow: visible;
-  text-align: right;
+  text-align: left;
   text-overflow: clip;
   font-size: 18px;
   white-space: nowrap;
@@ -179,31 +179,6 @@
   }
 
   .metas-overview__grid--3.ui-kpi-grid .metas-overview__metric.ui-kpi:last-child {
-    grid-column: 1 / -1;
-  }
-}
-
-/* No intervalo de tablet, a terceira métrica ocupa a linha inteira. Ela usa a
-   composição de linha (rótulo à esquerda, valor à direita) para não criar uma
-   faixa alta de label-sobre-valor atravessando o painel. */
-@container metas-overview (min-width: 560px) and (max-width: 939px) {
-  .metas-overview__grid--3 .metas-overview__metric.ui-kpi:nth-child(3) {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: baseline;
-    gap: 2px 16px;
-  }
-
-  .metas-overview__grid--3 .metas-overview__metric.ui-kpi:nth-child(3) .ui-kpi__head {
-    grid-column: 1;
-  }
-
-  .metas-overview__grid--3 .metas-overview__metric.ui-kpi:nth-child(3) .ui-kpi__value {
-    grid-column: 2;
-    justify-self: end;
-    text-align: right;
-  }
-
-  .metas-overview__grid--3 .metas-overview__metric.ui-kpi:nth-child(3) .ui-kpi__meta {
     grid-column: 1 / -1;
   }
 }
@@ -1203,7 +1178,7 @@
 }
 
 .metas-form__money {
-  text-align: right;
+  text-align: left;
   font-variant-numeric: tabular-nums;
   font-weight: 620;
   letter-spacing: 0.01em;

@@ -489,6 +489,19 @@
                 </div>
                 <div class="sheet-danger-zone__actions">
                     {{if .ReturnInvoiceID}}
+                    {{if .IsInstallmentSeriesEdit}}
+                    <button type="button"
+                        data-onclick-ev="openInvoiceMoveScopeFromButton"
+                        data-invoice-move-url="/transacoes/{{.EditID}}/mover-fatura"
+                        data-invoice-move-values='{"expected_invoice_id":"{{.ReturnInvoiceID}}","expected_destination_reference":"{{.QuickMoveDestinationRef}}","expected_updated_at":"{{.TransactionUpdatedAt}}","expected_move_scope":"chain"}'
+                        data-invoice-move-label="{{.InstallmentNumber}}/{{.TotalInstallments}}"
+                        data-move-scope-choice="true"
+                        class="sheet-danger-action sheet-danger-action--accent"
+                        aria-label="Escolher escopo para mover a parcela {{.InstallmentNumber}} de {{.TotalInstallments}}">
+                        <i data-lucide="calendar-plus" class="h-4 w-4" aria-hidden="true"></i>
+                        <span>Mover fatura</span>
+                    </button>
+                    {{else}}
                     <button type="button"
                         hx-post="/transacoes/{{.EditID}}/mover-fatura"
                         hx-vals='{"expected_invoice_id":"{{.ReturnInvoiceID}}","expected_destination_reference":"{{.QuickMoveDestinationRef}}","expected_updated_at":"{{.TransactionUpdatedAt}}","expected_move_scope":"{{.QuickMoveScope}}"}'
@@ -500,6 +513,7 @@
                         <i data-lucide="calendar-plus" class="h-4 w-4" aria-hidden="true"></i>
                         <span>Mover fatura</span>
                     </button>
+                    {{end}}
                     {{end}}
                     <button type="button"
                         {{if .IsSeriesEdit}}

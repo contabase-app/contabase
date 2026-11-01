@@ -323,10 +323,10 @@ func TestTenantInvoiceMoveN20N21Queues(t *testing.T) {
 			var query string
 			args := []any{"scope-a", "scope-a", models.AccountTypeCreditCard, models.TransactionTypeExpense}
 			if recurring {
-				query = tenantScopeStatement(t, "transacoes.go", "invoiceMoveQueueTx", "AND t.recurring_rule_id = ?", "h.WorkspaceID", "h.WorkspaceID", "models.AccountTypeCreditCard", "models.TransactionTypeExpense", "current.recurringRuleID.String", "current.date")
+				query = tenantScopeStatement(t, "transacoes.go", "invoiceMoveQueueLegacyTx", "AND t.recurring_rule_id = ?", "h.WorkspaceID", "h.WorkspaceID", "models.AccountTypeCreditCard", "models.TransactionTypeExpense", "current.recurringRuleID.String", "current.date")
 				args = append(args, rule, current.date)
 			} else {
-				query = tenantScopeStatement(t, "transacoes.go", "invoiceMoveQueueTx", "AND (t.id = ? OR t.parent_id = ?)", "h.WorkspaceID", "h.WorkspaceID", "models.AccountTypeCreditCard", "models.TransactionTypeExpense", "rootID", "rootID", "current.date")
+				query = tenantScopeStatement(t, "transacoes.go", "invoiceMoveQueueLegacyTx", "AND (t.id = ? OR t.parent_id = ?)", "h.WorkspaceID", "h.WorkspaceID", "models.AccountTypeCreditCard", "models.TransactionTypeExpense", "rootID", "rootID", "current.date")
 				args = append(args, "tx-a", "tx-a", current.date)
 			}
 			for _, invoice := range []string{"inv-a-closed", "inv-b"} {
@@ -357,7 +357,7 @@ func TestTenantInvoiceMoveN20N21Queues(t *testing.T) {
 							}
 						}
 						invoiceMoveReadOnly(t, db, func(tx *sql.Tx) {
-							items, err := h.invoiceMoveQueueTx(tx, current)
+							items, err := h.invoiceMoveQueueTx(tx, current, "")
 							if err != nil || len(items) != len(got) {
 								t.Fatalf("real queue=%+v err=%v", items, err)
 							}
@@ -382,7 +382,7 @@ func TestTenantInvoiceMoveN20N21Queues(t *testing.T) {
 				current.parentID = sql.NullString{String: "tx-a", Valid: true}
 			}
 			invoiceMoveReadOnly(t, db, func(tx *sql.Tx) {
-				items, err := h.invoiceMoveQueueTx(tx, current)
+				items, err := h.invoiceMoveQueueTx(tx, current, "")
 				if err != nil || len(items) != 1 || items[0].id != "tx-a-2" {
 					t.Fatalf("future queue/root filter=%+v err=%v", items, err)
 				}
@@ -397,14 +397,14 @@ func TestTenantInvoiceMoveN20N21Queues(t *testing.T) {
 			h.WorkspaceID = "scope-b"
 			bCurrent := invoiceMoveCandidate{id: "tx-b", accountID: "card-b", invoiceID: "inv-b", reference: "2099-08", totalInstallments: 5, date: testUnixDate("2099-06-25"), recurringRuleID: sql.NullString{String: bRule, Valid: recurring}}
 			invoiceMoveReadOnly(t, db, func(tx *sql.Tx) {
-				items, err := h.invoiceMoveQueueTx(tx, bCurrent)
+				items, err := h.invoiceMoveQueueTx(tx, bCurrent, "")
 				if err != nil || len(items) != 1 || items[0].id != "tx-b" || items[0].invoiceID != "inv-b" {
 					t.Fatalf("same-tenant B queue=%+v err=%v", items, err)
 				}
 			})
 			execTestSQL(t, db, `UPDATE transactions SET invoice_id = 'inv-a' WHERE id = 'tx-b'`)
 			invoiceMoveReadOnly(t, db, func(tx *sql.Tx) {
-				items, err := h.invoiceMoveQueueTx(tx, bCurrent)
+				items, err := h.invoiceMoveQueueTx(tx, bCurrent, "")
 				if err != nil || len(items) != 0 {
 					t.Fatalf("B/A queue contribution=%+v err=%v", items, err)
 				}

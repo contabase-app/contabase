@@ -475,11 +475,23 @@
     background: linear-gradient(90deg, var(--ui-border) 0%, transparent 100%);
 }
 
-/* The article owns the swipe geometry. The content is the visible row. */
+/* Individual records share the panel but read as separate cards. The date
+   headers stay in flow, so the grouping contract is untouched. */
+#lancamentos-table-body {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 10px 10px 12px;
+}
+
+/* The article owns the swipe geometry. Each transaction is a card with its
+   own surface and border; the list gap provides the vertical rhythm. */
 .tx-row {
     position: relative;
     overflow: hidden;
-    background: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-card);
+    background: var(--ui-surface-raised);
 }
 
 .ui-row--transaction {
@@ -490,27 +502,24 @@
     gap: 12px;
     min-width: 0;
     padding: 12px 18px;
-    border-bottom: 1px solid var(--ui-border);
-    background: var(--ui-surface);
+    background: var(--ui-surface-raised);
     color: var(--ui-text);
     transition: background-color var(--ui-transition);
 }
 
-.ui-row--transaction:hover { background: var(--ui-surface-raised); }
+.ui-row--transaction:hover { background: var(--ui-surface-hover); }
 
 .tx-row.overdue .ui-row--transaction {
-    background: color-mix(in srgb, var(--ui-danger) 4%, var(--ui-surface));
+    background: color-mix(in srgb, var(--ui-danger) 4%, var(--ui-surface-raised));
 }
 
 .tx-row.overdue .ui-row--transaction:hover {
-    background: color-mix(in srgb, var(--ui-danger) 7%, var(--ui-surface));
+    background: color-mix(in srgb, var(--ui-danger) 7%, var(--ui-surface-raised));
 }
 
 .ui-row--transaction:has(.lancamentos-row-check:checked) {
-    background: color-mix(in srgb, var(--ui-accent) 7%, var(--ui-surface));
+    background: color-mix(in srgb, var(--ui-accent) 7%, var(--ui-surface-raised));
 }
-
-#lancamentos-table-body .ui-row--transaction:last-child { border-bottom: 0; }
 
 .bulk-mode .ui-row--transaction { cursor: pointer; }
 
@@ -715,6 +724,24 @@
     }
     .lancamentos-row-amount { min-width: 100px; }
     .lancamentos-row-date { font-size: 10.5px; }
+
+    /* Two account identities plus two logos do not fit on one mobile line.
+       Stack origin and destination so both names stay readable. */
+    .lancamentos-row-transfer {
+        display: grid;
+        width: 100%;
+        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-areas:
+            "origin origin"
+            "arrow destination";
+        align-items: center;
+        gap: 2px 6px;
+    }
+
+    .lancamentos-row-transfer > .ui-row__account:first-child { grid-area: origin; }
+    .lancamentos-row-transfer > .ui-row__account:last-child { grid-area: destination; }
+    .lancamentos-row-transfer > .shrink-0 { grid-area: arrow; justify-self: end; }
+
     .bulk-action-bar button { min-height: 44px; }
     .bulk-action-bar button[data-bulk-delete-btn] { min-width: 44px; }
 }
@@ -776,12 +803,19 @@
     color: var(--ui-accent-strong);
 }
 
-.lancamentos-invoices-list { display: flex; flex-direction: column; }
+.lancamentos-invoices-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 10px 10px 12px;
+}
 
 .invoice-row {
     position: relative;
     overflow: hidden;
-    background: var(--ui-surface);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-card);
+    background: var(--ui-surface-raised);
 }
 
 .ui-row--invoice-summary {
@@ -792,15 +826,12 @@
     gap: 12px;
     min-width: 0;
     padding: 12px 18px;
-    border-bottom: 1px solid var(--ui-border);
-    background: var(--ui-surface);
+    background: var(--ui-surface-raised);
     color: var(--ui-text);
     transition: background-color var(--ui-transition);
 }
 
-.ui-row--invoice-summary:hover { background: var(--ui-surface-raised); }
-
-.lancamentos-invoices-list .invoice-row:last-child .ui-row--invoice-summary { border-bottom: 0; }
+.ui-row--invoice-summary:hover { background: var(--ui-surface-hover); }
 
 .ui-row--invoice-summary .ui-avatar { flex: 0 0 auto; }
 

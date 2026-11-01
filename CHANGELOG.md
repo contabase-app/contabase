@@ -11,7 +11,40 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
-## [v1.0.0-beta.6] — não publicada — investimentos, interface e estabilidade
+## [v1.0.0-beta.7] — publicada — investimentos, cancelamentos e schema 82
+
+### Adicionado
+- **Cancelamento integral de investimentos:** lotes com transferências vinculadas podem ser cancelados quando o contrato da schema 79 permite, com compensação exata, recibo imutável e replay idempotente.
+- **Estorno individual de compras:** compras adicionais (não iniciais) podem ser estornadas isoladamente (schema 80). Compra com transferência automática recebe compensação entre as mesmas contas; compra record-only não movimenta saldo. A compra permanece no histórico como Estornada e sai do principal ativo.
+- **Cancelamento de registro inicial record-only:** lote inicial sem transferência automática pode ser cancelado sem efeito financeiro (schema 81), com recibo imutável.
+- **Aplicações record-only:** compras podem ser registradas sem transferência automática quando o dinheiro já está na conta de investimento.
+- **Operabilidade após estorno:** contas e lote deixam de ser congelados após um estorno individual; movimentos, renomeação e transições de ciclo de vida permitidas pelas regras existentes continuam funcionando (schema 82).
+
+### Alterado
+- **Disponibilidade de Investimentos:** instalações novas pelos instaladores Docker, source e release binário nascem com `CONTABASE_FEATURE_INVESTMENTS=false`. Atualizações preservam a configuração existente; ausência da variável mantém o comportamento legado habilitado.
+- **Telas de Investimentos:** detalhe, ações de compra e cancelamento foram reorganizados para os novos fluxos.
+- **Listagens:** Lançamentos, Contas a pagar/receber e Lançamentos dentro das faturas adotam cards individuais com agrupamento por data preservado. Transferências exibem logo e marcador das instituições de origem e destino, com fallback textual.
+- **Orientação de swipe:** a dica volta como rodapé discreto da listagem, visível apenas no mobile e somente quando há linhas com gesto real.
+
+### Corrigido
+- **Entrada monetária de Investimentos:** em cadastro, reaplicação e posição, os dois últimos dígitos digitados representam centavos (`1644041` → `R$ 16.440,41`). Valores brasileiros completos colados mantêm seu significado. Aritmética exata, validação de limites e posição zero são preservadas; o backend e formulários sem JavaScript continuam recebendo valores em reais.
+- **P1 pós-estorno:** a migration 82 remove o bloqueio genérico de UPDATE em contas e investimentos, mantendo protegidos identidade, workspace e vínculos financeiros. A revalidação histórica de recibos deixa de exigir saldos, versões, status ou arquivamento atuais; a validação no INSERT continua exigindo o estado financeiro completo.
+- **Faturas e lançamentos:** gestos de arraste em Faturas, movimentação de parcelas e escopo por workspace foram finalizados.
+- **Metas e interface:** indicadores e apresentação dos cartões foram ajustados.
+
+### Atualização
+- Caminho: `v1.0.0-beta.6` → `v1.0.0-beta.7`. Faça backup antes da atualização.
+- Schema 77 → 82: migrations 79, 80, 81 e 82; a 78 experimental não integra o startup. Não há rebuild das tabelas financeiras; a 82 substitui dois triggers de UPDATE.
+- Instalações existentes preservam `CONTABASE_FEATURE_INVESTMENTS`; instalações novas começam com o módulo desativado.
+- A política de recuperação automática continua restrita à Beta 6. Não há downgrade automático para a Beta 7 nem restore automático de banco; recuperação exige procedimento manual e autorização.
+
+### Limitações conhecidas
+- **P2 — recorrências legadas:** a movimentação pode ignorar ocorrências em faturas PAID. Não corrigido nesta versão.
+- Adoção histórica e resgates financeiros das novas aplicações permanecem indisponíveis.
+- A recuperação automática de atualização para a linha Beta 7 exige revisão específica em versão futura.
+- A homologação do upgrade operacional Beta 6 → Beta 7 depende do smoke real de instalação e atualização.
+
+## [v1.0.0-beta.6] — publicada — investimentos, interface e estabilidade
 
 ### Adicionado
 - **Investimentos:** cadastro e novas aplicações com seleção da conta de origem, transferência financeira atômica e histórico vinculado ao lançamento. Repetir a mesma requisição não duplica a compra nem o débito.

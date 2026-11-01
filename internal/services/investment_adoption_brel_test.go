@@ -1,3 +1,5 @@
+//go:build contabase_legacy_fixtures
+
 package services
 
 import (
@@ -9,11 +11,37 @@ import (
 	"testing"
 
 	"github.com/contabase-app/contabase/internal/database"
+	"github.com/contabase-app/contabase/internal/models"
 )
+
+func legacyAdoptionConfirmationFixture(t *testing.T) (*database.RuntimeDBs, string, []models.Investment) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "adoption77.db")
+	if err := database.CreateLegacyInvestmentFixture77(path); err != nil {
+		t.Fatal(err)
+	}
+	p, err := database.OpenLegacyInvestmentFixtureDBs(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { p.Close() })
+	seedInvestmentServiceFixtures(t, p.DB)
+	exec(t, p.Immediate, `INSERT INTO workspace_members(workspace_id,user_id,role) VALUES('ws-a','user-a','ADMIN'),('ws-b','user-b','ADMIN')`)
+	var investments []models.Investment
+	for n, cost := range []int64{900000, 700000} {
+		input := investmentCreateInput("ws-a", "acc-inv-a")
+		input.PrincipalCents = cost
+		i := mustCreateInvestment(t, p.Immediate, input)
+		investments = append(investments, i)
+		insertValuationRow(t, p.Immediate, "adoption-position-"+i.ID, "ws-a", i.ID, adoptionTestCut, []int64{1000000, 800000}[n])
+	}
+	exec(t, p.Immediate, `UPDATE accounts SET current_balance=2000000 WHERE workspace_id='ws-a' AND id='acc-inv-a'`)
+	return p, path, investments
+}
 
 func TestBRelConfirmationTokensSurviveMigration78(t *testing.T) {
 	t.Setenv("DATA_DIR", t.TempDir())
-	p, path, inv := adoptionConfirmationFixture(t)
+	p, path, inv := legacyAdoptionConfirmationFixture(t)
 	// Duplicate NULL ids, negative rowid and ORDER BY id ties are deliberate.
 	for _, rowid := range []int64{-1, 100, 101} {
 		exec(t, p.DB, `INSERT INTO transactions(rowid,workspace_id,user_id,account_id,type,amount,date,date_civil,description,notes) VALUES(?,'ws-a','user-a','acc-inv-a','TRANSFER',1,1,'2026-03-05','duplicata','á; CBTX|1|37|')`, rowid)
@@ -114,7 +142,7 @@ func TestBRelConfirmationTokensSurviveMigration78(t *testing.T) {
 		t.Fatal("maintenance connection returned to pool")
 	}
 	maintenance.Close()
-	post, err := database.OpenRuntimeDBs(path)
+	post, err := database.OpenLegacyInvestmentFixtureDBs(path)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,9 +3,29 @@
 Este documento é o índice principal das notas de lançamento do ContaBase.
 Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
-## Candidata atual
+## Última Beta publicada
 
-- **v1.0.0-beta.6 — preparação local, não publicada** — *Investimentos, interface e estabilidade*
+- **v1.0.0-beta.7 — prerelease publicada em 1 de novembro de 2026** — *Cancelamentos, estornos e operabilidade de Investimentos*
+
+  A Beta 7 conclui o ciclo de Investimentos: cancelamento integral de lotes com transferências vinculadas, estorno individual de compras adicionais, cancelamento de registro inicial record-only e aplicações sem transferência automática. Os recibos são imutáveis e idempotentes; compras estornadas saem do principal ativo sem apagar o histórico.
+
+  A migration 82 corrige o P1 em que contas e lotes ficavam bloqueados após um estorno individual. A revalidação histórica de recibos não depende mais de saldos, versões, status ou arquivamento atuais, e a validação no INSERT continua exigindo o estado financeiro completo. O schema avança de 77 para 82 sem rebuild das tabelas financeiras.
+
+  A entrada monetária de cadastro, reaplicação e posição passa a considerar os dois últimos dígitos digitados como centavos: `1644041` exibe `R$ 16.440,41`. Valores brasileiros completos colados mantêm seu significado. Instalações novas nascem com `CONTABASE_FEATURE_INVESTMENTS=false`; atualizações preservam a configuração existente.
+
+  As listagens de Lançamentos, Contas a pagar/receber e Lançamentos dentro das faturas passam a usar cards individuais com agrupamento por data preservado. Transferências mostram a logo da instituição de origem e de destino, com fallback pelo marcador da conta. A dica de swipe volta como rodapé discreto apenas no mobile, orientando confirmação, movimentação de parcelas e exclusão. Faturas e parcelamentos tiveram a movimentação de ocorrências, o escopo por workspace e os gestos de arraste finalizados.
+
+  **Atualização:** `v1.0.0-beta.6` → `v1.0.0-beta.7`. Faça backup antes de atualizar. As migrations 79 a 82 são transacionais e não reconstroem as tabelas financeiras. A política de recuperação automática continua restrita à Beta 6; a Beta 7 não tem downgrade automático nem restore automático de banco.
+
+  **P2 conhecido:** a movimentação de recorrências legadas pode ignorar ocorrências em faturas PAID. Não corrigido nesta versão. Adoção histórica e resgates financeiros das novas aplicações permanecem indisponíveis. A recuperação automática de atualização para a linha Beta 7 exige revisão específica em versão futura.
+
+  **Distribuição:** tag `v1.0.0-beta.7`, GitHub Release prerelease, artifacts Linux amd64 e arm64 com checksums e imagem GHCR `v1.0.0-beta.7`. A promoção do canal Beta e da imagem `:beta` acontece somente após o smoke real de instalação e atualização desta tag.
+
+  Veja as [notas da versão](docs/releases/v1.0.0-beta.7.md).
+
+## Beta 6 publicada
+
+- **v1.0.0-beta.6 — prerelease publicada** — *Investimentos, interface e estabilidade*
 
   O menu de ações em Metas e Reservas permanece legível acima dos cartões vizinhos. A página de Faturas abre no primeiro mês com fatura em aberto quando o mês atual já está pago; uma competência escolhida manualmente continua prevalecendo.
 
@@ -21,9 +41,9 @@ Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
   **Atualização prevista:** `v1.0.0-beta.5` → `v1.0.0-beta.6`. Faça backup antes de atualizar, preserve `SECURITY_MASTER_KEY` e revise contas legadas que dependam de recuperação administrativa. O upgrade operacional pelo instalador público ainda não foi comprovado integralmente.
 
-  **Distribuição:** esta é uma candidata local. Tag, GitHub Release, imagem GHCR e canal Beta dependem de revisão e autorização em etapas separadas.
+  **Distribuição:** Beta 6 publicada. Os detalhes acima preservam o registro da preparação dessa versão.
 
-## Última Beta publicada
+## Beta 5 publicada
 
 - **v1.0.0-beta.5 — prerelease publicada** — *Home renovada e identidade visual*
 

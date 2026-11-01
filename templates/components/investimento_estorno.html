@@ -1,0 +1,41 @@
+{{define "investment-reversal-preview"}}
+<div class="investment-cancellation-preview" data-investment-reversal-preview>
+    {{if .Eligible}}
+    <h3>Prévia do estorno</h3>
+    <p>Confira a compra e o impacto antes de confirmar. A compra permanece no histórico e o recibo é imutável.</p>
+    <dl class="investment-cancellation-terms">
+        <div><dt>Compra selecionada</dt><dd>{{.PurchaseDate}} · <span data-sensitive>{{.PurchaseValue}}</span></dd></div>
+        <div><dt>Tipo da compra</dt><dd>{{.MovementLabel}}</dd></div>
+        <div><dt>Valor do estorno</dt><dd data-sensitive>{{.Amount}}</dd></div>
+        <div><dt>Data econômica</dt><dd>{{.EconomicDate}}</dd></div>
+        {{if eq .Movement "TRANSFER"}}
+        <div><dt>Conta de investimento (origem da compensação)</dt><dd>{{.InvestmentAccountName}}</dd></div>
+        <div><dt>Conta de origem (destino da compensação)</dt><dd>{{.OriginAccountName}}</dd></div>
+        <div><dt>Saldo do investimento</dt><dd><span data-sensitive>{{.InvestmentBefore}}</span> → <span data-sensitive>{{.InvestmentAfter}}</span></dd></div>
+        <div><dt>Saldo da conta de origem</dt><dd><span data-sensitive>{{.OriginBefore}}</span> → <span data-sensitive>{{.OriginAfter}}</span></dd></div>
+        {{else}}
+        <div><dt>Movimentação financeira</dt><dd>Nenhuma. Compras sem movimentação automática não alteram o saldo das contas e o estorno também não altera.</dd></div>
+        {{end}}
+    </dl>
+    <p class="investment-note">O estorno preserva o histórico e registra um recibo imutável. As demais compras deste investimento não são afetadas. Nenhuma alteração é feita antes da confirmação.</p>
+    <form method="post" action="/investimentos/{{.InvestmentID}}/compras/estorno" hx-post="/investimentos/{{.InvestmentID}}/compras/estorno" hx-swap="none" hx-indicator="#htmx-indicator" data-investment-operation hx-sync="this:drop" hx-disabled-elt="find button[type='submit']" class="space-y-4">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="purchase_id" value="{{.PurchaseID}}">
+        <input type="hidden" name="request_id" value="{{.RequestID}}">
+        <input type="hidden" name="reason" value="{{.Reason}}">
+        <input type="hidden" name="preview_token" value="{{.PreviewToken}}">
+        <input type="hidden" name="expected_source_version" value="{{.ExpectedSourceVersion}}">
+        <input type="hidden" name="expected_investment_version" value="{{.ExpectedInvestmentVersion}}">
+        <p role="alert" tabindex="-1" class="investment-feedback" data-investment-operation-feedback hidden></p>
+        <label class="investment-confirm-field" for="investment-reversal-confirm"><input type="checkbox" id="investment-reversal-confirm" required> Confirmo o estorno desta compra{{if eq .Movement "TRANSFER"}} e a compensação entre as contas indicadas{{end}}.</label>
+        <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm">Confirmar estorno</button>
+    </form>
+    {{else}}
+    <div class="investment-feedback" role="alert" tabindex="-1">
+        <p><strong>Estorno indisponível para esta compra</strong></p>
+        {{if .Blockers}}<ul>{{range .Blockers}}<li>{{.}}</li>{{end}}</ul>{{else}}<p>Esta compra não atende aos requisitos para estorno.</p>{{end}}
+        <p>Nenhuma alteração financeira foi feita. Ajuste a situação e solicite uma nova prévia.</p>
+    </div>
+    {{end}}
+</div>
+{{end}}

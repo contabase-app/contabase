@@ -149,6 +149,99 @@
         }
     };
 
+    // --- Installment invoice move scope -------------------------------------
+    // Parcelamentos usam parent_id/installment_number. A escolha explícita evita
+    // confundir a série com recorrência e mantém uma única requisição por ação.
+    var invoiceMovePending = null;
+
+    function parseInvoiceMoveValues(raw) {
+        if (!raw) return {};
+        try {
+            var parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : null;
+        } catch (error) {
+            console.error('Invalid invoice move values', error);
+            return null;
+        }
+    }
+
+    function setInvoiceMoveScopeLabel(label) {
+        var labelEl = document.querySelector('[data-invoice-move-scope-label]');
+        if (!labelEl) return;
+        labelEl.textContent = label ? 'Parcela ' + label + '. ' : '';
+    }
+
+    function hideInvoiceMoveScopeModal() {
+        var modal = document.getElementById('invoice-move-scope-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+        if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
+    }
+
+    window.openInvoiceMoveScope = function (url, values, label, targetID) {
+        var modal = document.getElementById('invoice-move-scope-modal');
+        if (!modal || !url || !values) return;
+        invoiceMovePending = { url: url, values: values, target: targetID ? '#' + targetID : '' };
+        modal.querySelectorAll('input[name="invoice_move_scope"]').forEach(function (input) {
+            input.checked = input.value === 'single';
+        });
+        setInvoiceMoveScopeLabel(label || '');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        if (typeof window.overlayDidOpen === 'function') window.overlayDidOpen('invoice-move-scope');
+        focusDialog(modal, 'input[name="invoice_move_scope"]:checked');
+    };
+
+    window.openInvoiceMoveScopeFromButton = function (event) {
+        var button = event && event.target && event.target.closest
+            ? event.target.closest('[data-invoice-move-url]')
+            : null;
+        if (!button) return;
+        var values = parseInvoiceMoveValues(button.getAttribute('data-invoice-move-values'));
+        if (!values) return;
+        var row = button.closest('.invoice-transaction-row');
+        window.openInvoiceMoveScope(
+            button.getAttribute('data-invoice-move-url'),
+            values,
+            button.getAttribute('data-invoice-move-label'),
+            row ? row.id : ''
+        );
+    };
+
+    window.openInvoiceMoveScopeFromRow = function (row) {
+        if (!row) return;
+        var values = parseInvoiceMoveValues(row.dataset.swipeRightVals);
+        if (!values) return;
+        window.openInvoiceMoveScope(
+            row.dataset.swipeRightUrl,
+            values,
+            row.dataset.installmentLabel,
+            row.id
+        );
+    };
+
+    window.cancelInvoiceMoveScope = function () {
+        invoiceMovePending = null;
+        hideInvoiceMoveScopeModal();
+    };
+
+    window.submitInvoiceMoveScope = function () {
+        if (!invoiceMovePending) return;
+        var modal = document.getElementById('invoice-move-scope-modal');
+        var selected = modal ? modal.querySelector('input[name="invoice_move_scope"]:checked') : null;
+        var scope = selected && selected.value === 'future' ? 'future' : 'single';
+        var pending = invoiceMovePending;
+        invoiceMovePending = null;
+        hideInvoiceMoveScopeModal();
+        if (!window.htmx || typeof window.htmx.ajax !== 'function') return;
+        var values = Object.assign({}, pending.values, { move_scope: scope });
+        var options = { swap: 'none', values: values };
+        if (pending.target) options.target = pending.target;
+        window.htmx.ajax('POST', pending.url, options);
+    };
+
     // --- ESC key handler (registered once globally) ---
 
     if (!window._faturasEscBound) {

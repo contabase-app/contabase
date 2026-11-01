@@ -40,6 +40,7 @@
 .investment-metrics { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1.2fr; gap: .65rem; }
 .investment-metrics > div { padding: .9rem 1rem; background: var(--cb-surface-1); border: 1px solid var(--cb-border-subtle); border-radius: 12px; min-width: 0; }
 .investment-detail-metrics { grid-template-columns: 1fr 1fr 1.35fr 1fr; }
+.investment-account-metrics { grid-template-columns: repeat(3, minmax(0,1fr)); }
 .investment-page dt { font-size: .8125rem; color: var(--cb-text-main); opacity: .8; line-height: 1.4; }
 .investment-metrics dd { margin-top: .35rem; font-size: 1.2rem; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .investment-detail-metrics dd { font-size: 1.35rem; }
@@ -50,7 +51,8 @@
 .investment-note.is-confirm { padding: .75rem .9rem; border: 1px solid var(--cb-border-subtle); border-radius: 10px; background: var(--cb-surface-2); opacity: 1; }
 
 .investment-toolbar { display: flex; justify-content: space-between; align-items: end; gap: 1rem; flex-wrap: wrap; }
-.investment-filter { display: flex; align-items: end; gap: .65rem; }
+.investment-filter { display: flex; align-items: end; gap: .65rem; flex-wrap: wrap; }
+.investment-filter > div { flex: 1 1 180px; min-width: 0; }
 .investment-filter select { min-width: 180px; }
 .investment-search { width: min(100%, 330px); }
 
@@ -61,11 +63,21 @@
 .investment-row:hover, .investment-row:focus-within { border-color: var(--cb-border-strong); }
 .investment-name { font-size: 1rem; font-weight: 650; overflow-wrap: anywhere; }
 .investment-name:hover { text-decoration: underline; }
+.investment-account-name { font-weight: 600; }
+.investment-account-context { margin-top: .35rem; font-size: .875rem; overflow-wrap: anywhere; }
 .investment-row dd { margin-top: .25rem; font-weight: 600; font-size: .9375rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .investment-row dl { align-self: start; }
 .investment-row dd.is-unknown { font-weight: 500; opacity: .78; }
 .investment-status { display: inline-block; border-radius: 999px; padding: .2rem .6rem; font-size: .75rem; font-weight: 600; margin-top: .4rem; color: var(--cb-text-main); background: color-mix(in srgb, var(--v2-tone-neutral) 18%, transparent); }
 .investment-status.is-active { color: color-mix(in srgb, var(--v2-tone-ok) 80%, var(--cb-text-main)); background: color-mix(in srgb, var(--v2-tone-ok) 16%, transparent); }
+.investment-status.is-cancelled { color: color-mix(in srgb, var(--v2-tone-danger) 80%, var(--cb-text-main)); background: color-mix(in srgb, var(--v2-tone-danger) 16%, transparent); }
+.investment-status.is-reversed { color: color-mix(in srgb, var(--v2-tone-attention) 80%, var(--cb-text-main)); background: color-mix(in srgb, var(--v2-tone-attention) 14%, transparent); }
+/* Reversed purchases stay in the history: muted, with their receipt note and
+   no action. Independent purchases keep their normal presentation. */
+.investment-purchases > li.is-reversed { opacity: .82; }
+.investment-purchase-reversal-note { margin-top: .55rem; padding: .55rem .7rem; border-radius: 8px; background: var(--cb-surface-2); font-size: .8125rem; line-height: 1.5; }
+.investment-purchase-actions { margin-top: .55rem; }
+.investment-reversal-target { font-size: .875rem; }
 .investment-detail-link { display: inline-flex; align-items: center; justify-content: flex-end; gap: .4rem; min-height: 44px; font-size: .8125rem; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 .investment-empty, .investment-empty-search { padding: 1.75rem; background: var(--cb-surface-1); border: 1px dashed var(--cb-border-strong); border-radius: 12px; }
 .investment-empty p { margin: .4rem 0 1rem; }
@@ -74,6 +86,12 @@
 /* Actions: one primary step, one edit step, one administrative step. */
 .investment-actions { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
 .investment-action-admin { margin-left: auto; }
+.investment-cancel-unavailable { flex: 1 1 100%; display: flex; flex-direction: column; align-items: flex-start; gap: .55rem; padding: .8rem .9rem; border: 1px dashed var(--cb-border-strong); border-radius: 10px; background: var(--cb-surface-2); }
+.investment-cancel-unavailable .cb-button:disabled { width: auto; opacity: .65; }
+.investment-cancel-blockers { font-size: .8125rem; line-height: 1.5; }
+.investment-cancel-blockers > p + ul { margin-top: .25rem; }
+.investment-cancel-blockers ul { list-style: disc; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .2rem; }
+.investment-cancel-blockers > p:last-child { margin-top: .4rem; }
 
 .investment-detail-layout { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(0,1fr); gap: 1rem; align-items: start; }
 .investment-history, .investment-information { min-width: 0; padding: 1.25rem; }
@@ -127,6 +145,23 @@
 .investment-confirm-field { display: flex; align-items: center; gap: .65rem; min-height: 44px; font-size: .875rem; cursor: pointer; }
 .investment-confirm-field input { width: 1.25rem; height: 1.25rem; min-height: 0; flex: none; accent-color: var(--cb-accent); }
 
+/* Funding chooser: "transfer now" or money already sitting in the investment
+   account (record-only, no ledger write). The choice help sits under each
+   radio; the source select and the record note toggle via [hidden]. */
+.investment-funding-options { display: grid; gap: .35rem; }
+.investment-funding-options .investment-confirm-field { align-items: flex-start; padding-top: .55rem; min-height: 0; }
+.investment-funding-choice-help { display: block; margin-top: .15rem; font-size: .8125rem; font-weight: 400; opacity: .82; }
+
+/* Cancellation reuses the detail drawer and the existing history panels. The
+   receipt stays read-only; only the explicit confirmation form writes. */
+.investment-cancellation-terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: .75rem 1.5rem; margin: .9rem 0; }
+.investment-cancellation-terms dd { margin-top: .2rem; font-size: .875rem; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.investment-cancellation-preview { margin-top: 1.25rem; padding-top: 1.15rem; border-top: 1px solid var(--cb-border-subtle); }
+.investment-cancellation-preview h3 { font-size: 1rem; font-weight: 650; }
+.investment-cancellation-preview > p { margin-top: .4rem; font-size: .875rem; }
+.investment-cancellation-preview ul { margin: .4rem 0 0 1.1rem; font-size: .875rem; }
+.investment-cancellation-receipt > p { margin: .4rem 0 .9rem; font-size: .875rem; }
+
 /* Without JS: the openers cannot work, so the panels stay visible in the flow
    and the marker disappears from the DOM as soon as a browser runs scripts. */
 .investment-page:has(noscript > .investment-nojs) [data-investment-open],
@@ -166,6 +201,7 @@
     .investment-actions { flex-direction: column; align-items: stretch; }
     .investment-action-admin { margin-left: 0; }
     .investment-field-grid { grid-template-columns: minmax(0,1fr); }
+    .investment-cancellation-terms { grid-template-columns: minmax(0,1fr); }
     .investment-drawer { padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); }
 }
 

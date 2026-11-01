@@ -470,6 +470,7 @@
         </nav>
     </header>
 
+    {{$hasSwipeable := false}}
     {{if .Transactions}}
     <div class="cb-invoice-groups" data-show-more-group="faturas" data-show-more-initial="{{.InitialVisibleItems}}" data-show-more-total="{{len .Transactions}}" data-show-more-one-way>
         {{$invoiceID := .InvoiceID}}
@@ -484,6 +485,7 @@
             <div class="ui-list cb-invoice-group-rows">
                 {{range .Transactions}}
                 <div data-show-more-item="{{.ListIndex}}">
+                    {{if not .IsProjected}}{{$hasSwipeable = true}}{{end}}
                     {{if .IsProjected}}
                     <div class="ui-row ui-row--invoice cb-invoice-row is-projected">
                         <span class="ui-row__status" aria-hidden="true"><i data-lucide="{{if and .CategoryIcon (ne .CategoryIcon "tag")}}{{.CategoryIcon}}{{else}}repeat{{end}}"></i></span>
@@ -512,6 +514,8 @@
                         data-swipe-right-url="/transacoes/{{.ID}}/mover-fatura"
                         data-swipe-right-method="POST"
                         data-swipe-right-swap="none"
+                        data-swipe-right-move-scope="{{if .IsInstallmentSeries}}true{{else}}false{{end}}"
+                        data-installment-label="{{if .IsInstallmentSeries}}{{.InstallmentNumber}}/{{.TotalInstallments}}{{end}}"
                         data-swipe-right-vals='{"expected_invoice_id":"{{$invoiceID}}","expected_destination_reference":"{{$nextReference}}","expected_updated_at":"{{.UpdatedAt}}","expected_move_scope":"{{if .IsSeries}}chain{{else}}single{{end}}"}'>
                         <div data-swipe-bg-left class="cb-invoice-swipe-bg cb-invoice-swipe-bg--delete" aria-hidden="true">
                             <i data-lucide="trash-2"></i>
@@ -563,6 +567,20 @@
                                         aria-label="Informar reembolso para {{.Description}}">
                                         <i data-lucide="undo-2"></i>
                                     </button>
+                                    {{if .IsInstallmentSeries}}
+                                    <button type="button"
+                                        data-onclick-ev="openInvoiceMoveScopeFromButton"
+                                        data-invoice-move-url="/transacoes/{{.ID}}/mover-fatura"
+                                        data-invoice-move-values='{"expected_invoice_id":"{{$invoiceID}}","expected_destination_reference":"{{$nextReference}}","expected_updated_at":"{{.UpdatedAt}}","expected_move_scope":"chain"}'
+                                        data-invoice-move-label="{{.InstallmentNumber}}/{{.TotalInstallments}}"
+                                        data-move-scope-choice="true"
+                                        class="ui-row__action ui-row__action--desktop cb-invoice-row-action is-accent"
+                                        data-tooltip-hover
+                                        data-tooltip-text="Escolher escopo para mover parcela"
+                                        aria-label="Escolher escopo para mover a parcela {{.InstallmentNumber}} de {{.TotalInstallments}}">
+                                        <i data-lucide="calendar-plus"></i>
+                                    </button>
+                                    {{else}}
                                     <button type="button"
                                         hx-post="/transacoes/{{.ID}}/mover-fatura"
                                         hx-vals='{"expected_invoice_id":"{{$invoiceID}}","expected_destination_reference":"{{$nextReference}}","expected_updated_at":"{{.UpdatedAt}}","expected_move_scope":"{{if .IsSeries}}chain{{else}}single{{end}}"}'
@@ -574,6 +592,7 @@
                                         aria-label="Mover para próxima fatura">
                                         <i data-lucide="calendar-plus"></i>
                                     </button>
+                                    {{end}}
                                 </span>
                                 {{end}}
                             </span>
@@ -603,12 +622,14 @@
     </div>
     {{end}}
 
+    {{if $hasSwipeable}}
     <aside class="cb-v2-swipe-hint cb-invoice-swipe-hint">
         <i data-lucide="help-circle" class="cb-invoice-swipe-hint-icon" aria-hidden="true"></i>
         <span>
             <strong>Dica de navegação:</strong>
-            Arraste o lançamento para a Esquerda (&larr;) para mover a cobrança para a próxima fatura | Arraste para a Direita (&rarr;) para apagar o registro.
+            Arraste o lançamento para a Esquerda (&larr;) para mover a cobrança para a próxima fatura (parcelas permitem escolher o escopo) | Arraste para a Direita (&rarr;) para apagar o registro.
         </span>
     </aside>
+    {{end}}
 </section>
 {{end}}

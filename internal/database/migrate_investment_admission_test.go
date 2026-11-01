@@ -1,3 +1,5 @@
+//go:build contabase_legacy_fixtures
+
 package database
 
 import (
@@ -32,7 +34,7 @@ const admissionTxPlainFixture = `INSERT INTO transactions(id,workspace_id,user_i
 func admissionCandidateDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db := referenceLegacy71(t)
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 77); err != nil {
 		t.Fatal(err)
 	}
 	applyAdmissionCandidateForTest(t, db)
@@ -71,10 +73,10 @@ func applyAdmissionCandidateForTest(t *testing.T, db *sql.DB) {
 	}
 }
 
-func TestMigration78ExcludedFromStartup(t *testing.T) {
+func TestMigration78ExcludedFromLegacyFixture(t *testing.T) {
 	db := referenceLegacy71(t)
 	for attempt := 0; attempt < 2; attempt++ {
-		if err := runMigrations(db); err != nil {
+		if err := runMigrationsThroughVersionForTest(db, 77); err != nil {
 			t.Fatal(err)
 		}
 		if got := countQueryRows(t, db, `SELECT MAX(version) FROM schema_migrations`); got != 77 {
@@ -330,7 +332,7 @@ func TestMigration78CandidateSchemaFreshIdempotentLegacy(t *testing.T) {
 		}
 	}
 	// Idempotency of the runner over the final schema.
-	if err := runMigrations(db); err != nil {
+	if err := runMigrationsThroughVersionForTest(db, 77); err != nil {
 		t.Fatal(err)
 	}
 	applyAdmissionCandidateForTest(t, db)
@@ -688,7 +690,7 @@ func TestMigration78ReopenAndWAL(t *testing.T) {
 		mustExecOK(t, db, `INSERT INTO investment_withdrawals(id,workspace_id,investment_id,withdrawal_date,received_cents,mode,created_by,request_id) VALUES('legacy-withdrawal','ws-1','inv-1','2026-01-20',100,'PARTIAL','user-1','11111111-1111-4111-8111-111111111111')`)
 		mustExecOK(t, db, `INSERT INTO investment_withdrawal_allocations(workspace_id,investment_id,withdrawal_id,purchase_id,received_cents,principal_cents,closes_purchase) VALUES('ws-1','inv-1','legacy-withdrawal','initial:inv-1',100,NULL,0)`)
 		mustExecOK(t, db, `INSERT INTO accounts (id,workspace_id,name,type,initial_balance,current_balance) VALUES('acc-inv2','ws-2','Corretora 2','INVESTMENT',0,0)`)
-		if err := runMigrations(db); err != nil {
+		if err := runMigrationsThroughVersionForTest(db, 77); err != nil {
 			t.Fatal(err)
 		}
 		applyAdmissionCandidateForTest(t, db)
@@ -712,7 +714,7 @@ func TestMigration78ReopenAndWAL(t *testing.T) {
 			t.Fatal(err)
 		}
 		db2.SetMaxOpenConns(1)
-		if err := runMigrations(db2); err != nil {
+		if err := runMigrationsThroughVersionForTest(db2, 77); err != nil {
 			t.Fatal(err)
 		}
 		return db2

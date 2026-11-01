@@ -41,6 +41,42 @@
     max-width: none;
 }
 
+/* Cada obrigação é um cartão individual. O painel continua agrupando o
+   conjunto e o cabeçalho; o gap de 7px separa os registros sem tocar em
+   status, vencimentos, swipe ou nos contratos HTMX. */
+.cb-v2-contas-panels .ui-list-panel > .ui-list {
+    gap: 7px;
+    padding: 10px 10px 12px;
+}
+
+.cb-v2-contas-panels .ui-list-panel > .ui-list > .ui-row,
+.cb-v2-contas-panels .ui-list-panel > .ui-list > .ui-swipe {
+    overflow: hidden;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-card);
+    background: var(--ui-surface-raised);
+}
+
+.cb-v2-contas-panels .ui-list-panel > .ui-list > .ui-row:hover,
+.cb-v2-contas-panels .ui-list-panel > .ui-list > .ui-swipe > .ui-row:hover {
+    background: var(--ui-surface-hover);
+}
+
+.cb-v2-contas-panels .ui-list-panel > .ui-list > .ui-swipe > .ui-row {
+    border-bottom: 0;
+    background: var(--ui-surface-raised);
+}
+
+.cb-v2-contas-panels .ui-list-panel > .ui-list > .ui-row.is-overdue,
+.cb-v2-contas-panels .ui-list-panel > .ui-list > .ui-swipe > .ui-row.is-overdue {
+    background: color-mix(in srgb, var(--ui-danger) 4%, var(--ui-surface-raised));
+}
+
+.cb-v2-contas-panels .ui-list-panel > .ui-list > .ui-row.is-overdue:hover,
+.cb-v2-contas-panels .ui-list-panel > .ui-list > .ui-swipe > .ui-row.is-overdue:hover {
+    background: color-mix(in srgb, var(--ui-danger) 7%, var(--ui-surface-raised));
+}
+
 /* Tons dos botões de status financeiro. O botão continua sendo o mesmo
    controle de pagamento; só o tratamento visual muda. */
 .cb-v2-contas-panels .tx-status-warning {

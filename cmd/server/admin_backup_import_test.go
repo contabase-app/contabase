@@ -472,14 +472,18 @@ func createRestoreTestDB(t *testing.T, dbPath, marker string) *sql.DB {
 		_ = db.Close()
 		t.Fatalf("enable wal: %v", err)
 	}
+	frozen, err := os.ReadFile("../../internal/database/testdata/investment_schema77.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(string(frozen)); err != nil {
+		t.Fatal(err)
+	}
 	stmts := []string{
-		`CREATE TABLE users (id TEXT PRIMARY KEY, password_hash TEXT NOT NULL DEFAULT '')`,
-		`CREATE TABLE workspaces (id TEXT PRIMARY KEY)`,
-		`CREATE TABLE workspace_members (workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL)`,
-		`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL)`,
-		`CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, workspace_id TEXT NOT NULL, token_hash TEXT NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER, is_remember INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`,
-		`CREATE TABLE pre_auth_sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL, method TEXT NOT NULL, expires_at INTEGER NOT NULL, consumed_at INTEGER, remember_me INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)`,
 		`CREATE TABLE restore_marker (value TEXT NOT NULL)`,
+		`INSERT INTO users(id,name,email,password_hash) VALUES('restore-user','Synthetic','restore@example.test','hash')`,
+		`INSERT INTO workspaces(id,name) VALUES('restore-workspace','Synthetic')`,
+		`INSERT INTO workspace_members(workspace_id,user_id,role) VALUES('restore-workspace','restore-user','ADMIN')`,
 		`INSERT INTO sessions (id, user_id, workspace_id, token_hash, expires_at, is_remember, created_at) VALUES ('session-1', 'restore-user', 'restore-workspace', 'restore-session-hash', unixepoch() + 3600, 1, unixepoch())`,
 		`INSERT INTO pre_auth_sessions (id, user_id, token_hash, method, expires_at, remember_me, created_at) VALUES ('preauth-1', 'restore-user', 'restore-preauth-hash', 'TOTP', unixepoch() + 300, 1, unixepoch())`,
 		`INSERT INTO restore_marker (value) VALUES (?)`,

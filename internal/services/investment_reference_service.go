@@ -231,6 +231,9 @@ func recordInvestmentReferenceTx(ctx context.Context, tx *sql.Tx, in RecordInves
 	if !errors.Is(err, sql.ErrNoRows) {
 		return empty, err
 	}
+	if err = rejectCancelledInvestmentTx(ctx, tx, in.WorkspaceID, in.InvestmentID); err != nil {
+		return empty, err
+	}
 	if err = rejectFundedInvestmentTx(ctx, tx, in.WorkspaceID, in.InvestmentID); err != nil {
 		return empty, err
 	}

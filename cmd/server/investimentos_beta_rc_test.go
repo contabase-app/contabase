@@ -1,3 +1,5 @@
+//go:build contabase_legacy_fixtures
+
 package main
 
 import (
@@ -19,7 +21,22 @@ func newBetaRC78Harness(t *testing.T) *investimentosRoutesHarness {
 	t.Helper()
 	t.Setenv("DATA_DIR", t.TempDir())
 	t.Setenv("CONTABASE_FEATURE_INVESTMENT_OPERATIONS", "true")
-	h := newInvestimentosRoutesHarness(t)
+	seedPath := filepath.Join(t.TempDir(), "seed77.db")
+	if err := database.CreateLegacyInvestmentFixture77(seedPath); err != nil {
+		t.Fatal(err)
+	}
+	seedPools, err := database.OpenLegacyInvestmentFixtureDBs(seedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { seedPools.Close() })
+	if _, err := serverFixtureExec(t, seedPools.DB, `INSERT INTO users(id,name,email,password_hash,status) VALUES
+ ('admin-user','Admin','admin@example.test','hash','active'),('manager-user','Manager','manager@example.test','hash','active'),('regular-user','Regular','regular@example.test','hash','active');
+ INSERT INTO workspaces(id,name) VALUES('workspace-rbac','Synthetic RBAC');
+ INSERT INTO workspace_members(workspace_id,user_id,role) VALUES('workspace-rbac','admin-user','ADMIN'),('workspace-rbac','manager-user','MANAGER'),('workspace-rbac','regular-user','USER')`); err != nil {
+		t.Fatal(err)
+	}
+	h := newInvestimentosRoutesHarnessWithDB(t, "true", seedPools.DB)
 	path := filepath.Join(t.TempDir(), "beta-rc.db")
 	h.exec(t, `VACUUM INTO ?`, path)
 	if err := h.db.Close(); err != nil {
@@ -35,7 +52,10 @@ func newBetaRC78Harness(t *testing.T) *investimentosRoutesHarness {
 	if err != nil || closeErr != nil {
 		t.Fatal(err, closeErr)
 	}
-	pools, err := database.OpenRuntimeDBs(path)
+	if err := database.RegisterLegacyInvestmentFixture(path); err != nil {
+		t.Fatal(err)
+	}
+	pools, err := database.OpenLegacyInvestmentFixtureDBs(path)
 	if err != nil {
 		t.Fatal(err)
 	}

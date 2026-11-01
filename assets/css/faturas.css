@@ -388,9 +388,6 @@
 .cb-invoice-group { position: relative; }
 
 .cb-invoice-day {
-    position: sticky;
-    top: 8.75rem;
-    z-index: 2;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -407,10 +404,41 @@
 .cb-invoice-day-label { white-space: nowrap; }
 .cb-invoice-day-line { flex: 1 1 auto; height: 1px; }
 
-.cb-invoice-group-rows .ui-row { border-bottom: 1px solid var(--ui-border); }
-.cb-invoice-group:last-child .cb-invoice-group-rows > div:last-child .ui-row { border-bottom: 0; }
+/* Each invoice transaction is a card. Date group headers stay outside the
+   cards and the show-more wrapper keeps its original index contract. */
+.cb-invoice-group-rows {
+    gap: 7px;
+    padding: 10px 10px 12px;
+}
 
-.cb-invoice-row { border-radius: 0; }
+.cb-invoice-group-rows > div[data-show-more-item] {
+    overflow: hidden;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-card);
+    background: var(--ui-surface-raised);
+}
+
+.cb-invoice-group-rows > div[data-show-more-item] .ui-row {
+    border-bottom: 0;
+    background: var(--ui-surface-raised);
+}
+
+.cb-invoice-group-rows > div[data-show-more-item] .ui-row:hover {
+    background: var(--ui-surface-hover);
+}
+
+/* The neutral icon tile needs its own surface now that the row is raised. */
+.cb-invoice-group-rows > div[data-show-more-item] .ui-row:not(.is-projected) .ui-row__status {
+    background: var(--ui-surface);
+}
+
+.cb-invoice-group-rows > div[data-show-more-item] .cb-invoice-row.is-projected {
+    background: color-mix(in srgb, var(--ui-accent) 4%, var(--ui-surface-raised));
+}
+
+.cb-invoice-group-rows > div[data-show-more-item] .cb-invoice-row.is-projected:hover {
+    background: color-mix(in srgb, var(--ui-accent) 7%, var(--ui-surface-raised));
+}
 
 .cb-invoice-row .ui-row__title { white-space: nowrap; text-overflow: ellipsis; }
 .cb-invoice-row .ui-row__meta { gap: 4px 8px; }
@@ -418,8 +446,6 @@
 .cb-invoice-row .ui-row__amount.is-income { color: var(--ui-success); }
 .cb-invoice-row .ui-row__amount.is-projected { color: var(--ui-accent-strong); }
 
-.cb-invoice-row.is-projected { background: color-mix(in srgb, var(--ui-accent) 4%, var(--ui-surface)); }
-.cb-invoice-row.is-projected:hover { background: color-mix(in srgb, var(--ui-accent) 7%, var(--ui-surface)); }
 .cb-invoice-row.is-projected .ui-row__status {
     background: color-mix(in srgb, var(--ui-accent) 12%, transparent);
     color: var(--ui-accent-strong);

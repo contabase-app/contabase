@@ -1,3 +1,23 @@
+{{define "investimento-funding-chooser"}}
+    <fieldset class="investment-fieldset" data-investment-funding>
+        <legend>Origem do dinheiro</legend>
+        <div class="investment-funding-options">
+            <label class="investment-confirm-field" for="{{if .MinimumDate}}purchase{{else}}investment{{end}}-funding-transfer"><input id="{{if .MinimumDate}}purchase{{else}}investment{{end}}-funding-transfer" type="radio" name="funding_mode" value="transfer" data-investment-funding-mode {{if ne .FundingMode "record"}}checked{{end}}> <span>Transferir agora <span class="investment-funding-choice-help">Debita a conta de origem e credita a conta de investimento. Use quando o dinheiro ainda não foi transferido.</span></span></label>
+            <label class="investment-confirm-field" for="{{if .MinimumDate}}purchase{{else}}investment{{end}}-funding-record"><input id="{{if .MinimumDate}}purchase{{else}}investment{{end}}-funding-record" type="radio" name="funding_mode" value="record" data-investment-funding-mode {{if eq .FundingMode "record"}}checked{{end}}> <span>Dinheiro já está na conta de investimento <span class="investment-funding-choice-help">Sem transferência automática: nenhum saldo é movimentado.</span></span></label>
+        </div>
+        <div data-investment-funding-source {{if eq .FundingMode "record"}}hidden{{end}}>
+            <label class="cb-label" for="{{if .MinimumDate}}purchase{{else}}investment{{end}}-source">Conta de origem</label>
+            <select id="{{if .MinimumDate}}purchase{{else}}investment{{end}}-source" name="source_account_id" class="cb-input" {{if ne .FundingMode "record"}}required{{end}} aria-describedby="{{if .MinimumDate}}purchase{{else}}investment{{end}}-source-help">
+                <option value="">Selecione a conta que será debitada</option>
+                {{range .SourceAccounts}}<option value="{{.ID}}" {{if eq $.SourceAccountID .ID}}selected{{end}}>{{.Name}}</option>{{end}}
+            </select>
+            <p id="{{if .MinimumDate}}purchase{{else}}investment{{end}}-source-help" class="investment-help">A aplicação cria uma transferência para a conta de investimento. Use para dinheiro que ainda não foi transferido.</p>
+            {{if not .SourceAccounts}}<p class="investment-help">Cadastre uma conta corrente, poupança ou carteira em Configurações → Contas.</p>{{end}}
+        </div>
+        <p class="investment-help" data-investment-funding-note {{if ne .FundingMode "record"}}hidden{{end}}>Sem transferência automática: a origem é a própria conta de investimento e nenhum saldo é movimentado. Este registro não exige nem cria transferência vinculada.</p>
+    </fieldset>
+{{end}}
+
 {{define "investimento-form"}}
 <form method="post" action="{{.Action}}" hx-post="{{.Action}}" hx-swap="none" hx-indicator="#htmx-indicator" data-investment-operation hx-sync="this:drop" hx-disabled-elt="find button[type='submit']" {{if not .IsEdit}}data-investment-create{{end}} class="space-y-4">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -29,21 +49,11 @@
         </div>
     </fieldset>
     {{if not .IsEdit}}
+    {{template "investimento-funding-chooser" .}}
     <fieldset class="investment-fieldset">
         <legend>Aplicação</legend>
-    <input type="hidden" name="funding_mode" value="transfer">
-    <div>
-        <label class="cb-label" for="{{if .MinimumDate}}purchase{{else}}investment{{end}}-source">Conta de origem</label>
-        <select id="{{if .MinimumDate}}purchase{{else}}investment{{end}}-source" name="source_account_id" class="cb-input" required aria-describedby="{{if .MinimumDate}}purchase{{else}}investment{{end}}-source-help">
-            <option value="">Selecione a conta que será debitada</option>
-            {{range .SourceAccounts}}<option value="{{.ID}}" {{if eq $.SourceAccountID .ID}}selected{{end}}>{{.Name}}</option>{{end}}
-        </select>
-        <p id="{{if .MinimumDate}}purchase{{else}}investment{{end}}-source-help" class="investment-help">A aplicação cria uma transferência para a conta de investimento. Use para dinheiro que ainda não foi transferido.</p>
-        {{if not .SourceAccounts}}<p class="investment-help">Cadastre uma conta corrente, poupança ou carteira em Configurações → Contas.</p>{{end}}
-    </div>
-
         <div class="investment-field-grid">
-            <div><label class="cb-label" for="investment-principal">Valor aplicado (R$)</label><input id="investment-principal" type="text" inputmode="decimal" name="principal_amount" value="{{.PrincipalInput}}" data-investment-money="positive" placeholder="R$ 1.234,56" class="cb-input" aria-describedby="investment-principal-help" required><p id="investment-principal-help" class="investment-help">Digite em reais, com até duas casas decimais.</p></div>
+            <div><label class="cb-label" for="investment-principal">Valor aplicado (R$)</label><input id="investment-principal" type="text" inputmode="decimal" name="principal_amount" value="{{.PrincipalInput}}" data-investment-money="positive" data-investment-money-dial placeholder="R$ 1.234,56" class="cb-input" aria-describedby="investment-principal-help" required><p id="investment-principal-help" data-investment-dial-help="positive" class="investment-help">Digite em reais, com até duas casas decimais.</p></div>
             <div><label class="cb-label" for="investment-applied">Data da aplicação</label><input id="investment-applied" type="date" name="applied_date" value="{{.Investment.AppliedDate}}" class="cb-input" required></div>
         </div>
     </fieldset>
@@ -65,21 +75,12 @@
     <input type="hidden" name="request_id" value="{{.RequestID}}">
     <p data-investment-feedback role="alert" tabindex="-1" class="investment-feedback" {{if not .Error}}hidden{{end}}>{{.Error}}</p>
 
-    <input type="hidden" name="funding_mode" value="transfer">
-    <div>
-        <label class="cb-label" for="{{if .MinimumDate}}purchase{{else}}investment{{end}}-source">Conta de origem</label>
-        <select id="{{if .MinimumDate}}purchase{{else}}investment{{end}}-source" name="source_account_id" class="cb-input" required aria-describedby="{{if .MinimumDate}}purchase{{else}}investment{{end}}-source-help">
-            <option value="">Selecione a conta que será debitada</option>
-            {{range .SourceAccounts}}<option value="{{.ID}}" {{if eq $.SourceAccountID .ID}}selected{{end}}>{{.Name}}</option>{{end}}
-        </select>
-        <p id="{{if .MinimumDate}}purchase{{else}}investment{{end}}-source-help" class="investment-help">A aplicação cria uma transferência para a conta de investimento. Use para dinheiro que ainda não foi transferido.</p>
-        {{if not .SourceAccounts}}<p class="investment-help">Cadastre uma conta corrente, poupança ou carteira em Configurações → Contas.</p>{{end}}
-    </div>
+    {{template "investimento-funding-chooser" .}}
     <fieldset class="investment-fieldset">
         <legend>Nova compra</legend>
         <div class="investment-field-grid">
             <div><label class="cb-label" for="purchase-date">Data da nova compra</label><input id="purchase-date" type="date" name="purchase_date" min="{{.MinimumDate}}" value="{{.Investment.AppliedDate}}" class="cb-input" required></div>
-            <div><label class="cb-label" for="purchase-principal">Valor aplicado (R$)</label><input id="purchase-principal" type="text" inputmode="decimal" name="principal_amount" value="{{.PrincipalInput}}" data-investment-money="positive" class="cb-input" placeholder="R$ 2.000,00" aria-describedby="purchase-money-help" required><p id="purchase-money-help" class="investment-help">Digite em reais, com até duas casas decimais.</p></div>
+            <div><label class="cb-label" for="purchase-principal">Valor aplicado (R$)</label><input id="purchase-principal" type="text" inputmode="decimal" name="principal_amount" value="{{.PrincipalInput}}" data-investment-money="positive" data-investment-money-dial class="cb-input" placeholder="R$ 2.000,00" aria-describedby="purchase-money-help" required><p id="purchase-money-help" data-investment-dial-help="positive" class="investment-help">Digite em reais, com até duas casas decimais.</p></div>
         </div>
         <div class="investment-field-wide"><label class="cb-label" for="purchase-reference">Identificação da nota (opcional)</label><input id="purchase-reference" name="note_reference" maxlength="120" value="{{.NoteReference}}" class="cb-input"><p class="investment-help">Número ou identificação textual da nota de negociação.</p></div>
     </fieldset>
