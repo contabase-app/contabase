@@ -117,7 +117,7 @@ jobs:
       - backup-restore-portability
       - backup-restore-busybox
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Check out candidate

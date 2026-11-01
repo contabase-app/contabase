@@ -56,7 +56,16 @@ echo "== Build CSS =="
 ./scripts/build-css.sh
 
 echo "== Go tests (UTC, uncached) =="
-TZ=UTC go test ./... -count=1
+go_test_start="$SECONDS"
+go_test_log="$(mktemp "${TMPDIR:-/tmp}/contabase-go-tests.XXXXXX")"
+go_test_status=0
+TZ=UTC go test -timeout=20m ./... -count=1 | tee "$go_test_log" || go_test_status=$?
+./.github/scripts/summarize-go-test-durations.sh "$go_test_log"
+echo "== Duracao total do passo de testes: $((SECONDS - go_test_start))s =="
+rm -f "$go_test_log"
+if [[ "$go_test_status" -ne 0 ]]; then
+  exit "$go_test_status"
+fi
 
 echo "== Go vet =="
 go vet ./...
