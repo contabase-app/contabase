@@ -41,14 +41,16 @@
     }
 
     var lastCardIndex = 0;
-    var accountsExpanded = false;
-    var categoriesExpanded = false;
 
     function initCarousel(root) {
         var rail = root.querySelector('[data-v2-carousel]');
         if (!rail || rail.dataset.v2CarouselReady === 'true') return;
         rail.dataset.v2CarouselReady = 'true';
         var cards = Array.from(rail.querySelectorAll('[data-wallet-card]'));
+        // The add-card placeholder scrolls with the rail but never counts as a
+        // real card in the position label or in financial metrics.
+        var slides = Array.from(rail.querySelectorAll('[data-wallet-card], [data-wallet-add-card]'));
+        var cardSlides = cards.map(function (card) { return slides.indexOf(card); });
         var previous = root.querySelector('[data-v2-carousel-prev]');
         var next = root.querySelector('[data-v2-carousel-next]');
         var position = root.querySelector('[data-wallet-position]');
@@ -64,10 +66,16 @@
             var inset = parseFloat(window.getComputedStyle(rail).scrollPaddingRight);
             return rail.getBoundingClientRect().right - (isNaN(inset) ? railInset() : inset);
         }
-        function cardScrollLeft(index) {
-            return cards[index].getBoundingClientRect().left - rail.getBoundingClientRect().left + rail.scrollLeft - railInset();
+        function slideScrollLeft(index) {
+            return slides[index].getBoundingClientRect().left - rail.getBoundingClientRect().left + rail.scrollLeft - railInset();
         }
         function closestIndex() {
+            var start = railStart();
+            return slides.reduce(function (best, slide, index) {
+                return Math.abs(slide.getBoundingClientRect().left - start) < Math.abs(slides[best].getBoundingClientRect().left - start) ? index : best;
+            }, 0);
+        }
+        function closestCardIndex() {
             var start = railStart();
             return cards.reduce(function (best, card, index) {
                 return Math.abs(card.getBoundingClientRect().left - start) < Math.abs(cards[best].getBoundingClientRect().left - start) ? index : best;
@@ -78,23 +86,26 @@
             var end = railEnd();
             var first = -1;
             var last = -1;
-            cards.forEach(function (card, index) {
-                var rect = card.getBoundingClientRect();
+            slides.forEach(function (slide, index) {
+                if (!slide.hasAttribute('data-wallet-card')) return;
+                var rect = slide.getBoundingClientRect();
                 if (rect.left >= start - 1 && rect.right <= end + 1) {
-                    if (first < 0) first = index;
-                    last = index;
+                    var cardIndex = cardSlides.indexOf(index);
+                    if (cardIndex < 0) return;
+                    if (first < 0) first = cardIndex;
+                    last = cardIndex;
                 }
             });
             if (first < 0) {
-                var closest = closestIndex();
+                var closest = closestCardIndex();
                 return [closest, closest];
             }
             return [first, last];
         }
         function scrollToIndex(index, behavior) {
-            rail.scrollTo({ left: cardScrollLeft(index), behavior: behavior });
+            rail.scrollTo({ left: slideScrollLeft(index), behavior: behavior });
         }
-        // Arrows reflect the real scroll range: the last card is the end.
+        // Arrows reflect the real scroll range: the add-card slide is the end.
         function update() {
             var max = rail.scrollWidth - rail.clientWidth;
             previous.disabled = rail.scrollLeft <= 1;
@@ -112,17 +123,18 @@
         }
 
         previous.addEventListener('click', function () { scrollToIndex(Math.max(0, closestIndex() - 1), 'smooth'); });
-        next.addEventListener('click', function () { scrollToIndex(Math.min(cards.length - 1, closestIndex() + 1), 'smooth'); });
+        next.addEventListener('click', function () { scrollToIndex(Math.min(slides.length - 1, closestIndex() + 1), 'smooth'); });
         cards.forEach(function (card, index) {
             card.addEventListener('keydown', function (event) {
                 var target;
-                if (event.key === 'ArrowRight') target = Math.min(index + 1, cards.length - 1);
-                if (event.key === 'ArrowLeft') target = Math.max(index - 1, 0);
+                var slideIndex = cardSlides[index];
+                if (event.key === 'ArrowRight') target = Math.min(slideIndex + 1, slides.length - 1);
+                if (event.key === 'ArrowLeft') target = Math.max(slideIndex - 1, 0);
                 if (event.key === 'Home') target = 0;
-                if (event.key === 'End') target = cards.length - 1;
+                if (event.key === 'End') target = slides.length - 1;
                 if (target === undefined) return;
                 event.preventDefault();
-                cards[target].focus({ preventScroll: true });
+                slides[target].focus({ preventScroll: true });
                 scrollToIndex(target, reduceMotion() ? 'auto' : 'smooth');
             });
         });
@@ -135,43 +147,7 @@
         }, { passive: true });
         update();
         // Restore the visible card after an HTMX replacement without animation.
-        if (lastCardIndex) rail.scrollLeft = cardScrollLeft(lastCardIndex);
-    }
-
-    function initAccounts(root) {
-        var section = root.querySelector('.wallet-accounts');
-        var button = root.querySelector('[data-wallet-accounts-toggle]');
-        if (!button || button.dataset.ready === 'true') return;
-        button.dataset.ready = 'true';
-        button.hidden = false;
-        function updateState() {
-            section.dataset.walletCollapsed = String(!accountsExpanded);
-            button.setAttribute('aria-expanded', String(accountsExpanded));
-            button.querySelector('span').textContent = accountsExpanded ? 'Recolher contas' : 'Mostrar mais contas';
-        }
-        button.addEventListener('click', function () {
-            accountsExpanded = !accountsExpanded;
-            updateState();
-        });
-        updateState();
-    }
-
-    function initCategories(root) {
-        var section = root.querySelector('[data-wallet-categories]');
-        var button = root.querySelector('[data-wallet-categories-toggle]');
-        if (!section || !button || button.dataset.ready === 'true') return;
-        button.dataset.ready = 'true';
-        button.hidden = false;
-        function updateState() {
-            section.dataset.walletCategoriesCollapsed = String(!categoriesExpanded);
-            button.setAttribute('aria-expanded', String(categoriesExpanded));
-            button.querySelector('span').textContent = categoriesExpanded ? 'Mostrar menos' : 'Ver as 5 principais';
-        }
-        button.addEventListener('click', function () {
-            categoriesExpanded = !categoriesExpanded;
-            updateState();
-        });
-        updateState();
+        if (lastCardIndex) rail.scrollLeft = slideScrollLeft(lastCardIndex);
     }
 
     function initialize() {
@@ -180,8 +156,6 @@
         initActionTabs(root);
         if (typeof window.applyCardSchemes === 'function') window.applyCardSchemes(root);
         initCarousel(root);
-        initAccounts(root);
-        initCategories(root);
         if (typeof window.initPrivacyToggle === 'function') window.initPrivacyToggle(root);
         if (window.lucide && typeof window.lucide.createIcons === 'function') {
             window.lucide.createIcons();
@@ -193,10 +167,10 @@
     window.addEventListener('resize', function () {
         var rail = document.querySelector('.wallet [data-v2-carousel]');
         if (!rail) return;
-        var cards = rail.querySelectorAll('[data-wallet-card]');
-        if (cards[lastCardIndex]) {
+        var slides = rail.querySelectorAll('[data-wallet-card], [data-wallet-add-card]');
+        if (slides[lastCardIndex]) {
             var inset = parseFloat(window.getComputedStyle(rail).scrollPaddingLeft) || 0;
-            rail.scrollLeft = cards[lastCardIndex].getBoundingClientRect().left - rail.getBoundingClientRect().left + rail.scrollLeft - inset;
+            rail.scrollLeft = slides[lastCardIndex].getBoundingClientRect().left - rail.getBoundingClientRect().left + rail.scrollLeft - inset;
         }
         rail.dispatchEvent(new Event('scroll'));
     });

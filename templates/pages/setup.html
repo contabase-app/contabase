@@ -149,6 +149,15 @@
                             </label>
                         </div>
                     </label>
+                    <label class="block space-y-2">
+                        <span class="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Manifesto SHA-256 (.manifest.json)</span>
+                        <input type="file" name="manifest_file" accept=".json,.manifest.json" class="block w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-300">
+                        <p class="text-xs text-zinc-400 leading-relaxed">Obrigatório para backups novos. Selecione o arquivo .manifest.json gerado junto do backup .db.</p>
+                    </label>
+                    <label class="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+                        <input type="checkbox" name="legacy_restore" value="1" class="mt-0.5">
+                        <span><strong>Restauração legada explícita:</strong> confirma que o backup não possui manifesto e aceita as validações estruturais de schema, integridade e foreign keys. Não use para backups novos com manifesto.</span>
+                    </label>
                     <button type="submit"
                         class="btn-tactile h-12 w-full rounded-xl bg-white text-sm font-bold text-zinc-950 transition-all hover:bg-zinc-100 shadow-lg mt-2">
                         Importar e Restaurar Sistema

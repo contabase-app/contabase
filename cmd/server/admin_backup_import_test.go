@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -324,7 +327,7 @@ func TestAdminImportBackupCandidateCleanupIsIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "contabase.db")
 	createRestoreTestDB(t, dbPath, "current").Close()
-	path, cleanup, err := saveAdminBackupImportUpload(dbPath, strings.NewReader("candidate"))
+	path, cleanup, err := saveAdminBackupImportUpload(dbPath, "candidate.db", strings.NewReader("candidate"))
 	if err != nil {
 		t.Fatalf("stage candidate: %v", err)
 	}
@@ -345,8 +348,173 @@ func TestAdminImportBackupCandidateAndRollbackFailureReturnsNoRuntime(t *testing
 		return nil, errors.New("forced candidate and rollback open failure")
 	}
 	result, runtime, err := restoreAdminBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, openFn, startRestoreTestServerRuntime)
-	if err == nil || runtime != nil || !result.RolledBack {
+	if err == nil || runtime != nil || result.RolledBack || result.RollbackState != adminRollbackFailed || result.RuntimeState != adminRuntimeUnknown {
 		t.Fatalf("double failure must be fail-closed: runtime=%v rolled_back=%v err=%v", runtime, result.RolledBack, err)
+	}
+}
+
+func TestAdminImportBackupCanceledBeforeCommitPreservesOriginal(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DATA_DIR", dir)
+	dbPath := filepath.Join(dir, "cancel-before-commit.db")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
+	defer current.Close()
+	candidatePath := filepath.Join(dir, "candidate.db")
+	createRestoreTestDB(t, candidatePath, "candidate").Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	validator := func(string) error {
+		cancel()
+		return nil
+	}
+	result, returned, err := restoreSQLiteBackupFromFile(ctx, current, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBs, startRestoreTestServerRuntime, validator)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("restore error = %v, want context.Canceled", err)
+	}
+	if returned != current {
+		t.Fatal("canceled restore must preserve the current runtime")
+	}
+	if result.RolledBack {
+		t.Fatal("canceled restore before commit must not report rollback")
+	}
+	assertRestoreMarker(t, dbPath, "current")
+	if _, statErr := os.Stat(filepath.Join(dir, "backups", "pre-restore")); !os.IsNotExist(statErr) {
+		t.Fatalf("canceled restore created a pre-restore backup: %v", statErr)
+	}
+}
+
+func TestAdminImportBackupCompletesAfterCommitWhenClientCancels(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DATA_DIR", dir)
+	dbPath := filepath.Join(dir, "cancel-after-commit.db")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
+	candidatePath := filepath.Join(dir, "candidate.db")
+	createRestoreTestDB(t, candidatePath, "candidate").Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	startFn := func(dbs *contabaseDB.RuntimeDBs) (*serverRuntime, error) {
+		cancel()
+		return startRestoreTestServerRuntime(dbs)
+	}
+	result, refreshed, err := restoreSQLiteBackupFromFile(ctx, current, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBs, startFn, validateSQLiteBackupCandidate)
+	if err != nil {
+		t.Fatalf("restore after commitment: %v", err)
+	}
+	if refreshed == nil {
+		t.Fatal("restore after commitment returned no runtime")
+	}
+	defer refreshed.Close()
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		t.Fatal("test did not cancel the request after commitment")
+	}
+	if result.RolledBack {
+		t.Fatal("successful restore reported rollback")
+	}
+	assertRestoreMarker(t, dbPath, "candidate")
+	if err := validateSQLiteIntegrity(refreshed.DBs.DB); err != nil {
+		t.Fatalf("restored integrity: %v", err)
+	}
+	if err := validateSQLiteForeignKeys(refreshed.DBs.DB); err != nil {
+		t.Fatalf("restored foreign keys: %v", err)
+	}
+}
+
+func TestAdminImportBackupValidSyntheticBeta7Data(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DATA_DIR", dir)
+	dbPath := filepath.Join(dir, "beta7-contabase.db")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
+	candidatePath := filepath.Join(dir, "beta7-candidate.db")
+	candidate := createRestoreTestDB(t, candidatePath, "candidate")
+	statements := []string{
+		`INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('b1-checking', 'restore-workspace', 'Conta Sintetica', 'CHECKING', 100000, 100000, unixepoch(), unixepoch())`,
+		`INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at) VALUES ('b1-card', 'restore-workspace', 'Cartao Sintetico', 'CREDIT_CARD', 0, 0, unixepoch(), unixepoch())`,
+		`INSERT INTO credit_cards (id, account_id, closing_day, due_day, credit_limit) VALUES ('b1-cc', 'b1-card', 20, 10, 500000)`,
+		`INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status, created_at) VALUES ('b1-inv', 'b1-card', '2026-10', unixepoch(), unixepoch() + 86400, 'OPEN', unixepoch())`,
+		`INSERT INTO transactions (id, workspace_id, user_id, account_id, invoice_id, type, amount, date, description, status, created_at, updated_at) VALUES ('b1-tx', 'restore-workspace', 'restore-user', 'b1-card', 'b1-inv', 'EXPENSE', 12345, unixepoch(), 'Compra sintetica', 'paid', unixepoch(), unixepoch())`,
+		`INSERT INTO boxes (id, workspace_id, name, target_amount, monthly_recharge, created_at, updated_at) VALUES ('b1-box', 'restore-workspace', 'Reserva Sintetica', 500000, 0, unixepoch(), unixepoch())`,
+		`INSERT INTO box_virtual_ledger (id, box_id, amount, type, description, reference_date, created_at) VALUES ('b1-lv', 'b1-box', 50000, 'RECHARGE', 'Aporte sintetico', unixepoch(), unixepoch())`,
+	}
+	for _, statement := range statements {
+		if _, err := candidate.Exec(statement); err != nil {
+			_ = candidate.Close()
+			t.Fatalf("seed synthetic Beta 7 data: %v", err)
+		}
+	}
+	if err := candidate.Close(); err != nil {
+		t.Fatalf("close synthetic candidate: %v", err)
+	}
+
+	result, refreshed, err := restoreAdminBackupFromFile(current, "file:"+dbPath, dbPath, candidatePath, contabaseDB.OpenRuntimeDBs, func(dbs *contabaseDB.RuntimeDBs) (*serverRuntime, error) {
+		return startServerRuntime(dbs, serverRuntimeOptions{})
+	})
+	if err != nil {
+		t.Fatalf("restore synthetic Beta 7 backup: %v", err)
+	}
+	if refreshed == nil {
+		t.Fatal("restore returned no runtime")
+	}
+	defer refreshed.Close()
+	if result.RolledBack {
+		t.Fatal("valid synthetic backup reported rollback")
+	}
+	assertRestoreMarker(t, dbPath, "candidate")
+	if err := validateSQLiteIntegrity(refreshed.DBs.DB); err != nil {
+		t.Fatalf("restored integrity: %v", err)
+	}
+	if err := validateSQLiteForeignKeys(refreshed.DBs.DB); err != nil {
+		t.Fatalf("restored foreign keys: %v", err)
+	}
+	var accounts, cards, invoices, transactions, reserveObjects int
+	if err := refreshed.DBs.DB.QueryRow(`SELECT (SELECT count(*) FROM accounts), (SELECT count(*) FROM credit_cards), (SELECT count(*) FROM invoices), (SELECT count(*) FROM transactions), (SELECT count(*) FROM sqlite_schema WHERE name IN ('boxes','box_virtual_ledger','box_contribution_lifecycle_events'))`).Scan(&accounts, &cards, &invoices, &transactions, &reserveObjects); err != nil {
+		t.Fatalf("count restored synthetic data: %v", err)
+	}
+	if accounts < 2 || cards != 1 || invoices != 1 || transactions != 1 || reserveObjects != 0 {
+		t.Fatalf("restored synthetic counts accounts=%d cards=%d invoices=%d transactions=%d reserveObjects=%d", accounts, cards, invoices, transactions, reserveObjects)
+	}
+	var journalMode string
+	if err := refreshed.DBs.DB.QueryRow(`PRAGMA journal_mode`).Scan(&journalMode); err != nil {
+		t.Fatalf("read restored journal mode: %v", err)
+	}
+	if !strings.EqualFold(journalMode, "wal") {
+		t.Fatalf("restored journal mode = %q, want wal", journalMode)
+	}
+	var workspaceID string
+	var amount, balance int64
+	if err := refreshed.DBs.DB.QueryRow(`SELECT workspace_id, amount,
+		(SELECT current_balance FROM accounts WHERE id='b1-checking')
+		FROM transactions WHERE id='b1-tx'`).Scan(&workspaceID, &amount, &balance); err != nil {
+		t.Fatal(err)
+	}
+	if workspaceID != "restore-workspace" || amount != 12345 || balance != 100000 {
+		t.Fatalf("financial/workspace invariant changed: workspace=%s amount=%d balance=%d", workspaceID, amount, balance)
+	}
+	assertRestoredAuthStateInvalidated(t, refreshed.DBs.DB)
+}
+
+func TestAdminBackupImportFailurePublishesSpecificAlert(t *testing.T) {
+	rr := httptest.NewRecorder()
+	writeAdminBackupImportFailure(rr, adminBackupImportBusyMessage, http.StatusConflict)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusConflict)
+	}
+	trigger := rr.Header().Get("HX-Trigger")
+	if !strings.Contains(trigger, "mostrarAlerta") || !strings.Contains(trigger, "sistema está concluindo") {
+		t.Fatalf("expected specific alert trigger, got %q", trigger)
+	}
+	if !strings.Contains(rr.Body.String(), `id="settings-dynamic-payload"`) {
+		t.Fatalf("expected settings target in error body, got %q", rr.Body.String())
+	}
+}
+
+func TestAdminBackupImportForbiddenPublishesSpecificAlert(t *testing.T) {
+	rr := httptest.NewRecorder()
+	writeAdminBackupImportForbidden(rr, httptest.NewRequest(http.MethodPost, "/admin/backups/importar", nil))
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusForbidden)
+	}
+	if trigger := rr.Header().Get("HX-Trigger"); !strings.Contains(trigger, "mostrarAlerta") || !strings.Contains(trigger, "permissão") {
+		t.Fatalf("expected specific forbidden trigger, got %q", trigger)
 	}
 }
 
@@ -438,10 +606,19 @@ func TestAdminBackupImportFormPreventsDuplicateSubmits(t *testing.T) {
 		`type="submit"`,
 		`type="file"`,
 		`name="backup_file"`,
+		`name="manifest_file"`,
+		`name="legacy_restore"`,
 		`required`,
 		`Importando...`,
 		`accept=".db"`,
 		"data-backup-dropzone",
+		"data-backup-import-form",
+		`data-backup-import-state role="status"`,
+		`data-backup-import-status tabindex="-1"`,
+		"data-backup-import-status-icon",
+		"data-backup-import-status-text",
+		"data-backup-import-dismiss",
+		`Dispensar`,
 		`data-lucide="download"`,
 		`data-lucide="upload"`,
 		`ui-btn admin-danger-btn`,
@@ -640,18 +817,19 @@ func assertSidecarDoesNotContain(t *testing.T, path, stale string) {
 	}
 }
 
-func TestAdminBackupImportShellLoadsDropzoneScript(t *testing.T) {
+func TestAdminBackupImportShellLoadsFeedbackScripts(t *testing.T) {
 	tpl := template.Must(template.New("backup-shell").Funcs(buildFuncMap()).ParseFiles("../../templates/components/app_shell.html"))
 	var out bytes.Buffer
 	if err := tpl.ExecuteTemplate(&out, "app-v2-document-end", nil); err != nil {
 		t.Fatal(err)
 	}
-	const asset = "/assets/js/backup-dropzone.js"
-	if strings.Count(out.String(), `src="`+asset+`"`) != 1 {
-		t.Fatal("app shell must load the backup dropzone script exactly once")
-	}
-	if _, err := os.Stat("../.." + asset); err != nil {
-		t.Fatalf("backup dropzone script referenced by shell must exist: %v", err)
+	for _, asset := range []string{"/assets/js/backup-dropzone.js", "/assets/js/backup-import-feedback.js"} {
+		if strings.Count(out.String(), `src="`+asset+`"`) != 1 {
+			t.Fatalf("app shell must load %s exactly once", asset)
+		}
+		if _, err := os.Stat("../.." + asset); err != nil {
+			t.Fatalf("script referenced by shell must exist: %s: %v", asset, err)
+		}
 	}
 }
 
@@ -748,4 +926,286 @@ func TestAdminBackupImportCompiledCSSIndicatorRules(t *testing.T) {
 			t.Fatalf("request-state %q transition = %q, want opacity 200ms ease-in", selector, decls["transition"])
 		}
 	}
+}
+
+func TestRestoreCandidateRejectsInvalidPreMigrationManifest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "candidate.db")
+	db, err := contabaseDB.Open("file:" + path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path+".manifest.json", []byte(`{"version":1,"file":"candidate.db","size":1,"sha256":"bad","schema_version":83,"created_at":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRestoreCandidate(path, true, false); err == nil {
+		t.Fatal("invalid pre-migration manifest accepted by restore validation")
+	}
+}
+
+func writeRestoreManifest(t *testing.T, path, file, hash string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	if file == "" {
+		file = filepath.Base(path)
+	}
+	if hash == "" {
+		hash = hex.EncodeToString(sum[:])
+	}
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schemaVersion int
+	if err := db.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&schemaVersion); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	manifest := map[string]any{
+		"version":        1,
+		"file":           file,
+		"size":           len(data),
+		"sha256":         hash,
+		"schema_version": schemaVersion,
+		"created_at":     1,
+	}
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path+".manifest.json", encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRestoreCandidateManifestPolicy(t *testing.T) {
+	t.Run("new backup with valid manifest", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "new.db")
+		createRestoreTestDB(t, path, "new").Close()
+		writeRestoreManifest(t, path, "", "")
+		if err := validateRestoreCandidate(path, true, false); err != nil {
+			t.Fatalf("valid manifest rejected: %v", err)
+		}
+	})
+	t.Run("new backup with missing manifest", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "new.db")
+		createRestoreTestDB(t, path, "new").Close()
+		if err := validateRestoreCandidate(path, false, false); err == nil {
+			t.Fatal("missing manifest accepted in normal restore")
+		}
+	})
+	t.Run("new backup with invalid hash", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "new.db")
+		createRestoreTestDB(t, path, "new").Close()
+		writeRestoreManifest(t, path, "", strings.Repeat("0", 64))
+		if err := validateRestoreCandidate(path, true, false); err == nil {
+			t.Fatal("invalid manifest hash accepted")
+		}
+	})
+	t.Run("manifest for another file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "new.db")
+		createRestoreTestDB(t, path, "new").Close()
+		writeRestoreManifest(t, path, "other.db", "")
+		if err := validateRestoreCandidate(path, true, false); err == nil {
+			t.Fatal("manifest from another file accepted")
+		}
+	})
+	t.Run("malformed manifest", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "new.db")
+		createRestoreTestDB(t, path, "new").Close()
+		if err := os.WriteFile(path+".manifest.json", []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := validateRestoreCandidate(path, true, false); err == nil {
+			t.Fatal("malformed manifest accepted")
+		}
+	})
+	t.Run("tampered sqlite backup", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "new.db")
+		createRestoreTestDB(t, path, "new").Close()
+		writeRestoreManifest(t, path, "", "")
+		file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := file.Write([]byte("tamper")); err != nil {
+			file.Close()
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := validateRestoreCandidate(path, true, false); err == nil {
+			t.Fatal("tampered backup accepted")
+		}
+	})
+	t.Run("legacy missing manifest is explicit only", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "legacy.db")
+		createRestoreTestDB(t, path, "legacy").Close()
+		if err := validateRestoreCandidate(path, false, false); err == nil {
+			t.Fatal("legacy backup accepted without explicit legacy mode")
+		}
+		if err := validateRestoreCandidate(path, false, true); err != nil {
+			t.Fatalf("explicit legacy backup rejected: %v", err)
+		}
+	})
+	t.Run("manifest and legacy are mutually exclusive", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "new.db")
+		createRestoreTestDB(t, path, "new").Close()
+		writeRestoreManifest(t, path, "", "")
+		if err := validateRestoreCandidate(path, true, true); err == nil {
+			t.Fatal("manifest plus legacy accepted")
+		}
+	})
+	t.Run("renaming does not bypass manifest identity", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "original.db")
+		createRestoreTestDB(t, path, "rename").Close()
+		writeRestoreManifest(t, path, "", "")
+		renamed := filepath.Join(dir, "renamed.db")
+		if err := os.Rename(path, renamed); err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(path + ".manifest.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(renamed+".manifest.json", data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := validateRestoreCandidate(renamed, true, false); err == nil {
+			t.Fatal("renamed backup bypassed manifest file identity")
+		}
+	})
+}
+
+func TestRestoreCandidateFailureDoesNotReplacePersistedDatabase(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "current.db")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
+	defer func() {
+		if current != nil && current.DBs != nil {
+			current.Close()
+		}
+	}()
+	candidatePath := filepath.Join(dir, "candidate.db")
+	createRestoreTestDB(t, candidatePath, "candidate").Close()
+
+	validator := func(path string) error {
+		return validateRestoreCandidate(path, false, false)
+	}
+	result, next, err := restoreSQLiteBackupFromFile(context.Background(), current, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBs, startRestoreTestServerRuntime, validator)
+	if err == nil {
+		t.Fatal("restore without manifest succeeded")
+	}
+	if next != current {
+		t.Fatal("failed restore returned a different runtime")
+	}
+	if result.CommitmentReached {
+		t.Fatal("failed validation reached restore commitment")
+	}
+	assertRestoreMarker(t, dbPath, "current")
+}
+
+func TestRestoreUploadStagingPreservesManifestFilename(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(t.TempDir(), "source.db")
+	createRestoreTestDB(t, sourcePath, "staged").Close()
+	file, err := os.Open(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	dbPath := filepath.Join(dir, "contabase.db")
+	stagedPath, cleanup, err := saveAdminBackupImportUpload(dbPath, "contabase-pre-migration-test.db", file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if filepath.Base(stagedPath) != "contabase-pre-migration-test.db" {
+		t.Fatalf("staged filename = %q", filepath.Base(stagedPath))
+	}
+	writeRestoreManifest(t, stagedPath, "", "")
+	manifestData, err := os.ReadFile(stagedPath + ".manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(stagedPath + ".manifest.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveRestoreManifestUpload(stagedPath, bytes.NewReader(manifestData)); err != nil {
+		t.Fatalf("save uploaded manifest: %v", err)
+	}
+	if err := validateRestoreCandidate(stagedPath, true, false); err != nil {
+		t.Fatalf("staged backup with manifest rejected: %v", err)
+	}
+	if err := os.Remove(stagedPath + ".manifest.json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRestoreCandidate(stagedPath, false, false); err == nil {
+		t.Fatal("staged backup without manifest accepted in normal restore")
+	}
+	if err := validateRestoreCandidate(stagedPath, false, true); err != nil {
+		t.Fatalf("staged legacy backup rejected in explicit legacy mode: %v", err)
+	}
+}
+
+func TestRestoreCandidateManifestAcceptedByPersistedRestore(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DATA_DIR", dir)
+	dbPath := filepath.Join(dir, "contabase.db")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
+	candidatePath := filepath.Join(dir, "candidate.db")
+	createRestoreTestDB(t, candidatePath, "candidate").Close()
+	writeRestoreManifest(t, candidatePath, "", "")
+
+	validator := func(path string) error {
+		return validateRestoreCandidate(path, true, false)
+	}
+	result, next, err := restoreSQLiteBackupFromFile(context.Background(), current, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBs, startRestoreTestServerRuntime, validator)
+	if err != nil {
+		t.Fatalf("restore with manifest: %v", err)
+	}
+	if next == nil {
+		t.Fatal("restore with manifest returned no runtime")
+	}
+	defer next.Close()
+	if result.RolledBack {
+		t.Fatal("valid manifest restore reported rollback")
+	}
+	assertRestoreMarker(t, dbPath, "candidate")
+}
+
+func TestRestoreCandidateLegacyAcceptedByPersistedRestore(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DATA_DIR", dir)
+	dbPath := filepath.Join(dir, "contabase.db")
+	current := createRestoreTestServerRuntime(t, dbPath, "current")
+	candidatePath := filepath.Join(dir, "legacy-candidate.db")
+	createRestoreTestDB(t, candidatePath, "legacy").Close()
+
+	validator := func(path string) error {
+		return validateRestoreCandidate(path, false, true)
+	}
+	result, next, err := restoreSQLiteBackupFromFile(context.Background(), current, "file:"+dbPath, dbPath, candidatePath, openRestoreTestRuntimeDBs, startRestoreTestServerRuntime, validator)
+	if err != nil {
+		t.Fatalf("explicit legacy restore: %v", err)
+	}
+	if next == nil {
+		t.Fatal("explicit legacy restore returned no runtime")
+	}
+	defer next.Close()
+	if result.RolledBack {
+		t.Fatal("explicit legacy restore reported rollback")
+	}
+	assertRestoreMarker(t, dbPath, "legacy")
 }

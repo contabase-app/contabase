@@ -1,14 +1,5 @@
 /* ContaBase Faturas Styles */
 
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-
-.btn-tactile { transition: all 0.15s ease; }
-.btn-tactile:active { transform: scale(0.97); }
-
-.emblem-wrap-solid { background-color: var(--ic, #8b5cf6); }
-.icon-colored { color: var(--ic, #8b5cf6); }
-
 .cb-invoice-limit-progress {
     display: block;
     width: 100%;
@@ -51,17 +42,18 @@
 
 /* Date separator line between transaction date groups */
 .cb-date-separator-line {
-    background: linear-gradient(90deg, var(--cb-border-subtle) 0%, transparent 100%);
+    background: linear-gradient(90deg, var(--ui-border) 0%, transparent 100%);
 }
 
-/* Faturas inside the global V2 shell. Canonical --cb-* bridge tokens are
-   defined once in ui-tokens.css and inherited by .cb-v2-faturas-main; this
-   page must not redefine them. */
+/* Faturas inside the global V2 shell. Canonical --ui-* tokens are inherited
+   from the shell; this page must not redefine them. */
 
 .cb-v2-faturas-content {
-    width: min(100%, 1180px);
+    /* Detail and empty states keep the ergonomic measure; the index widens to
+       the shell measure in faturas-index.css. Top padding is shell-owned. */
+    width: min(100%, var(--ui-content-standard));
     margin: 0 auto;
-    padding: 30px 0 28px;
+    padding-bottom: 28px;
 }
 
 /* Page-specific composition only: the header chrome, type scale and action
@@ -74,86 +66,55 @@
     flex: 0 0 auto;
 }
 
-.cb-v2-faturas-panels .cb-card-dense {
-    border-color: var(--v2-border);
-    background: var(--v2-surface);
-}
-
-.cb-v2-faturas-panels .cb-card-dense { border-radius: 12px; }
-
 .cb-v2-faturas-empty {
     display: grid;
     justify-items: start;
     gap: 12px;
-    max-width: 560px;
-    padding: 28px;
-    border: 1px solid var(--v2-border);
-    border-radius: 12px;
-    background: var(--v2-surface);
+    max-width: 620px;
+    padding: var(--ui-panel-pad);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-panel);
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-panel);
 }
 
 .cb-v2-faturas-empty-icon {
     display: grid;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     place-items: center;
-    border-radius: 10px;
-    background: var(--v2-accent-soft);
-    color: var(--v2-accent-strong);
+    border-radius: var(--ui-radius-card);
+    background: var(--ui-surface-raised);
+    color: var(--ui-text-subtle);
 }
 
-.cb-v2-faturas-empty-icon svg { width: 19px; height: 19px; }
-.cb-v2-faturas-empty .cb-v2-eyebrow { margin: 2px 0 0; }
+.cb-v2-faturas-empty-icon svg { width: 20px; height: 20px; }
 .cb-v2-faturas-empty h2 {
     margin: 0;
-    color: var(--v2-text);
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: -0.025em;
+    color: var(--ui-text);
+    font-size: var(--ui-fs-card-title);
+    font-weight: 630;
+    letter-spacing: -.015em;
 }
-.cb-v2-faturas-empty > p:not(.cb-v2-eyebrow) {
+.cb-v2-faturas-empty > p:not(.ui-eyebrow) {
     max-width: 50ch;
     margin: -4px 0 4px;
-    color: var(--v2-muted);
-    font-size: 13px;
+    color: var(--ui-text-muted);
+    font-size: var(--ui-fs-md);
     line-height: 1.55;
 }
-.cb-v2-faturas-empty > p strong { color: var(--v2-text); }
+.cb-v2-faturas-empty > p strong { color: var(--ui-text); }
 
 .cb-v2-faturas-empty-navigation {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
 }
-.cb-v2-faturas-empty-navigation a,
-.cb-v2-faturas-empty-create {
-    display: inline-flex;
-    min-height: 38px;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 0 11px;
-    border: 1px solid var(--v2-border);
-    border-radius: 9px;
-    background: var(--v2-surface-raised);
-    color: var(--v2-muted);
-    font-size: 12px;
-    font-weight: 650;
-    transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+
+@media (max-width: 1023px) {
+    .cb-v2-faturas-main .ui-btn { min-height: var(--ui-control-height-lg); }
+    .cb-invoice-filter-clear { min-height: var(--ui-control-height-lg); }
 }
-.cb-v2-faturas-empty-navigation a:hover {
-    border-color: var(--v2-border-strong);
-    background: var(--v2-surface-hover);
-    color: var(--v2-text);
-}
-.cb-v2-faturas-empty-navigation svg,
-.cb-v2-faturas-empty-create svg { width: 15px; height: 15px; }
-.cb-v2-faturas-empty-create {
-    border-color: var(--v2-fab-border);
-    background: var(--v2-accent);
-    color: #fff;
-}
-.cb-v2-faturas-empty-create:hover { background: var(--v2-fab-hover); }
 
 @media (max-width: 767px) {
     .cb-v2-faturas-content { padding-top: 20px; }
@@ -165,6 +126,8 @@
    bordered cards. Tokens are canonical (--ui-*). */
 
 .cb-invoice-summary { display: grid; gap: 18px; }
+.cb-invoice-month-nav { padding: var(--ui-panel-pad); margin-top: 18px; }
+.cb-invoice-month-title { margin: 0 0 12px; color: var(--ui-text); font-size: var(--ui-fs-card-title); font-weight: 630; letter-spacing: -.01em; }
 
 /* Identity (direct invoice links only; the hub shows the selected card). */
 .cb-invoice-identity { display: grid; gap: 14px; padding: 18px 20px; }
@@ -202,7 +165,7 @@
 .cb-invoice-identity-dates svg { width: 14px; height: 14px; color: var(--ui-text-subtle); }
 .cb-invoice-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--ui-border); }
 .cb-invoice-filter-label { color: var(--ui-text-subtle); font-size: 10.5px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
-.cb-invoice-filter-clear { min-height: 26px; gap: 4px; padding-inline: 9px; font-size: 11px; text-decoration: none; }
+.cb-invoice-filter-clear { min-height: 32px; gap: 4px; padding-inline: 10px; font-size: 11px; text-decoration: none; }
 .cb-invoice-filter-clear svg { width: 12px; height: 12px; }
 
 /* Sensitive-data warning: semantic warning surface, no decorative color. */
@@ -341,6 +304,7 @@
     .cb-invoice-main,
     .cb-invoice-actions { padding: 16px; }
     .cb-invoice-identity { padding: 16px; }
+    .cb-invoice-action-btn { min-height: var(--ui-control-height-lg); }
     .cb-invoice-hero { align-items: flex-start; }
     .cb-invoice-hero-value { font-size: clamp(24px, 7vw, 28px); }
     .cb-invoice-hero-meta { gap: 12px; }
@@ -379,7 +343,6 @@
 }
 
 .cb-invoice-sort { width: auto; margin: 0; flex: 0 0 auto; }
-.cb-invoice-sort .ui-tab { min-height: 34px; padding-inline: 12px; white-space: nowrap; }
 .cb-invoice-sort-full { display: none; }
 .cb-invoice-sort-short { display: inline; }
 
@@ -840,6 +803,7 @@ html.dark .sheet-shell.cb-invoice-refund-dialog {
     .cb-invoice-modal-btn {
         width: 100%;
         min-width: 0;
+        min-height: var(--ui-control-height-lg);
     }
     .cb-invoice-field input[name="payment_amount"] { font-size: 16px; }
     .cb-invoice-refund-dialog .sheet-topbar { padding: 18px 18px 0; }

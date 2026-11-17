@@ -113,6 +113,11 @@ func TestAdminPremiumPreservesFunctionalHooksAndSensitiveActions(t *testing.T) {
 	for _, want := range []string{
 		`href="/admin/backups/exportar"`,
 		`data-backup-dropzone`,
+		`data-backup-import-form`,
+		`data-backup-import-state role="status"`,
+		`data-backup-import-status tabindex="-1"`,
+		`data-backup-import-status-text`,
+		`data-backup-import-dismiss`,
 		`hx-post="/admin/backups/importar"`,
 		`hx-disabled-elt="find button[type='submit']"`,
 		`name="backup_file"`,

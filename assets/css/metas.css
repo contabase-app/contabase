@@ -1,10 +1,5 @@
 /* ContaBase Metas Styles */
 
-/* === ICONE COLORIDO === */
-.icon-colored {
-    color: var(--ic, #8b5cf6);
-}
-
 /* === P.40.a — Helpers visuais para redesign de /metas ===
    Classes preparatórias; markup existente permanece inalterado. */
 
@@ -69,6 +64,7 @@
 .metas-overview__metric.ui-kpi {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  align-content: start;
   align-items: baseline;
   gap: 2px 16px;
   min-width: 0;
@@ -95,7 +91,9 @@
   text-align: left;
   text-overflow: clip;
   font-size: 18px;
-  white-space: nowrap;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .metas-overview__metric--primary .ui-kpi__value {
@@ -109,6 +107,47 @@
 
 .metas-overview__source {
   margin-top: -1px;
+}
+
+.metas-obligations {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.metas-obligations__label {
+  flex: 0 0 auto;
+}
+
+.metas-obligations__value {
+  color: var(--ui-text, var(--v2-text));
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.metas-obligations__note {
+  flex-basis: 100%;
+  color: var(--ui-text-muted, var(--v2-muted));
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.metas-obligations .f1-info-panel {
+  flex-basis: 100%;
+}
+
+.metas-f1-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.metas-f1-meta .f1-info-panel {
+  flex-basis: 100%;
+  margin: 4px 0 0;
 }
 
 .metas-overview__metric + .metas-overview__metric {
@@ -225,7 +264,7 @@
   box-shadow: var(--ui-shadow-floating);
 }
 
-/* === Cards de Limites e Reservas ===
+/* === Cards de Limites ===
    O card é uma superfície própria da página (não um KPI nem uma linha de lista):
    raio de card, borda canônica, um único destaque monetário e metadados
    separados por uma hairline. Tudo consome --ui-*; não há paleta paralela. */
@@ -380,12 +419,14 @@
 
 .metas-box-value {
   margin: 0;
+  max-width: 100%;
   color: var(--ui-text);
   font-size: 1.375rem;
   font-weight: 680;
   letter-spacing: -0.02em;
   line-height: 1.15;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
 
@@ -397,11 +438,13 @@
 
 .metas-box-target {
   margin: 0;
+  max-width: 100%;
   color: var(--ui-text-muted);
   font-size: 0.84375rem;
   font-weight: 620;
   line-height: 1.25;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
 
@@ -561,13 +604,13 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Metas e Reservas inside the authenticated V2 shell.
+/* Metas (Limites) inside the authenticated V2 shell.
    Existing component semantics are retained; these rules only map their visual
    surface to the global shell tokens. */
 .cb-v2-metas-content {
-  width: min(100%, 1180px);
-  margin: 0 auto;
-  padding: 30px 0 12px;
+  /* Data surface: width, centering and top padding come from .cb-v2-content
+     (--ui-content-max). Only the page bottom clearance is local. */
+  padding-bottom: 12px;
 }
 
 /* Header: composição e tipografia vêm de .ui-page-header/.ui-eyebrow/
@@ -659,7 +702,7 @@
   .metas-card { padding: 0.875rem; gap: 0.6875rem; }
 }
 
-/* === M5 — Históricos de reservas e limites ===
+/* === M5 — Histórico de limites ===
    A composição usa os componentes compartilhados .ui-list-panel/.ui-row/
    .ui-badge/.ui-empty. Este bloco cobre apenas o cabeçalho do sheet, a
    densidade da linha e a direção visual dos valores; não redefine .ui-row
@@ -1364,8 +1407,7 @@
 }
 
 .metas-form__alert,
-[data-metas-sheet] [id="limite-form-error"]:not(.hidden),
-[data-metas-sheet] [id="caixinha-form-error"]:not(.hidden) {
+[data-metas-sheet] [id="limite-form-error"]:not(.hidden) {
   margin: 0 0 0.25rem;
   padding: 0.625rem 0.75rem;
   border: 1px solid color-mix(in srgb, var(--ui-danger) 38%, var(--ui-border));

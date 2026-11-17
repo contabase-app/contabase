@@ -284,6 +284,16 @@ func TestLancamentosTransactionRowSeriesAndReceiptConditions(t *testing.T) {
 	if strings.Contains(html, `aria-label="Editar`) == false {
 		t.Fatal("desktop edit action must remain available")
 	}
+
+	row.CanGenerateReceipt = true
+	html = renderLancamentoRowHTML(t, row)
+	for _, want := range []string{
+		`data-tooltip-hover data-tooltip-text="Editar lançamento"`,
+		`data-tooltip-hover data-tooltip-text="Abrir recibo"`,
+		`data-tooltip-hover data-tooltip-text="Excluir lançamento"`,
+	} {
+		assertContains(t, html, want)
+	}
 }
 
 func TestLancamentosTransactionRowUsesAccountProviderIdentity(t *testing.T) {

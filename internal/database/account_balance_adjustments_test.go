@@ -16,6 +16,9 @@ func accountAdjustmentLegacyDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec(ddl); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(legacyReserveDDL); err != nil {
+		t.Fatal(err)
+	}
 	for _, m := range migrations {
 		if m.version >= 64 {
 			break

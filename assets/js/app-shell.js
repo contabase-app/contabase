@@ -42,13 +42,24 @@
 
     function initDrawer(root) {
         var dialog = root.querySelector('[data-v2-menu-dialog]');
-        var trigger = root.querySelector('[data-v2-menu-trigger]');
-        if (!dialog || !trigger || dialog.dataset.v2DrawerReady === 'true') return;
+        if (!dialog) return;
+
+        // Delegated because the appbar lives inside #main-content and is
+        // replaced on every full HTMX navigation.
+        if (root.dataset.v2DrawerDelegationReady !== 'true') {
+            root.dataset.v2DrawerDelegationReady = 'true';
+            root.addEventListener('click', function (event) {
+                var target = event.target;
+                if (!target || typeof target.closest !== 'function') return;
+                var trigger = target.closest('[data-v2-menu-trigger]');
+                if (!trigger || !root.contains(trigger)) return;
+                if (!dialog.open) dialog.showModal();
+            });
+        }
+
+        if (dialog.dataset.v2DrawerReady === 'true') return;
         dialog.dataset.v2DrawerReady = 'true';
 
-        trigger.addEventListener('click', function () {
-            if (!dialog.open) dialog.showModal();
-        });
         dialog.querySelectorAll('[data-v2-menu-close], a, button[hx-get]').forEach(function (item) {
             item.addEventListener('click', function () {
                 if (dialog.open) dialog.close();
@@ -140,10 +151,12 @@
     function syncNotificationBadges(root) {
         var source = document.getElementById('notification-badge');
         if (!source) return;
+        var hidden = source.classList.contains('hidden');
+        var label = source.getAttribute('aria-label');
         root.querySelectorAll('[data-notification-badge]').forEach(function (badge) {
-            badge.className = source.className;
-            if (source.hasAttribute('aria-label')) {
-                badge.setAttribute('aria-label', source.getAttribute('aria-label'));
+            badge.classList.toggle('hidden', hidden);
+            if (label) {
+                badge.setAttribute('aria-label', label);
             } else {
                 badge.removeAttribute('aria-label');
             }
@@ -162,7 +175,7 @@
                 toggle.setAttribute('title', 'Alternar para tema ' + nextTheme);
             });
             var themeColor = document.querySelector('meta[name="theme-color"]');
-            if (themeColor) themeColor.setAttribute('content', isDark ? '#161a20' : '#f3f4f6');
+            if (themeColor) themeColor.setAttribute('content', isDark ? '#0e1013' : '#f4f5f7');
         };
 
         toggles.forEach(function (toggle) {
@@ -200,11 +213,20 @@
         initialize();
     }
 
-    document.addEventListener('htmx:afterSwap', function () {
+    function refreshShellState() {
         var root = document.querySelector('[data-app-shell]');
         if (!root) return;
         syncNavigation(root);
         syncNotificationBadges(root);
+        initThemeToggle(root);
+        initDrawer(root);
         refreshIcons();
+    }
+
+    document.addEventListener('htmx:afterSwap', refreshShellState);
+    document.addEventListener('htmx:afterSettle', refreshShellState);
+    document.addEventListener('htmx:oobAfterSwap', function () {
+        var root = document.querySelector('[data-app-shell]');
+        if (root) syncNotificationBadges(root);
     });
 }());

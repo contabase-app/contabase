@@ -1,0 +1,2841 @@
+/*
+ * Dashboard Preview — laboratório visual da beta.8.
+ * Escopo exclusivo: .cb-preview. Não altera tokens globais, o Dashboard
+ * canônico nem a navegação compartilhada fora desta página.
+ */
+
+.cb-preview.cb-v2 {
+    background:
+        radial-gradient(820px 480px at 50% -10%, rgba(255, 255, 255, 0.035), transparent 62%),
+        var(--ui-canvas);
+    color-scheme: dark;
+}
+
+html[data-theme="light"] .cb-preview.cb-v2 {
+    background: var(--ui-canvas);
+    color-scheme: light;
+}
+
+.cbp-canvas {
+    width: 100%;
+    max-width: var(--ui-content-max);
+    margin: 0 auto;
+}
+
+.cbp-page-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 8px 2px 18px;
+}
+
+.cbp-page-head-copy {
+    min-width: 0;
+}
+
+.cbp-eyebrow-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+
+.cbp-preview-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 26px;
+    padding: 3px 10px;
+    border: 1px solid color-mix(in srgb, var(--ui-accent) 32%, var(--ui-border));
+    border-radius: 999px;
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent-on-soft);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.cbp-preview-badge svg {
+    width: 13px;
+    height: 13px;
+}
+
+.cbp-temporal-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 11px 14px;
+    border: 1px solid var(--ui-border);
+    border-radius: 14px;
+    background: var(--ui-surface-raised);
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    line-height: 1.45;
+}
+
+.cbp-temporal-notice svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    margin-top: 1px;
+    color: var(--ui-accent);
+}
+
+.cbp-temporal-notice p {
+    margin: 0;
+}
+
+.cbp-temporal-notice strong {
+    color: var(--ui-text);
+    font-weight: 600;
+}
+
+.cbp-period-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    padding: 2px 7px;
+    border: 1px solid var(--ui-border);
+    border-radius: 999px;
+    background: var(--ui-surface-raised);
+    color: var(--ui-text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.cbp-period-badge.is-selected {
+    border-color: color-mix(in srgb, var(--ui-accent) 30%, var(--ui-border));
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent-on-soft);
+}
+
+.cbp-hero .cbp-period-badge {
+    border-color: var(--ui-hero-mini-border);
+    background: var(--ui-hero-mini);
+    color: var(--ui-hero-muted);
+}
+
+/* ---------- Foco temporal ---------- */
+.cbp-focus-card {
+    position: relative;
+}
+
+.cbp-focus-card.is-focus-muted {
+    padding-bottom: 58px;
+}
+
+.cbp-focus-content {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+}
+
+.cbp-focus-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: grid;
+    place-items: center;
+    padding: 18px 18px 58px;
+    border-radius: inherit;
+    background: color-mix(in srgb, var(--ui-surface) 72%, transparent);
+    backdrop-filter: blur(8px) saturate(0.9);
+    -webkit-backdrop-filter: blur(8px) saturate(0.9);
+    transition: opacity 160ms ease;
+}
+
+.cbp-focus-overlay[hidden] {
+    display: none;
+}
+
+.cbp-focus-note {
+    width: min(100%, 340px);
+    padding: 14px 16px;
+    border: 1px solid var(--ui-border-strong);
+    border-radius: var(--ui-radius-card);
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-card);
+    color: var(--ui-text-muted);
+    font-size: var(--ui-fs-card-subtitle);
+    line-height: 1.45;
+    text-align: left;
+}
+
+.cbp-focus-note strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--ui-text);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+.cbp-focus-note p {
+    margin: 0;
+}
+
+.cbp-focus-control {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    bottom: auto;
+    z-index: 6;
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 14px;
+    border: 1px solid var(--ui-border-strong);
+    border-radius: 999px;
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-card);
+    color: var(--ui-text);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cbp-focus-control:hover {
+    background: var(--ui-surface-hover);
+}
+
+.cbp-focus-control:focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 2px;
+}
+
+.cbp-focus-control svg {
+    width: 14px;
+    height: 14px;
+}
+
+.cbp-focus-card.is-focus-revealed .cbp-focus-control {
+    top: auto;
+    bottom: 12px;
+    border-color: color-mix(in srgb, var(--ui-accent) 45%, var(--ui-border));
+    color: var(--ui-accent-text);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+    .cbp-focus-overlay {
+        background: color-mix(in srgb, var(--ui-surface) 94%, transparent);
+    }
+}
+
+.cbp-back-link {
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.cbp-back-link:hover {
+    color: var(--ui-text);
+}
+
+.cbp-page-head h1 {
+    margin: 0 0 4px;
+    font-size: var(--ui-fs-dashboard-greeting);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    line-height: 1.08;
+}
+
+.cbp-page-head p {
+    max-width: 62ch;
+    margin: 0;
+    color: var(--ui-text-muted);
+    font-size: var(--ui-fs-md);
+    line-height: 1.5;
+}
+
+.cbp-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.cbp-month-filter {
+    display: inline-flex;
+    min-height: 42px;
+    align-items: center;
+    gap: 1px;
+    padding: 3px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-pill);
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-card);
+}
+
+.cbp-month-filter-label {
+    padding: 0 8px 0 10px;
+    color: var(--ui-text-subtle);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.cbp-month-arrow {
+    display: inline-grid;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    place-items: center;
+    border-radius: var(--ui-radius-pill);
+    color: var(--ui-text-muted);
+    transition: background-color 160ms ease, color 160ms ease;
+}
+
+.cbp-month-arrow:hover {
+    background: var(--ui-surface-hover);
+    color: var(--ui-text);
+}
+
+.cbp-month-arrow.is-disabled {
+    opacity: 0.35;
+    pointer-events: none;
+}
+
+.cbp-month-arrow svg {
+    width: 14px;
+    height: 14px;
+}
+
+.cbp-month-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    color: var(--ui-text);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+}
+
+.cbp-month-value svg {
+    width: 14px;
+    height: 14px;
+    color: var(--ui-accent);
+}
+
+.cbp-month-reset {
+    margin-left: 2px;
+    padding: 0 10px;
+    color: var(--ui-accent-text);
+    font-size: var(--ui-fs-label);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.cbp-month-reset:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.cbp-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 0 16px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-action-pill);
+    background: var(--ui-surface);
+    color: var(--ui-text);
+    font: inherit;
+    font-size: var(--ui-fs-action);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.cbp-btn:hover {
+    border-color: var(--ui-border-strong);
+    background: var(--ui-surface-raised);
+}
+
+.cbp-btn-primary {
+    border: 0;
+    background: linear-gradient(135deg, var(--ui-action-gradient-start), var(--ui-action-gradient-end));
+    color: var(--ui-action-fg);
+    box-shadow: var(--ui-action-shadow);
+}
+
+.cbp-btn-primary:hover {
+    background: linear-gradient(135deg, var(--ui-action-gradient-start), var(--ui-action-gradient-end));
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+}
+
+.cbp-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.cbp-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: var(--ui-layout-gap, 16px);
+    align-items: stretch;
+}
+
+.cbp-hero { grid-column: 1 / span 5; grid-row: 1; }
+.cbp-finance { grid-column: 6 / span 4; grid-row: 1; }
+.cbp-categories { grid-column: 10 / span 3; grid-row: 1; }
+.cbp-cashflow { grid-column: 1 / span 8; grid-row: 2; }
+.cbp-commitments { grid-column: 9 / span 4; grid-row: 2; }
+.cbp-accounts { grid-column: 1 / span 4; grid-row: 3; }
+.cbp-goals { grid-column: 5 / span 4; grid-row: 3; }
+.cbp-cards { grid-column: 9 / span 4; grid-row: 3; }
+
+.cbp-grid.is-historical-focus .cbp-finance { grid-column: 1 / span 4; grid-row: 1; }
+.cbp-grid.is-historical-focus .cbp-categories { grid-column: 5 / span 4; grid-row: 1; }
+.cbp-grid.is-historical-focus .cbp-goals { grid-column: 9 / span 4; grid-row: 1; }
+
+.cbp-grid.is-historical-focus.is-cards-period .cbp-cards { grid-column: 1 / span 6; grid-row: 2; }
+.cbp-grid.is-historical-focus.is-cards-period .cbp-hero { grid-column: 7 / span 6; grid-row: 2; }
+.cbp-grid.is-historical-focus.is-cards-period .cbp-cashflow { grid-column: 1 / span 8; grid-row: 3; }
+.cbp-grid.is-historical-focus.is-cards-period .cbp-commitments { grid-column: 9 / span 4; grid-row: 3; }
+.cbp-grid.is-historical-focus.is-cards-period .cbp-accounts { grid-column: 1 / span 12; grid-row: 4; }
+
+.cbp-grid.is-historical-focus.is-cards-fallback .cbp-hero { grid-column: 1 / span 5; grid-row: 2; }
+.cbp-grid.is-historical-focus.is-cards-fallback .cbp-cashflow { grid-column: 6 / span 7; grid-row: 2; }
+.cbp-grid.is-historical-focus.is-cards-fallback .cbp-commitments { grid-column: 1 / span 4; grid-row: 3; }
+.cbp-grid.is-historical-focus.is-cards-fallback .cbp-accounts { grid-column: 5 / span 8; grid-row: 3; }
+.cbp-grid.is-historical-focus.is-cards-fallback .cbp-cards { grid-column: 1 / span 12; grid-row: 4; }
+
+.cbp-card {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    padding: var(--ui-card-pad, 18px 20px);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-panel);
+    background: var(--ui-surface);
+    box-shadow: var(--ui-shadow-card);
+}
+
+
+.cbp-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: var(--ui-card-head-gap, 14px);
+}
+
+.cbp-card-head h2 {
+    margin: 0 0 3px;
+    color: var(--ui-text);
+    font-size: var(--ui-fs-card-title);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+}
+
+.cbp-card-head p {
+    margin: 0;
+    color: var(--ui-text-muted);
+    font-size: var(--ui-fs-card-subtitle);
+    line-height: 1.4;
+}
+
+.cbp-link {
+    color: var(--ui-accent-text);
+    font-size: var(--ui-fs-sm);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.cbp-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.cbp-note {
+    margin: 8px 0 0;
+    color: var(--ui-text-muted);
+    font-size: var(--ui-fs-sm);
+    line-height: 1.45;
+}
+
+.cbp-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 7px;
+    border-radius: var(--ui-radius-badge);
+    font-size: var(--ui-fs-badge);
+    font-weight: 600;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.cbp-chip.is-positive,
+.cbp-chip.is-paid {
+    background: var(--ui-success-soft);
+    color: var(--ui-success);
+}
+
+.cbp-chip.is-negative,
+.cbp-chip.is-overdue {
+    background: var(--ui-danger-soft);
+    color: var(--ui-danger);
+}
+
+.cbp-chip.is-warning,
+.cbp-chip.is-closed {
+    background: var(--ui-warning-soft);
+    color: var(--ui-warning);
+}
+
+.cbp-chip.is-neutral,
+.cbp-chip.is-open {
+    background: var(--ui-surface-raised);
+    color: var(--ui-text-muted);
+}
+
+.cbp-dot {
+    width: 7px;
+    height: 7px;
+    flex: none;
+    border-radius: 50%;
+}
+
+.cbp-dot.is-income { background: var(--ui-success); }
+.cbp-dot.is-expense { background: var(--ui-danger); }
+.cbp-dot.is-economy { background: var(--ui-success); }
+.cbp-dot.is-adjustment { background: var(--ui-info); }
+.cbp-flow-legend b.is-adjustment { color: var(--ui-info); }
+
+/* ---------- Saldo total ---------- */
+.cbp-hero {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    border-color: var(--ui-border);
+    background: var(--ui-hero-bg);
+    color: var(--ui-hero-text);
+}
+
+
+.cbp-hero .cbp-card-head h2 { color: var(--ui-hero-text); }
+.cbp-hero .cbp-card-head p { color: var(--ui-hero-muted); }
+
+.cbp-icon-btn {
+    display: inline-grid;
+    width: 36px;
+    height: 36px;
+    flex: none;
+    place-items: center;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-tile);
+    background: var(--ui-surface-raised);
+    color: var(--ui-text);
+    cursor: pointer;
+    transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.cbp-hero .cbp-icon-btn {
+    border-color: var(--ui-hero-mini-border);
+    background: var(--ui-hero-mini);
+    color: var(--ui-hero-text);
+}
+
+.cbp-icon-btn:hover {
+    border-color: var(--ui-border-strong);
+    background: var(--ui-surface-hover);
+}
+
+.cbp-hero .cbp-icon-btn:hover {
+    border-color: var(--ui-hero-border);
+    background: color-mix(in srgb, var(--ui-hero-text) 12%, transparent);
+}
+
+.cbp-icon-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.cbp-hero-value {
+    margin: 0;
+    color: var(--ui-hero-text);
+    font-size: var(--ui-fs-dashboard-hero);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.045em;
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+}
+
+.cbp-hero-value.is-negative {
+    color: var(--ui-danger);
+}
+
+.cbp-hero-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    color: var(--ui-hero-muted);
+    font-size: 11.5px;
+}
+
+.cbp-hero-meta .cbp-chip {
+    background: rgba(255, 255, 255, 0.09);
+}
+
+html[data-theme="light"] .cbp-hero-meta .cbp-chip {
+    background: var(--ui-hero-mini);
+}
+
+.cbp-hero-meta .cbp-chip.is-positive { color: var(--ui-success); }
+.cbp-hero-meta .cbp-chip.is-negative { color: var(--ui-danger); }
+
+.cbp-info-btn {
+    display: inline-grid;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    place-items: center;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--ui-hero-muted);
+    cursor: pointer;
+}
+
+.cbp-info-btn:hover {
+    background: color-mix(in srgb, var(--ui-hero-text) 10%, transparent);
+    color: var(--ui-hero-text);
+}
+
+.cbp-info-btn svg {
+    width: 13px;
+    height: 13px;
+}
+
+.cbp-info-panel {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--ui-hero-mini-border);
+    border-radius: var(--ui-radius-info);
+    background: var(--ui-hero-mini);
+    color: var(--ui-hero-muted);
+    font-size: var(--ui-fs-body-sm);
+    line-height: 1.45;
+}
+
+.cbp-info-panel p {
+    margin: 0 0 5px;
+}
+
+.cbp-info-panel p:last-child {
+    margin-bottom: 0;
+}
+
+.cbp-invested {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: auto;
+    padding-top: 18px;
+    border-top: 1px solid var(--ui-hero-mini-border);
+}
+
+.cbp-invested-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--ui-hero-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.cbp-invested-value {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.cbp-invested-value strong {
+    color: var(--ui-hero-text);
+    font-size: 17px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+
+.cbp-invested-value strong.is-muted {
+    color: var(--ui-hero-muted);
+    font-weight: 600;
+}
+
+.cbp-invested-value small {
+    color: var(--ui-hero-muted);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.cbp-composition-bar {
+    margin: 2px 0 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--ui-hero-mini);
+}
+
+.cbp-composition-bar svg {
+    display: block;
+    width: 100%;
+    height: 10px;
+}
+
+.cbp-composition-track { fill: var(--ui-hero-mini); }
+.cbp-composition-invested { fill: var(--ui-accent); }
+.cbp-composition-other { fill: var(--ui-chart-other); }
+
+.cbp-composition-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.cbp-composition-row {
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr) auto auto;
+    align-items: baseline;
+    gap: 7px;
+    font-size: 11.5px;
+}
+
+.cbp-composition-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 3px;
+}
+
+.cbp-composition-dot.is-invested { background: var(--ui-accent); }
+.cbp-composition-dot.is-other { background: var(--ui-chart-other); }
+
+.cbp-composition-row > span:nth-child(2) {
+    overflow: hidden;
+    color: var(--ui-hero-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cbp-composition-row strong {
+    color: var(--ui-hero-text);
+    font-size: 12.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cbp-composition-row small {
+    color: var(--ui-hero-muted);
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cbp-composition-note {
+    margin: 2px 0 0;
+    color: var(--ui-hero-muted);
+    font-size: 10.5px;
+    line-height: 1.4;
+}
+
+/* ---------- Fluxo de caixa ---------- */
+.cbp-seg {
+    display: inline-flex;
+    flex: none;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-pill);
+    background: var(--ui-surface-raised);
+}
+
+.cbp-seg-option {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    min-height: 30px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: var(--ui-radius-pill);
+    background: transparent;
+    color: var(--ui-text-muted);
+    font: inherit;
+    font-size: var(--ui-fs-label);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cbp-seg-option.is-active {
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent-on-soft);
+}
+
+.cbp-flow-legend {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin: 2px 0 10px;
+    color: var(--ui-text-muted);
+    font-size: 12px;
+}
+
+.cbp-flow-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.cbp-flow-legend b {
+    color: var(--ui-text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.cbp-flow-legend b.is-income { color: var(--ui-success); }
+.cbp-flow-legend b.is-expense { color: var(--ui-danger); }
+
+.cbp-flow-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 38px;
+    margin-top: 12px;
+    border: 1px solid var(--ui-border);
+    border-radius: 10px;
+    background: var(--ui-surface-raised);
+    color: var(--ui-text);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cbp-flow-toggle:hover {
+    border-color: var(--ui-border-strong);
+    background: var(--ui-surface-hover);
+}
+
+.cbp-flow-toggle:focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 2px;
+}
+
+.cbp-flow-toggle svg {
+    width: 14px;
+    height: 14px;
+}
+
+.cbp-flow-toggle .is-collapse {
+    display: none;
+}
+
+.cbp-flow-toggle[aria-expanded="true"] .is-expand {
+    display: none;
+}
+
+.cbp-flow-toggle[aria-expanded="true"] .is-collapse {
+    display: inline-block;
+}
+
+.cbp-flow-net {
+    margin-left: auto;
+}
+
+@media (min-width: 768px) {
+    .cbp-flow-net {
+        padding-left: 14px;
+        border-left: 1px solid var(--ui-border);
+    }
+}
+
+.cbp-flow-net b.is-positive { color: var(--ui-success); }
+.cbp-flow-net b.is-negative { color: var(--ui-danger); }
+.cbp-flow-net b.is-neutral { color: var(--ui-text-muted); }
+
+.cbp-flow-plot {
+    position: relative;
+    min-height: 188px;
+}
+
+.cbp-flow-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+.cbp-flow-grid line {
+    stroke: var(--ui-border);
+    stroke-width: 1;
+    opacity: 0.62;
+}
+
+.cbp-flow-axis-label {
+    fill: var(--ui-text-subtle);
+    font-size: 9px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+
+.cbp-flow-baseline {
+    stroke: var(--ui-border-strong);
+    stroke-width: 1;
+}
+
+.cbp-flow-bar.is-income {
+    fill: var(--ui-success);
+}
+
+.cbp-flow-bar.is-expense {
+    fill: var(--ui-danger);
+    opacity: 0.84;
+}
+
+.cbp-flow-current-band {
+    fill: color-mix(in srgb, var(--ui-accent) 7%, transparent);
+}
+
+.cbp-flow-month {
+    fill: var(--ui-text-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+}
+
+.cbp-flow-month.is-current {
+    fill: var(--ui-accent-on-soft);
+    font-weight: 650;
+}
+
+.cbp-flow-group {
+    cursor: pointer;
+    outline: none;
+}
+
+.cbp-flow-hit {
+    fill: transparent;
+    stroke: transparent;
+    stroke-width: 2;
+}
+
+.cbp-flow-group:hover .cbp-flow-hit {
+    stroke: color-mix(in srgb, var(--ui-accent) 35%, transparent);
+}
+
+.cbp-flow-group:focus-visible .cbp-flow-hit {
+    stroke: var(--ui-accent);
+}
+
+.cbp-flow-bar {
+    transition: opacity 120ms ease, filter 120ms ease;
+}
+
+.cbp-flow-plot[data-active] .cbp-flow-group:not(.is-active) .cbp-flow-bar {
+    opacity: 0.35;
+}
+
+.cbp-flow-group.is-active .cbp-flow-bar {
+    opacity: 1;
+}
+
+.cbp-flow-tooltip {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 3;
+    min-width: 190px;
+    max-width: calc(100% - 16px);
+    padding: 10px 12px;
+    border: 1px solid var(--ui-border-strong);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--ui-surface) 96%, transparent);
+    box-shadow: var(--ui-shadow-card);
+    color: var(--ui-text);
+    font-size: 11.5px;
+    pointer-events: none;
+    animation: cbp-flow-tooltip-in 140ms ease-out;
+}
+
+@keyframes cbp-flow-tooltip-in {
+    from {
+        opacity: 0;
+        transform: translateY(-3px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.cbp-flow-tooltip[hidden] {
+    display: none;
+}
+
+.cbp-flow-tooltip p {
+    margin: 0;
+}
+
+.cbp-flow-tooltip-month {
+    margin-bottom: 6px !important;
+    color: var(--ui-text-subtle);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.cbp-flow-tooltip-row,
+.cbp-flow-tooltip-net {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 4px !important;
+    color: var(--ui-text-muted);
+}
+
+.cbp-flow-tooltip-row b,
+.cbp-flow-tooltip-net b {
+    color: var(--ui-text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.cbp-flow-tooltip-row.is-income b { color: var(--ui-success); }
+.cbp-flow-tooltip-row.is-expense b { color: var(--ui-danger); }
+
+.cbp-flow-tooltip-net {
+    margin-top: 6px !important;
+    margin-bottom: 0 !important;
+    padding-top: 6px;
+    border-top: 1px solid var(--ui-border);
+}
+
+.cbp-flow-tooltip-net b.is-positive { color: var(--ui-success); }
+.cbp-flow-tooltip-net b.is-negative { color: var(--ui-danger); }
+.cbp-flow-tooltip-net b.is-neutral { color: var(--ui-text-muted); }
+
+.cbp-flow-table {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--ui-border);
+}
+
+.cbp-flow-table summary {
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    cursor: pointer;
+}
+
+.cbp-table-scroll {
+    overflow-x: auto;
+}
+
+.cbp-flow-table table {
+    width: 100%;
+    margin-top: 8px;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.cbp-flow-table th,
+.cbp-flow-table td {
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--ui-border);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.cbp-flow-table th:first-child {
+    text-align: left;
+}
+
+.cbp-flow-table thead th {
+    color: var(--ui-text-muted);
+    font-weight: 600;
+}
+
+.cbp-flow-table .is-positive { color: var(--ui-success); }
+.cbp-flow-table .is-negative { color: var(--ui-danger); }
+
+/* ---------- Contas ---------- */
+.cbp-account-list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.cbp-account-row {
+    display: flex;
+    min-height: var(--ui-list-row-min-height);
+    align-items: center;
+    gap: var(--ui-list-row-gap);
+    margin-inline: -4px;
+    padding: var(--ui-list-row-padding-block) 4px;
+    border-bottom: var(--ui-list-row-separator);
+    border-radius: var(--ui-list-row-radius);
+    transition: background-color 140ms ease;
+}
+
+.cbp-account-row:last-child {
+    border-bottom: 0;
+    padding-bottom: var(--ui-list-row-padding-block);
+}
+
+.cbp-account-row:hover {
+    background: color-mix(in srgb, var(--ui-surface-hover) 72%, transparent);
+}
+
+.cbp-account-row:focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 1px;
+}
+
+.cbp-account-avatar {
+    display: grid;
+    width: var(--ui-list-avatar-size);
+    height: var(--ui-list-avatar-size);
+    flex: none;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.cbp-account-avatar img {
+    width: 100%;
+    height: 100%;
+    padding: 2px;
+    object-fit: contain;
+}
+
+.cbp-avatar-tone-0 { background: var(--ui-avatar-tone-0-soft); color: var(--ui-avatar-tone-0); }
+.cbp-avatar-tone-1 { background: var(--ui-avatar-tone-1-soft); color: var(--ui-avatar-tone-1); }
+.cbp-avatar-tone-2 { background: var(--ui-avatar-tone-2-soft); color: var(--ui-avatar-tone-2); }
+.cbp-avatar-tone-3 { background: var(--ui-avatar-tone-3-soft); color: var(--ui-avatar-tone-3); }
+.cbp-avatar-tone-4 { background: var(--ui-avatar-tone-4-soft); color: var(--ui-avatar-tone-4); }
+
+.cbp-account-copy {
+    min-width: 0;
+    line-height: 1.3;
+}
+
+.cbp-account-copy strong {
+    display: block;
+    overflow: hidden;
+    color: var(--ui-text);
+    font-size: 13px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cbp-account-copy small {
+    display: block;
+    margin-top: var(--ui-list-copy-gap);
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+}
+
+.cbp-account-value {
+    margin-left: auto;
+    text-align: right;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.cbp-account-value small {
+    display: block;
+    color: var(--ui-text-subtle);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.cbp-account-value strong {
+    display: block;
+    color: var(--ui-text);
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.cbp-account-value em {
+    display: block;
+    font-size: 10.5px;
+    font-style: normal;
+    font-weight: 600;
+}
+
+.cbp-account-value em.is-positive { color: var(--ui-success); }
+.cbp-account-value em.is-negative { color: var(--ui-danger); }
+.cbp-account-value em.is-neutral { color: var(--ui-text-subtle); }
+
+.cbp-more {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--ui-border);
+}
+
+.cbp-more summary {
+    color: var(--ui-accent-text);
+    font-size: var(--ui-fs-body-sm);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* ---------- Próximos compromissos ---------- */
+.cbp-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+    padding: 3px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-tab);
+    background: var(--ui-surface-raised);
+}
+
+.cbp-tabs button {
+    flex: 1;
+    min-height: 34px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--ui-radius-dashboard-tab-item);
+    background: transparent;
+    color: var(--ui-text-muted);
+    font: inherit;
+    font-size: var(--ui-fs-tab);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cbp-tabs button[aria-selected="true"] {
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent-on-soft);
+}
+
+.cbp-tabs button span {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background: var(--ui-progress-track);
+    font-size: 9px;
+}
+
+.cbp-commitment-summary {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 0 0 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--ui-border);
+    border-radius: 10px;
+    background: var(--ui-surface-raised);
+}
+
+.cbp-commitment-summary-label {
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.cbp-commitment-summary strong {
+    color: var(--ui-text);
+    font-size: 18px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+}
+
+.cbp-commitment-summary.is-payable strong { color: var(--ui-danger); }
+.cbp-commitment-summary.is-receivable strong { color: var(--ui-success); }
+
+.cbp-commitment-summary-count {
+    margin-left: auto;
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+    white-space: nowrap;
+}
+
+.cbp-commitment-cap {
+    margin: 6px 0 0;
+    color: var(--ui-text-subtle);
+    font-size: 10.5px;
+}
+
+.cbp-commitment-list {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.cbp-commitment-row {
+    display: flex;
+    min-height: var(--ui-list-row-min-height);
+    align-items: center;
+    gap: var(--ui-list-row-gap);
+    margin-inline: -4px;
+    padding: var(--ui-list-row-padding-block) 4px;
+    border-bottom: var(--ui-list-row-separator);
+    border-radius: var(--ui-list-row-radius);
+    transition: background-color 140ms ease;
+}
+
+.cbp-commitment-row:last-child {
+    border-bottom: 0;
+    padding-bottom: var(--ui-list-row-padding-block);
+}
+
+.cbp-commitment-row:hover {
+    background: color-mix(in srgb, var(--ui-surface-hover) 72%, transparent);
+}
+
+.cbp-commitment-row:focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 1px;
+}
+
+.cbp-date-chip {
+    width: var(--ui-list-avatar-size);
+    flex: none;
+    padding: 5px 0;
+    border-radius: 10px;
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent-on-soft);
+    text-align: center;
+    line-height: 1.1;
+}
+
+.cbp-date-chip b {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+.cbp-date-chip span {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.cbp-commitment-copy {
+    min-width: 0;
+    line-height: 1.3;
+}
+
+.cbp-commitment-copy strong {
+    display: block;
+    overflow: hidden;
+    color: var(--ui-text);
+    font-size: 12px;
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cbp-commitment-copy small {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+    margin-top: var(--ui-list-copy-gap);
+    color: var(--ui-text-subtle);
+    font-size: 10.5px;
+}
+
+.cbp-commitment-amount {
+    margin-left: auto;
+    color: var(--ui-text);
+    font-size: 12.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cbp-commitment-amount.is-positive { color: var(--ui-success); }
+
+/* ---------- Cartões ---------- */
+.cbp-card-rail {
+    display: flex;
+    flex: 1;
+    align-items: stretch;
+    gap: 16px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    padding: 2px 0 4px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    touch-action: auto;
+}
+
+.cbp-card-rail::-webkit-scrollbar {
+    display: none;
+}
+
+/* Dashboard carousel sizing only. The visual composition is the canonical
+   .cb-v2-credit-card tile shared with /faturas. */
+.cbp-credit-card {
+    flex: 0 0 342px;
+    width: 342px;
+    min-width: 0;
+    scroll-snap-align: start;
+}
+
+.cbp-credit-card--add {
+    align-items: flex-start;
+    justify-content: center;
+    gap: 12px;
+    border: 1px dashed var(--ui-border-strong);
+    background: color-mix(in srgb, var(--ui-field-bg) 82%, transparent);
+    color: var(--ui-text);
+    text-decoration: none;
+    transition: border-color var(--ui-transition), background-color var(--ui-transition), transform 120ms ease;
+}
+
+.cbp-credit-card--add:hover {
+    border-color: var(--ui-accent-strong);
+    background: color-mix(in srgb, var(--ui-accent) 9%, var(--ui-field-bg));
+    transform: translateY(-1px);
+}
+
+.cbp-credit-card--add:active { transform: translateY(0); }
+
+.cbp-credit-card--add:focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+}
+
+.cbp-cc-add-icon {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--ui-accent) 32%, var(--ui-border));
+    border-radius: var(--ui-radius-tile);
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent-strong);
+}
+
+.cbp-cc-add-icon svg { width: 20px; height: 20px; }
+
+.cbp-cc-add-copy {
+    display: grid;
+    gap: 3px;
+}
+
+.cbp-cc-add-copy strong {
+    color: var(--ui-text);
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: -.01em;
+    line-height: 1.25;
+}
+
+.cbp-cc-add-copy span {
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    line-height: 1.4;
+}
+
+.cbp-cards .cbp-carousel-nav {
+    margin-top: auto;
+    padding-top: 13px;
+    border-top: 1px solid var(--ui-border);
+}
+
+.cbp-carousel-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.cbp-carousel-nav p {
+    margin: 0;
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+
+.cbp-carousel-nav > div {
+    display: flex;
+    gap: 8px;
+}
+
+.cbp-carousel-nav .cbp-icon-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    color: var(--ui-text-muted);
+}
+
+.cbp-carousel-nav .cbp-icon-btn:hover {
+    color: var(--ui-text);
+}
+
+.cbp-carousel-nav .cbp-icon-btn svg {
+    width: 15px;
+    height: 15px;
+}
+
+.cbp-carousel-nav .cbp-icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* ---------- Categorias ---------- */
+.cbp-category-list {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--ui-list-compact-gap);
+    margin: 0;
+    padding: 0;
+}
+
+.cbp-category-bar-row {
+    min-width: 0;
+    min-height: var(--ui-list-compact-min-height);
+}
+
+.cbp-category-bar-row.cbp-chart-0 { --dashboard-category-color: var(--ui-chart-0); }
+.cbp-category-bar-row.cbp-chart-1 { --dashboard-category-color: var(--ui-chart-1); }
+.cbp-category-bar-row.cbp-chart-2 { --dashboard-category-color: var(--ui-chart-2); }
+.cbp-category-bar-row.cbp-chart-3 { --dashboard-category-color: var(--ui-chart-3); }
+.cbp-category-bar-row.cbp-chart-4 { --dashboard-category-color: var(--ui-chart-4); }
+.cbp-category-bar-row.cbp-chart-other { --dashboard-category-color: var(--ui-chart-other); }
+
+.cbp-category-bar-head {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+    font-size: 12px;
+}
+
+.cbp-category-icon {
+    display: grid;
+    width: 20px;
+    height: 20px;
+    flex: none;
+    place-items: center;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--dashboard-category-color) 14%, transparent);
+    color: var(--dashboard-category-color);
+}
+
+.cbp-category-icon svg {
+    width: 11px;
+    height: 11px;
+}
+
+.cbp-category-bar-head strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ui-text);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cbp-category-bar-head > .cbp-category-amount {
+    margin-left: auto;
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cbp-category-bar-head > small {
+    color: var(--ui-text-subtle);
+    font-size: 10px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cbp-category-progress {
+    display: block;
+    width: 100%;
+    height: 7px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 999px;
+    background: var(--ui-progress-track);
+    appearance: none;
+}
+
+.cbp-category-progress::-webkit-progress-bar {
+    border-radius: 999px;
+    background: var(--ui-progress-track);
+}
+
+.cbp-category-progress::-webkit-progress-value {
+    border-radius: 999px;
+    background: var(--dashboard-category-color);
+}
+
+.cbp-category-progress::-moz-progress-bar {
+    border-radius: 999px;
+    background: var(--dashboard-category-color);
+}
+
+.cbp-categories .cbp-note {
+    margin-top: auto;
+    padding-top: 10px;
+}
+
+/* ---------- Visão financeira ---------- */
+/* O card mede a si mesmo: em larguras estreitas (mobile, coluna compacta do
+   grid) os blocos Realizado/Projetado empilham para preservar a leitura das
+   linhas label↔valor sem quebra. Ver @container após .cbp-finance-blocks. */
+.cbp-finance {
+    align-self: start;
+    padding: var(--ui-card-pad-compact, 14px 16px);
+    container-type: inline-size;
+}
+
+.cbp-finance .cbp-card-head {
+    margin-bottom: var(--ui-card-head-gap-compact, 12px);
+}
+
+.cbp-finance-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    margin: 0 0 12px;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid var(--ui-border);
+    border-radius: 0;
+    background: transparent;
+}
+
+.cbp-finance-tab {
+    min-width: 0;
+    min-height: 38px;
+    padding: 0 8px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: var(--ui-text-muted);
+    font: inherit;
+    font-size: var(--ui-fs-tab-strong);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    transition: color 160ms ease, border-color 160ms ease;
+}
+
+.cbp-finance-tab:hover {
+    color: var(--ui-text);
+}
+
+.cbp-finance-tab.is-active {
+    border-bottom-color: currentColor;
+    color: var(--ui-text);
+    font-weight: 650;
+}
+
+.cbp-finance-tab:focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 2px;
+}
+
+.cbp-state-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 22px;
+    padding: 3px 9px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-badge);
+    background: var(--ui-surface-raised);
+    color: var(--ui-text-muted);
+    font-size: var(--ui-fs-label);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+}
+
+.cbp-state-badge::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    flex: none;
+    border-radius: 999px;
+    background: currentColor;
+}
+
+.cbp-state-badge.is-complete {
+    border-color: color-mix(in srgb, var(--ui-success) 30%, var(--ui-border));
+    background: var(--ui-success-soft);
+    color: var(--ui-success);
+}
+
+.cbp-state-badge.is-partial {
+    border-color: color-mix(in srgb, var(--ui-warning) 30%, var(--ui-border));
+    background: var(--ui-warning-soft);
+    color: var(--ui-warning);
+}
+
+.cbp-state-badge.is-unavailable {
+    border-color: color-mix(in srgb, var(--ui-danger) 30%, var(--ui-border));
+    background: var(--ui-danger-soft);
+    color: var(--ui-danger);
+}
+
+.cbp-state-badge.is-history {
+    color: var(--ui-text-muted);
+}
+
+.cbp-finance-panel[hidden] {
+    display: none;
+}
+
+.cbp-finance-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 8px;
+    flex-wrap: wrap;
+    min-width: 0;
+    margin-bottom: 0;
+}
+
+.cbp-finance-panel-head .cbp-state-badge {
+    min-height: 20px;
+    padding: 2px 8px;
+    font-size: 10px;
+}
+
+.cbp-finance-active-month {
+    min-width: 0;
+    color: var(--ui-text);
+    font-size: 13.5px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+}
+
+.cbp-finance-status-note {
+    margin: 0;
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    line-height: 1.4;
+}
+
+.cbp-finance-blocks {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    margin-top: 13px;
+}
+
+.cbp-finance-blocks.is-single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+/* Depois da base para vencer na cascata: card estreito (mobile, coluna
+   compacta do grid) empilha Realizado/Projetado e ganha largura de leitura. */
+@container (max-width: 430px) {
+    .cbp-finance-blocks {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 7px;
+    }
+
+    .cbp-finance-blocks .cbp-finance-metrics {
+        gap: 4px 8px;
+    }
+}
+
+@container (max-width: 300px) {
+    .cbp-finance-blocks .cbp-finance-metrics {
+        column-gap: 6px;
+    }
+
+    .cbp-finance-block .cbp-finance-block-head {
+        flex-direction: row;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 2px 6px;
+    }
+
+    .cbp-finance-block .cbp-finance-label {
+        gap: 4px;
+        font-size: 10.5px;
+    }
+
+    .cbp-finance-block .cbp-finance-label::before {
+        width: 4px;
+        height: 4px;
+    }
+}
+
+@container (min-width: 431px) {
+    .cbp-finance-block .cbp-finance-metrics {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .cbp-finance-block .cbp-finance-metric {
+        flex-direction: row;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .cbp-finance-block .cbp-finance-metric dd {
+        text-align: right;
+    }
+
+    .cbp-finance-block .cbp-finance-metric.is-adjustment {
+        align-items: baseline;
+    }
+}
+
+.cbp-finance-block {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+    padding: 20px;
+    border: 1px solid var(--ui-border);
+    border-radius: 13px;
+    background: var(--ui-surface-raised);
+}
+
+.cbp-finance-block.is-projected {
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--ui-border) 72%, var(--ui-text-muted) 28%);
+    background: transparent;
+}
+
+.cbp-finance-block-head {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.cbp-finance-block-title {
+    color: var(--ui-text);
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0;
+    line-height: 1.3;
+}
+
+.cbp-finance-block-sub {
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+    line-height: 1.35;
+}
+
+.cbp-finance-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 9px;
+    margin: 0;
+}
+
+.cbp-finance-metric {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.cbp-finance-label {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.35;
+    text-align: left;
+}
+
+.cbp-finance-label::before {
+    content: "";
+    width: 5px;
+    height: 5px;
+    flex: none;
+    border-radius: 999px;
+    background: var(--ui-text-subtle);
+}
+
+.cbp-finance-metric.is-income .cbp-finance-label::before {
+    background: var(--ui-success);
+}
+
+.cbp-finance-metric.is-expense .cbp-finance-label::before {
+    background: var(--ui-danger);
+}
+
+.cbp-finance-metric.is-pending .cbp-finance-label::before {
+    background: var(--ui-text-subtle);
+}
+
+.cbp-finance-metric.is-adjustment {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding-top: 5px;
+    border-top: 1px solid var(--ui-border);
+}
+
+.cbp-finance-metric.is-adjustment .cbp-finance-label {
+    flex: 1;
+}
+
+.cbp-finance-metric.is-adjustment .cbp-finance-label {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+}
+
+.cbp-finance-metric.is-adjustment .cbp-finance-label::before {
+    display: none;
+}
+
+.cbp-finance-label small {
+    color: var(--ui-text-subtle);
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.3;
+}
+
+.cbp-finance-metric dd {
+    margin: 0;
+    min-width: 0;
+    text-align: left;
+}
+
+.cbp-finance-metric.is-adjustment dd {
+    text-align: right;
+}
+
+.cbp-finance-metric strong {
+    color: var(--ui-text);
+    font-size: 13.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    white-space: nowrap;
+}
+
+.cbp-finance-metric.is-pending strong {
+    color: var(--ui-text);
+    font-weight: 550;
+}
+
+.cbp-finance-metric.is-adjustment strong {
+    font-size: 12.5px;
+    font-weight: 550;
+}
+
+.cbp-finance-metric strong.is-positive,
+.cbp-finance-result strong.is-positive {
+    color: var(--ui-success);
+}
+
+.cbp-finance-metric strong.is-negative,
+.cbp-finance-result strong.is-negative {
+    color: var(--ui-danger);
+}
+
+.cbp-finance-metric strong.is-neutral,
+.cbp-finance-result strong.is-neutral {
+    color: var(--ui-text-muted);
+}
+
+.cbp-finance-result {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: auto;
+    padding-top: 5px;
+    border-top: 1px solid var(--ui-border);
+}
+
+.cbp-finance-result > span {
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+    font-weight: 500;
+    line-height: 1.3;
+}
+
+.cbp-finance-result strong {
+    color: var(--ui-text);
+    font-size: clamp(16px, 1.3vw, 17.5px);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+.cbp-finance-na {
+    display: inline-block;
+    color: var(--ui-text-subtle);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.cbp-finance-note {
+    margin: 8px 0 0;
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.cbp-finance-footnote {
+    margin: 8px 0 0;
+    padding-left: 8px;
+    border-left: 2px solid var(--ui-border);
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.cbp-finance-footnote.is-negative,
+.cbp-finance-footnote.is-unavailable {
+    border-left-color: var(--ui-danger);
+    color: var(--ui-danger);
+}
+
+.cbp-finance-footnote.is-partial {
+    border-left-color: var(--ui-warning);
+    color: var(--ui-warning);
+}
+
+.cbp-finance-details {
+    margin-top: 7px;
+    padding-top: 6px;
+    border-top: 1px solid var(--ui-border);
+}
+
+.cbp-finance-details-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 36px;
+    color: var(--ui-text);
+    cursor: pointer;
+    list-style: none;
+}
+
+.cbp-finance-details-summary::-webkit-details-marker {
+    display: none;
+}
+
+.cbp-finance-details-summary:focus-visible {
+    border-radius: 8px;
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 2px;
+}
+
+.cbp-finance-details-title {
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+.cbp-finance-details-tail {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.cbp-finance-details-hint {
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+    font-weight: 500;
+    text-align: right;
+}
+
+.cbp-finance-details-chevron {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    color: var(--ui-text-muted);
+    transition: transform 160ms ease;
+}
+
+.cbp-finance-details[open] .cbp-finance-details-chevron {
+    transform: rotate(180deg);
+}
+
+.cbp-finance-details-body {
+    display: grid;
+    gap: 8px;
+    padding-top: 4px;
+}
+
+.cbp-finance-details-body .cbp-finance-extra:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+
+.cbp-finance-details-body .cbp-finance-footnote {
+    margin-top: 0;
+}
+
+.cbp-finance-extra {
+    margin-top: 10px;
+    padding-top: 9px;
+    border-top: 1px solid var(--ui-border);
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.cbp-finance-extra-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--ui-text);
+    font-weight: 600;
+}
+
+.cbp-finance-extra-values {
+    display: flex;
+    align-items: baseline;
+    gap: 4px 10px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+}
+
+.cbp-finance-extra-values .is-positive {
+    color: var(--ui-success);
+}
+
+.cbp-finance-extra-values .is-negative {
+    color: var(--ui-danger);
+}
+
+.cbp-finance-extra small {
+    display: block;
+    margin-top: 3px;
+    color: var(--ui-text-subtle);
+    font-size: 10.5px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+.cbp-finance-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+    padding: 13px;
+    border: 1px dashed var(--ui-border-strong);
+    border-radius: 12px;
+    color: var(--ui-text-muted);
+}
+
+.cbp-finance-empty i {
+    width: 17px;
+    height: 17px;
+    color: var(--ui-text-subtle);
+}
+
+.cbp-finance-empty strong {
+    color: var(--ui-text);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.cbp-finance-empty p {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.45;
+}
+
+/* ---------- Metas ---------- */
+.cbp-goal-list {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.cbp-goal-row {
+    min-width: 0;
+}
+
+.cbp-goal-head {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 6px;
+    font-size: 11.5px;
+}
+
+.cbp-goal-icon {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    flex: none;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent-on-soft);
+}
+
+.cbp-goal-icon svg {
+    width: 13px;
+    height: 13px;
+}
+
+.cbp-goal-head strong {
+    overflow: hidden;
+    color: var(--ui-text);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cbp-goal-head > span:last-child {
+    margin-left: auto;
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.cbp-goal-sep {
+    color: var(--ui-text-subtle);
+}
+
+.cbp-goal-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 5px;
+    color: var(--ui-text-subtle);
+    font-size: 10.5px;
+}
+
+.cbp-goal-meta strong {
+    color: var(--ui-text);
+    font-weight: 500;
+}
+
+/* ---------- Progresso ---------- */
+.cbp-progress {
+    --dashboard-progress-bg: linear-gradient(90deg, var(--ui-accent), var(--ui-accent-2));
+    display: block;
+    width: 100%;
+    height: 7px;
+    overflow: hidden;
+    border: 0;
+    border-radius: 999px;
+    background: var(--ui-progress-track);
+    appearance: none;
+}
+
+.cbp-progress::-webkit-progress-bar {
+    border-radius: 999px;
+    background: var(--ui-progress-track);
+}
+
+.cbp-progress::-webkit-progress-value {
+    border-radius: 999px;
+    background: var(--dashboard-progress-bg);
+}
+
+.cbp-progress::-moz-progress-bar {
+    border-radius: 999px;
+    background: var(--dashboard-progress-bg);
+}
+
+.cbp-progress.is-accent {
+    --dashboard-progress-bg: linear-gradient(90deg, var(--ui-accent), var(--ui-accent-2));
+}
+
+.cbp-progress.is-positive,
+.cbp-progress--ok {
+    --dashboard-progress-bg: linear-gradient(90deg, var(--ui-success), color-mix(in srgb, var(--ui-success) 58%, var(--ui-accent)));
+}
+
+.cbp-progress.is-warning,
+.cbp-progress--attention {
+    --dashboard-progress-bg: linear-gradient(90deg, var(--ui-warning), color-mix(in srgb, var(--ui-warning) 60%, var(--ui-danger)));
+}
+
+.cbp-progress--near {
+    --dashboard-progress-bg: linear-gradient(90deg, color-mix(in srgb, var(--ui-warning) 70%, var(--ui-danger)), var(--ui-danger));
+}
+
+.cbp-progress--exceeded,
+.cbp-progress.is-negative {
+    --dashboard-progress-bg: linear-gradient(90deg, var(--ui-danger), color-mix(in srgb, var(--ui-danger) 70%, var(--ui-warning)));
+}
+
+/* ---------- Estado vazio ---------- */
+.cbp-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 20px 10px;
+    color: var(--ui-text-muted);
+    font-size: 11px;
+    text-align: center;
+}
+
+.cbp-empty svg {
+    width: 22px;
+    height: 22px;
+    color: var(--ui-text-subtle);
+}
+
+.cbp-empty p {
+    margin: 0;
+}
+
+.cbp-empty a {
+    color: var(--ui-accent-text);
+    font-size: var(--ui-fs-body-sm);
+    font-weight: 600;
+}
+
+.cbp-empty--link {
+    text-decoration: none;
+}
+
+.cbp-empty--link span {
+    color: var(--ui-text-subtle);
+    font-size: 10px;
+}
+
+/* ---------- Appbar mobile ---------- */
+.cbp-appbar-greeting {
+    min-width: 0;
+}
+
+.cbp-appbar-greeting span {
+    display: block;
+    margin-bottom: 1px;
+    color: var(--ui-text-subtle);
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.cbp-appbar-greeting strong {
+    display: block;
+    overflow: hidden;
+    color: var(--ui-text);
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---------- Privacidade ---------- */
+.privacy-enabled .cbp-main [data-sensitive] {
+    visibility: hidden;
+    user-select: none;
+}
+
+.privacy-enabled .cbp-main :is(strong, span, p, small, b, em, td, th, div)[data-sensitive] {
+    position: relative;
+}
+
+.privacy-enabled .cbp-main :is(strong, span, p, small, b, em, td, th, div)[data-sensitive]::after {
+    content: "••••";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    visibility: visible;
+    color: var(--ui-text-muted);
+    letter-spacing: 0.12em;
+}
+
+.privacy-enabled .cbp-main .cbp-progress {
+    background: var(--ui-progress-track);
+}
+
+.privacy-enabled .cbp-main .cbp-progress::-webkit-progress-value {
+    background: var(--ui-progress-track);
+}
+
+.privacy-enabled .cbp-main .cbp-progress::-moz-progress-bar {
+    background: var(--ui-progress-track);
+}
+
+.privacy-enabled .cbp-main .cbp-category-progress,
+.privacy-enabled .cbp-main .cb-card-progress {
+    visibility: hidden;
+}
+
+/* ---------- Responsivo ---------- */
+@media (max-width: 1359px) {
+    .cbp-flow-plot {
+        min-height: 0;
+    }
+}
+
+@media (max-width: 1359px) and (min-width: 1024px) {
+    .cbp-flow-month {
+        font-size: 14px;
+    }
+}
+
+@media (max-width: 1023px) and (min-width: 768px) {
+    .cbp-flow-month {
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 767px) {
+    .cbp-flow-plot {
+        min-height: 0;
+    }
+}
+
+@media (max-width: 767px) and (min-width: 431px) {
+    .cbp-flow-month {
+        font-size: 14px;
+    }
+}
+
+@media (max-width: 430px) {
+    .cbp-flow-month {
+        font-size: 19px;
+    }
+}
+
+
+@media (min-width: 1600px) {
+    .cbp-accounts { grid-column: 1 / span 5; }
+    .cbp-goals { grid-column: 6 / span 3; }
+    .cbp-cards { grid-column: 9 / span 4; }
+}
+
+@media (max-width: 1359px) and (min-width: 1024px) {
+    .cbp-hero { grid-column: 1 / span 7; grid-row: 1; }
+    .cbp-finance { grid-column: 8 / span 5; grid-row: 1; }
+    .cbp-cashflow { grid-column: 1 / span 8; grid-row: 2; }
+    .cbp-commitments { grid-column: 9 / span 4; grid-row: 2; }
+    .cbp-accounts { grid-column: 1 / span 6; grid-row: 3; }
+    .cbp-cards { grid-column: 7 / span 6; grid-row: 3; }
+    .cbp-categories { grid-column: 1 / span 6; grid-row: 4; }
+    .cbp-goals { grid-column: 7 / span 6; grid-row: 4; }
+
+    .cbp-grid.is-historical-focus > .cbp-card,
+    .cbp-grid.is-historical-focus.is-cards-period > .cbp-card,
+    .cbp-grid.is-historical-focus.is-cards-fallback > .cbp-card {
+        grid-column: 1 / -1;
+        grid-row: auto;
+    }
+}
+
+@media (min-width: 1024px) {
+    .cbp-flow-toggle {
+        display: none;
+    }
+
+    .cbp-flow-panel[hidden] {
+        display: block;
+    }
+
+    .cbp-category-list {
+        justify-content: space-between;
+    }
+
+    .cbp-category-list.is-sparse {
+        justify-content: center;
+    }
+
+}
+
+@media (max-width: 1023px) {
+    .cbp-page-head {
+        padding-top: 16px;
+    }
+
+    .cbp-page-head h1,
+    .cbp-page-head p {
+        display: none;
+    }
+
+    .cbp-desktop-action {
+        display: none;
+    }
+
+    .cbp-grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+
+    .cbp-finance-tab,
+    .cbp-finance-details-summary {
+        min-height: 44px;
+    }
+
+    .cbp-grid > * {
+        grid-column: 1 / -1;
+        grid-row: auto;
+    }
+
+    .cbp-grid.is-historical-focus > .cbp-card,
+    .cbp-grid.is-historical-focus.is-cards-period > .cbp-card,
+    .cbp-grid.is-historical-focus.is-cards-fallback > .cbp-card {
+        grid-column: 1 / -1;
+        grid-row: auto;
+    }
+
+    .cbp-flow-toggle {
+        display: inline-flex;
+    }
+
+    .cbp-flow-panel[hidden] {
+        display: none;
+    }
+
+    .cbp-category-list {
+        gap: var(--ui-list-compact-gap);
+    }
+
+    .cbp-category-bar-head {
+        font-size: 12.5px;
+    }
+
+    .cbp-category-bar-head > small {
+        font-size: 10.5px;
+    }
+
+    .cbp-flow-axis-label {
+        display: none;
+    }
+
+    .cbp-carousel-nav .cbp-icon-btn {
+        width: 44px;
+        height: 44px;
+    }
+}
+
+
+@media (max-width: 767px) {
+    .cbp-page-head {
+        align-items: flex-start;
+        padding-bottom: 14px;
+    }
+
+    .cbp-head-actions {
+        width: 100%;
+    }
+
+    .cbp-month-filter {
+        width: auto;
+    }
+
+    .cbp-card {
+        padding: 15px;
+        border-radius: 18px;
+    }
+
+    .cbp-finance {
+        padding: 13px 14px;
+    }
+
+    .cbp-finance-block-head {
+        flex-direction: row;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 2px 6px;
+    }
+
+    .cbp-card-head {
+        margin-bottom: 12px;
+    }
+
+    .cbp-hero-value {
+        font-size: var(--ui-fs-dashboard-hero-mobile);
+    }
+
+    .cbp-flow-net {
+        margin-left: 0;
+    }
+
+    .cbp-flow-tooltip {
+        right: 6px;
+        top: 6px;
+        min-width: 170px;
+    }
+
+    .cbp-credit-card {
+        flex: 0 0 min(86vw, 324px);
+        width: min(86vw, 324px);
+        min-width: 0;
+    }
+
+    .cbp-finance-blocks {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .cbp-account-copy strong {
+        overflow: visible;
+        text-overflow: clip;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.25;
+    }
+}
+
+@media (max-width: 430px) {
+    .cbp-month-filter-label {
+        display: none;
+    }
+
+    .cbp-month-filter {
+        min-height: 40px;
+    }
+
+    .cbp-month-value {
+        padding: 0 6px;
+        font-size: 11px;
+    }
+
+    .cbp-month-reset {
+        padding: 0 8px;
+    }
+
+}
+
+@media (max-width: 420px) {
+    .cbp-credit-card {
+        padding: 13px 14px 12px;
+    }
+}
+
+@media (max-width: 389px) {
+    .cbp-card-rail {
+        gap: 14px;
+    }
+
+    .cbp-finance-label {
+        gap: 4px;
+        font-size: 10.5px;
+    }
+
+    .cbp-finance-label::before {
+        width: 4px;
+        height: 4px;
+    }
+
+    .cbp-finance-metric strong {
+        font-size: 12.5px;
+    }
+
+    .cbp-finance-result strong {
+        font-size: 16px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cb-preview *,
+    .cb-preview *::before,
+    .cb-preview *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+    }
+
+    .cbp-btn-primary:hover {
+        transform: none;
+    }
+}
+
+/* ---------- R1.3-B10.1 — SSR canônico + regiões montadas por JS ----------
+   O DOM do mês atual é sempre renderizado na ordem canônica mobile: Saldo,
+   Finanças, Fluxo, Contas, Compromissos, Cartões, Categorias e Metas.
+   dashboard-preview-layout.js monta as duas regiões apenas no desktop
+   (>=1200px) e devolve os mesmos nós à ordem canônica em <=1199px. O desenho
+   aprovado na B10 não muda; só a ordem do DOM passa a acompanhar cada layout. */
+.cbp-grid--contract {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ui-layout-gap-compact, 14px);
+}
+
+/* Placeholders das regiões: fora do desktop montado não geram caixa. */
+.cbp-grid--contract > .cbp-region,
+.cbp-grid--contract > .cbp-region > .cbp-region-pair {
+    display: none;
+}
+
+/* O card de Finanças herda `align-self: start` do grid legado; na pilha ele
+   precisa ocupar a largura da coluna (mobile, tablet e desktop). */
+.cbp-grid--contract .cbp-finance {
+    align-self: stretch;
+}
+
+@media (min-width: 1200px) {
+    /* Enquanto o script monta o desktop, evita o flash da coluna única. A
+       animação é o fail-safe: sem o script, o conteúdo aparece em 1,5s. */
+    .cbp-grid--contract.is-layout-pending {
+        visibility: hidden;
+        animation: cbp-layout-reveal 0s linear 1.5s forwards;
+    }
+
+    @keyframes cbp-layout-reveal {
+        to { visibility: visible; }
+    }
+
+    .cbp-grid--contract.is-regions {
+        display: grid;
+        grid-template-columns: minmax(0, 42fr) minmax(0, 58fr);
+        gap: var(--ui-layout-gap, 16px);
+        align-items: start;
+    }
+
+    .cbp-grid--contract.is-regions > .cbp-region {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: var(--ui-layout-gap, 16px);
+    }
+
+    .cbp-grid--contract.is-regions > .cbp-region > .cbp-region-pair {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--ui-layout-gap, 16px);
+        align-items: stretch;
+    }
+
+    .cbp-grid--contract.is-regions .cbp-region .cbp-card,
+    .cbp-grid--contract.is-regions .cbp-region-pair .cbp-card {
+        grid-column: auto;
+        grid-row: auto;
+    }
+
+    .cbp-grid--contract.is-regions .cbp-finance {
+        align-self: stretch;
+    }
+
+    .cbp-grid--contract.is-regions .cbp-hero {
+        container-type: inline-size;
+    }
+
+    .cbp-grid--contract.is-regions .cbp-hero-value {
+        font-size: var(--ui-fs-dashboard-hero-wide);
+    }
+}
+
+/* Visão financeira mobile (<=767px): Realizado e Projetado lado a lado, com
+   rótulo acima do valor e resultado ancorado no rodapé de cada bloco. */
+@media (max-width: 767px) {
+    .cbp-finance-blocks {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .cbp-finance-blocks.is-single {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .cbp-finance-block {
+        gap: 8px;
+        padding: 9px 10px 10px;
+    }
+
+    .cbp-finance-block .cbp-finance-block-head {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+    }
+
+    .cbp-finance-block .cbp-finance-metrics {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 7px;
+    }
+
+    .cbp-finance-block .cbp-finance-metric,
+    .cbp-finance-block .cbp-finance-metric.is-adjustment {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1px;
+    }
+
+    .cbp-finance-block .cbp-finance-metric dd,
+    .cbp-finance-block .cbp-finance-metric.is-adjustment dd {
+        text-align: left;
+    }
+
+    .cbp-finance-block .cbp-finance-metric strong {
+        font-size: 13px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .cbp-finance-result strong {
+        font-size: clamp(13px, 4vw, 16px);
+    }
+}

@@ -37,8 +37,8 @@ func TestPWAInstallIconsUseDarkBackgroundAndSafeMask(t *testing.T) {
 	if err := json.Unmarshal(raw, &manifest); err != nil {
 		t.Fatalf("decode PWA manifest: %v", err)
 	}
-	if manifest.BackgroundColor != "#0a0b0f" || manifest.ThemeColor != "#0a0b0f" {
-		t.Fatalf("PWA chrome must stay dark; background=%q theme=%q", manifest.BackgroundColor, manifest.ThemeColor)
+	if manifest.BackgroundColor != "#0e1013" || manifest.ThemeColor != "#0e1013" {
+		t.Fatalf("PWA chrome must match the authenticated shell canvas; background=%q theme=%q", manifest.BackgroundColor, manifest.ThemeColor)
 	}
 
 	wanted := map[string]struct {

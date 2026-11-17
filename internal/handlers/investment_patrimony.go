@@ -30,16 +30,26 @@ type investmentPatrimonyView struct {
 
 // Reuse existing feature/permission decisions; do not expose investment data
 // through a less privileged dashboard or settings read.
-func queryInvestmentPatrimonyViews(db *sql.DB, workspaceID, userID string) (*investmentPatrimonyView, map[string]*investmentPatrimonyView) {
+func queryInvestmentPatrimonyViews(db reportQueryer, workspaceID, userID string) (*investmentPatrimonyView, map[string]*investmentPatrimonyView) {
 	if !features.FromEnv().Investments {
 		return nil, nil
 	}
 	var member models.WorkspaceMember
 	if err := db.QueryRow(`SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ?`, workspaceID, userID).Scan(&member.Role); err != nil || !models.HasPermission(&member, models.PermissionInvestmentsRead) {
+		if err != sql.ErrNoRows {
+			recordDashboardReadError(db, err)
+		}
 		return nil, nil
 	}
-	projection, err := services.ReadWorkspaceInvestmentPatrimony(context.Background(), db, workspaceID)
+	var projection services.WorkspaceInvestmentPatrimony
+	var err error
+	if tx := dashboardReadTx(db); tx != nil {
+		projection, err = services.ReadWorkspaceInvestmentPatrimonyTx(context.Background(), tx, workspaceID)
+	} else {
+		projection, err = services.ReadWorkspaceInvestmentPatrimony(context.Background(), db.(*sql.DB), workspaceID)
+	}
 	if err != nil {
+		recordDashboardReadError(db, err)
 		return &investmentPatrimonyView{Title: "Patrimônio aplicado conhecido", Coverage: "Indisponível — não foi possível consultar as posições"}, nil
 	}
 	view := &investmentPatrimonyView{

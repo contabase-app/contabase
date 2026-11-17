@@ -1179,16 +1179,11 @@ func TestPaidEarlySelectedByRoutingIsBlockedByStateMachine(t *testing.T) {
 	if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id = 'card'`).Scan(&balanceBefore); err != nil {
 		t.Fatal(err)
 	}
-	var reserveEventsBefore int
-	if err := db.QueryRow(`SELECT COUNT(1) FROM box_virtual_ledger`).Scan(&reserveEventsBefore); err != nil {
-		t.Fatal(err)
-	}
 
 	handler := TransactionHandler{DB: db, WorkspaceID: "ws", UserID: "user-ws"}
 	txDate := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC).Unix()
 	_, err := handler.insertTransaction(
-		"EXPENSE", 50000, "Nova Compra Apos Quitacao", "", "", civilWriteDateFromLegacyUnix(txDate), "card", "", "", 1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false,
-	)
+		"EXPENSE", 50000, "Nova Compra Apos Quitacao", "", "", civilWriteDateFromLegacyUnix(txDate), "card", "", "", 1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "")
 	if !errors.Is(err, errAutomaticInvoiceFrozen) || !errors.Is(err, errInvoiceStateTransitionConflict) {
 		t.Fatalf("insertTransaction error = %v, want automatic frozen invoice conflict", err)
 	}
@@ -1210,11 +1205,9 @@ func TestPaidEarlySelectedByRoutingIsBlockedByStateMachine(t *testing.T) {
 		t.Fatalf("inserted transactions = %d, want 0", inserted)
 	}
 	var balanceAfter int64
-	var reserveEventsAfter int
 	_ = db.QueryRow(`SELECT current_balance FROM accounts WHERE id = 'card'`).Scan(&balanceAfter)
-	_ = db.QueryRow(`SELECT COUNT(1) FROM box_virtual_ledger`).Scan(&reserveEventsAfter)
-	if balanceAfter != balanceBefore || reserveEventsAfter != reserveEventsBefore {
-		t.Fatalf("side effects changed: balance %d->%d reserve events %d->%d", balanceBefore, balanceAfter, reserveEventsBefore, reserveEventsAfter)
+	if balanceAfter != balanceBefore {
+		t.Fatalf("side effects changed: balance %d->%d", balanceBefore, balanceAfter)
 	}
 }
 

@@ -31,6 +31,9 @@ func openPre66IconTestDB(t *testing.T) (*sql.DB, string) {
 	t.Cleanup(func() { _ = db.Close() })
 	db.SetMaxOpenConns(1)
 	execTestDB(t, db, ddl)
+	if _, err := db.Exec(legacyReserveDDL); err != nil {
+		t.Fatal(err)
+	}
 	for _, m := range migrations {
 		if m.version >= 66 {
 			break
@@ -87,7 +90,6 @@ func TestMigration66AddsIconKeys(t *testing.T) {
 	db := openIconTestDB(t)
 
 	assertColumnExists(t, db, "cost_limits", "icon_key")
-	assertColumnExists(t, db, "boxes", "icon_key")
 	assertColumnExists(t, db, "categories", "icon")
 
 	var name string
@@ -123,20 +125,12 @@ func TestMigration66IconKeysStartEmptyForExistingRows(t *testing.T) {
 		INSERT INTO cost_limits (id, workspace_id, category_id, max_amount_monthly, alert_threshold, created_at, updated_at)
 		VALUES ('limit-1', 'ws-icons', 'cat-1', 10000, 80, ?, ?)
 	`, now, now)
-	execTestDB(t, db, `
-		INSERT INTO boxes (id, workspace_id, name, target_amount, monthly_recharge, created_at, updated_at)
-		VALUES ('box-1', 'ws-icons', 'Reserva', 100000, 0, ?, ?)
-	`, now, now)
-
-	var limitIcon, boxIcon sql.NullString
+	var limitIcon sql.NullString
 	if err := db.QueryRow(`SELECT icon_key FROM cost_limits WHERE id = 'limit-1'`).Scan(&limitIcon); err != nil {
 		t.Fatalf("read limit icon_key: %v", err)
 	}
-	if err := db.QueryRow(`SELECT icon_key FROM boxes WHERE id = 'box-1'`).Scan(&boxIcon); err != nil {
-		t.Fatalf("read box icon_key: %v", err)
-	}
-	if limitIcon.Valid || boxIcon.Valid {
-		t.Fatalf("icon_key deveria nascer NULL: limit=%v box=%v", limitIcon, boxIcon)
+	if limitIcon.Valid {
+		t.Fatalf("icon_key deveria nascer NULL: limit=%v", limitIcon)
 	}
 }
 

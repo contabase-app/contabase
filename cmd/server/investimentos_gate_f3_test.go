@@ -326,13 +326,13 @@ func TestB7GateRecordCancellationWorkspaceIsolationAndSchema(t *testing.T) {
 		t.Fatalf("foreign requests wrote receipts: %d", leaked)
 	}
 
-	// The harness database carries the full registry including schema 82.
+	// The harness database carries the full registry including schema 83.
 	var version int
 	if err := h.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 82 {
-		t.Fatalf("schema version=%d want=82", version)
+	if version != 83 {
+		t.Fatalf("schema version=%d want=83", version)
 	}
 
 	// Confirm, then revalidate the database through the runtime read-only

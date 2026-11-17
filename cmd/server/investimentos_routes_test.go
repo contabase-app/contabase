@@ -418,8 +418,8 @@ func TestInvestimentosDetailPatrimonialDifference(t *testing.T) {
 	for _, tc := range []struct {
 		name, date, amount, gain, percent, tone string
 	}{
-		{"positive", "2026-02-01", "102500", "+ R$ 25,00", "+2,50%", "text-emerald-700"},
-		{"loss", "2026-02-02", "98000", "- R$ 20,00", "-2,00%", "text-red-700"},
+		{"positive", "2026-02-01", "102500", "+ R$ 25,00", "+2,50%", "is-positive"},
+		{"loss", "2026-02-02", "98000", "- R$ 20,00", "-2,00%", "is-negative"},
 		{"zero", "2026-02-03", "100000", "R$ 0,00", "0,00%", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

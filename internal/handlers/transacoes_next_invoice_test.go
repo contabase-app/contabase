@@ -42,9 +42,7 @@ func TestInsertTransactionNextInvoiceCreatesInvoiceForCreditCard(t *testing.T) {
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"NEXT_INVOICE",
-		false,
-	)
+		"NEXT_INVOICE")
 	if err != nil {
 		t.Fatalf("insertTransaction NEXT_INVOICE: %v", err)
 	}
@@ -85,9 +83,7 @@ func TestInsertTransactionNextInvoiceReusesExistingNextInvoice(t *testing.T) {
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"NEXT_INVOICE",
-		false,
-	)
+		"NEXT_INVOICE")
 	if err != nil {
 		t.Fatalf("insertTransaction NEXT_INVOICE with existing next: %v", err)
 	}
@@ -126,9 +122,7 @@ func TestInsertTransactionAutoRejectsPaidInvoiceWithinCycle(t *testing.T) {
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"",
-		false,
-	)
+		"")
 	if !errors.Is(err, errAutomaticInvoiceFrozen) || !errors.Is(err, errInvoiceStateTransitionConflict) {
 		t.Fatalf("insertTransaction auto paid within cycle error = %v, want frozen conflict", err)
 	}
@@ -177,9 +171,7 @@ func TestInsertTransactionAutoAcceptsClosedUnpaidInvoiceWithinCycle(t *testing.T
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction auto closed within cycle error = %v, want nil", err)
 	}
@@ -248,8 +240,7 @@ func TestInsertTransactionAutoUnknownInvoiceStatusIsStructural(t *testing.T) {
 	_, err := handler.insertTransaction(
 		"EXPENSE", 15000, "Auto corrupt status", "", "",
 		MustCivilWriteDate("2026-07-10"), "card-test", "", "cat-expense-rec",
-		1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false,
-	)
+		1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "")
 	if !errors.Is(err, errInvoiceStateStructural) {
 		t.Fatalf("error = %v, want structural", err)
 	}
@@ -271,8 +262,7 @@ func TestAutomaticInstallmentsFrozenDestinationRollbackIntegral(t *testing.T) {
 	_, err := handler.insertTransaction(
 		"EXPENSE", 30000, "Installments frozen rollback", "", "",
 		MustCivilWriteDate("2026-07-10"), "card-test", "", "cat-expense-rec",
-		2, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false,
-	)
+		2, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "")
 	if !errors.Is(err, errAutomaticInvoiceFrozen) {
 		t.Fatalf("error = %v, want frozen conflict", err)
 	}
@@ -296,8 +286,7 @@ func TestAutomaticRecurringProjectionFrozenDestinationRollbackIntegral(t *testin
 	_, err := handler.insertTransaction(
 		"EXPENSE", 15000, "Projection frozen rollback", "", "",
 		MustCivilWriteDate("2026-07-10"), "card-test", "", "cat-expense-rec",
-		1, "paid", true, "MONTHLY", "", OptionalCivilWriteDate{}, &total, "", false,
-	)
+		1, "paid", true, "MONTHLY", "", OptionalCivilWriteDate{}, &total, "")
 	if !errors.Is(err, errAutomaticInvoiceFrozen) {
 		t.Fatalf("error = %v, want frozen conflict", err)
 	}
@@ -321,8 +310,7 @@ func TestManualClosedInvoiceSelectionRemainsExplicitControl(t *testing.T) {
 	_, err := handler.insertTransaction(
 		"EXPENSE", 15000, "Manual closed control", "", "",
 		MustCivilWriteDate("2026-07-10"), "card-test", "", "cat-expense-rec",
-		1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "invoice-2026-08", false,
-	)
+		1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "invoice-2026-08")
 	if err != nil {
 		t.Fatalf("manual CLOSED selection: %v", err)
 	}
@@ -364,9 +352,7 @@ func TestInsertTransactionAutoAfterClosingGoesToNextInvoice(t *testing.T) {
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction auto after closing: %v", err)
 	}
@@ -440,9 +426,7 @@ func TestInsertTransactionAutoOnClosingDayGoesToNextInvoice(t *testing.T) {
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction auto on closing day: %v", err)
 	}
@@ -478,9 +462,7 @@ func TestInsertTransactionNextPaidReferencePreservesStateMachineBlock(t *testing
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"NEXT_INVOICE",
-		false,
-	)
+		"NEXT_INVOICE")
 	if !errors.Is(err, errInvoiceImplicitReopenBlocked) {
 		t.Fatalf("insertTransaction next paid reference error = %v, want state-machine block", err)
 	}
@@ -604,9 +586,7 @@ func TestInsertTransactionNextInvoiceSkipsForNonFirstInstallment(t *testing.T) {
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"NEXT_INVOICE",
-		false,
-	)
+		"NEXT_INVOICE")
 	if err != nil {
 		t.Fatalf("insertTransaction NEXT_INVOICE installment: %v", err)
 	}
@@ -686,9 +666,7 @@ func TestInsertTransactionNextInvoiceFailsForNonCreditCardAccount(t *testing.T) 
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"NEXT_INVOICE",
-		false,
-	)
+		"NEXT_INVOICE")
 	if err != nil {
 		t.Fatalf("unexpected error for non-credit card NEXT_INVOICE: %v", err)
 	}
@@ -855,9 +833,7 @@ func TestInsertTransactionNextInvoiceMissingCreditCardConfig(t *testing.T) {
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"NEXT_INVOICE",
-		false,
-	)
+		"NEXT_INVOICE")
 	if err == nil {
 		t.Fatal("expected error for credit card without config, got nil")
 	}
@@ -893,9 +869,7 @@ func TestInsertTransactionNextInvoiceNormalCreditCardAlsoWorks(t *testing.T) {
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction normal credit card: %v", err)
 	}

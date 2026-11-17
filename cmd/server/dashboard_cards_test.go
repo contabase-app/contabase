@@ -22,6 +22,12 @@ func TestSortDashboardCardsByPaymentPriority(t *testing.T) {
 		{ID: "same-due-larger", Amount: 7200, DueDateUnix: time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC).Unix()},
 	}
 
+	for i := range cards {
+		cards[i].PaymentState = handlers.InvoiceComputedState{Pending: cards[i].Amount, Financial: handlers.InvoiceFinancialPending}
+		if cards[i].Status == models.InvoiceStatusPaid {
+			cards[i].PaymentState = handlers.InvoiceComputedState{Financial: handlers.InvoiceFinancialPaid}
+		}
+	}
 	handlers.SortDashboardCardsByPaymentPriority(cards, now)
 
 	got := make([]string, 0, len(cards))
@@ -31,8 +37,8 @@ func TestSortDashboardCardsByPaymentPriority(t *testing.T) {
 	want := []string{
 		"overdue-oldest",
 		"overdue-recent",
-		"same-due-larger",
 		"same-due-smaller",
+		"same-due-larger",
 		"upcoming-later",
 		"undated",
 		"paid",
@@ -53,6 +59,9 @@ func TestSortDashboardCardsUsesSaoPauloCivilDayAcrossUTCBoundary(t *testing.T) {
 		{ID: "overdue", Amount: 1000, DueDateUnix: time.Date(2026, time.August, 30, 0, 0, 0, 0, time.UTC).Unix()},
 	}
 
+	for i := range cards {
+		cards[i].PaymentState = handlers.InvoiceComputedState{Pending: cards[i].Amount, Financial: handlers.InvoiceFinancialPending}
+	}
 	handlers.SortDashboardCardsByPaymentPriority(cards, now)
 	if got := []string{cards[0].ID, cards[1].ID}; !reflect.DeepEqual(got, []string{"overdue", "due-today"}) {
 		t.Fatalf("payment-priority order = %v, want overdue before due-today", got)

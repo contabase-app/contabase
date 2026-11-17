@@ -129,7 +129,7 @@ func sqlite79CheckBasis(objects map[string]cancellationSchemaObject) error {
 	return nil
 }
 
-func sqlite79CheckParentColumns(q sqlite79Reader) error {
+func sqlite79CheckParentColumnsForSchema(q sqlite79Reader, version int) error {
 	for table, required := range map[string][]string{
 		"users": {"id:TEXT"}, "workspaces": {"id:TEXT"},
 		"accounts":     {"id:TEXT", "workspace_id:TEXT", "type:TEXT", "archived_at:INTEGER", "current_balance:INTEGER", "balance_version:INTEGER"},
@@ -176,10 +176,30 @@ func sqlite79CheckParentColumns(q sqlite79Reader) error {
 		fields = append(fields, "NULL AS "+name)
 	}
 	var valid int
-	if err := q.QueryRowContext(context.Background(), `SELECT `+cancellation79Relation("c", true)+` FROM (SELECT `+strings.Join(fields, ",")+`) c`).Scan(&valid); err != nil {
+	if err := q.QueryRowContext(context.Background(), `SELECT `+cancellation79RelationForSchema(version, "c", true)+` FROM (SELECT `+strings.Join(fields, ",")+`) c`).Scan(&valid); err != nil {
 		return fmt.Errorf("invalid SQLite cancellation parent relation: %w", err)
 	}
 	return nil
+}
+
+func sqlite79CheckParentColumns(q sqlite79Reader) error {
+	return sqlite79CheckParentColumnsForSchema(q, 82)
+}
+
+func validateCancellation79Structure(q sqlite79Reader) error {
+	return validateCancellation79StructureForSchema(q, 82)
+}
+
+func validateCancellation79Receipts(q sqlite79Reader) error {
+	return validateCancellation79ReceiptsForSchema(q, 82)
+}
+
+func validateReversal80Structure(q sqlite79Reader, current bool) error {
+	return validateReversal80StructureForSchema(q, current, 82)
+}
+
+func validateReversal80Receipts(q sqlite79Reader) error {
+	return validateReversal80ReceiptsForSchema(q, 82)
 }
 
 func sqlite79Inspect(q sqlite79Reader) (int, error) {
@@ -197,6 +217,23 @@ func sqlite79Inspect(q sqlite79Reader) (int, error) {
 	version, err := sqlite79Markers(q, objects)
 	if err != nil {
 		return 0, err
+	}
+	if hasReservePhysicalRemoval(version) {
+		for _, name := range reserveRemovalTables {
+			if _, ok := objects[name]; ok {
+				return 0, fmt.Errorf("schema %d still contains reserve table %s", version, name)
+			}
+		}
+		for name, o := range objects {
+			ddl := strings.ToLower(o.ddl)
+			if strings.Contains(ddl, "boxes") ||
+				strings.Contains(ddl, "box_virtual_ledger") ||
+				strings.Contains(ddl, "box_contribution_lifecycle_events") ||
+				strings.Contains(name, "box_virtual_ledger") ||
+				strings.Contains(name, "box_contribution_lifecycle_events") {
+				return 0, fmt.Errorf("schema %d still contains reserve object %s", version, name)
+			}
+		}
 	}
 	for _, o := range objects {
 		// Schema 80 extends the same rule: the marker must reach the schema
@@ -221,7 +258,7 @@ func sqlite79Inspect(q sqlite79Reader) (int, error) {
 		if err := sqlite79CheckBasis(objects); err != nil {
 			return 0, err
 		}
-		if err := sqlite79CheckParentColumns(q); err != nil {
+		if err := sqlite79CheckParentColumnsForSchema(q, version); err != nil {
 			return 0, err
 		}
 		for name, object := range objects {
@@ -267,18 +304,18 @@ func sqlite79Inspect(q sqlite79Reader) (int, error) {
 		}
 	}
 	if version >= 79 {
-		if err := validateCancellation79Structure(q); err != nil {
+		if err := validateCancellation79StructureForSchema(q, version); err != nil {
 			return 0, err
 		}
-		if err := validateCancellation79Receipts(q); err != nil {
+		if err := validateCancellation79ReceiptsForSchema(q, version); err != nil {
 			return 0, err
 		}
 	}
 	if version >= 80 {
-		if err := validateReversal80Structure(q, version >= 82); err != nil {
+		if err := validateReversal80StructureForSchema(q, version >= 82, version); err != nil {
 			return 0, err
 		}
-		if err := validateReversal80Receipts(q); err != nil {
+		if err := validateReversal80ReceiptsForSchema(q, version); err != nil {
 			return 0, err
 		}
 	}
@@ -424,13 +461,13 @@ func validateRecordCancellation81Receipts(q sqlite79Reader) error {
 	return nil
 }
 
-func validateReversal80Structure(q sqlite79Reader, current bool) error {
+func validateReversal80StructureForSchema(q sqlite79Reader, current bool, version int) error {
 	objects, err := sqlite79Schema(q)
 	if err != nil {
 		return err
 	}
 	expected := map[string]bool{}
-	for _, want := range reversal80Objects() {
+	for _, want := range reversal80ObjectsForSchema(version) {
 		if current && isReversal82Dropped(want.name) {
 			continue
 		}
@@ -466,9 +503,9 @@ func isReversal82Dropped(name string) bool {
 	return false
 }
 
-func validateReversal80Receipts(q sqlite79Reader) error {
+func validateReversal80ReceiptsForSchema(q sqlite79Reader, version int) error {
 	var bad int
-	if err := q.QueryRowContext(context.Background(), `SELECT EXISTS(SELECT 1 FROM investment_purchase_reversals r WHERE NOT COALESCE((`+reversal80Relation("r", false)+`) AND (`+reversal80JSON("r")+`),0))`).Scan(&bad); err != nil {
+	if err := q.QueryRowContext(context.Background(), `SELECT EXISTS(SELECT 1 FROM investment_purchase_reversals r WHERE NOT COALESCE((`+reversal80RelationForSchema(version, "r", false)+`) AND (`+reversal80JSON("r")+`),0))`).Scan(&bad); err != nil {
 		return err
 	}
 	if bad != 0 {
@@ -483,13 +520,13 @@ func validateReversal80Receipts(q sqlite79Reader) error {
 	return nil
 }
 
-func validateCancellation79Structure(q sqlite79Reader) error {
+func validateCancellation79StructureForSchema(q sqlite79Reader, version int) error {
 	objects, err := sqlite79Schema(q)
 	if err != nil {
 		return err
 	}
 	expected := map[string]bool{}
-	for _, want := range cancellation79Objects() {
+	for _, want := range cancellation79ObjectsForSchema(version) {
 		expected[want.name] = true
 		got, ok := objects[want.name]
 		if !ok || got.kind != want.kind || got.table != want.table || sqlite79NormalizeDDL(got.ddl) != sqlite79NormalizeDDL(want.ddl) {
@@ -504,9 +541,9 @@ func validateCancellation79Structure(q sqlite79Reader) error {
 	return nil
 }
 
-func validateCancellation79Receipts(q sqlite79Reader) error {
+func validateCancellation79ReceiptsForSchema(q sqlite79Reader, version int) error {
 	var bad int
-	if err := q.QueryRowContext(context.Background(), `SELECT EXISTS(SELECT 1 FROM investment_cancellations c WHERE NOT COALESCE((`+cancellation79Relation("c", false)+`) AND (`+cancellation79JSON("c")+`),0))`).Scan(&bad); err != nil {
+	if err := q.QueryRowContext(context.Background(), `SELECT EXISTS(SELECT 1 FROM investment_cancellations c WHERE NOT COALESCE((`+cancellation79RelationForSchema(version, "c", false)+`) AND (`+cancellation79JSON("c")+`),0))`).Scan(&bad); err != nil {
 		return err
 	}
 	if bad != 0 {
@@ -609,10 +646,10 @@ func publishSQLiteRuntime79(db *sql.DB, guard *sqliteGuardConnector) error {
 		return err
 	}
 	// The publish gate tracks the registry head: a runtime database is only
-	// served after the full chain (now through schema 82) has been applied
+	// served after the full chain (now through schema 83) has been applied
 	// and revalidated.
-	if version != 82 {
-		return fmt.Errorf("runtime requires SQLite schema 82")
+	if version != currentSchemaVersion {
+		return fmt.Errorf("runtime requires SQLite schema %d", currentSchemaVersion)
 	}
 	return publishSQLiteGuard(db, guard)
 }

@@ -87,6 +87,28 @@ O monitor externo valida também DNS, proxy reverso, TLS, certificado e o alcanc
 - Verifique se o restore copiou os uploads.
 - Confira se a permissao do diretorio esta correta.
 
+## Loop entre login, setup e inicio apos restore
+
+Sintoma: depois de restaurar um backup legado, o login parece concluir, mas a pagina inicial volta para `/setup` ou `/login`, criando um ciclo.
+
+Em versoes afetadas, o servidor podia manter a conexao SQLite anterior a restauracao e interpretar a falha de consulta como banco sem usuarios. A Beta 8 corrige esse fluxo: a pagina inicial e as rotas de transacoes usam a conexao atual, falha de leitura na pagina inicial responde 503 e o primeiro setup continua funcionando.
+
+Recuperacao operacional temporaria em instalacao afetada:
+
+```bash
+docker compose restart contabase
+docker compose logs --tail 100 contabase
+```
+
+Em instalacao systemd, reinicie a unidade e confira o estado:
+
+```bash
+sudo systemctl restart contabase
+sudo systemctl status contabase --no-pager
+```
+
+Reiniciar nao e a solucao definitiva: atualize para a versao corrigida assim que ela estiver disponivel. Se o ciclo continuar, preserve os logs, confirme a integridade do backup e revise [Backup e Restore](backup-restauracao.md). Nao repita o restore nem remova `data/` sem autorizacao.
+
 ## Alterei o env e nada mudou
 
 Depois de mudar `.env.docker`, recrie a stack:
@@ -97,15 +119,20 @@ docker compose up -d --build
 
 ## Docker nao atualiza
 
-- Confirme se voce fez `git pull`.
-- Confirme se voce fez `docker compose up -d --build`.
-- Veja os logs.
+- Use o comando global `contabase-update` com uma versao publicada. **O dispatcher Beta 8** autentica canal, Release, tag, commit e manifesto e verifica o bundle antes de executar o updater; o updater cria o backup canonico antes de alterar o runtime, valida a identidade da imagem e executa o healthcheck.
+- **O dispatcher Beta 7**, no modo Docker, executa o helper presente no checkout e repassa a versao explicita em `CONTABASE_VERSION`, sem autenticar completamente o bundle antes da execucao. O checkout da tag Beta 8 nao substitui o comando global instalado; ele so e reinstalado ao final de uma atualizacao bem-sucedida. A validacao da identidade da tag dentro do helper ja iniciado nao equivale a autenticacao antecipada do dispatcher Beta 8.
+- Nao use `git pull` seguido de `docker compose up -d --build` como substituto do updater: esse atalho nao cria o backup canonico e nao valida a identidade do runtime.
 
 ```bash
 git status --short
-docker compose up -d --build
+sudo contabase-update vX.Y.Z
 docker compose logs --tail 100 contabase
 ```
+
+- Pre-requisitos: worktree limpo, estado da instalacao em `/etc/contabase/install-state.env` e `flock` (util-linux). O comando fica em `/usr/local/bin/contabase-update`, instalado pelo instalador e pelos updaters; em instalacoes antigas sem ele, use o fallback unico descrito em [Atualizacao](atualizacao.md).
+- Instalacoes criadas por tag na Beta 7 precisam primeiro da [transicao unica de checkout](atualizacao.md#transição-única-de-checkout-por-tag-beta7--beta8), condicionada a disponibilizacao oficial da versao. Exija origem oficial, worktree limpo, estado legado valido, backup adequado e runtime Beta 7 em execucao, com Docker health `healthy`, `/health` saudavel e `/app/VERSION` igual a `v1.0.0-beta.7`. Depois do checkout, o `VERSION` local passa a Beta 8 enquanto o runtime ainda e Beta 7. Sem comprovar a identidade e a saude anteriores, a atualizacao permanece bloqueada; preserve o estado e os dados.
+- `scripts/update-contabase-docker.sh` e o helper interno do checkout. Chamado direto, ele nao faz a validacao de canal, Release, commit autorizado e manifesto do dispatcher Beta 8 e, em checkout por tag, exige `CONTABASE_VERSION` explicita. Nem a chamada direta nem o dispatcher Beta 7 equivalem ao dispatcher autenticado Beta 8.
+- Para escolher o metodo e verificar a disponibilidade da versao, consulte o [Guia Completo de Instalacao](https://contabase.pages.dev/setup/).
 
 ## Erro de permissao
 

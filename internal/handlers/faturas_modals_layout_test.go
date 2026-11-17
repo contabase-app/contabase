@@ -74,9 +74,17 @@ func TestInvoiceModalsKeepActionsOutsideScrollableBody(t *testing.T) {
 		t.Fatal("refund backdrop must match the shared modal darkening without extra blur")
 	}
 
-	// Shared overlay manager locks the page behind dialogs.
+	// Shared overlay manager locks the page behind dialogs and reconciles
+	// dialogs removed by HTMX without navigating or closing other overlays.
 	overlay := readTestFile(t, "assets/js/overlay-stack.js")
-	for _, contract := range []string{"_syncOverlayScrollLock", "cb-overlay-open"} {
+	for _, contract := range []string{
+		"_syncOverlayScrollLock",
+		"cb-overlay-open",
+		"_reconcileRemovedOverlays",
+		"window.overlayReconcile",
+		"htmx:oobAfterSwap",
+		"htmx:afterSettle",
+	} {
 		if !strings.Contains(overlay, contract) {
 			t.Fatalf("overlay manager missing scroll lock contract %q", contract)
 		}
@@ -103,7 +111,7 @@ func TestFaturasSelectedCardUsesTonalStateAndSemanticFocus(t *testing.T) {
 			t.Fatalf("selected card contract missing %q", contract)
 		}
 	}
-	if !strings.Contains(card, `{{if and .IsSelected .IsFaturasIndex}}`) {
+	if !strings.Contains(card, `{{if .IsFaturasIndex}}`) {
 		t.Fatal("selection check must stay scoped to the Faturas hub")
 	}
 
@@ -116,6 +124,9 @@ func TestFaturasSelectedCardUsesTonalStateAndSemanticFocus(t *testing.T) {
 		"border-color: color-mix(in srgb, var(--card-fg) 38%, var(--card-line));",
 		"box-shadow: var(--card-shadow),",
 		".cb-v2-credit-card-selected {",
+		"display: none;",
+		".cb-v2-faturas-index-main .cb-v2-credit-card.is-selected .cb-v2-credit-card-selected {",
+		"display: inline-grid;",
 		".cb-v2-faturas-index-main .cb-v2-credit-card:focus-visible {",
 		"outline: 2px solid var(--ui-focus);",
 		"outline-offset: 2px;",

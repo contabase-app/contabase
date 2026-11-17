@@ -24,7 +24,7 @@ O instalador:
 4. Cria as pastas do sistema.
 5. Cria o arquivo de configuração.
 6. Gera secrets fortes.
-7. Pergunta porta, URL pública, hosts e proxy.
+7. Pergunta porta e modo de acesso; deriva URL e hosts ou pede os valores no modo avançado.
 8. Cria o serviço `systemd`.
 9. Inicia o ContaBase.
 10. Testa o `/health`.
@@ -39,14 +39,17 @@ Você precisa de:
 - `systemd`;
 - porta `8080` livre, ou outra porta que você escolher.
 
-O servidor precisa ter ferramentas básicas como `curl`, `tar` e `sha256sum`.
+O servidor precisa ter ferramentas básicas como `curl`, `tar`, `sha256sum` e `flock` (util-linux). O `flock` é obrigatório para a atualização segura da Beta 8.
 
-## Instalação pelo menu guiado
+## Instalação pelo helper da tag publicada
+
+O Release Bootstrap permanece bloqueado pela validação independente e pelos testes de instalação exigidos. Os comandos abaixo usam o helper legado da tag, com seu próprio contrato de variáveis; não usam a entrada Stable nem o Bootstrap.
 
 Baixe o instalador:
 
 ```bash
-curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
+export CONTABASE_VERSION=vX.Y.Z
+curl -fsSLo /tmp/contabase-install.sh "https://raw.githubusercontent.com/contabase-app/contabase/${CONTABASE_VERSION}/scripts/install.sh"
 ```
 
 Execute:
@@ -69,74 +72,74 @@ Escolha a opção:
 
 ## Perguntas feitas pelo instalador
 
-O instalador pode perguntar:
+Na instalação Release, se a versão não foi definida pelo canal ou por `CONTABASE_VERSION`:
+
+```text
+Tag publica para instalar (ex.: vMAJOR.MINOR.PATCH[-beta.N]):
+```
+
+Essa pergunta não tem padrão. Para uma configuração nova e terminal interativo:
 
 ```text
 Porta local do ContaBase [8080]:
+Como voce vai acessar o ContaBase?
+1) Local somente nesta maquina
+2) Rede local/LAN por IP privado
+3) Dominio HTTPS/proxy reverso
+4) Avancado/manual
+Opcao (1/2/3/4) [3]:
 ```
 
-Use `8080`, a menos que essa porta já esteja ocupada.
+O padrão da porta é `8080` (ou o valor informado por variável de ambiente); o padrão do modo de acesso é `3`. As perguntas seguintes dependem da escolha:
 
-Depois:
+| Modo | Pergunta literal | Padrão |
+|---|---|---|
+| 1, local | Nenhuma pergunta adicional | URL localhost, hosts locais, sem proxy |
+| 2, LAN | `IP privado LAN do servidor (ex: 192.168.1.50):` | Sem padrão; IP privado obrigatório |
+| 3, proxy | `Dominio HTTPS (ex: financeiro.exemplo.com):` | Sem padrão; domínio obrigatório |
+| 3, proxy | `IP(s) do proxy confiavel, separados por virgula [127.0.0.1,::1]:` | `127.0.0.1,::1` |
+| 4, manual | `URL publica do ContaBase [${default_base_url}]:` | Valor atual ou `http://<host detectado>:<porta>` |
+| 4, manual | `Dominios/IPs permitidos, separados por virgula [${default_allowed_hosts}]:` | Valor atual ou host da URL |
+| 4, manual | `TRUSTED_PROXIES (vazio se nao houver proxy):` | Valor atual; vazio na configuração nova sem override |
+
+`${default_base_url}` e `${default_allowed_hosts}` representam valores calculados pelo script; no terminal aparecem os valores resolvidos. Em LAN, URL e hosts são derivados do IP privado. Em proxy, são derivados do domínio; informe o IP/CIDR do proxy que se conecta diretamente ao aplicativo.
+
+Um arquivo de configuração existente preserva os valores e dispensa essas perguntas. Antes de instalar a Release, há um resumo e a confirmação:
 
 ```text
-URL pública do ContaBase [http://servidor:8080]:
+Continuar com a instalacao? (s/N)
 ```
 
-Se você vai acessar por IP local:
+O padrão é não. Se houver secrets ausentes em configuração existente, pode aparecer `Deseja gerar os secrets ausentes automaticamente? (s/N)`, também com padrão não. Em instalação nova eles são gerados automaticamente, sem exibição dos valores.
+
+## Source legado
+
+A opção `3` do menu principal compila localmente com Go/Node e usa checkout Git persistente. Para instalação nova sem toolchain, prefira a opção `2` (Release).
+
+O Source legado não pergunta a porta: os perfis local/LAN usam `8080`. Para configuração manual, confira `PORT`, URL e hosts em `/etc/contabase/contabase.env` e a configuração do serviço. Em terminal interativo, mostra:
 
 ```text
-http://192.168.1.50:8080
+Como voce vai acessar o ContaBase instalado por source/systemd?
+1) Local somente nesta maquina
+2) Rede local/LAN por IP privado
+3) Dominio HTTPS/proxy reverso
+4) Avancado/manual (preservar valores atuais)
+Opcao (1/2/3/4) [3]:
 ```
 
-Se você vai acessar por domínio:
+| Modo | Pergunta literal | Padrão |
+|---|---|---|
+| 2, LAN | `IP privado LAN do servidor (ex: 192.168.1.50):` | Sem padrão |
+| 3, proxy | `Dominio HTTPS (ex: financeiro.exemplo.com):` | Sem padrão |
+| 3, proxy | `TRUSTED_PROXIES (IP/CIDR do proxy que conecta no app):` | Sem padrão indicado; informe a topologia real |
 
-```text
-https://financeiro.seudominio.com
-```
+Os modos `1` e `4` não fazem perguntas adicionais. O modo `4` preserva a configuração atual; edite URL, hosts e proxies no arquivo local se necessário. Não há pergunta de tag, porta ou confirmação final nesse fluxo.
 
-Depois:
-
-```text
-Domínios/IPs permitidos para acessar o ContaBase, separados por vírgula [localhost,127.0.0.1,servidor]:
-```
-
-Inclua o domínio ou IP que você vai usar no navegador.
-
-Exemplo com domínio:
-
-```text
-financeiro.seudominio.com,localhost,127.0.0.1
-```
-
-Depois:
-
-```text
-Vai usar reverse proxy? Ex.: Nginx Proxy Manager, Caddy, Traefik ou Cloudflare Tunnel [s/N]:
-```
-
-Responda:
-
-- `s` se vai usar domínio com HTTPS por proxy;
-- `n` se vai acessar direto por IP e porta.
-
-Se responder `s`, o instalador pergunta:
-
-```text
-IP(s) do proxy confiável, separados por vírgula [127.0.0.1,::1]:
-```
-
-Se o proxy roda no mesmo servidor, pode aceitar o padrão.
+O Source Bootstrap é outro método, adiado e indisponível. Sua execução é recusada antes de qualquer alteração; não possui instalação ou atualização suportada nesta fase. Isso não muda o Source legado.
 
 ## Token de setup
 
-Em uma instalação nova, o instalador mostra:
-
-```text
-CONTABASE_SETUP_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-Guarde esse token.
+Em uma instalação nova, o instalador gera o token sem imprimir seu valor. Consulte a chave `CONTABASE_SETUP_TOKEN` localmente com `sudo nano /etc/contabase/contabase.env` (arquivo `0600`). Não envie o valor em logs ou mensagens.
 
 Ele serve para criar o primeiro usuário administrador em:
 
@@ -173,7 +176,8 @@ sudo systemctl restart contabase
 Use este modo se você já sabe os valores.
 
 ```bash
-curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
+export CONTABASE_VERSION=vX.Y.Z
+curl -fsSLo /tmp/contabase-install.sh "https://raw.githubusercontent.com/contabase-app/contabase/${CONTABASE_VERSION}/scripts/install.sh"
 
 CONTABASE_INSTALL_METHOD=release \
 CONTABASE_VERSION=vX.Y.Z \
@@ -235,7 +239,8 @@ Opcional: `sudo cb-update vX.Y.Z`
 Baixe o instalador da versão desejada:
 
 ```bash
-curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
+export CONTABASE_VERSION=vX.Y.Z
+curl -fsSLo /tmp/contabase-install.sh "https://raw.githubusercontent.com/contabase-app/contabase/${CONTABASE_VERSION}/scripts/install.sh"
 ```
 
 Execute:

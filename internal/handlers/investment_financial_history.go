@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"fmt"
 	"math/big"
 )
@@ -9,7 +8,7 @@ import (
 // Investment adjustments participate in balance evolution, never in cash-flow
 // income. Economic time keeps backdated corrections out of today's return.
 // The existing trend path is preserved when no integration falls in the window.
-func investmentAdjustmentTrend(db *sql.DB, workspace, account string, current, movementNet, start, end int64) (string, string, bool) {
+func investmentAdjustmentTrend(db reportQueryer, workspace, account string, current, movementNet, start, end int64) (string, string, bool) {
 	rows, err := db.Query(`SELECT h.delta_cents FROM investment_adjustment_economic_dates f
  JOIN account_balance_adjustments h ON h.workspace_id=f.workspace_id AND h.account_id=f.account_id AND h.id=f.adjustment_id
  JOIN accounts a ON a.workspace_id=f.workspace_id AND a.id=f.account_id
@@ -24,6 +23,7 @@ func investmentAdjustmentTrend(db *sql.DB, workspace, account string, current, m
 	for rows.Next() {
 		var amount int64
 		if err = rows.Scan(&amount); err != nil {
+			recordDashboardReadError(db, err)
 			return "—", "flat", true
 		}
 		found = true

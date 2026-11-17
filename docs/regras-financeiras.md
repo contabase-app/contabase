@@ -1,11 +1,33 @@
 # ContaBase - Regras Financeiras
 
-Esta pagina resume as regras que o sistema usa para calcular valores, faturas e reservas. Ela existe para referencia tecnica e para evitar interpretacoes erradas na operacao diaria.
+Esta pagina resume as regras que o sistema usa para calcular valores, faturas e limites. Ela existe para referencia tecnica e para evitar interpretacoes erradas na operacao diaria.
 
 ## Dois modos de uso
 
 - `Personal` atende uso familiar e fluxo de caixa simples.
 - `Business` adiciona contas a pagar/receber, faturas, contatos e relatorios de negocio.
+
+## Contas
+
+A pagina `/contas` separa tres abas: `A Pagar`, `A Receber` e `A Transferir`.
+
+- `A Transferir` mostra apenas transferencias internas com status `pending` no periodo selecionado.
+- A data de referencia da aba e o vencimento quando existir; sem vencimento, usa a data da transferencia. Essa e a mesma semantica de periodo das demais pendencias.
+- A aba exibe origem, destino, valor, data e situacao; parcelas e recorrencias sao identificadas por badge.
+- Transferencias internas nao entram em `A Pagar`, `A Receber` nem nos totais de inadimplencia.
+- A busca da aba filtra somente as transferencias; os tres indicadores superiores continuam representando os totais do periodo.
+- Transferencia pendente nao reserva saldo: o debito na origem e o credito no destino so ocorrem na confirmacao.
+- A aba permite editar e confirmar a transferencia pelo fluxo proprio; a confirmacao aplica o debito e o credito atomicamente. Os gestos de swipe sao apenas atalhos para confirmar ou remover e nao alteram a regra financeira.
+
+## Saldo total e obrigacoes (F1)
+
+Desde a Beta 8, Reservas nao fazem parte do dominio financeiro. O Dashboard nao calcula saldo reservado nem subtrai valores reservados para exibir um "saldo disponivel".
+
+- `Saldo total` e a soma do saldo atual das contas nao arquivadas que nao sao cartao de credito. Contas de investimento entram na soma e podem nao ser resgataveis imediatamente; o valor nao representa dinheiro disponivel para gastar.
+- `Obrigacoes` reune faturas de cartao ainda nao pagas pelo saldo residual e despesas pendentes em contas que nao sao cartao, incluindo investimento e carteira, liquidas de reembolsos ativos. Compras de cartao entram pela fatura, sem duplicacao com a compra individual.
+- Os recortes de 30 e 60 dias usam o vencimento efetivo. Obrigacoes vencidas entram no recorte de 30 dias quando ainda estao pendentes. Itens sem data utilizavel nao entram no periodo e sao sinalizados separadamente.
+- A composicao usa um unico snapshot de leitura. Se houver inconsistencia ou estouro representavel, o indicador aparece como indisponivel em vez de exibir um numero inferido.
+- Nao ha transferencia automatica entre saldo total, obrigacoes e metas. Metas continuam sendo planejamento e nao reservam saldo.
 
 ## Relatorios financeiros
 
@@ -36,6 +58,9 @@ A Previsao combina o que ja aconteceu com o que ainda esta pendente:
 
 - soma realizado + pendentes;
 - organiza pendencias pelo vencimento;
+- em `Personal`, quando nao ha vencimento, usa a data do lancamento como data de recebimento/vencimento previsto;
+- em `Business`, usa o vencimento; a data do lancamento e competencia e nao substitui o vencimento;
+- vencimento negativo, data do lancamento ausente ou data civil malformada nao usam fallback silencioso;
 - inclui faturas abertas ou fechadas pelo saldo pendente;
 - nao duplica compra individual de cartao + fatura;
 - mostra uma janela movel com o mes selecionado e os 12 meses seguintes;
@@ -128,22 +153,6 @@ max(0, creditLimit - invoiceTotal)
 
 Faturas pagas nao devem ser editadas ou apagadas. Isso protege o historico financeiro.
 
-## Reservas
-
-Cada reserva usa um ledger interno (`box_virtual_ledger`) com entradas e saídas. Os tipos principais são:
-
-| Tipo | Efeito |
-|------|--------|
-| `RECHARGE` | adiciona fundos |
-| `BONUS` | soma valor extra |
-| `RELEASE` | libera valor reservado |
-| `CONSUME` | consome o valor reservado |
-| `REVERSAL` | reverte um consumo anterior |
-
-O alerta de excesso aparece apenas quando o consumo passa do valor reservado.
-
-Administradores podem verificar inconsistências no endpoint interno `/admin/caixinhas/ledger/reconciliar`. O endpoint só diagnostica; ele não altera dados.
-
 ## Recorrencias e parcelamentos
 
 Parcelamentos:
@@ -175,6 +184,17 @@ Materializacao automatica:
 - a projecao e mantida por um job diario, uma varredura assincrona no boot e um fallback leve por acesso, restrito a Dashboard e Lancamentos. Faturas e Relatorios nao disparam a materializacao;
 - o motor e idempotente: rodar a projecao mais de uma vez nao duplica ocorrencias por serie/sequencia nem por regra/sequencia.
 - uma sequencia registrada em `recurring_occurrence_skips` e tratada como intencionalmente ausente; o horizonte continua avancando e as demais sequencias continuam sendo materializadas.
+
+## Atomicidade e contencao
+
+As mutacoes financeiras usam uma unica transacao: saldo, historico, fatura, skip de recorrencia e demais efeitos sao confirmados juntos ou revertidos juntos.
+
+- Contencao SQLite detectada no registro do skip ou na remocao das transacoes, antes do commit, retorna `503` com `Retry-After: 1` para a exclusao recorrente. O rollback preserva a transacao, a serie e o skip; nao ha exclusao parcial.
+- Falha generica de commit no toggle de pagamento permanece indeterminada (`409`/`429`). Na exclusao, contencao SQLite no commit retorna `409`; erro generico de commit continua `500`.
+- Cancelamento de contexto comprovadamente anterior ao commit do driver retorna `408` sem efeito financeiro.
+- O sistema nao executa retry financeiro automatico. O operador deve atualizar os dados e repetir a acao de forma consciente.
+- A exclusao de apenas uma ocorrencia grava a ausencia persistente e remove o lancamento na mesma transacao; o materializador respeita esse registro e nao recria a ocorrencia.
+- Repetir um pagamento ja confirmado nao duplica saldo nem historico; a operacao e idempotente.
 
 ## Valores nulos
 

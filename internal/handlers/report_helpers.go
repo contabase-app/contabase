@@ -8,14 +8,57 @@ import (
 	"math"
 	"math/big"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/contabase-app/contabase/internal/civildate"
 	"github.com/contabase-app/contabase/internal/models"
 )
+
+// reliablePendingDate reports whether a pending cash event has a trustworthy
+// reference date for projection. Business always requires due_date. Personal
+// uses date/date_civil when due_date is absent, because that is the expected
+// receipt/payment date in that workspace type. Explicitly invalid dates never
+// fall back.
+func reliablePendingDate(workspaceType string, dueDate sql.NullInt64, dateUnix int64, dateCivil sql.NullString) bool {
+	if dueDate.Valid {
+		if dueDate.Int64 > 0 {
+			return true
+		}
+		if dueDate.Int64 < 0 {
+			return false
+		}
+	}
+	if !strings.EqualFold(strings.TrimSpace(workspaceType), models.WorkspaceTypePersonal) {
+		return false
+	}
+	if dateUnix <= 0 {
+		return false
+	}
+	if dateCivil.Valid && strings.TrimSpace(dateCivil.String) != "" {
+		_, err := civildate.ParseCivilDateInput(strings.TrimSpace(dateCivil.String))
+		return err == nil
+	}
+	civil, err := civildate.LegacyUnixToCivilDateInLocation(dateUnix, appTimeLocation())
+	if err != nil {
+		return false
+	}
+	_, err = civildate.ParseCivilDateInput(civil.String())
+	return err == nil
+}
 
 type ReportPeriod struct {
 	Start int64
 	End   int64
+}
+
+// reportQueryer is implemented by both *sql.DB and *sql.Tx. It lets report
+// builders run against one read-only snapshot without changing their SQL.
+type reportQueryer interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+	QueryRow(query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 func NewReportPeriodFromMonth(year, month int) ReportPeriod {
@@ -31,15 +74,18 @@ func NewReportPeriodFromYear(year int) ReportPeriod {
 }
 
 type CashEvent struct {
-	DateUnix    int64
-	AmountCents int64
-	Source      string
-	CategoryID  *string
-	AccountID   string
-	MacroGroup  string
-	IsRealized  bool
-	IsIncome    bool
-	Description string
+	DateUnix                 int64
+	CivilDate                string
+	AmountCents              int64
+	Source                   string
+	CategoryID               *string
+	AccountID                string
+	MacroGroup               string
+	IsRealized               bool
+	IsIncome                 bool
+	Description              string
+	HasReliableDueDate       bool
+	IsInvoicePaymentReversal bool
 }
 
 const (
@@ -47,6 +93,36 @@ const (
 	CashSourceInvoicePayment   = "invoice_payment"
 	CashSourceInvoiceProjected = "invoice_projected"
 )
+
+// legacyCivilDate is the only fallback reader for rows without a persisted
+// civil date. Legacy timestamps were written either as noon UTC (parseDate) or
+// as real instants (faturas.go paid_at = now), so the configured application
+// timezone is the documented interpretation, matching f1ObligationDueDate and
+// scheduled payment resolution. Persisted civil dates always win.
+func legacyCivilDate(unix int64) string {
+	if date, err := civildate.LegacyUnixToCivilDateInLocation(unix, appTimeLocation()); err == nil {
+		return date.String()
+	}
+	return time.Unix(unix, 0).In(appTimeLocation()).Format("2006-01-02")
+}
+
+// cashEventCivilDate is the single civil-date reading for dashboard grouping.
+func cashEventCivilDate(event CashEvent) string {
+	if value := strings.TrimSpace(event.CivilDate); value != "" {
+		if _, err := time.Parse("2006-01-02", value); err == nil {
+			return value
+		}
+	}
+	return legacyCivilDate(event.DateUnix)
+}
+
+func cashEventCivilMonth(event CashEvent) string {
+	date := cashEventCivilDate(event)
+	if len(date) < 7 {
+		return ""
+	}
+	return date[:7]
+}
 
 type DRERowView struct {
 	Competencia string
@@ -116,6 +192,7 @@ func QueryRealizedCashEvents(db *sql.DB, workspaceID string, period ReportPeriod
 			t.amount,
 			t.date,
 			t.paid_at,
+			COALESCE(NULLIF(t.paid_date_civil, ''), NULLIF(t.date_civil, ''), '') AS civil_date,
 			t.type,
 			t.account_id,
 			COALESCE(a.name, '') AS account_name,
@@ -141,11 +218,11 @@ func QueryRealizedCashEvents(db *sql.DB, workspaceID string, period ReportPeriod
 
 	var events []CashEvent
 	for rows.Next() {
-		var id, description, txType, accountID, accountName, accountType, macroGroup sql.NullString
+		var id, description, txType, accountID, accountName, accountType, macroGroup, civilDate sql.NullString
 		var amount, date int64
 		var paidAt sql.NullInt64
 		var categoryID sql.NullString
-		if err := rows.Scan(&id, &description, &amount, &date, &paidAt, &txType,
+		if err := rows.Scan(&id, &description, &amount, &date, &paidAt, &civilDate, &txType,
 			&accountID, &accountName, &accountType, &categoryID, &macroGroup); err != nil {
 			return nil, err
 		}
@@ -153,8 +230,13 @@ func QueryRealizedCashEvents(db *sql.DB, workspaceID string, period ReportPeriod
 		if paidAt.Valid && paidAt.Int64 > 0 {
 			effectiveDate = paidAt.Int64
 		}
+		civil := civilDate.String
+		if civil == "" {
+			civil = legacyCivilDate(effectiveDate)
+		}
 		ev := CashEvent{
 			DateUnix:    effectiveDate,
+			CivilDate:   civil,
 			AmountCents: amount,
 			Source:      CashSourceTransaction,
 			AccountID:   accountID.String,
@@ -327,8 +409,13 @@ func QueryInvoiceProjectedCashEvents(db *sql.DB, workspaceID string, period Repo
 		if invoice.pending <= 0 {
 			continue
 		}
+		invoiceCivil := invoice.dueDateCivil
+		if invoiceCivil == "" {
+			invoiceCivil = legacyCivilDate(invoice.dueDate)
+		}
 		ev := CashEvent{
 			DateUnix:    invoice.dueDate,
+			CivilDate:   invoiceCivil,
 			AmountCents: invoice.pending,
 			Source:      CashSourceInvoiceProjected,
 			AccountID:   "",
@@ -401,15 +488,19 @@ func BuildCashFlowDataByDueDate(db *sql.DB, workspaceID string, period ReportPer
 // realized cash by paid_at plus pending cash by due_date. Paid invoice payments
 // are realized cash; open/closed invoice balances are pending cash.
 func BuildPrevisaoCashFlowData(db *sql.DB, workspaceID string, period ReportPeriod) ([]CashEvent, []CashEvent, error) {
-	realized, err := BuildRealizadoCashFlowData(db, workspaceID, period)
+	return buildPrevisaoCashFlowData(db, workspaceID, period)
+}
+
+func buildPrevisaoCashFlowData(db reportQueryer, workspaceID string, period ReportPeriod) ([]CashEvent, []CashEvent, error) {
+	realized, err := buildRealizadoCashFlowData(db, workspaceID, period)
 	if err != nil {
 		return nil, nil, err
 	}
-	projected, err := QueryProjectedCashEventsByDueDate(db, workspaceID, period)
+	projected, err := queryProjectedCashEventsByDueDate(db, workspaceID, period)
 	if err != nil {
 		return nil, nil, err
 	}
-	invoiceProjected, err := QueryInvoiceCashEventsByDueDate(db, workspaceID, period)
+	invoiceProjected, err := queryInvoiceCashEventsByDueDate(db, workspaceID, period)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -422,19 +513,31 @@ func BuildPrevisaoCashFlowData(db *sql.DB, workspaceID string, period ReportPeri
 // Exclui transferências e compras individuais em cartão de crédito.
 // Pagamentos de fatura entram como saída realizada.
 func BuildRealizadoCashFlowData(db *sql.DB, workspaceID string, period ReportPeriod) ([]CashEvent, error) {
+	return buildRealizadoCashFlowData(db, workspaceID, period)
+}
+
+func buildRealizadoCashFlowData(db reportQueryer, workspaceID string, period ReportPeriod) ([]CashEvent, error) {
 	rows, err := db.Query(`
 		SELECT
 			t.id,
 			COALESCE(t.description, '') AS description,
 			t.amount,
 			COALESCE(NULLIF(t.paid_at, 0), t.date) AS effective_date,
+			COALESCE(NULLIF(t.paid_date_civil, ''), '') AS civil_date,
 			t.type,
 			t.account_id,
 			COALESCE(a.name, '') AS account_name,
 			COALESCE(a.type, '') AS account_type,
 			t.category_id,
 			COALESCE(c.macro_group, p.macro_group, CASE WHEN ip.id IS NOT NULL THEN 'Fatura de cartão' ELSE 'Sem grupo macro' END) AS macro_group,
-			ip.id IS NOT NULL AS is_invoice_payment
+			ip.id IS NOT NULL AS is_invoice_payment,
+			EXISTS (
+				SELECT 1
+				FROM invoice_payments ipr
+				WHERE ipr.workspace_id = t.workspace_id
+				  AND ipr.reversal_transaction_id = t.id
+				  AND ipr.reversed_at IS NOT NULL
+			) AS is_invoice_payment_reversal
 		FROM financial_transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
@@ -455,22 +558,28 @@ func BuildRealizadoCashFlowData(db *sql.DB, workspaceID string, period ReportPer
 
 	var events []CashEvent
 	for rows.Next() {
-		var id, description, txType, accountID, accountName, accountType, macroGroup sql.NullString
+		var id, description, txType, accountID, accountName, accountType, macroGroup, civilDate sql.NullString
 		var amount, effectiveDate int64
 		var categoryID sql.NullString
-		var isInvoicePayment bool
-		if err := rows.Scan(&id, &description, &amount, &effectiveDate, &txType,
-			&accountID, &accountName, &accountType, &categoryID, &macroGroup, &isInvoicePayment); err != nil {
+		var isInvoicePayment, isInvoicePaymentReversal bool
+		if err := rows.Scan(&id, &description, &amount, &effectiveDate, &civilDate, &txType,
+			&accountID, &accountName, &accountType, &categoryID, &macroGroup, &isInvoicePayment, &isInvoicePaymentReversal); err != nil {
 			return nil, err
 		}
+		civil := civilDate.String
+		if civil == "" {
+			civil = legacyCivilDate(effectiveDate)
+		}
 		ev := CashEvent{
-			DateUnix:    effectiveDate,
-			AmountCents: amount,
-			Source:      CashSourceTransaction,
-			AccountID:   accountID.String,
-			Description: description.String,
-			IsRealized:  true,
-			IsIncome:    txType.String == models.TransactionTypeIncome,
+			DateUnix:                 effectiveDate,
+			CivilDate:                civil,
+			AmountCents:              amount,
+			Source:                   CashSourceTransaction,
+			AccountID:                accountID.String,
+			Description:              description.String,
+			IsRealized:               true,
+			IsIncome:                 txType.String == models.TransactionTypeIncome,
+			IsInvoicePaymentReversal: isInvoicePaymentReversal,
 		}
 		if isInvoicePayment {
 			ev.Source = CashSourceInvoicePayment
@@ -499,6 +608,7 @@ func QueryRealizedCashEventsByDueDate(db *sql.DB, workspaceID string, period Rep
 			COALESCE(t.description, '') AS description,
 			t.amount,
 			COALESCE(NULLIF(t.due_date, 0), t.date) AS effective_date,
+			COALESCE(NULLIF(t.due_date_civil, ''), NULLIF(t.date_civil, ''), '') AS civil_date,
 			t.type,
 			t.account_id,
 			COALESCE(a.name, '') AS account_name,
@@ -525,10 +635,10 @@ func QueryRealizedCashEventsByDueDate(db *sql.DB, workspaceID string, period Rep
 
 	var events []CashEvent
 	for rows.Next() {
-		var id, description, txType, accountID, accountName, accountType, macroGroup sql.NullString
+		var id, description, txType, accountID, accountName, accountType, macroGroup, civilDate sql.NullString
 		var amount, effectiveDate int64
 		var categoryID sql.NullString
-		if err := rows.Scan(&id, &description, &amount, &effectiveDate, &txType,
+		if err := rows.Scan(&id, &description, &amount, &effectiveDate, &civilDate, &txType,
 			&accountID, &accountName, &accountType, &categoryID, &macroGroup); err != nil {
 			return nil, err
 		}
@@ -559,20 +669,30 @@ func QueryRealizedCashEventsByDueDate(db *sql.DB, workspaceID string, period Rep
 }
 
 func QueryProjectedCashEventsByDueDate(db *sql.DB, workspaceID string, period ReportPeriod) ([]CashEvent, error) {
+	return queryProjectedCashEventsByDueDate(db, workspaceID, period)
+}
+
+func queryProjectedCashEventsByDueDate(db reportQueryer, workspaceID string, period ReportPeriod) ([]CashEvent, error) {
 	rows, err := db.Query(`
 		SELECT
 			t.id,
 			COALESCE(t.description, '') AS description,
 			t.amount,
 			COALESCE(NULLIF(t.due_date, 0), t.date) AS effective_date,
+			COALESCE(NULLIF(t.due_date_civil, ''), NULLIF(t.date_civil, ''), '') AS civil_date,
 			t.type,
 			t.account_id,
 			COALESCE(a.name, '') AS account_name,
 			COALESCE(a.type, '') AS account_type,
 			t.category_id,
-			COALESCE(c.macro_group, p.macro_group, '') AS macro_group
+			COALESCE(c.macro_group, p.macro_group, '') AS macro_group,
+			w.type,
+			t.date,
+			t.date_civil,
+			t.due_date
 		FROM financial_transactions t
 		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		JOIN workspaces w ON w.id = t.workspace_id
 		LEFT JOIN categories c ON c.id = t.category_id AND c.workspace_id = t.workspace_id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
 		WHERE t.workspace_id = ?
@@ -592,21 +712,35 @@ func QueryProjectedCashEventsByDueDate(db *sql.DB, workspaceID string, period Re
 
 	var events []CashEvent
 	for rows.Next() {
-		var id, description, txType, accountID, accountName, accountType, macroGroup sql.NullString
-		var amount, effectiveDate int64
+		var id, description, txType, accountID, accountName, accountType, macroGroup, workspaceType, dateCivil, civilDate sql.NullString
+		var amount, effectiveDate, dateUnix int64
 		var categoryID sql.NullString
-		if err := rows.Scan(&id, &description, &amount, &effectiveDate, &txType,
-			&accountID, &accountName, &accountType, &categoryID, &macroGroup); err != nil {
+		var dueDate sql.NullInt64
+		if err := rows.Scan(&id, &description, &amount, &effectiveDate, &civilDate, &txType,
+			&accountID, &accountName, &accountType, &categoryID, &macroGroup, &workspaceType, &dateUnix, &dateCivil, &dueDate); err != nil {
 			return nil, err
 		}
+		civil := civilDate.String
+		if civil == "" {
+			switch {
+			case dueDate.Valid && dueDate.Int64 > 0:
+				civil = legacyCivilDate(dueDate.Int64)
+			case dateCivil.Valid && strings.TrimSpace(dateCivil.String) != "":
+				civil = dateCivil.String
+			default:
+				civil = legacyCivilDate(dateUnix)
+			}
+		}
 		ev := CashEvent{
-			DateUnix:    effectiveDate,
-			AmountCents: amount,
-			Source:      CashSourceTransaction,
-			AccountID:   accountID.String,
-			Description: description.String,
-			IsRealized:  false,
-			IsIncome:    txType.String == models.TransactionTypeIncome,
+			DateUnix:           effectiveDate,
+			CivilDate:          civil,
+			AmountCents:        amount,
+			Source:             CashSourceTransaction,
+			AccountID:          accountID.String,
+			Description:        description.String,
+			IsRealized:         false,
+			IsIncome:           txType.String == models.TransactionTypeIncome,
+			HasReliableDueDate: reliablePendingDate(workspaceType.String, dueDate, dateUnix, dateCivil),
 		}
 		if categoryID.Valid {
 			ev.CategoryID = &categoryID.String
@@ -626,6 +760,10 @@ func QueryProjectedCashEventsByDueDate(db *sql.DB, workspaceID string, period Re
 }
 
 func QueryInvoiceCashEventsByDueDate(db *sql.DB, workspaceID string, period ReportPeriod) ([]CashEvent, error) {
+	return queryInvoiceCashEventsByDueDate(db, workspaceID, period)
+}
+
+func queryInvoiceCashEventsByDueDate(db reportQueryer, workspaceID string, period ReportPeriod) ([]CashEvent, error) {
 	invoices, err := queryReportPendingInvoices(context.Background(), db, workspaceID, period.Start, period.End, true, true)
 	if err != nil {
 		return nil, err
@@ -635,14 +773,20 @@ func QueryInvoiceCashEventsByDueDate(db *sql.DB, workspaceID string, period Repo
 		if invoice.pending <= 0 {
 			continue
 		}
+		invoiceCivil := invoice.dueDateCivil
+		if invoiceCivil == "" {
+			invoiceCivil = legacyCivilDate(invoice.dueDate)
+		}
 		ev := CashEvent{
-			DateUnix:    invoice.dueDate,
-			AmountCents: invoice.pending,
-			Source:      CashSourceInvoiceProjected,
-			AccountID:   "",
-			Description: "Fatura " + invoice.cardName + " - " + invoice.reference,
-			IsRealized:  false,
-			IsIncome:    false,
+			DateUnix:           invoice.dueDate,
+			CivilDate:          invoiceCivil,
+			AmountCents:        invoice.pending,
+			Source:             CashSourceInvoiceProjected,
+			AccountID:          "",
+			Description:        "Fatura " + invoice.cardName + " - " + invoice.reference,
+			IsRealized:         false,
+			IsIncome:           false,
+			HasReliableDueDate: invoice.dueDate > 0,
 		}
 		events = append(events, ev)
 	}
@@ -748,20 +892,22 @@ type reportGroupedAmount struct {
 type reportPendingInvoice struct {
 	id, cardName, reference string
 	dueDate                 int64
+	dueDateCivil            string
 	pending                 int64
 }
 
 // queryReportPendingInvoices reads all invoice components in one tenant-scoped
 // statement. The pending amount is checked only after items, general refunds,
 // and effective payments have all been applied.
-func queryReportPendingInvoices(ctx context.Context, db *sql.DB, workspaceID string, start, end int64, inclusiveEnd, includeAllItems bool) ([]reportPendingInvoice, error) {
+func queryReportPendingInvoices(ctx context.Context, db reportQueryer, workspaceID string, start, end int64, inclusiveEnd, includeAllItems bool) ([]reportPendingInvoice, error) {
 	endOp := "<"
 	if inclusiveEnd {
 		endOp = "<="
 	}
 	rows, err := db.QueryContext(ctx, `
 		WITH selected AS (
-			SELECT i.id, i.due_date, COALESCE(a.name, '') AS card_name,
+			SELECT i.id, i.due_date, COALESCE(i.due_date_civil, '') AS due_date_civil,
+			       COALESCE(a.name, '') AS card_name,
 			       COALESCE(i.reference, '') AS reference, COALESCE(i.paid_amount, 0) AS legacy_paid,
 			       a.workspace_id
 			FROM invoices i
@@ -769,19 +915,19 @@ func queryReportPendingInvoices(ctx context.Context, db *sql.DB, workspaceID str
 			WHERE a.workspace_id = ? AND i.status IN ('OPEN', 'CLOSED')
 			  AND i.due_date >= ? AND i.due_date `+endOp+` ?
 		)
-		SELECT id, due_date, card_name, reference, legacy_paid, 'base', 0 FROM selected
+		SELECT id, due_date, due_date_civil, card_name, reference, legacy_paid, 'base', 0 FROM selected
 		UNION ALL
-		SELECT s.id, s.due_date, s.card_name, s.reference, s.legacy_paid, 'item', `+transactionNetAmountTSQL+`
+		SELECT s.id, s.due_date, s.due_date_civil, s.card_name, s.reference, s.legacy_paid, 'item', `+transactionNetAmountTSQL+`
 		FROM selected s JOIN financial_transactions t ON t.workspace_id = s.workspace_id AND t.invoice_id = s.id
 		WHERE (? = 1 OR t.type = 'EXPENSE')
 		UNION ALL
-		SELECT s.id, s.due_date, s.card_name, s.reference, s.legacy_paid, 'refund', ir.amount_cents
+		SELECT s.id, s.due_date, s.due_date_civil, s.card_name, s.reference, s.legacy_paid, 'refund', ir.amount_cents
 		FROM selected s JOIN invoice_refunds ir ON ir.workspace_id = s.workspace_id AND ir.invoice_id = s.id AND ir.reversed_at IS NULL
 		UNION ALL
-		SELECT s.id, s.due_date, s.card_name, s.reference, s.legacy_paid, 'payment', ip.amount_cents
+		SELECT s.id, s.due_date, s.due_date_civil, s.card_name, s.reference, s.legacy_paid, 'payment', ip.amount_cents
 		FROM selected s JOIN invoice_payments ip ON ip.workspace_id = s.workspace_id AND ip.invoice_id = s.id AND ip.reversed_at IS NULL
 		UNION ALL
-		SELECT s.id, s.due_date, s.card_name, s.reference, s.legacy_paid, 'lineage', 0
+		SELECT s.id, s.due_date, s.due_date_civil, s.card_name, s.reference, s.legacy_paid, 'lineage', 0
 		FROM selected s JOIN invoice_payments ip ON ip.workspace_id = s.workspace_id AND ip.invoice_id = s.id
 	`, workspaceID, start, end, includeAllItems)
 	if err != nil {
@@ -796,14 +942,14 @@ func queryReportPendingInvoices(ctx context.Context, db *sql.DB, workspaceID str
 	}
 	byID := make(map[string]*aggregate)
 	for rows.Next() {
-		var id, cardName, reference, kind string
+		var id, cardName, reference, kind, dueDateCivil string
 		var dueDate, legacy, cents int64
-		if err := rows.Scan(&id, &dueDate, &cardName, &reference, &legacy, &kind, &cents); err != nil {
+		if err := rows.Scan(&id, &dueDate, &dueDateCivil, &cardName, &reference, &legacy, &kind, &cents); err != nil {
 			return nil, err
 		}
 		acc := byID[id]
 		if acc == nil {
-			acc = &aggregate{invoice: reportPendingInvoice{id: id, cardName: cardName, reference: reference, dueDate: dueDate}, legacy: legacy}
+			acc = &aggregate{invoice: reportPendingInvoice{id: id, cardName: cardName, reference: reference, dueDate: dueDate, dueDateCivil: dueDateCivil}, legacy: legacy}
 			byID[id] = acc
 		}
 		switch kind {

@@ -1,7 +1,16 @@
 <div align="center">
-  <h1>ContaBase</h1>
-  <p>Base financeira privada, self-hosted e pensada para quem quer manter os dados sob controle.</p>
-  <p><strong>Beta pública controlada:</strong> use o canal de instalação para receber a versão recomendada.</p>
+  <h1>
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/branding/logo-dark.png">
+      <img src="assets/branding/logo-light.png" alt="ContaBase" width="260" height="80">
+    </picture>
+  </h1>
+  <p>Gerenciador financeiro self-hosted, privado e de código aberto.</p>
+  <p><strong>v1.0.0-beta.8</strong></p>
+  <p>
+    <a href="https://contabase.pages.dev/"><strong>Acessar a Página Oficial</strong></a><br>
+    <a href="https://contabase.pages.dev/setup/"><strong>Guia Completo de Instalação</strong></a>
+  </p>
 </div>
 
 ---
@@ -21,13 +30,9 @@ Não é SaaS, não possui telemetria e não envia seus dados financeiros para te
 
 ## Instalação
 
-Acesse o canal público de instalação em https://get-contabase.pages.dev/ e siga o instalador guiado.
+Acesse o [Guia Completo de Instalação](https://contabase.pages.dev/setup/) para escolher o método e a versão distribuída. Antes de executar comandos para a Beta 8, confirme a disponibilidade da tag, da Release e dos artefatos exigidos pelo método; a documentação da versão não comprova sua publicação.
 
-→ [Guia completo de instalação](docs/instalacao.md)
-→ [Instalação com Docker](docs/instalacao-docker.md)
-→ [Instalação em LXC/VPS](docs/instalacao-lxc-vps.md)
-→ [Guia de atualização](docs/atualizacao.md)
-→ [Primeiros passos](docs/primeiros-passos.md)
+Os guias técnicos locais detalham [instalação](docs/instalacao.md), [Docker](docs/instalacao-docker.md), [LXC/VPS](docs/instalacao-lxc-vps.md), [atualização](docs/atualizacao.md) e [primeiros passos](docs/primeiros-passos.md).
 
 ## Documentação principal
 
@@ -40,7 +45,8 @@ Acesse o canal público de instalação em https://get-contabase.pages.dev/ e si
 - [Segurança](SECURITY.md)
 - [Privacidade](PRIVACY.md)
 - [Termos de uso](TERMS.md)
-- [Última beta publicada — v1.0.0-beta.7](docs/releases/v1.0.0-beta.7.md)
+- [ContaBase v1.0.0-beta.8](docs/releases/v1.0.0-beta.8.md)
+- [Histórico da Beta 7 — v1.0.0-beta.7](docs/releases/v1.0.0-beta.7.md)
 - [Beta publicada anterior — v1.0.0-beta.6](docs/releases/v1.0.0-beta.6.md)
 - [Beta publicada anterior — v1.0.0-beta.5](docs/releases/v1.0.0-beta.5.md)
 - [Beta publicada anterior — v1.0.0-beta.4](docs/releases/v1.0.0-beta.4.md)
@@ -48,6 +54,14 @@ Acesse o canal público de instalação em https://get-contabase.pages.dev/ e si
 - [Notas da Beta.9 publicada](docs/releases/v0.1.0-beta.9.md)
 - [Histórico da beta.2](docs/releases/v1.0.0-beta.2.md)
 - [Histórico da primeira beta](docs/releases/v0.1.0-beta.1.md)
+
+## Novidades da Beta 8
+
+A Beta 8 remove definitivamente o domínio de Reservas e avança o schema para 83. O Dashboard V2 passa a ser a página principal, com um snapshot financeiro consistente para os oito cartões do resumo, shell visual unificado em todas as páginas, notificações interativas com pagamento direto e instalação do PWA restaurada. O Dashboard separa saldo total e obrigações de 30/60 dias, sem saldo reservado nem subtração automática de Reservas. A atualização usa dispatcher autenticado por commit e manifesto, com `flock`, proveniência de instalação e backup pré-migration verificável. A versão também consolida transferências pendentes, logout explícito, revogação de sessões na troca de senha, correções de concorrência no toggle de pagamento e na exclusão recorrente, e o rodapé passa a exibir o link Apoiar o Projeto, com destino na página de apoio do site oficial.
+
+Reservas citadas nos destaques históricos abaixo foram removidas na Beta 8.
+
+Consulte as [notas da Beta 8](docs/releases/v1.0.0-beta.8.md).
 
 ## Destaques da Beta v1.0.0-beta.7
 
@@ -62,7 +76,7 @@ A Beta 7 conclui o ciclo de Investimentos: cancelamento integral de lotes com tr
 - O menu de ações em Metas e Reservas permanece acima dos cartões vizinhos.
 - Faturas abre no próximo mês com fatura em aberto quando o mês atual já está pago.
 
-Esses destaques pertencem à Beta 6. A Beta 7 é a versão publicada mais recente; a promoção do canal de instalação depende do smoke real de instalação e atualização da tag.
+Esses destaques pertencem à Beta 6. Consulte as notas de cada versão para suas regras e limitações; a promoção do canal de instalação depende do smoke real de instalação e atualização da tag.
 
 ## Avisos da Beta
 

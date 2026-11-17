@@ -167,8 +167,8 @@ func TestInvestimentosBeta7Schema79HTTPSmoke(t *testing.T) {
 		t.Fatal("generic mutations changed funded inventory")
 	}
 	var version int
-	if err := h.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 82 {
+	if err := h.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 83 {
 		t.Fatal("wrong schema", version, err)
 	}
-	t.Log("HTTP_SMOKE schema=82 checking=1000000->500000->300000 investment=0->500000->700000 purchases=3 record_only=1 transfers=2 same_day=yes replay=exact RBAC=403 CSRF=403 workspace=404 funded_exits=409 generic_mutations=409")
+	t.Log("HTTP_SMOKE schema=83 checking=1000000->500000->300000 investment=0->500000->700000 purchases=3 record_only=1 transfers=2 same_day=yes replay=exact RBAC=403 CSRF=403 workspace=404 funded_exits=409 generic_mutations=409")
 }

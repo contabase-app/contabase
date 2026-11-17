@@ -2,10 +2,8 @@ package handlers
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -595,12 +593,21 @@ func TestRecurringDeleteSingleConcurrentEditCannotResurrectSequence(t *testing.T
 	})
 	editRequest.Header.Set("HX-Current-URL", "http://localhost/lancamentos")
 
+	var balanceBefore int64
+	if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id='checking-test'`).Scan(&balanceBefore); err != nil {
+		t.Fatalf("balance before: %v", err)
+	}
+	var ruleActiveBefore int
+	if err := db.QueryRow(`SELECT active FROM recurring_rules WHERE id=?`, fixture.ruleID).Scan(&ruleActiveBefore); err != nil {
+		t.Fatalf("rule active before: %v", err)
+	}
+
 	start := make(chan struct{})
-	deleteResult := make(chan int, 1)
+	deleteResult := make(chan *httptest.ResponseRecorder, 1)
 	editResult := make(chan int, 1)
 	go func() {
 		<-start
-		deleteResult <- recurringDeleteRequest(t, &fixture.handler, selectedID, "single").Code
+		deleteResult <- recurringDeleteRequest(t, &fixture.handler, selectedID, "single")
 	}()
 	go func() {
 		<-start
@@ -609,15 +616,116 @@ func TestRecurringDeleteSingleConcurrentEditCannotResurrectSequence(t *testing.T
 		editResult <- rr.Code
 	}()
 	close(start)
-	deleteStatus, editStatus := <-deleteResult, <-editResult
-	if deleteStatus != http.StatusOK {
-		t.Fatalf("concurrent delete status = %d; edit status = %d", deleteStatus, editStatus)
+	deleteRR, editStatus := <-deleteResult, <-editResult
+	switch deleteRR.Code {
+	case http.StatusOK:
+		assertRecurringSkip(t, db, "ws-test", fixture.seriesID, 3, 1)
+		assertRecurringSequenceCount(t, db, "ws-test", fixture.seriesID, 3, 0)
+		if err := EnsureRecurringMaterialized(db, "ws-test", MustCivilWriteDate("2026-05-15")); err != nil {
+			t.Fatalf("materializer after concurrent edit/delete: %v", err)
+		}
+		assertRecurringSequenceCount(t, db, "ws-test", fixture.seriesID, 3, 0)
+	case http.StatusServiceUnavailable:
+		if got := deleteRR.Header().Get("Retry-After"); got != "1" {
+			t.Fatalf("concurrent delete Retry-After = %q, want 1; edit status = %d", got, editStatus)
+		}
+		if trigger := deleteRR.Header().Get("HX-Trigger"); !strings.Contains(trigger, deleteSQLiteContentionMessage) {
+			t.Fatalf("concurrent delete HX-Trigger = %q, want contention message; edit status = %d", trigger, editStatus)
+		}
+		if !assertRecurringDeletePreserved(t, db, "ws-test", fixture.seriesID, fixture.ruleID, 3, selectedID, balanceBefore, ruleActiveBefore) {
+			t.Fatalf("concurrent delete contention left partial state; edit status = %d", editStatus)
+		}
+		assertRecurringSkip(t, db, "ws-test", fixture.seriesID, 3, 0)
+		assertRecurringSequenceCount(t, db, "ws-test", fixture.seriesID, 3, 1)
+		if err := EnsureRecurringMaterialized(db, "ws-test", MustCivilWriteDate("2026-05-15")); err != nil {
+			t.Fatalf("materializer after concurrent delete contention: %v", err)
+		}
+		assertRecurringSkip(t, db, "ws-test", fixture.seriesID, 3, 0)
+		assertRecurringSequenceCount(t, db, "ws-test", fixture.seriesID, 3, 1)
+	default:
+		t.Fatalf("concurrent delete status = %d; edit status = %d, want 200 or 503", deleteRR.Code, editStatus)
+	}
+}
+
+func TestRecurringDeleteSinglePreCommitBusyReturns503WithoutPartialState(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "recurring-delete-busy.db")
+	bootstrap, err := database.Open(dbPath)
+	if err != nil {
+		t.Fatalf("bootstrap disk db: %v", err)
+	}
+	if err := bootstrap.Close(); err != nil {
+		t.Fatalf("close bootstrap: %v", err)
+	}
+	dsn := dbPath + "?_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)&_pragma=busy_timeout(50)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("open disk db: %v", err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(2)
+	fixture := newRecurringDeleteFixture(t, db, "personal", "EXPENSE", true)
+	selectedID := fixture.transactionID(t, 3)
+
+	var balanceBefore int64
+	if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id='checking-test'`).Scan(&balanceBefore); err != nil {
+		t.Fatalf("balance before: %v", err)
+	}
+	var ruleActiveBefore int
+	if err := db.QueryRow(`SELECT active FROM recurring_rules WHERE id=?`, fixture.ruleID).Scan(&ruleActiveBefore); err != nil {
+		t.Fatalf("rule active before: %v", err)
+	}
+
+	extDB, err := sql.Open("sqlite", "file:"+dbPath+"?_txlock=immediate&_pragma=busy_timeout(0)&_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatalf("open external writer: %v", err)
+	}
+	defer extDB.Close()
+	extDB.SetMaxOpenConns(1)
+	extTx, err := extDB.Begin()
+	if err != nil {
+		t.Fatalf("external writer begin: %v", err)
+	}
+	t.Cleanup(func() { _ = extTx.Rollback() })
+	if _, err := extTx.Exec(`UPDATE accounts SET updated_at = updated_at + 1 WHERE id='checking-test'`); err != nil {
+		t.Fatalf("external writer lock: %v", err)
+	}
+
+	rr := recurringDeleteRequest(t, &fixture.handler, selectedID, "single")
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("delete under writer lock status = %d, want 503, body=%q", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Retry-After"); got != "1" {
+		t.Fatalf("Retry-After = %q, want 1", got)
+	}
+	if trigger := rr.Header().Get("HX-Trigger"); !strings.Contains(trigger, deleteSQLiteContentionMessage) {
+		t.Fatalf("HX-Trigger = %q, want contention message", trigger)
+	}
+	if !assertRecurringDeletePreserved(t, db, "ws-test", fixture.seriesID, fixture.ruleID, 3, selectedID, balanceBefore, ruleActiveBefore) {
+		t.Fatal("contended delete left partial state")
+	}
+	assertRecurringSkip(t, db, "ws-test", fixture.seriesID, 3, 0)
+	assertRecurringSequenceCount(t, db, "ws-test", fixture.seriesID, 3, 1)
+
+	if err := extTx.Rollback(); err != nil {
+		t.Fatalf("release external writer: %v", err)
+	}
+	rr = recurringDeleteRequest(t, &fixture.handler, selectedID, "single")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("delete after writer release status = %d, want 200, body=%q", rr.Code, rr.Body.String())
 	}
 	assertRecurringSkip(t, db, "ws-test", fixture.seriesID, 3, 1)
 	assertRecurringSequenceCount(t, db, "ws-test", fixture.seriesID, 3, 0)
-	if err := EnsureRecurringMaterialized(db, "ws-test", MustCivilWriteDate("2026-05-15")); err != nil {
-		t.Fatalf("materializer after concurrent edit/delete: %v", err)
+	var balanceAfter int64
+	if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id='checking-test'`).Scan(&balanceAfter); err != nil {
+		t.Fatalf("balance after: %v", err)
 	}
+	if balanceAfter != balanceBefore {
+		t.Fatalf("balance changed: before=%d after=%d", balanceBefore, balanceAfter)
+	}
+	if err := EnsureRecurringMaterialized(db, "ws-test", MustCivilWriteDate("2026-05-15")); err != nil {
+		t.Fatalf("materializer after contention retry: %v", err)
+	}
+	assertRecurringSkip(t, db, "ws-test", fixture.seriesID, 3, 1)
 	assertRecurringSequenceCount(t, db, "ws-test", fixture.seriesID, 3, 0)
 }
 
@@ -742,85 +850,6 @@ func (lc *logCapture) require(marker string) {
 	lc.t.Helper()
 	if !strings.Contains(lc.buf.String(), marker) {
 		lc.t.Fatalf("failpoint marker %q not found in log output: %q", marker, lc.buf.String())
-	}
-}
-
-func TestRecurringDeleteSingleFailureInReserveReversalPreservesAll(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-	fixture := newRecurringDeleteFixture(t, db, "personal", "EXPENSE", true)
-	selectedID := fixture.transactionID(t, 3)
-	execTestSQL(t, db, `UPDATE transactions SET status='paid', paid_at=12345 WHERE id=?`, selectedID)
-	execTestSQL(t, db, `UPDATE accounts SET current_balance=90000 WHERE id='checking-test'`)
-
-	now := time.Now().Unix()
-	boxID := "box-reserve-reversal-test"
-	execTestSQL(t, db, `INSERT INTO boxes (id, workspace_id, name, category_id, target_amount, monthly_recharge, created_at, updated_at)
-		VALUES (?, 'ws-test', 'Caixinha Rollback', 'cat-expense-rec', 500000, 0, ?, ?)`, boxID, now, now)
-	execTestSQL(t, db, `INSERT INTO box_virtual_ledger (id, box_id, amount, type, description, source_transaction_id, reference_date, created_at)
-		VALUES (?, ?, -10000, 'CONSUME', 'Consumo para teste de rollback', ?, ?, ?)`,
-		"ledger-reserve-rollback", boxID, selectedID, testUnixDate("2026-03-15"), now)
-
-	execTestSQL(t, db, `CREATE TRIGGER fail_recurring_reserve_reversal BEFORE INSERT ON box_virtual_ledger FOR EACH ROW
-		WHEN NEW.type = 'REVERSAL'
-		BEGIN SELECT RAISE(ABORT, 'test_reserve_reversal_failpoint'); END`)
-
-	var balanceBefore int64
-	if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id='checking-test'`).Scan(&balanceBefore); err != nil {
-		t.Fatalf("balance before: %v", err)
-	}
-	var ruleActive int
-	if err := db.QueryRow(`SELECT active FROM recurring_rules WHERE id=?`, fixture.ruleID).Scan(&ruleActive); err != nil {
-		t.Fatalf("rule active: %v", err)
-	}
-
-	var ledgerIDsBefore []string
-	ldRows, _ := db.Query(`SELECT id FROM box_virtual_ledger WHERE box_id=? ORDER BY id`, boxID)
-	if ldRows != nil {
-		defer ldRows.Close()
-		for ldRows.Next() {
-			var id string
-			ldRows.Scan(&id)
-			ledgerIDsBefore = append(ledgerIDsBefore, id)
-		}
-	}
-
-	lc := captureLog(t)
-
-	rr := recurringDeleteRequest(t, &fixture.handler, selectedID, "single")
-	if rr.Code == http.StatusOK {
-		lc.require("unreachable")
-		t.Fatal("forced reserve reversal failure returned 200")
-	}
-	lc.require("test_reserve_reversal_failpoint")
-	assertRecurringDeletePreserved(t, db, "ws-test", fixture.seriesID, fixture.ruleID, 3, selectedID, balanceBefore, ruleActive)
-	assertRecurringSkip(t, db, "ws-test", fixture.seriesID, 3, 0)
-
-	var ledgerIDsAfter []string
-	ldRows2, _ := db.Query(`SELECT id FROM box_virtual_ledger WHERE box_id=? ORDER BY id`, boxID)
-	if ldRows2 != nil {
-		defer ldRows2.Close()
-		for ldRows2.Next() {
-			var id string
-			ldRows2.Scan(&id)
-			ledgerIDsAfter = append(ledgerIDsAfter, id)
-		}
-	}
-	if len(ledgerIDsAfter) != len(ledgerIDsBefore) {
-		t.Fatalf("ledger row count changed: before=%d after=%d", len(ledgerIDsBefore), len(ledgerIDsAfter))
-	}
-	for i := range ledgerIDsBefore {
-		if ledgerIDsAfter[i] != ledgerIDsBefore[i] {
-			t.Fatalf("ledger row diverged at %d: before=%s after=%s", i, ledgerIDsBefore[i], ledgerIDsAfter[i])
-		}
-	}
-
-	var ledgerReversalCount int
-	if err := db.QueryRow(`SELECT COUNT(1) FROM box_virtual_ledger WHERE type='REVERSAL' AND source_transaction_id=?`, selectedID).Scan(&ledgerReversalCount); err != nil {
-		t.Fatalf("count reversals: %v", err)
-	}
-	if ledgerReversalCount != 0 {
-		t.Errorf("partial reversal persisted: %d reversal rows", ledgerReversalCount)
 	}
 }
 
@@ -983,7 +1012,6 @@ func bulkRowsSignatureF04B(t *testing.T, db *sql.DB, query string, args ...inter
 type bulkAtomicitySnapshotF04B struct {
 	transactions  string
 	balances      string
-	ledgerEvents  int
 	statusHistory int
 	rules         string
 	series        string
@@ -996,7 +1024,6 @@ func captureBulkAtomicitySnapshotF04B(t *testing.T, db *sql.DB) bulkAtomicitySna
 		transactions: bulkRowsSignatureF04B(t, db, `SELECT id FROM transactions WHERE workspace_id='ws-test' ORDER BY id`),
 		balances: bulkRowsSignatureF04B(t, db, `
 			SELECT id || ':' || current_balance FROM accounts WHERE workspace_id='ws-test' ORDER BY id`),
-		ledgerEvents:  bulkCountF04B(t, db, `SELECT COUNT(1) FROM box_virtual_ledger`),
 		statusHistory: bulkCountF04B(t, db, `SELECT COUNT(1) FROM transaction_status_history`),
 		rules: bulkRowsSignatureF04B(t, db, `
 			SELECT id || ':' || active || ':' || COALESCE(generated_until_civil, '')
@@ -1060,45 +1087,6 @@ func insertBulkRecurringRowsF04B(t *testing.T, db *sql.DB, workspaceID, userID, 
 		VALUES (?, ?, ?, ?, ?, 'EXPENSE', 10000, ?, 'F04B Bulk Recorrente', 'paid', ?, ?, 1, ?, ?)
 	`, txID, workspaceID, userID, accountID, categoryID, testUnixDate("2026-01-15"), ruleID, seriesID, now, now)
 	return ruleID, seriesID, txID
-}
-
-func TestBulkDeleteNormalTransactionsPreservesBehavior(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-	seedBoxConsumeCreationScenario(t, db)
-
-	linkedID := createExpenseForReserveTest(t, db, "F04B Bulk Normal Vinculada", "checking-test", "cat-expense-direct", 900)
-	beforeConsumes := activeConsumesBySourceTx(t, db, linkedID)
-	if len(beforeConsumes) != 1 {
-		t.Fatalf("consumes ativos antes = %d, want 1", len(beforeConsumes))
-	}
-	insertBulkPlainPaidExpenseF04B(t, db, "f04b-normal-installment", "F04B Parcelamento Sem Recorrencia", true)
-
-	var balanceBefore int64
-	if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id='checking-test'`).Scan(&balanceBefore); err != nil {
-		t.Fatalf("saldo antes: %v", err)
-	}
-
-	rr := bulkDeleteFormRequestF04B(t, &TransactionHandler{DB: db, Templates: testBulkReserveTemplates(), WorkspaceID: "ws-test", UserID: "user-test"}, []string{linkedID, "f04b-normal-installment"}, false, nil)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%q", rr.Code, rr.Body.String())
-	}
-
-	assertTransactionRemoved(t, db, linkedID)
-	assertTransactionRemoved(t, db, "f04b-normal-installment")
-	if got := countReversalsForConsume(t, db, beforeConsumes[0].ID); got != 1 {
-		t.Fatalf("reversões da reserva = %d, want 1", got)
-	}
-	var balanceAfter int64
-	if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id='checking-test'`).Scan(&balanceAfter); err != nil {
-		t.Fatalf("saldo depois: %v", err)
-	}
-	if delta := balanceAfter - balanceBefore; delta != 1400 {
-		t.Fatalf("variação do saldo = %d, want 1400", delta)
-	}
-	if got := bulkCountF04B(t, db, `SELECT COUNT(1) FROM recurring_occurrence_skips`); got != 0 {
-		t.Fatalf("skips criados = %d, want 0", got)
-	}
 }
 
 func TestBulkDeleteRecurringRejectsAndPreservesMaterialization(t *testing.T) {
@@ -1234,73 +1222,6 @@ func TestBulkDeleteMixedRecurringIsAtomic(t *testing.T) {
 	}
 }
 
-func TestBulkDeleteRecurringWorkspaceIsolation(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-	seedBoxConsumeCreationScenario(t, db)
-
-	now := time.Now().Unix()
-	execTestSQL(t, db, `
-		INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at)
-		VALUES ('b-checking-f04b', 'ws-b', 'Conta B F04B', 'CHECKING', 1000, 1000, ?, ?)
-	`, now, now)
-	_, _, externalRecurringID := insertBulkRecurringRowsF04B(t, db, "ws-b", "user-b", "b-checking-f04b", "b-cat-expense", "f04b-ext")
-	localNormalID := createExpenseForReserveTest(t, db, "F04B Isolamento Normal Local", "checking-test", "cat-expense-direct", 800)
-
-	handler := TransactionHandler{DB: db, Templates: testBulkReserveTemplates(), WorkspaceID: "ws-test", UserID: "user-test"}
-
-	t.Run("normal_local_mais_recorrente_externo", func(t *testing.T) {
-		rr := bulkDeleteFormRequestF04B(t, &handler, []string{localNormalID, externalRecurringID}, true, nil)
-		if rr.Code != http.StatusForbidden {
-			t.Fatalf("status = %d, want %d body=%q", rr.Code, http.StatusForbidden, rr.Body.String())
-		}
-		if strings.Contains(rr.Body.String(), "recorrent") {
-			t.Fatalf("resposta 403 vazou informação de recorrência: %q", rr.Body.String())
-		}
-		assertTransactionExists(t, db, localNormalID)
-		assertTransactionExists(t, db, externalRecurringID)
-	})
-
-	t.Run("somente_normal_local_com_recorrente_externo_existente", func(t *testing.T) {
-		rr := bulkDeleteFormRequestF04B(t, &handler, []string{localNormalID}, true, nil)
-		if rr.Code != http.StatusOK {
-			t.Fatalf("status = %d body=%q", rr.Code, rr.Body.String())
-		}
-		assertTransactionRemoved(t, db, localNormalID)
-		assertTransactionExists(t, db, externalRecurringID)
-	})
-
-	t.Run("recorrente_local_mais_id_externo", func(t *testing.T) {
-		_, _, localRecurringID := insertBulkRecurringRowsF04B(t, db, "ws-test", "user-test", "checking-test", "cat-expense-direct", "f04b-local")
-		rr := bulkDeleteFormRequestF04B(t, &handler, []string{localRecurringID, externalRecurringID}, true, nil)
-		if rr.Code != http.StatusForbidden {
-			t.Fatalf("status = %d, want %d body=%q", rr.Code, http.StatusForbidden, rr.Body.String())
-		}
-		assertTransactionExists(t, db, localRecurringID)
-		assertTransactionExists(t, db, externalRecurringID)
-	})
-
-	t.Run("id_inexistente_preserva_contrato", func(t *testing.T) {
-		otherLocal := createExpenseForReserveTest(t, db, "F04B Isolamento Normal Local 2", "checking-test", "cat-expense-direct", 300)
-		rr := bulkDeleteFormRequestF04B(t, &handler, []string{otherLocal, "f04b-id-inexistente"}, true, nil)
-		if rr.Code != http.StatusForbidden {
-			t.Fatalf("status = %d, want %d body=%q", rr.Code, http.StatusForbidden, rr.Body.String())
-		}
-		assertTransactionExists(t, db, otherLocal)
-	})
-
-	var externalSeriesActive int
-	if err := db.QueryRow(`SELECT active FROM recurring_series WHERE id='f04b-ext-series'`).Scan(&externalSeriesActive); err != nil {
-		t.Fatalf("external series active: %v", err)
-	}
-	if externalSeriesActive != 1 {
-		t.Fatalf("série externa active = %d, want 1", externalSeriesActive)
-	}
-	if got := bulkCountF04B(t, db, `SELECT COUNT(1) FROM recurring_occurrence_skips`); got != 0 {
-		t.Fatalf("skips = %d, want 0", got)
-	}
-}
-
 func TestBulkDeleteRecurringHTTPContract(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
@@ -1336,46 +1257,5 @@ func TestBulkDeleteRecurringHTTPContract(t *testing.T) {
 				t.Fatalf("skips = %d, want 0", got)
 			}
 		})
-	}
-}
-
-func TestEnsureBulkDeleteHasNoRecurringTransactionsTxPropagatesQueryError(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-	seedBoxConsumeCreationScenario(t, db)
-	normalID := createExpenseForReserveTest(t, db, "F04B Query Error Normal", "checking-test", "cat-expense-direct", 700)
-	_, _, recurringID := insertBulkRecurringRowsF04B(t, db, "ws-test", "user-test", "checking-test", "cat-expense-direct", "f04b-qe")
-	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
-
-	tx, err := db.BeginTx(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("begin tx: %v", err)
-	}
-	if err := handler.ensureBulkDeleteHasNoRecurringTransactionsTx(tx, []string{normalID}); err != nil {
-		t.Fatalf("transação normal não deveria bloquear: %v", err)
-	}
-	if err := handler.ensureBulkDeleteHasNoRecurringTransactionsTx(tx, []string{normalID, recurringID}); !errors.Is(err, errRecurringDeleteConflict) {
-		t.Fatalf("erro = %v, want errRecurringDeleteConflict", err)
-	}
-	if err := tx.Rollback(); err != nil {
-		t.Fatalf("rollback tx: %v", err)
-	}
-
-	closedTx, err := db.BeginTx(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("begin closed tx: %v", err)
-	}
-	if err := closedTx.Rollback(); err != nil {
-		t.Fatalf("rollback closed tx: %v", err)
-	}
-	err = handler.ensureBulkDeleteHasNoRecurringTransactionsTx(closedTx, []string{normalID})
-	if err == nil {
-		t.Fatal("erro da query não pode virar nil")
-	}
-	if errors.Is(err, errRecurringDeleteConflict) {
-		t.Fatalf("erro SQL não pode virar errRecurringDeleteConflict: %v", err)
-	}
-	if !errors.Is(err, sql.ErrTxDone) {
-		t.Fatalf("erro = %v, want sql.ErrTxDone", err)
 	}
 }

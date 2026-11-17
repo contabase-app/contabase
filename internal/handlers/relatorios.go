@@ -1466,12 +1466,12 @@ func (h *RelatoriosHandler) buildRelatoriosDataWithModo(reqID, tab, view, modo s
 		ds.NetPositive = net > 0
 		ds.NetNegative = net < 0
 		if net < 0 {
-			ds.NetClass = "text-[var(--cb-danger)]"
+			ds.NetClass = "text-[var(--ui-danger)]"
 		} else {
-			ds.NetClass = "text-[var(--cb-success)]"
+			ds.NetClass = "text-[var(--ui-success)]"
 		}
 		if accumulatedCents < 0 {
-			ds.AccumulatedClass = "text-[var(--cb-danger)]"
+			ds.AccumulatedClass = "text-[var(--ui-danger)]"
 		} else {
 			ds.AccumulatedClass = ""
 		}

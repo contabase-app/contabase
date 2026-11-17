@@ -72,3 +72,52 @@ test('scheme is reapplied after HTMX swaps', () => {
     afterSwap[0][1]();
     assert.equal(card.getAttribute('data-card-scheme'), 'dark');
 });
+
+test('card copy uses the adaptive foreground tokens with AA contrast', () => {
+    const { window } = load();
+    const path = require('node:path').resolve(__dirname, '../css/credit-cards.css');
+    const css = fs.readFileSync(path, 'utf8');
+    const cssRules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+    const expected = {
+        '.cb-v2-credit-card-meta strong': 'var(--card-fg-soft)',
+        '.cb-v2-credit-card-limit strong': 'var(--card-fg-soft)',
+        '.cb-v2-credit-card-pending': 'var(--card-fg-soft)',
+        '.cb-v2-credit-card-history': 'var(--card-fg-soft)',
+        '.cb-v2-credit-card-history small': 'var(--card-fg-muted)',
+        '.cb-v2-credit-card-amount small': 'var(--card-fg-muted)',
+    };
+    for (const [selector, token] of Object.entries(expected)) {
+        const colorRules = cssRules.filter(([, selectors]) => selectors.replace(/\/\*[\s\S]*?\*\//g, '').split(',').some(item => item.trim() === selector))
+            .map(([, , declarations]) => declarations.match(/color:\s*([^;]+)/)?.[1]?.trim())
+            .filter(Boolean);
+        assert.equal(colorRules.at(-1), token, `${selector} must end with ${token}`);
+    }
+
+    function linear(channel) {
+        const value = channel / 255;
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    }
+    function luminance(rgb) {
+        return 0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2]);
+    }
+    function blend(foreground, background, alpha) {
+        return foreground.map((channel, index) => Math.round(channel * alpha + background[index] * (1 - alpha)));
+    }
+    function contrast(foreground, background) {
+        const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+        return (values[0] + 0.05) / (values[1] + 0.05);
+    }
+
+    // Captured card surface for Mercado Pago #00A6FF; light-scheme ink on a
+    // bright card covers the opposite end of the custom-color range.
+    const darkSurface = [0, 113, 185];
+    const whiteSoft = blend([255, 255, 255], darkSurface, 0xeb / 0xff);
+    const lightSurface = [250, 250, 250];
+    const darkSoft = blend([25, 28, 43], lightSurface, 0xf0 / 0xff);
+    assert.ok(contrast(whiteSoft, darkSurface) >= 4.5);
+    assert.ok(contrast(darkSoft, lightSurface) >= 4.5);
+    assert.equal(window.creditCardSchemeForColor('#00A6FF'), 'dark');
+    assert.equal(window.creditCardSchemeForColor('#FFFFFF'), 'light');
+    assert.equal(window.creditCardSchemeForColor('#FFFF00'), 'light');
+    assert.equal(window.creditCardSchemeForColor('#000000'), 'dark');
+});

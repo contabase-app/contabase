@@ -68,10 +68,13 @@ func seedInvestimentosI32A(t *testing.T) *investimentosRoutesHarness {
 			respondForbidden(w, r)
 			return
 		}
-		data := handlers.BuildDashboardData(h.db, ctx.UserID, ctx.ActiveWorkspaceID)
-		if err := h.base.Templates.ExecuteTemplate(w, "dashboard-page", data); err != nil {
-			t.Error(err)
+		dashboard := &handlers.DashboardV2Handler{
+			DB:          h.db,
+			Templates:   h.base.Templates,
+			UserID:      ctx.UserID,
+			WorkspaceID: ctx.ActiveWorkspaceID,
 		}
+		dashboard.ServeHTTP(w, r)
 	}))
 	bindConfig := func(ctx authContext) handlers.ConfiguracoesHandler {
 		return handlers.ConfiguracoesHandler{DB: h.db, Templates: h.base.Templates, UserID: ctx.UserID, WorkspaceID: ctx.ActiveWorkspaceID, ActorRole: ctx.Role, CanConfigRead: hasPermission(ctx.Role, permConfigRead), CanConfigWrite: hasPermission(ctx.Role, permConfigWrite)}
@@ -112,7 +115,7 @@ func TestInvestimentosI32AAccountsDashboardReadOnlyAndCoverage(t *testing.T) {
 						t.Fatalf("dashboard still exposes patrimonial content %q", unwanted)
 					}
 				}
-				for _, want := range []string{"Saldo financeiro", "Investimento A", "Outra corretora", "R$ 1.000,00", "R$ 450,00", "Saldo total", "Reservado", "Disponível"} {
+				for _, want := range []string{"Saldo financeiro", "Investimento A", "Outra corretora", "R$ 1.000,00", "R$ 450,00", "Saldo total"} {
 					if !strings.Contains(body, want) {
 						t.Fatalf("dashboard missing %q", want)
 					}

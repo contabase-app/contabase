@@ -201,8 +201,6 @@ func recurringAll4BB2Snapshot(t *testing.T, db *sql.DB, seriesID string) string 
 		recurringAll4BB2RowsSnapshot(t, db, "accounts", `SELECT * FROM accounts WHERE workspace_id='ws-test' ORDER BY id`),
 		recurringAll4BB2RowsSnapshot(t, db, "invoices", `SELECT i.* FROM invoices i JOIN accounts a ON a.id=i.account_id WHERE a.workspace_id='ws-test' ORDER BY i.id`),
 		recurringAll4BB2RowsSnapshot(t, db, "payments", `SELECT * FROM invoice_payments WHERE workspace_id='ws-test' ORDER BY id`),
-		recurringAll4BB2RowsSnapshot(t, db, "boxes", `SELECT * FROM boxes WHERE workspace_id='ws-test' ORDER BY id`),
-		recurringAll4BB2RowsSnapshot(t, db, "ledger", `SELECT l.* FROM box_virtual_ledger l JOIN boxes b ON b.id=l.box_id WHERE b.workspace_id='ws-test' ORDER BY l.id`),
 		recurringAll4BB2RowsSnapshot(t, db, "contacts", `SELECT * FROM contacts WHERE workspace_id='ws-test' ORDER BY id`),
 		recurringAll4BB2RowsSnapshot(t, db, "categories", `SELECT * FROM categories WHERE workspace_id='ws-test' ORDER BY id`),
 		recurringAll4BB2RowsSnapshot(t, db, "credit_cards", `SELECT c.* FROM credit_cards c JOIN accounts a ON a.id=c.account_id WHERE a.workspace_id='ws-test' ORDER BY c.id`),
@@ -606,9 +604,6 @@ func recurringAll4BB2OccurrenceSnapshot(t *testing.T, db *sql.DB, id string) str
 					SELECT invoice_id FROM transactions WHERE id=? AND workspace_id='ws-test'
 				)
 			) ORDER BY ip.id`, id, id),
-		recurringAll4BB2RowsSnapshot(t, db, "ledger", `
-			SELECT l.* FROM box_virtual_ledger l JOIN boxes b ON b.id=l.box_id
-			WHERE b.workspace_id='ws-test' AND l.source_transaction_id=? ORDER BY l.id`, id),
 	}
 	return strings.Join(parts, "\n")
 }
@@ -1122,120 +1117,6 @@ func TestRecurringAll4BB2InvoiceRollbackFailures(t *testing.T) {
 	}
 }
 
-func newRecurringAll4BB2ReserveFixture(t *testing.T) *recurringAll4BB2Fixture {
-	t.Helper()
-	db := openTestDB(t)
-	seedBoxConsumeCreationScenario(t, db)
-	handlerInsert := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
-	totalOccurrences := int64(3)
-	_, err := handlerInsert.insertTransaction(
-		"EXPENSE", 3000, "Recurring All B2 Reserve", "", "",
-		MustCivilWriteDate("2026-07-05"), "checking-test", "", "cat-expense-direct",
-		1, "pending", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, "", false,
-	)
-	if err != nil {
-		t.Fatalf("insert B2 reserve recurrence: %v", err)
-	}
-	ids := recurringTransactionIDsByDescription(t, db, "Recurring All B2 Reserve")
-	if len(ids) != 3 {
-		t.Fatalf("B2 reserve ids=%d", len(ids))
-	}
-	var ruleID, seriesID string
-	if err := db.QueryRow(`SELECT recurring_rule_id, series_id FROM transactions WHERE id=?`, ids[0]).Scan(&ruleID, &seriesID); err != nil {
-		t.Fatal(err)
-	}
-	return &recurringAll4BB2Fixture{
-		db:       db,
-		handler:  testPaidInvoiceMutationHandler(db),
-		seriesID: seriesID,
-		ruleID:   ruleID,
-		ids:      ids,
-	}
-}
-
-func recurringAll4BB2ReserveRequest(t *testing.T, f *recurringAll4BB2Fixture) *httptest.ResponseRecorder {
-	t.Helper()
-	return updateTransactionForReserveScopeTest(t, f.handler, f.ids[0], "all", map[string]string{
-		"valor":            "12,00",
-		"descricao":        "Recurring All B2 Reserve Updated",
-		"data":             "2026-07-05",
-		"tipo":             "despesa",
-		"origem_conta_id":  "checking-test",
-		"categoria_id":     "cat-expense-parent",
-		"status_pagamento": "pending",
-		"recorrencia":      "MONTHLY",
-		"escopo":           "all",
-	})
-}
-
-func TestRecurringAll4BB2ReserveRollbackAndProtectedIdempotency(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		trigger string
-	}{
-		{"compensation", `CREATE TRIGGER fail_b2_reserve_reversal AFTER INSERT ON box_virtual_ledger WHEN NEW.type='REVERSAL' BEGIN SELECT RAISE(ABORT, 'fail reserve reversal'); END`},
-		{"consume", `CREATE TRIGGER fail_b2_reserve_consume AFTER INSERT ON box_virtual_ledger WHEN NEW.type='CONSUME' AND NEW.amount=-1200 BEGIN SELECT RAISE(ABORT, 'fail reserve consume'); END`},
-	} {
-		t.Run("rollback_"+tc.name, func(t *testing.T) {
-			f := newRecurringAll4BB2ReserveFixture(t)
-			defer f.close()
-			before := recurringAll4BB2Snapshot(t, f.db, f.seriesID)
-			execTestSQL(t, f.db, tc.trigger)
-			rr := recurringAll4BB2ReserveRequest(t, f)
-			if rr.Code != http.StatusInternalServerError {
-				t.Fatalf("status=%d want=500 body=%q", rr.Code, rr.Body.String())
-			}
-			if after := recurringAll4BB2Snapshot(t, f.db, f.seriesID); after != before {
-				t.Fatalf("reserve %s failure did not rollback exact state", tc.name)
-			}
-		})
-	}
-
-	t.Run("rollback_after_consume_before_transaction_write", func(t *testing.T) {
-		f := newRecurringAll4BB2ReserveFixture(t)
-		defer f.close()
-		before := recurringAll4BB2Snapshot(t, f.db, f.seriesID)
-		execTestSQL(t, f.db, fmt.Sprintf(`
-			CREATE TRIGGER fail_b2_after_reserve_consume
-			BEFORE UPDATE OF description ON transactions
-			WHEN OLD.id='%s'
-			BEGIN SELECT RAISE(ABORT, 'fail after reserve consume'); END
-		`, f.ids[0]))
-		rr := recurringAll4BB2ReserveRequest(t, f)
-		if rr.Code != http.StatusInternalServerError {
-			t.Fatalf("status=%d want=500 body=%q", rr.Code, rr.Body.String())
-		}
-		if after := recurringAll4BB2Snapshot(t, f.db, f.seriesID); after != before {
-			t.Fatal("failure after reserve consume did not rollback exact state")
-		}
-	})
-
-	t.Run("protected_has_no_reserve_effect", func(t *testing.T) {
-		f := newRecurringAll4BB2ReserveFixture(t)
-		defer f.close()
-		execTestSQL(t, f.db, `UPDATE transactions SET status='paid' WHERE id=?`, f.ids[1])
-		protectedBefore := recurringAll4BB2OccurrenceSnapshot(t, f.db, f.ids[1])
-		rr := recurringAll4BB2ReserveRequest(t, f)
-		recurringAll4BB2AssertStatus(t, rr, http.StatusOK)
-		if protectedAfter := recurringAll4BB2OccurrenceSnapshot(t, f.db, f.ids[1]); protectedAfter != protectedBefore {
-			t.Fatal("protected occurrence produced reserve or transaction effects")
-		}
-	})
-
-	t.Run("repeat_is_financially_idempotent", func(t *testing.T) {
-		f := newRecurringAll4BB2ReserveFixture(t)
-		defer f.close()
-		rr := recurringAll4BB2ReserveRequest(t, f)
-		recurringAll4BB2AssertStatus(t, rr, http.StatusOK)
-		financialAfterFirst := recurringAll4BB2FinancialSnapshot(t, f.db)
-		rr = recurringAll4BB2ReserveRequest(t, f)
-		recurringAll4BB2AssertStatus(t, rr, http.StatusOK)
-		if financialAfterRepeat := recurringAll4BB2FinancialSnapshot(t, f.db); financialAfterRepeat != financialAfterFirst {
-			t.Fatal("repeated reserve update duplicated financial effects")
-		}
-	})
-}
-
 func TestRecurringAll4BB2TransferBalanceAtomicAndIdempotent(t *testing.T) {
 	t.Run("rollback_after_second_account_effect", func(t *testing.T) {
 		f := newRecurringAll4BB2Fixture(t, false, "2026-01-10", nil)
@@ -1387,8 +1268,6 @@ func recurringAll4BB2GlobalFunctionalSnapshot(t *testing.T, db *sql.DB) string {
 		recurringAll4BB2RowsSnapshot(t, db, "accounts", `SELECT * FROM accounts ORDER BY workspace_id, id`),
 		recurringAll4BB2RowsSnapshot(t, db, "invoices", `SELECT i.* FROM invoices i JOIN accounts a ON a.id=i.account_id ORDER BY a.workspace_id, i.id`),
 		recurringAll4BB2RowsSnapshot(t, db, "payments", `SELECT * FROM invoice_payments ORDER BY workspace_id, id`),
-		recurringAll4BB2RowsSnapshot(t, db, "boxes", `SELECT * FROM boxes ORDER BY workspace_id, id`),
-		recurringAll4BB2RowsSnapshot(t, db, "ledger", `SELECT l.* FROM box_virtual_ledger l JOIN boxes b ON b.id=l.box_id ORDER BY b.workspace_id, l.id`),
 		recurringAll4BB2RowsSnapshot(t, db, "contacts", `SELECT * FROM contacts ORDER BY workspace_id, id`),
 		recurringAll4BB2RowsSnapshot(t, db, "categories", `SELECT * FROM categories ORDER BY workspace_id, id`),
 		recurringAll4BB2RowsSnapshot(t, db, "credit_cards", `SELECT c.* FROM credit_cards c JOIN accounts a ON a.id=c.account_id ORDER BY a.workspace_id, c.id`),
@@ -2020,7 +1899,6 @@ func recurringAll4BB2FinancialSnapshot(t *testing.T, db *sql.DB) string {
 		recurringAll4BB2RowsSnapshot(t, db, "accounts", `SELECT * FROM accounts WHERE workspace_id='ws-test' ORDER BY id`),
 		recurringAll4BB2RowsSnapshot(t, db, "invoices", `SELECT i.* FROM invoices i JOIN accounts a ON a.id=i.account_id WHERE a.workspace_id='ws-test' ORDER BY i.id`),
 		recurringAll4BB2RowsSnapshot(t, db, "payments", `SELECT * FROM invoice_payments WHERE workspace_id='ws-test' ORDER BY id`),
-		recurringAll4BB2RowsSnapshot(t, db, "ledger", `SELECT l.* FROM box_virtual_ledger l JOIN boxes b ON b.id=l.box_id WHERE b.workspace_id='ws-test' ORDER BY l.id`),
 	}, "\n")
 }
 

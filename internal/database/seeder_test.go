@@ -318,8 +318,6 @@ func TestWorkspaceCategoryReseedApplyPreservesUsageDependenciesAndOrphans(t *tes
 	insertReseedTransaction(t, db, "tx-child", "ws-reseed-preserve", "used-child")
 	insertReseedCategory(t, db, "limit-cat", "ws-reseed-preserve", "Categoria Limite", "EXPENSE", "LIFESTYLE", "")
 	insertReseedCostLimit(t, db, "limit-1", "ws-reseed-preserve", "limit-cat")
-	insertReseedCategory(t, db, "box-cat", "ws-reseed-preserve", "Categoria Caixinha", "EXPENSE", "LIFESTYLE", "")
-	insertReseedBox(t, db, "box-1", "ws-reseed-preserve", "box-cat")
 	insertReseedCategory(t, db, "rule-cat", "ws-reseed-preserve", "Categoria Recorrencia", "EXPENSE", "LIFESTYLE", "")
 	insertReseedRecurringRule(t, db, "rule-1", "ws-reseed-preserve", "rule-cat")
 	insertOrphanReseedCategory(t, db, "orphan-used", "ws-reseed-preserve", "Orfa Usada", "EXPENSE", "LIFESTYLE", "missing-parent")
@@ -337,7 +335,6 @@ func TestWorkspaceCategoryReseedApplyPreservesUsageDependenciesAndOrphans(t *tes
 	assertReseedCategoryExists(t, db, "parent-with-used-child")
 	assertReseedCategoryExists(t, db, "used-child")
 	assertReseedCategoryExists(t, db, "limit-cat")
-	assertReseedCategoryExists(t, db, "box-cat")
 	assertReseedCategoryExists(t, db, "rule-cat")
 	assertReseedCategoryExists(t, db, "orphan-used")
 
@@ -346,7 +343,6 @@ func TestWorkspaceCategoryReseedApplyPreservesUsageDependenciesAndOrphans(t *tes
 	assertReseedReportHasItem(t, report.PreservedByUsage, "rule-cat")
 	assertReseedReportHasItem(t, report.PreservedByDependency, "parent-with-used-child")
 	assertReseedReportHasItem(t, report.PreservedByDependency, "limit-cat")
-	assertReseedReportHasItem(t, report.PreservedByDependency, "box-cat")
 	assertReseedReportHasItem(t, report.Conflicts, "orphan-used")
 	assertSeedParent(t, querySeededCategoriesFromDB(t, db, "ws-reseed-preserve"), "Refeições", "EXPENSE", "Estilo de Vida")
 }
@@ -1035,16 +1031,6 @@ func insertReseedCostLimit(t *testing.T, db *sql.DB, id, workspaceID, categoryID
 	t.Helper()
 	if _, err := db.Exec(`INSERT INTO cost_limits (id, workspace_id, category_id, max_amount_monthly) VALUES (?, ?, ?, 10000)`, id, workspaceID, categoryID); err != nil {
 		t.Fatalf("insert reseed cost limit %s: %v", id, err)
-	}
-}
-
-func insertReseedBox(t *testing.T, db *sql.DB, id, workspaceID, categoryID string) {
-	t.Helper()
-	if _, err := db.Exec(`
-		INSERT INTO boxes (id, workspace_id, name, category_id, target_amount, monthly_recharge, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 10000, 1000, unixepoch(), unixepoch())
-	`, id, workspaceID, id, categoryID); err != nil {
-		t.Fatalf("insert reseed box %s: %v", id, err)
 	}
 }
 

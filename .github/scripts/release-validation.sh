@@ -20,6 +20,9 @@ if [[ "$snapshot_version" != "$release_version" ]]; then
   exit 1
 fi
 
+echo "== Validate public candidate paths =="
+./.github/scripts/check-public-paths.sh "$repo_root"
+
 expected_go_version="go$(awk '$1 == "go" { print $2; exit }' go.mod)"
 if [[ ! "$expected_go_version" =~ ^go[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "invalid Go version in go.mod: $expected_go_version" >&2
@@ -75,6 +78,27 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
 echo "== Native build =="
 go build ./...
+
+echo "== F0 install-state provenance =="
+./scripts/tests/test_install_state_provenance.sh
+
+echo "== F1 Source tag update =="
+./scripts/tests/test_update_source_tag.sh
+
+echo "== F2 Docker Compose tag update =="
+./scripts/tests/test_update_docker_tag.sh
+
+echo "== F3-B updater bundle authentication =="
+./scripts/tests/test_update_bundle_auth.sh
+
+echo "== F3-C authenticated update dispatcher =="
+./scripts/tests/test_update_dispatcher.sh
+
+echo "== F3-D Release isolated bootstrap =="
+./scripts/tests/test_release_isolated_bootstrap.sh
+
+echo "== R3 workflow hardening contracts =="
+./scripts/tests/test_workflow_hardening.sh
 
 echo "== Build release packages =="
 rm -rf "$dist_dir" "$work_dir"

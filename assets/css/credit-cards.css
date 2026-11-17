@@ -9,11 +9,12 @@
  *   - contrast-safe text/border/track tokens and status dot tones;
  *   - status badge semantics (base) and the on-face pill variant;
  *   - progress meter on the tonal surface;
- *   - logo/avatar foundation.
+ *   - logo/avatar foundation;
+ *   - the shared tile composition consumed by both pages.
  *
- * Loaded after ui-tokens.css and before the consumer stylesheet
- * (dashboard-wallet.css / faturas-index.css). Geometry, layout and behavior
- * stay in each consumer: the components keep independent functional contracts.
+ * Loaded after ui-tokens.css and before the consumer stylesheets
+ * (dashboard-preview.css / faturas-index.css). Page-specific carousel rails,
+ * selection chrome and dashboard state overlays remain in their consumers.
  * Structural palette remains in ui-tokens.css; no parallel palette here.
  */
 
@@ -23,7 +24,7 @@
     /* Dark scheme is always safe and is the default without JS. */
     --card-fg: #ffffff;
     --card-fg-soft: #ffffffeb;
-    --card-fg-muted: #ffffffe0;
+    --card-fg-muted: #ffffffeb;
     --card-line: #ffffff2b;
     --card-track: #ffffff38;
     --card-fill: #ffffffe8;
@@ -175,4 +176,235 @@
     font-weight: 650;
     line-height: 1;
     letter-spacing: -.02em;
+}
+
+/* --- 5. Card composition (shared) ---------------------------------------
+   The Dashboard carousel and the Faturas hub render the same tile. Geometry,
+   typography and internal hierarchy live here so the two pages cannot drift. */
+
+.cb-v2-credit-card {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    flex: 0 0 342px;
+    width: 342px;
+    min-width: min(100%, 342px);
+    min-height: 190px;
+    padding: 14px 16px 13px;
+    scroll-snap-align: start;
+    border: 1px solid var(--card-line);
+    border-radius: 16px;
+    color: var(--card-fg);
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.cb-v2-credit-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+}
+
+.cb-v2-credit-card-identity {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.cb-v2-credit-card-logo {
+    width: 30px;
+    height: 30px;
+    padding: 3px;
+    border: 1px solid var(--card-badge-border);
+    border-radius: 9px;
+    background: var(--card-badge-bg);
+}
+
+/* Provider artwork already includes its branded surface. Let it use the full
+   reserved 30px while keeping the monogram fallback's framed treatment. */
+.cb-v2-credit-card-logo:has(> img:not(.hidden):not([hidden])) {
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.cb-v2-credit-card-logo:has(> img:not(.hidden):not([hidden])) > img:not(.hidden):not([hidden]) {
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.cb-v2-credit-card-logo > img[hidden] {
+    display: none;
+}
+
+.cb-v2-credit-card-logo .cb-card-logo-monogram {
+    font-size: 10.5px;
+    color: var(--card-fg);
+}
+
+.cb-v2-credit-card-name {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--card-fg);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -.01em;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.cb-v2-credit-card-amount {
+    display: grid;
+    gap: 1px;
+    margin-top: auto;
+    padding-top: 6px;
+    min-width: 0;
+}
+
+.cb-v2-credit-card-amount small {
+    color: var(--card-fg-muted);
+    font-size: 10.5px;
+    font-weight: 550;
+    letter-spacing: .02em;
+}
+
+.cb-v2-credit-card-amount strong {
+    overflow: hidden;
+    color: var(--card-fg);
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 640;
+    letter-spacing: -.02em;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-v2-credit-card-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    color: var(--card-fg-muted);
+    font-size: 10.5px;
+}
+
+.cb-v2-credit-card-meta small {
+    color: var(--card-fg-muted);
+    font-size: 10.5px;
+    font-weight: 500;
+}
+
+.cb-v2-credit-card-meta strong {
+    color: var(--card-fg-soft);
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cb-v2-credit-card-closing {
+    overflow: hidden;
+    color: var(--card-fg-muted);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-v2-credit-card-limit {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    margin-top: 1px;
+    padding-top: 7px;
+    border-top: 1px solid var(--card-line);
+}
+
+.cb-v2-credit-card-limit small {
+    color: var(--card-fg-muted);
+    font-size: 10px;
+    font-weight: 550;
+}
+
+.cb-v2-credit-card-limit strong {
+    overflow: hidden;
+    color: var(--card-fg-soft);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-v2-credit-card-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.cb-v2-credit-card-progress-row .cb-card-progress { flex: 1 1 auto; }
+
+.cb-v2-card-usage {
+    flex: 0 0 auto;
+    margin: 0;
+    color: var(--card-fg-muted);
+    font-size: 10px;
+    font-weight: 550;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.cb-v2-credit-card-pending {
+    overflow: hidden;
+    color: var(--card-fg-soft);
+    font-size: 10.5px;
+    font-weight: 550;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-v2-credit-card-history {
+    display: grid;
+    gap: 2px;
+    color: var(--card-fg-soft);
+    font-size: 10.5px;
+    line-height: 1.35;
+}
+
+.cb-v2-credit-card-history > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-v2-credit-card-history b {
+    color: var(--card-fg);
+    font-weight: 600;
+}
+
+.cb-v2-credit-card-history small {
+    overflow: hidden;
+    color: var(--card-fg-muted);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-v2-credit-card:focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
 }

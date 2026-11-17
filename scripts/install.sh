@@ -281,30 +281,25 @@ show_menu() {
   say "   Para VPS/LXC sem Docker, sem Go e sem Node."
   say "   Baixa o binário publicado no GitHub Release."
   blank
-  say "3) Instalar via código-fonte/systemd"
+  say "3) Instalar via código-fonte/systemd (Source legado)"
   say "   Avançado. Para desenvolvimento, customização ou repo privado."
   say "   Exige Go e Node."
+  say "   Para novas instalações VPS/LXC, prefira a opção 2 (Release)."
+  say "   Source Bootstrap está indisponível nesta fase."
   blank
   say "4) Avançado/manual"
   say "   Mostra os scripts específicos para executar manualmente."
   blank
-  say "5) Atualizar via Docker Compose"
-  say "   Atualiza instalação criada pela opção 1."
+  say "5) Sair"
   blank
-  say "6) Atualizar via binário da Release"
-  say "   Atualiza instalação criada pela opção 2."
-  blank
-  say "7) Atualizar via código-fonte/systemd"
-  say "   Atualiza instalação criada pela opção 3."
-  blank
-  say "8) Sair"
+  say "Para atualizar uma instalação existente, use contabase-update."
   blank
 }
 
 interactive_menu() {
   while true; do
     show_menu
-    read -r -p "Opcao (1-8): " choice
+    read -r -p "Opcao (1-5): " choice
     blank
     case "$choice" in
       1)
@@ -332,23 +327,11 @@ interactive_menu() {
         return 0
         ;;
       5)
-        dispatch_method update-docker
-        return 0
-        ;;
-      6)
-        dispatch_method update-release
-        return 0
-        ;;
-      7)
-        dispatch_method update-source
-        return 0
-        ;;
-      8)
         say "Saindo."
         return 0
         ;;
       *)
-        say "Opcao invalida. Escolha um numero de 1 a 8."
+        say "Opcao invalida. Escolha um numero de 1 a 5."
         blank
         ;;
     esac

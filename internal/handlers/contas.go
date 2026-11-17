@@ -49,6 +49,7 @@ type ContasData struct {
 	HasFilters                bool
 	Payables                  []PendingItemRow
 	Receivables               []PendingItemRow
+	Transfers                 []PendingItemRow
 	TotalPayables             MoneyDisplay
 	TotalReceivables          MoneyDisplay
 	TotalOverdueReceivabs     MoneyDisplay
@@ -64,14 +65,24 @@ type PendingItemRow struct {
 	AmountMoney                 MoneyDisplay
 	DueDateUnix                 int64
 	DueDate                     string
+	DateLabel                   string
 	AccountName                 string
 	AccountProviderSlug         string
 	AccountColor                string
 	ProviderMark                string
 	ProviderLogoPath            string
+	DestinationAccountName      string
+	DestinationAccountColor     string
+	DestinationProviderMark     string
+	DestinationProviderLogoPath string
 	ContactName                 string
 	IsOverdue                   bool
 	IsScheduled                 bool
+	IsTransfer                  bool
+	IsRecurring                 bool
+	InstallmentNumber           int64
+	TotalInstallments           int64
+	HasInstallmentInfo          bool
 	StatusIcon                  string
 	StatusTone                  string
 	StatusTitle                 string
@@ -102,10 +113,7 @@ func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	aba := strings.TrimSpace(r.URL.Query().Get("aba"))
-	if aba == "" {
-		aba = "pagar"
-	}
+	aba := normalizeContasAba(r.URL.Query().Get("aba"))
 	partial := r.URL.Query().Get("partial")
 
 	var data ContasData
@@ -113,13 +121,17 @@ func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Requ
 	switch partial {
 	case "lista":
 		templateName = "contas-list"
-		var payables, receivables []PendingItemRow
+		var payables, receivables, transfers []PendingItemRow
 		var err error
 		switch aba {
 		case "receber":
 			tQ := time.Now()
 			receivables, err = queryPendingItemsFiltered(h.DB, h.WorkspaceID, "INCOME", false, mes, ano, q)
 			perfStep(reqID, "Contas", "queryReceivables", time.Since(tQ))
+		case "transferir":
+			tQ := time.Now()
+			transfers, err = queryPendingTransfersFiltered(h.DB, h.WorkspaceID, mes, ano, q)
+			perfStep(reqID, "Contas", "queryTransfers", time.Since(tQ))
 		default:
 			tQ := time.Now()
 			payables, err = queryPendingItemsFiltered(h.DB, h.WorkspaceID, "EXPENSE", false, mes, ano, q)
@@ -136,12 +148,20 @@ func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Requ
 			HasFilters:  q != "",
 			Payables:    payables,
 			Receivables: receivables,
+			Transfers:   transfers,
 		}
 	default:
 		selectedMonth := time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC)
 
+		// A busca da aba A Transferir é local àquela lista. Os três KPIs
+		// continuam representando o período e não devem ser filtrados por ela.
+		kpiSearch := q
+		if aba == "transferir" {
+			kpiSearch = ""
+		}
+
 		tQ1 := time.Now()
-		payables, err := queryPendingItemsFiltered(h.DB, h.WorkspaceID, "EXPENSE", false, mes, ano, q)
+		payables, err := queryPendingItemsFiltered(h.DB, h.WorkspaceID, "EXPENSE", false, mes, ano, kpiSearch)
 		perfStep(reqID, "Contas", "queryPayables", time.Since(tQ1))
 		if err != nil {
 			log.Printf("query payables error: %v", err)
@@ -149,7 +169,7 @@ func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		tQ2 := time.Now()
-		receivables, err := queryPendingItemsFiltered(h.DB, h.WorkspaceID, "INCOME", false, mes, ano, q)
+		receivables, err := queryPendingItemsFiltered(h.DB, h.WorkspaceID, "INCOME", false, mes, ano, kpiSearch)
 		perfStep(reqID, "Contas", "queryReceivables", time.Since(tQ2))
 		if err != nil {
 			log.Printf("query receivables error: %v", err)
@@ -157,12 +177,23 @@ func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		tQ3 := time.Now()
-		overdueReceivables, err := queryPendingItemsFiltered(h.DB, h.WorkspaceID, "INCOME", true, mes, ano, q)
+		overdueReceivables, err := queryPendingItemsFiltered(h.DB, h.WorkspaceID, "INCOME", true, mes, ano, kpiSearch)
 		perfStep(reqID, "Contas", "queryOverdue", time.Since(tQ3))
 		if err != nil {
 			log.Printf("query overdue receivables error: %v", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
+		}
+		var transfers []PendingItemRow
+		if aba == "transferir" {
+			tQ4 := time.Now()
+			transfers, err = queryPendingTransfersFiltered(h.DB, h.WorkspaceID, mes, ano, q)
+			perfStep(reqID, "Contas", "queryTransfers", time.Since(tQ4))
+			if err != nil {
+				log.Printf("query transfers error: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
 		}
 		data = ContasData{
 			Aba:                       aba,
@@ -173,17 +204,18 @@ func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Requ
 			MonthSelectorHXTarget:     "#contas-body",
 			MonthSelectorHXSwap:       "outerHTML",
 			MonthSelectorPartial:      "content",
-			MonthSelectorPrevQuery:    contasMonthQuery(int(selectedMonth.AddDate(0, -1, 0).Month()), selectedMonth.AddDate(0, -1, 0).Year(), q),
-			MonthSelectorNextQuery:    contasMonthQuery(int(selectedMonth.AddDate(0, 1, 0).Month()), selectedMonth.AddDate(0, 1, 0).Year(), q),
-			MonthSelectorCurrentQuery: contasMonthQuery(int(now.Month()), now.Year(), q),
-			MesAnteriorURL:            "/contas?" + contasMonthQuery(int(selectedMonth.AddDate(0, -1, 0).Month()), selectedMonth.AddDate(0, -1, 0).Year(), q),
-			MesSeguinteURL:            "/contas?" + contasMonthQuery(int(selectedMonth.AddDate(0, 1, 0).Month()), selectedMonth.AddDate(0, 1, 0).Year(), q),
-			CurrentMonthURL:           "/contas?" + contasMonthQuery(int(now.Month()), now.Year(), q),
-			MonthOptions:              buildContasMonthOptions(selectedMonth, q),
+			MonthSelectorPrevQuery:    contasMonthQuery(int(selectedMonth.AddDate(0, -1, 0).Month()), selectedMonth.AddDate(0, -1, 0).Year(), q, aba),
+			MonthSelectorNextQuery:    contasMonthQuery(int(selectedMonth.AddDate(0, 1, 0).Month()), selectedMonth.AddDate(0, 1, 0).Year(), q, aba),
+			MonthSelectorCurrentQuery: contasMonthQuery(int(now.Month()), now.Year(), q, aba),
+			MesAnteriorURL:            "/contas?" + contasMonthQuery(int(selectedMonth.AddDate(0, -1, 0).Month()), selectedMonth.AddDate(0, -1, 0).Year(), q, aba),
+			MesSeguinteURL:            "/contas?" + contasMonthQuery(int(selectedMonth.AddDate(0, 1, 0).Month()), selectedMonth.AddDate(0, 1, 0).Year(), q, aba),
+			CurrentMonthURL:           "/contas?" + contasMonthQuery(int(now.Month()), now.Year(), q, aba),
+			MonthOptions:              buildContasMonthOptions(selectedMonth, q, aba),
 			Busca:                     q,
 			HasFilters:                q != "",
 			Payables:                  payables,
 			Receivables:               receivables,
+			Transfers:                 transfers,
 			TotalPayables:             MoneyMinor(sumPendingAmount(payables)),
 			TotalReceivables:          MoneyMinor(sumPendingAmount(receivables)),
 			TotalOverdueReceivabs:     MoneyMinor(sumPendingAmount(overdueReceivables)),
@@ -222,12 +254,18 @@ func (h *ContasHandler) HandleContasConceito(w http.ResponseWriter, r *http.Requ
 		if q != "" {
 			cleanQ.Set("q", q)
 		}
+		if aba != "pagar" {
+			cleanQ.Set("aba", aba)
+		}
 		w.Header().Set("HX-Replace-Url", "/contas?"+cleanQ.Encode())
 	}
 	if partial == "lista" {
 		cleanQ := url.Values{}
 		cleanQ.Set("periodo", fmt.Sprintf("%04d-%02d", ano, mes))
 		cleanQ.Set("aba", aba)
+		if q != "" {
+			cleanQ.Set("q", q)
+		}
 		w.Header().Set("HX-Replace-Url", "/contas?"+cleanQ.Encode())
 	}
 	perfRequest(reqID, r, time.Since(t0), buf.Len())
@@ -400,6 +438,106 @@ func queryPendingItemsFiltered(db *sql.DB, workspaceID, itemType string, onlyOve
 	return out, rows.Err()
 }
 
+func queryPendingTransfersFiltered(db *sql.DB, workspaceID string, mes, ano int, search string) ([]PendingItemRow, error) {
+	sqlQuery := `
+		SELECT
+			t.id,
+			COALESCE(t.description, ''),
+			t.amount,
+			COALESCE(t.due_date, t.date),
+			COALESCE(NULLIF(a.name, ''), 'Conta de origem'),
+			COALESCE(NULLIF(a.provider_slug, ''), 'custom'),
+			COALESCE(NULLIF(a.color, ''), ''),
+			COALESCE(NULLIF(da.name, ''), ''),
+			COALESCE(NULLIF(da.provider_slug, ''), 'custom'),
+			COALESCE(NULLIF(da.color, ''), ''),
+			CASE WHEN t.recurring_rule_id IS NOT NULL THEN 1 ELSE 0 END,
+			t.installment_number,
+			t.total_installments
+		FROM financial_transactions t
+		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		LEFT JOIN accounts da ON da.id = t.destination_account_id AND da.workspace_id = t.workspace_id
+		WHERE t.workspace_id = ?
+		  AND t.type = 'TRANSFER'
+		  AND t.status = 'pending'
+	`
+	args := []interface{}{workspaceID}
+	if mes > 0 && ano > 0 {
+		monthStart := time.Date(ano, time.Month(mes), 1, 0, 0, 0, 0, time.UTC)
+		nextMonth := monthStart.AddDate(0, 1, 0)
+		sqlQuery += ` AND COALESCE(t.due_date, t.date) >= ? AND COALESCE(t.due_date, t.date) < ?`
+		args = append(args, monthStart.Unix(), nextMonth.Unix())
+	}
+	if search != "" {
+		like := "%" + search + "%"
+		sqlQuery += `
+		  AND (
+			  UNACCENT(COALESCE(t.description, '')) LIKE UNACCENT(?)
+			  OR UNACCENT(COALESCE(a.name, '')) LIKE UNACCENT(?)
+			  OR UNACCENT(COALESCE(da.name, '')) LIKE UNACCENT(?)
+		  )
+		`
+		args = append(args, like, like, like)
+	}
+	sqlQuery += ` ORDER BY COALESCE(t.due_date, t.date) ASC, t.created_at ASC, t.id ASC`
+
+	rows, err := db.Query(sqlQuery, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	loc := appTimeLocation()
+	nowTZ := time.Now().In(loc)
+	today := time.Date(nowTZ.Year(), nowTZ.Month(), nowTZ.Day(), 0, 0, 0, 0, time.UTC)
+	var out []PendingItemRow
+	for rows.Next() {
+		var row PendingItemRow
+		var displayDateUnix int64
+		var destinationName, destinationProviderSlug, destinationColor string
+		var isRecurring int
+		if err := rows.Scan(
+			&row.ID,
+			&row.Description,
+			&row.Amount,
+			&displayDateUnix,
+			&row.AccountName,
+			&row.AccountProviderSlug,
+			&row.AccountColor,
+			&destinationName,
+			&destinationProviderSlug,
+			&destinationColor,
+			&isRecurring,
+			&row.InstallmentNumber,
+			&row.TotalInstallments,
+		); err != nil {
+			return nil, err
+		}
+		row.IsTransfer = true
+		row.AmountMoney = MoneyMinor(row.Amount)
+		row.DateLabel = formatDateLabelFromUnix(displayDateUnix)
+		row.ProviderMark = accountProviderMark(row.AccountProviderSlug, row.AccountName)
+		row.ProviderLogoPath = accountProviderLogoPathForAccount(row.AccountProviderSlug, row.AccountName)
+		row.DestinationAccountName = destinationName
+		row.DestinationAccountColor = destinationColor
+		if destinationName != "" {
+			row.DestinationProviderMark = accountProviderMark(destinationProviderSlug, destinationName)
+			row.DestinationProviderLogoPath = accountProviderLogoPathForAccount(destinationProviderSlug, destinationName)
+		}
+		row.IsRecurring = isRecurring == 1
+		row.HasInstallmentInfo = row.TotalInstallments > 1
+		date := time.Unix(displayDateUnix, 0).UTC()
+		dateDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
+		row.IsOverdue = dateDay.Before(today)
+		visual := transactionVisualStatus(models.TransactionTypeTransfer, models.PaymentStatusPending, displayDateUnix, nil)
+		row.StatusIcon = visual.Icon
+		row.StatusTone = visual.Tone
+		row.StatusTitle = visual.Title
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 func sumPendingAmount(items []PendingItemRow) int64 {
 	var total int64
 	for _, item := range items {
@@ -416,18 +554,22 @@ func formatDateLabelFromUnix(unix int64) string {
 	return fmt.Sprintf("%02d/%02d/%04d", t.Day(), t.Month(), t.Year())
 }
 
-func buildContasMonthOptions(selectedMonth time.Time, search string) []MonthOption {
-	return buildContasMonthOptionsAt(selectedMonth, search, time.Now())
+func buildContasMonthOptions(selectedMonth time.Time, search string, abas ...string) []MonthOption {
+	return buildContasMonthOptionsAt(selectedMonth, search, time.Now(), abas...)
 }
 
-func buildContasMonthOptionsAt(selectedMonth time.Time, search string, now time.Time) []MonthOption {
+func buildContasMonthOptionsAt(selectedMonth time.Time, search string, now time.Time, abas ...string) []MonthOption {
+	aba := ""
+	if len(abas) > 0 {
+		aba = abas[0]
+	}
 	shortMonths := []string{"Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"}
 	currentMonth := appMonthStartUTC(now)
 	firstMonth := selectedMonth.AddDate(0, -5, 0)
 	options := make([]MonthOption, 0, 12)
 	for offset := 0; offset < 12; offset++ {
 		m := firstMonth.AddDate(0, offset, 0)
-		query := contasMonthQuery(int(m.Month()), m.Year(), search)
+		query := contasMonthQuery(int(m.Month()), m.Year(), search, aba)
 		options = append(options, MonthOption{
 			Label:     shortMonths[int(m.Month())-1],
 			Year:      fmt.Sprintf("%d", m.Year()),
@@ -444,11 +586,27 @@ func contasURL(mes, ano int, search string) string {
 	return "/contas?" + contasMonthQuery(mes, ano, search)
 }
 
-func contasMonthQuery(mes, ano int, search string) string {
+func contasMonthQuery(mes, ano int, search string, abas ...string) string {
 	values := url.Values{}
 	values.Set("periodo", fmt.Sprintf("%04d-%02d", ano, mes))
 	if strings.TrimSpace(search) != "" {
 		values.Set("q", strings.TrimSpace(search))
 	}
+	if len(abas) > 0 {
+		switch aba := strings.ToLower(strings.TrimSpace(abas[0])); aba {
+		case "receber", "transferir":
+			values.Set("aba", aba)
+		}
+	}
 	return values.Encode()
+}
+
+func normalizeContasAba(raw string) string {
+	aba := strings.ToLower(strings.TrimSpace(raw))
+	switch aba {
+	case "receber", "transferir":
+		return aba
+	default:
+		return "pagar"
+	}
 }

@@ -16,23 +16,26 @@ func TestShellOwnsNavigationPresentation(t *testing.T) {
 	tokens := readTestFile(t, "assets/css/ui-tokens.css")
 
 	for _, want := range []string{
-		"--ui-nav-width: 248px;",
-		"--ui-nav-item-height: 40px;",
-		"--ui-nav-item-radius: 10px;",
-		"--ui-nav-active-bg: var(--v2-accent-soft);",
-		"--ui-nav-active-fg: var(--v2-accent-on-soft);",
-		"--ui-nav-active-indicator-width: 2px;",
+		"--ui-nav-width: 264px;",
+		"--ui-nav-width-collapsed: 80px;",
+		"--ui-nav-item-height: 42px;",
+		"--ui-nav-item-radius: 12px;",
+		"--ui-nav-active-bg: var(--ui-accent-soft);",
+		"--ui-nav-active-fg: var(--ui-accent-on-soft);",
 		"--ui-icon-button-size-sm: 34px;",
+		"--ui-quick-action-height: 40px;",
+		"--ui-content-max: 1560px;",
 	} {
 		if !strings.Contains(tokens, want) {
 			t.Fatalf("ui-tokens.css lost canonical navigation token %q", want)
 		}
 	}
 
-	if !strings.Contains(shell, ".cb-v2-nav-link.is-active {") ||
-		!strings.Contains(shell, "background: var(--ui-nav-active-bg);") ||
-		!strings.Contains(shell, "box-shadow: inset var(--ui-nav-active-indicator-width) 0 0 var(--ui-nav-active-indicator);") {
+	if !strings.Contains(shell, ".cb-v2-nav-link.is-active {\n    background: var(--ui-nav-active-bg);\n    color: var(--ui-nav-active-fg);\n}") {
 		t.Fatal("app-shell.css must define the single canonical selected navigation state")
+	}
+	if strings.Contains(shell, "ui-nav-active-indicator") {
+		t.Fatal("selected navigation must not use a side bar, ring or shadow indicator")
 	}
 
 	// The FAB is a shell component: it disappears on desktop for every page,
@@ -99,6 +102,55 @@ func TestPageStylesheetsDoNotRestyleTheShell(t *testing.T) {
 				}
 				t.Errorf("%s redefines shell selector %q: %s", name, selector, trimmed)
 			}
+		}
+	}
+}
+
+func TestShellExposesLogoutInDesktopAndMobile(t *testing.T) {
+	shell := readTestFile(t, "templates/components/app_shell.html")
+	if got := strings.Count(shell, `{{template "app-v2-logout-action" .}}`); got != 2 {
+		t.Fatalf("app shell includes logout action %d times, want desktop and mobile (2)", got)
+	}
+	for _, want := range []string{
+		`hx-post="/logout"`,
+		`hx-swap="none"`,
+		`aria-label="Sair da conta"`,
+		`<span>Sair</span>`,
+	} {
+		if !strings.Contains(shell, want) {
+			t.Fatalf("app shell logout action missing %q", want)
+		}
+	}
+	css := readTestFile(t, "assets/css/app-shell.css")
+	if !strings.Contains(css, ".cb-v2-logout-action") {
+		t.Fatal("app shell must style the logout action")
+	}
+}
+
+// R1.3-D4-A: the notification badge is a component with one OOB sink id and
+// N visible [data-notification-badge] copies. This removes the duplicate DOM id
+// identified in D3-B3b without changing the notification query or its updates.
+func TestNotificationBadgeUsesSingleIdAndDataContract(t *testing.T) {
+	shell := readTestFile(t, "templates/components/app_shell.html")
+	if got := strings.Count(shell, `id="notification-badge"`); got != 1 {
+		t.Fatalf("app shell must expose exactly one notification-badge OOB id, got %d", got)
+	}
+	if got := strings.Count(shell, `data-notification-badge`); got < 2 {
+		t.Fatalf("app shell must render the desktop and appbar badges through the data contract, got %d", got)
+	}
+	for _, plural := range []string{"notificação não lida", "notificações não lidas"} {
+		if !strings.Contains(shell, plural) {
+			t.Fatalf("notification badge must keep the singular/plural accessible label %q", plural)
+		}
+	}
+	dashboard := readTestFile(t, "templates/pages/dashboard_preview.html")
+	if strings.Contains(dashboard, `id="notification-badge"`) {
+		t.Fatal("dashboard appbar must not duplicate the notification-badge id")
+	}
+	js := readTestFile(t, "assets/js/app-shell.js")
+	for _, want := range []string{"htmx:oobAfterSwap", "htmx:afterSettle", "data-notification-badge", "classList.toggle('hidden'", "v2DrawerDelegationReady"} {
+		if !strings.Contains(js, want) {
+			t.Fatalf("app-shell.js lost the shared notification/drawer contract %q", want)
 		}
 	}
 }

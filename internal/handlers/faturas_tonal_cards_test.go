@@ -11,6 +11,7 @@ import (
 func TestFaturasTonalCardConsumesSharedFoundation(t *testing.T) {
 	tile := readTestFile(t, "templates/components/credit_card.html")
 	faturasIndex := readTestFile(t, "assets/css/faturas-index.css")
+	sharedCardCSS := readTestFile(t, "assets/css/credit-cards.css")
 	hubTpl := readTestFile(t, "templates/pages/faturas_index.html")
 
 	for _, contract := range []string{
@@ -47,7 +48,7 @@ func TestFaturasTonalCardConsumesSharedFoundation(t *testing.T) {
 	}
 
 	// Status semantics remain integrated to the face.
-	for _, contract := range []string{`is-open`, `is-closed`, `is-paid`, `is-overdue`} {
+	for _, contract := range []string{`is-open`, `is-closed`, `is-paid`, `is-overdue`, `is-empty`} {
 		if !strings.Contains(tile, contract) {
 			t.Fatalf("Faturas tile lost status semantic %q", contract)
 		}
@@ -58,7 +59,7 @@ func TestFaturasTonalCardConsumesSharedFoundation(t *testing.T) {
 		`--card-fg`, `--card-fg-muted`, `--card-line`,
 		`border-radius: 16px`,
 	} {
-		if !strings.Contains(faturasIndex, contract) {
+		if !strings.Contains(sharedCardCSS, contract) {
 			t.Fatalf("Faturas tonal tile must use shared surface token %q", contract)
 		}
 	}

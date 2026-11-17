@@ -45,6 +45,8 @@ func calculateInvoiceDates(t time.Time, closingDay, dueDay int64) (closingUnix, 
 	return closingUnix, dueUnix, reference
 }
 
+const currentSchemaVersion = 83
+
 type migration struct {
 	version int
 	name    string
@@ -1923,6 +1925,7 @@ END`,
 	{version: 80, name: "investment_purchase_reversal", up: migrateInvestmentPurchaseReversals},
 	{version: 81, name: "investment_record_cancellation", up: migrateInvestmentRecordCancellations},
 	{version: 82, name: "investment_purchase_reversal_operability", up: migrateInvestmentPurchaseReversals82},
+	{version: 83, name: "reserve_physical_removal", up: migrateReservePhysicalRemoval},
 	// Experimental migration 78 is not homologated. Apply it explicitly in
 	// candidate tests only; normal startup skips it and applies schema 79.
 }
@@ -3026,6 +3029,73 @@ func checkSkipsNoTriggers(tx *sql.Tx) error {
 	return rows.Err()
 }
 
+func migrationBootstrapRequired(db *sql.DB) (bool, error) {
+	rows, err := db.Query(`SELECT version, name FROM schema_migrations ORDER BY version`)
+	if err != nil {
+		return false, fmt.Errorf("read migration history: %w", err)
+	}
+	defer rows.Close()
+
+	index := 0
+	applied := make(map[int]bool, len(migrations))
+	for rows.Next() {
+		var version int
+		var name string
+		if err := rows.Scan(&version, &name); err != nil {
+			return false, fmt.Errorf("scan migration history: %w", err)
+		}
+		if strings.HasPrefix(name, "test-only excluded: ") {
+			// Historical package tests pin future versions with this explicit
+			// marker; the application never writes it.
+			continue
+		}
+		if index >= len(migrations) || version != migrations[index].version || name != migrations[index].name {
+			return false, fmt.Errorf("migration history diverges at version %d (%s)", version, name)
+		}
+		applied[version] = true
+		index++
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("iterate migration history: %w", err)
+	}
+	for _, m := range migrations {
+		if m.version < currentSchemaVersion && !applied[m.version] {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func ensureLegacyReserveTablesForMigrations(db *sql.DB, required bool) error {
+	if !required {
+		return nil
+	}
+	for _, table := range reserveRemovalTables {
+		exists, err := tableExistsDB(db, table)
+		if err != nil {
+			return fmt.Errorf("inspect legacy reserve table %s: %w", table, err)
+		}
+		if exists {
+			// Historical tests and already-updated databases may carry only a
+			// subset or a partially evolved schema. Never overwrite or reshape
+			// an existing table from the bootstrap path.
+			return nil
+		}
+	}
+	if _, err := db.Exec(legacyReserveDDL); err != nil {
+		return fmt.Errorf("bootstrap legacy reserve tables for historical migrations: %w", err)
+	}
+	return nil
+}
+
+func tableExistsDB(db *sql.DB, table string) (bool, error) {
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM sqlite_schema WHERE type='table' AND name=?`, table).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func runMigrations(db *sql.DB) error {
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
 		version INTEGER PRIMARY KEY,
@@ -3033,6 +3103,18 @@ func runMigrations(db *sql.DB) error {
 		applied_at INTEGER NOT NULL DEFAULT (unixepoch())
 	)`); err != nil {
 		return fmt.Errorf("create schema_migrations: %w", err)
+	}
+
+	// Historical migrations 1-82 still create and read the reserve tables.
+	// Bootstrap them only while the validated migration history is below 83;
+	// a database already at 83 must never recreate them. The head is read as a
+	// strict prefix of the current registry, not merely MAX(version).
+	bootstrapReserveTables, err := migrationBootstrapRequired(db)
+	if err != nil {
+		return err
+	}
+	if err := ensureLegacyReserveTablesForMigrations(db, bootstrapReserveTables); err != nil {
+		return err
 	}
 
 	for _, m := range migrations {

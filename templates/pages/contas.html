@@ -122,24 +122,120 @@
             class="ui-tab {{if eq .Aba "receber"}}is-active{{end}}">
             <i data-lucide="arrow-down-left" aria-hidden="true"></i>A Receber
         </button>
+        <button type="button" aria-pressed="{{if eq .Aba "transferir"}}true{{else}}false{{end}}"
+            hx-get="/contas?aba=transferir&partial=lista"
+            hx-target="#contas-list" hx-swap="outerHTML"
+            hx-include="#contasFilters"
+            class="ui-tab {{if eq .Aba "transferir"}}is-active{{end}}">
+            <i data-lucide="arrow-left-right" aria-hidden="true"></i>A Transferir
+        </button>
     </nav>
 
     {{$isPagar := eq .Aba "pagar"}}
+    {{$isReceber := eq .Aba "receber"}}
+    {{$isTransferir := eq .Aba "transferir"}}
     {{$items := .Payables}}
-    {{if not $isPagar}}{{$items = .Receivables}}{{end}}
+    {{if $isReceber}}{{$items = .Receivables}}{{else if $isTransferir}}{{$items = .Transfers}}{{end}}
 
 <div id="contas-panel">
 {{if $items}}
-    <section class="ui-panel ui-list-panel" aria-label="{{if $isPagar}}Contas a pagar{{else}}Contas a receber{{end}}">
+    <section class="ui-panel ui-list-panel" aria-label="{{if $isPagar}}Contas a pagar{{else if $isReceber}}Contas a receber{{else}}Transferências a executar{{end}}">
         <div class="ui-list-panel__head">
-            <strong>{{if $isPagar}}A pagar{{else}}A receber{{end}}</strong>
-            <span>{{len $items}} {{if eq (len $items) 1}}item{{else}}itens{{end}} · ordenado por vencimento</span>
+            <strong>{{if $isPagar}}A pagar{{else if $isReceber}}A receber{{else}}A transferir{{end}}</strong>
+            <span>{{len $items}} {{if eq (len $items) 1}}item{{else}}itens{{end}} · {{if $isTransferir}}ordenado por data{{else}}ordenado por vencimento{{end}}</span>
         </div>
         {{$hasSwipeable := false}}
+        {{$hasTransferSwipe := false}}
         <div class="ui-list">
         {{range $items}}
-        {{if not .IsInvoice}}{{$hasSwipeable = true}}{{end}}
-        {{if .IsInvoice}}
+        {{if and (not .IsInvoice) (not .IsTransfer)}}{{$hasSwipeable = true}}{{end}}
+        {{if .IsTransfer}}{{$hasTransferSwipe = true}}{{end}}
+        {{if .IsTransfer}}
+        <div id="transfer-{{.ID}}" class="ui-swipe contas-transfer-row-swipe"
+            data-payment-id="{{.ID}}"
+            data-payment-context="contas"
+            data-payment-post-url="/transacoes/{{.ID}}/status-pagamento"
+            data-payment-target="#transfer-{{.ID}}"
+            data-payment-swap="none"
+            data-payment-description="{{if .Description}}{{.Description}}{{else}}Transferência{{end}}"
+            data-payment-amount="R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}"
+            data-payment-type="TRANSFER"
+            data-payment-account-id="{{.PaymentAccountID}}"
+            data-payment-account-name="{{.AccountName}}"
+            data-payment-destination-account-name="{{if .DestinationAccountName}}{{.DestinationAccountName}}{{else}}Destino não informado{{end}}"
+            data-payment-account-change-allowed="false"
+            data-swipe-row="true"
+            data-swipe-left-url="/transacoes/{{.ID}}?escopo=single"
+            data-swipe-left-method="DELETE"
+            data-swipe-left-target="#transfer-{{.ID}}"
+            data-swipe-left-swap="delete"
+            data-swipe-left-confirm="Remover esta transferência?"
+            data-swipe-right-payment-confirm="true">
+            <div data-swipe-bg-left class="ui-swipe__bg ui-swipe__bg--left">
+                <i data-lucide="trash-2" aria-hidden="true"></i>
+            </div>
+            <div data-swipe-bg-right class="ui-swipe__bg ui-swipe__bg--right">
+                <i data-lucide="check-circle-2" aria-hidden="true"></i>
+            </div>
+            <article id="tx-{{.ID}}" class="ui-row contas-transfer-row{{if .IsOverdue}} is-overdue{{end}}" data-swipe-content>
+                <button type="button"
+                    data-payment-confirm
+                    class="ui-row__status contas-transfer-row__icon tx-status-{{.StatusTone}}"
+                    title="Confirmar transferência"
+                    aria-label="Confirmar transferência: {{if .Description}}{{.Description}}{{else}}Transferência{{end}}">
+                    <i data-lucide="{{.StatusIcon}}" aria-hidden="true"></i>
+                </button>
+                <button type="button"
+                    class="ui-row__main ui-row__main--button"
+                    hx-get="/transacoes/{{.ID}}"
+                    hx-target="#bottom-sheet-container"
+                    hx-swap="innerHTML"
+                    hx-push-url="false">
+                    <span class="sr-only">Editar transferência: </span>
+                    <span class="ui-row__title">{{if .Description}}{{.Description}}{{else}}Transferência{{end}}</span>
+                    <span class="ui-row__meta">
+                        <span class="contas-transfer-row__route">
+                            <span class="ui-row__account">
+                                {{if .ProviderLogoPath}}<img class="ui-row__account-logo" src="{{assetPath .ProviderLogoPath}}" alt="" width="16" height="16" data-avatar-fallback><span class="ui-row__account-mark hidden" data-avatar-text data-cb-color="{{.AccountColor}}">{{if .ProviderMark}}{{.ProviderMark}}{{else}}•{{end}}</span>{{else}}<span class="ui-row__account-mark" data-cb-color="{{.AccountColor}}">{{if .ProviderMark}}{{.ProviderMark}}{{else}}•{{end}}</span>{{end}}
+                                <span class="contas-transfer-row__account" title="{{.AccountName}}">{{.AccountName}}</span>
+                            </span>
+                            <span class="contas-transfer-row__arrow" aria-hidden="true">&rarr;</span>
+                            <span class="sr-only">para</span>
+                            <span class="ui-row__account">
+                                {{if .DestinationAccountName}}
+                                    {{if .DestinationProviderLogoPath}}<img class="ui-row__account-logo" src="{{assetPath .DestinationProviderLogoPath}}" alt="" width="16" height="16" data-avatar-fallback><span class="ui-row__account-mark hidden" data-avatar-text data-cb-color="{{.DestinationAccountColor}}">{{if .DestinationProviderMark}}{{.DestinationProviderMark}}{{else}}•{{end}}</span>{{else}}<span class="ui-row__account-mark" data-cb-color="{{if .DestinationAccountColor}}{{.DestinationAccountColor}}{{else}}#6B7280{{end}}">{{if .DestinationProviderMark}}{{.DestinationProviderMark}}{{else}}•{{end}}</span>{{end}}
+                                    <span class="contas-transfer-row__account" title="{{.DestinationAccountName}}">{{.DestinationAccountName}}</span>
+                                {{else}}
+                                    <span class="ui-row__account-mark" data-cb-color="#6B7280">?</span>
+                                    <span class="contas-transfer-row__account">Destino não informado</span>
+                                {{end}}
+                            </span>
+                        </span>
+                    </span>
+                </button>
+                <span class="ui-row__actions contas-transfer-row__end">
+                    <span class="ui-row__amount is-transfer" data-sensitive>R$ {{.AmountMoney.Reais}}{{.AmountMoney.Cents}}</span>
+                    <span class="contas-transfer-row__date-line">
+                        <span class="contas-transfer-row__date">{{.DateLabel}}</span>
+                        <button type="button"
+                            class="ui-row__action ui-row__action--desktop"
+                            hx-get="/transacoes/{{.ID}}"
+                            hx-target="#bottom-sheet-container"
+                            hx-swap="innerHTML"
+                            hx-push-url="false"
+                            aria-label="Editar transferência: {{if .Description}}{{.Description}}{{else}}Transferência{{end}}">
+                            <i data-lucide="pencil" aria-hidden="true"></i>
+                        </button>
+                    </span>
+                    <span class="contas-transfer-row__badges">
+                        <span class="ui-badge {{if .IsOverdue}}ui-badge--danger{{else}}ui-badge--warning{{end}}">{{if .IsOverdue}}Atrasada{{else}}Pendente{{end}}</span>
+                        {{if .HasInstallmentInfo}}<span class="ui-badge ui-badge--neutral">{{.InstallmentNumber}}/{{.TotalInstallments}}</span>{{end}}
+                        {{if .IsRecurring}}<span class="ui-badge ui-badge--accent">Recorrente</span>{{end}}
+                    </span>
+                </span>
+            </article>
+        </div>
+        {{else if .IsInvoice}}
         <a id="invoice-{{.ID}}" href="/cartoes/faturas/{{.ID}}" class="ui-row ui-row--link{{if .IsOverdue}} is-overdue{{end}}">
             <span class="ui-avatar{{if and (not .ProviderLogoPath) (not .ProviderMark)}} ui-avatar--warning{{end}}" data-cb-color="{{.AccountColor}}">
                 {{if .ProviderLogoPath}}<img src="{{assetPath .ProviderLogoPath}}" alt="" width="34" height="34" data-avatar-fallback><span class="hidden" data-avatar-text>{{if .ProviderMark}}{{.ProviderMark}}{{else}}CB{{end}}</span>{{else if .ProviderMark}}{{.ProviderMark}}{{else}}<i data-lucide="credit-card" aria-hidden="true"></i>{{end}}
@@ -229,7 +325,12 @@
         {{end}}
         {{end}}
         </div>
-        {{if $hasSwipeable}}
+        {{if $hasTransferSwipe}}
+        <aside class="cb-v2-swipe-hint">
+            <i data-lucide="help-circle" class="cb-v2-swipe-hint-icon" aria-hidden="true"></i>
+            <span><strong>Dica de navegação:</strong> Arraste para a Esquerda (&larr;) para confirmar a transferência. Arraste para a Direita (&rarr;) para excluir.</span>
+        </aside>
+        {{else if $hasSwipeable}}
         <aside class="cb-v2-swipe-hint">
             <i data-lucide="help-circle" class="cb-v2-swipe-hint-icon" aria-hidden="true"></i>
             <span><strong>Dica de navegação:</strong> Arraste para a Esquerda (&larr;) para confirmar pagamento/recebimento. Arraste para a Direita (&rarr;) para excluir.</span>
@@ -238,9 +339,9 @@
     </section>
 {{else}}
     <div class="ui-empty">
-        <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="check-circle"></i></span>
-        <p class="ui-empty__title">{{if .Busca}}Nenhum resultado{{else if $isPagar}}Sem contas pendentes{{else}}Sem recebíveis pendentes{{end}}</p>
-        <p class="ui-empty__text">{{if .Busca}}Nenhum resultado para “{{.Busca}}”. Ajuste a busca ou troque o mês.{{else}}Nenhum compromisso {{if $isPagar}}a pagar{{else}}a receber{{end}} neste período.{{end}}</p>
+        <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="{{if $isTransferir}}arrow-left-right{{else}}check-circle{{end}}"></i></span>
+        <p class="ui-empty__title">{{if .Busca}}Nenhum resultado{{else if $isPagar}}Sem contas pendentes{{else if $isReceber}}Sem recebíveis pendentes{{else}}Sem transferências pendentes{{end}}</p>
+        <p class="ui-empty__text">{{if .Busca}}Nenhum resultado para “{{.Busca}}”. Ajuste a busca ou troque o mês.{{else if $isTransferir}}Nenhuma transferência a executar neste período.{{else}}Nenhum compromisso {{if $isPagar}}a pagar{{else}}a receber{{end}} neste período.{{end}}</p>
     </div>
 {{end}}
 </div>

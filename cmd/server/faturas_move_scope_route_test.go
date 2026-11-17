@@ -27,7 +27,7 @@ func TestMoverFaturaParceladaRouteCSRFWorkspaceAndReplay(t *testing.T) {
 	signer := &csrfSigner{secret: bytes.Repeat([]byte{29}, 32), ttl: time.Hour}
 	mux := http.NewServeMux()
 	txBase := handlers.TransactionHandler{DB: db, Templates: transacoesEditarStubTemplates{}}
-	registerTransacoesRoutes(mux, db, authService, signer, &txBase)
+	registerTransacoesRoutes(mux, newSQLDBProvider(db), authService, signer, &txBase)
 	session := createAdminUsersRBACSession(t, authService, "admin-user", models.RoleAdmin)
 
 	form := url.Values{}

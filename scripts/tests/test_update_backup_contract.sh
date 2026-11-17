@@ -104,6 +104,13 @@ write_shims() {
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'cmd:git %s\n' "$*" >> "$EVENT_LOG"
+if [ "${1:-}" = fetch ] && [ -n "${TEST_GIT_REMOTE_DIR:-}" ]; then
+  exec env \
+    GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0="url.file://${TEST_GIT_REMOTE_DIR}.insteadOf" \
+    GIT_CONFIG_VALUE_0="https://github.com/contabase-app/contabase.git" \
+    "$REAL_GIT" "$@"
+fi
 exec "$REAL_GIT" "$@"
 SHIM
 
@@ -116,7 +123,12 @@ if [ "${1:-}" = exec ]; then
   exit 0
 fi
 case "$*" in
-  'compose '*config*) exit 0 ;;
+  'compose '*config*)
+    if [[ "$*" == *'--format json'* ]]; then
+      printf '{"name":"fixture-project","services":{"contabase":{"build":{"context":"."}}}}\n'
+    fi
+    exit 0
+    ;;
   'compose '*"ps -q contabase"*) printf 'fixture-container\n'; exit 0 ;;
   inspect*'{{.Id}}'*) printf 'fixture-container\n'; exit 0 ;;
   inspect*'State.Health'*) printf 'healthy\n'; exit 0 ;;
@@ -126,7 +138,8 @@ case "$*" in
   inspect*'com.docker.compose.project'*) printf 'fixture-project\n'; exit 0 ;;
   inspect*'Mounts'*) printf '/app/data\n'; exit 0 ;;
   inspect*'Config.Image'*) printf 'contabase:fixture-old\n'; exit 0 ;;
-  inspect*'.Image'*) printf 'sha256:fixture-old\n'; exit 0 ;;
+  inspect*'.Image'*) printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'; exit 0 ;;
+  'image inspect '*) printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'; exit 0 ;;
   'image tag '*|'image rm '*) exit 0 ;;
   'compose '*port*) printf '127.0.0.1:8080\n'; exit 0 ;;
   'compose '*logs*) exit 0 ;;
@@ -141,9 +154,9 @@ if [ "${1:-}" = compose ]; then
       fi
       exit 0
       ;;
-    *' up '*' --build '*)
+    *contabase-activate.*' up '*' --no-build '*)
       printf '%s\n' "${VERSION:-}" > "$RUNTIME_VERSION_FILE"
-      printf 'event:start_new_runtime cmd=docker_compose_up_build\n' >> "$EVENT_LOG"
+      printf 'event:start_new_runtime cmd=docker_compose_up_candidate\n' >> "$EVENT_LOG"
       if [ "${TEST_SCENARIO:-}" = post_start ]; then
         printf 'event:failure point=new_runtime_start\n' >> "$EVENT_LOG"
         exit 45
@@ -428,6 +441,8 @@ make_git_fixture() {
   local seed="$root/seed" origin="$root/origin.git" install_repo="$root/repo"
   mkdir -p "$seed/scripts/ops" "$seed/scripts/lib" "$seed/templates" "$seed/assets"
   "$REAL_CP" "$REPO_DIR/scripts/lib/contabase-recovery.sh" "$seed/scripts/lib/contabase-recovery.sh"
+  "$REAL_CP" "$REPO_DIR/scripts/lib/contabase-install-state.sh" "$seed/scripts/lib/contabase-install-state.sh"
+  "$REAL_CP" "$REPO_DIR/scripts/lib/contabase-update-wrapper.sh" "$seed/scripts/lib/contabase-update-wrapper.sh"
   "$REAL_GIT" -C "$seed" init -q -b main
   "$REAL_GIT" -C "$seed" config user.name Fixture
   "$REAL_GIT" -C "$seed" config user.email fixture@example.invalid
@@ -468,6 +483,8 @@ SHIM
   "$REAL_GIT" -C "$seed" remote add origin "$origin"; "$REAL_GIT" -C "$seed" push -q -u origin main
   "$REAL_GIT" --git-dir="$origin" symbolic-ref HEAD refs/heads/main
   "$REAL_GIT" clone -q "$origin" "$install_repo"
+  "$REAL_GIT" -C "$install_repo" remote set-url origin https://github.com/contabase-app/contabase.git
+  printf '%s\n' "$origin" > "$root/origin-path"
   printf 'v0.1.0-beta.8\n' > "$seed/VERSION"
   "$REAL_GIT" -C "$seed" add VERSION; "$REAL_GIT" -C "$seed" commit -qm beta8; "$REAL_GIT" -C "$seed" push -q origin main
   printf '%s' "$install_repo"
@@ -477,6 +494,11 @@ prepare_runtime_env() {
   local root="$1" mode="$2" scenario="$3"
   export TEST_MODE="$mode" TEST_SCENARIO="$scenario"
   export EVENT_LOG="$root/events.log" ARGS_LOG="$root/args.log" COUNTER_FILE="$root/counter"
+  if [ -f "$root/origin-path" ]; then
+    export TEST_GIT_REMOTE_DIR="$(cat "$root/origin-path")"
+  else
+    unset TEST_GIT_REMOTE_DIR
+  fi
   export TEST_APP_DIR="$root/app" TEST_TMP_BINARY="$root/tmp/contabase"
   export TEST_SERVICE_FILE="$root/systemd/contabase.service" TEST_LOCAL_BIN="$root/local-bin"
   export TEST_DATA_DIR="$root/data" TEST_USER="$(id -un)"
@@ -533,6 +555,7 @@ trap '__entrypoint_test_debug' DEBUG
 ENTRY
   set +e
   (cd "$repo" && DATA_DIR="$TEST_DATA_DIR" CONTABASE_VERSION=v0.1.0-beta.8 \
+    CONTABASE_STATE_FILE="$root/etc/contabase/install-state.env" \
     BASH_ENV="$bash_env" bash "$repo/scripts/update-contabase-source.sh") >"$output" 2>&1
   rc=$?; set -e; printf '%s' "$rc"
 }

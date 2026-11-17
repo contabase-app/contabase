@@ -68,6 +68,14 @@ func TestLancamentosResumoStatusOrderPutsDirectionalMetricsFirst(t *testing.T) {
 			t.Fatalf("métrica de lifecycle não pode ser primária: %#v", item)
 		}
 	}
+	// Presentation contract requested by D4-C1: confirmed inflow points down
+	// (money entering the workspace) while confirmed outflow points up.
+	if items[0].Icon != "arrow-down" || items[0].Tone != ToneOK {
+		t.Fatalf("Entradas confirmadas deve usar arrow-down/verde: %#v", items[0])
+	}
+	if items[1].Icon != "arrow-up" || items[1].Tone != ToneDanger {
+		t.Fatalf("Saídas confirmadas deve usar arrow-up/vermelha: %#v", items[1])
+	}
 }
 
 // A: receita confirmada alimenta Entradas confirmadas.

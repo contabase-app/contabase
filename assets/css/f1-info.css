@@ -1,0 +1,219 @@
+/* F1: explicações sob demanda junto aos indicadores.
+   O botão mantém 44px de área de toque; o painel é inline e não depende de hover. */
+
+.f1-info-label {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.f1-info-button {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  margin: -10px -8px -10px -10px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ui-text-muted, var(--v2-muted));
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.f1-info-button:hover {
+  color: var(--ui-text, var(--v2-text));
+  background: color-mix(in srgb, currentColor 9%, transparent);
+}
+
+.f1-info-button:focus-visible {
+  outline: 2px solid var(--ui-accent, var(--v2-accent));
+  outline-offset: 2px;
+}
+
+.f1-info-button[aria-expanded="true"] {
+  color: var(--ui-accent, var(--v2-accent));
+  background: color-mix(in srgb, var(--ui-accent, var(--v2-accent)) 10%, transparent);
+}
+
+.f1-info-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.f1-info-panel {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 4px 0 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border, var(--v2-border));
+  border-radius: 10px;
+  background: var(--ui-surface-raised, var(--v2-surface-raised));
+  color: var(--ui-text-muted, var(--v2-muted));
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.f1-info-panel[hidden] {
+  display: none;
+}
+
+.f1-info-panel__summary {
+  margin: 0;
+  color: var(--ui-text, var(--v2-text));
+}
+
+.f1-info-panel__details {
+  margin-top: 6px;
+}
+
+.f1-info-panel__details summary {
+  min-height: 44px;
+  align-content: center;
+  cursor: pointer;
+  color: var(--ui-text-muted, var(--v2-muted));
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* F1-O: seletor compacto de período das Obrigações. */
+.f1-info-label--obligations {
+  flex-wrap: nowrap;
+  row-gap: 2px;
+}
+
+/* Dashboard: seletor junto ao rótulo; no mobile, abaixo do rótulo. */
+.wallet-kpi-row--obligations {
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "dot label toggle value";
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 4px;
+}
+
+.wallet-kpi-row--obligations .wallet-kpi-dot {
+  grid-area: dot;
+  align-self: center;
+}
+
+.wallet-kpi-row--obligations .wallet-kpi-label {
+  grid-area: label;
+  min-width: 0;
+}
+
+.wallet-kpi-row--obligations .wallet-kpi-value {
+  grid-area: value;
+  justify-self: end;
+}
+
+.wallet-kpi-row--obligations .f1-obligations-note {
+  grid-column: 1 / -1;
+  display: block;
+  padding-left: 0;
+  margin: 0;
+}
+
+.wallet-kpi-row--obligations .f1-window-toggle {
+  grid-area: toggle;
+  justify-self: start;
+  margin-left: 0;
+}
+
+@media (max-width: 699px) {
+  .wallet-kpi-row--obligations {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "dot label value"
+      ". toggle .";
+  }
+}
+
+.f1-info-label__main {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+/* Valores dos indicadores secundários: presença menor, sem perder leitura. */
+.wallet-kpi-value {
+  font-size: 16px;
+  font-weight: 560;
+  letter-spacing: -0.01em;
+}
+
+@media (max-width: 1023px) {
+  .wallet-kpi-value {
+    font-size: clamp(14px, 3.9vw, 16px);
+  }
+}
+
+@media (max-width: 699px) {
+  .wallet-kpi-value {
+    font-size: 14px;
+  }
+}
+
+.f1-window-toggle {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 2px;
+  margin-left: 0;
+  padding: 2px;
+  border: 1px solid var(--ui-border, var(--v2-border));
+  border-radius: 10px;
+  background: var(--ui-surface, var(--v2-surface));
+  vertical-align: middle;
+}
+
+.f1-window-option {
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -8px 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ui-text-muted, var(--v2-muted));
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.f1-window-option:hover {
+  color: var(--ui-text, var(--v2-text));
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+
+.f1-window-option:focus-visible {
+  outline: 2px solid var(--ui-accent, var(--v2-accent));
+  outline-offset: 1px;
+}
+
+.f1-window-option[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--ui-accent, var(--v2-accent)) 12%, transparent);
+  color: var(--ui-accent, var(--v2-accent));
+}
+
+.f1-window-option:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.f1-info-panel__details summary:focus-visible {
+  outline: 2px solid var(--ui-accent, var(--v2-accent));
+  outline-offset: 2px;
+}
+
+.f1-info-panel__details p {
+  margin: 2px 0 0;
+}

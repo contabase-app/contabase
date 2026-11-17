@@ -818,7 +818,7 @@ func printCategoryReseedHelp(cmd *flag.FlagSet) {
 	fmt.Println("ATENÇÃO:")
 	fmt.Println("  1. Dry-run é o comportamento padrão (não altera dados).")
 	fmt.Println("  2. Faça backup antes de aplicar (scripts/ops/backup.sh).")
-	fmt.Println("  3. Categorias com lançamentos, recorrências, limites ou caixinhas são preservadas.")
+	fmt.Println("  3. Categorias com lançamentos, recorrências ou limites são preservadas.")
 	fmt.Println("  4. Categorias filhas com dependências preservam seus pais automaticamente.")
 	fmt.Println()
 	cmd.PrintDefaults()

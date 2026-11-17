@@ -69,45 +69,6 @@ func c2bHandlerFixture(t *testing.T, economicDate string, net int64) (*sql.DB, s
 	return db, services.ClassifyInvestmentSettlementInput{WorkspaceID: "r03-ws", InvestmentID: inv.ID, WithdrawalID: w.ID, SettlementRevisionID: s.ID, ApplicationID: a.ID, ExpectedSettlementVersion: s.Version, CreatedBy: "r03-user", RequestID: uuid.NewString(), CategoryID: category, LegacyReconciliationEvidence: "Extratos e resultados gerenciais conferidos; sem receitas ou despesas legadas equivalentes"}
 }
 
-// A fixture that temporarily removes boxes must detach and restore its
-// cross-table triggers. Production guards remain byte-for-byte identical.
-func suspendClassificationReserveTriggersForFixture(t *testing.T, db *sql.DB) func() {
-	t.Helper()
-	rows, err := db.Query(`SELECT name,sql FROM sqlite_schema WHERE type='trigger' AND
- (name IN ('trg_c2b_reserve','trg_c2b_reserve_update') OR name LIKE 'trg_cancellation79_%' OR name LIKE 'trg_reversal80_%') ORDER BY name`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	type definition struct{ name, sql string }
-	var definitions []definition
-	for rows.Next() {
-		var d definition
-		if err = rows.Scan(&d.name, &d.sql); err != nil {
-			rows.Close()
-			t.Fatal(err)
-		}
-		definitions = append(definitions, d)
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, d := range definitions {
-		execTestSQL(t, db, `DROP TRIGGER `+d.name)
-	}
-	return func() {
-		t.Helper()
-		for _, d := range definitions {
-			execTestSQL(t, db, d.sql)
-			var restored string
-			if err := db.QueryRow(`SELECT sql FROM sqlite_schema WHERE type='trigger' AND name=?`, d.name).Scan(&restored); err != nil || restored != d.sql {
-				t.Fatal("reserve guard not restored", d.name, err)
-			}
-		}
-	}
-}
-
 func TestInvestmentClassificationDashboardFinancialQueries(t *testing.T) {
 	for _, net := range []int64{525500, 490000} {
 		t.Run(fmt.Sprint(net), func(t *testing.T) {
@@ -140,7 +101,6 @@ func TestInvestmentClassificationDashboardFinancialQueries(t *testing.T) {
 			type financialSnapshot struct {
 				income, expense, flow, variable, average                       int64
 				accountPercent, accountDirection, totalPercent, totalDirection string
-				reserve                                                        services.WorkspaceReserveBalance
 			}
 			read := func() financialSnapshot {
 				var s financialSnapshot
@@ -151,10 +111,6 @@ func TestInvestmentClassificationDashboardFinancialQueries(t *testing.T) {
 				now := day.AddDate(0, 0, 1).Add(12 * time.Hour)
 				s.accountPercent, s.accountDirection = queryAccountTrend(db, "r03-ws", "r03-account", balance, now)
 				s.totalPercent, s.totalDirection = queryBalanceTrend(db, "r03-ws", balance, now)
-				s.reserve, err = services.CalculateWorkspaceReserveBalance(db, "r03-ws")
-				if err != nil {
-					t.Fatal(err)
-				}
 				return s
 			}
 			before := read()
@@ -228,16 +184,21 @@ func TestInvestmentClassificationAfterTransferKeepsBothAccounts(t *testing.T) {
 	}
 }
 
-func TestInvestmentClassificationLegacyFixtureRestoresReserveGuard(t *testing.T) {
+func TestInvestmentClassificationWorksWithoutReserveDomain(t *testing.T) {
 	db, in := c2bHandlerFixture(t, "2026-03-31", 490000)
 	r, err := services.ClassifyInvestmentSettlementResult(context.Background(), db, in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	execTestSQL(t, db, `INSERT INTO boxes(id,workspace_id,name,category_id) VALUES('c2b-box','r03-ws','Reserva','c2b-loss')`)
-	tenantMetasCategoriesLegacyBoxes(t, db)
-	if _, err = db.Exec(`INSERT INTO box_virtual_ledger(id,box_id,amount,type,source_transaction_id,reference_date) VALUES('forbidden-reserve','c2b-box',-10000,'CONSUME',?,1)`, r.TransactionID); err == nil || !strings.Contains(err.Error(), "classification cannot move reserves") {
-		t.Fatal("reserve guard lost after fixture rebuild", err)
+	if r.TransactionID == "" || r.ResultCents == nil || *r.ResultCents != -10000 {
+		t.Fatalf("classification result = %+v", r)
+	}
+	var reserveObjects int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM sqlite_schema WHERE name IN ('boxes','box_virtual_ledger','box_contribution_lifecycle_events','trg_c2b_reserve','trg_c2b_reserve_update')`).Scan(&reserveObjects); err != nil {
+		t.Fatal(err)
+	}
+	if reserveObjects != 0 {
+		t.Fatalf("reserve schema objects = %d, want 0", reserveObjects)
 	}
 }
 

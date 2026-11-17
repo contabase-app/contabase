@@ -40,9 +40,7 @@ func TestRecurringProjectionNonCardRespectsDefaultPaymentStatusPending(t *testin
 		true,
 		"MONTHLY",
 		"", OptionalCivilWriteDate{}, &totalOccurrences,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction recurring pending: %v", err)
 	}
@@ -77,9 +75,7 @@ func TestRecurringProjectionNonCardKeepsFuturePendingWhenCurrentIsPaid(t *testin
 		true,
 		"MONTHLY",
 		"", OptionalCivilWriteDate{}, &totalOccurrences,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction recurring paid: %v", err)
 	}
@@ -110,9 +106,7 @@ func TestRecurringCreateCreatesSeriesAndPropagatesSeriesID(t *testing.T) {
 		true,
 		"MONTHLY",
 		"", OptionalCivilWriteDate{}, &totalOccurrences,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction recurring series: %v", err)
 	}
@@ -144,9 +138,7 @@ func TestRecurringCreatePersonalContactNullAndCommonTransactionNoSeries(t *testi
 		true,
 		"MONTHLY",
 		"", OptionalCivilWriteDate{}, &totalOccurrences,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction personal recurring: %v", err)
 	}
@@ -165,9 +157,7 @@ func TestRecurringCreatePersonalContactNullAndCommonTransactionNoSeries(t *testi
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction common: %v", err)
 	}
@@ -203,9 +193,7 @@ func TestRecurringCreateBusinessPreservesDueDateAndContact(t *testing.T) {
 		true,
 		"MONTHLY",
 		"contact-fase3", MustOptionalCivilWriteDate("2026-07-20"), &totalOccurrences,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction business recurring: %v", err)
 	}
@@ -239,11 +227,11 @@ func TestRecurringCreateWorkspaceIsolationSeriesID(t *testing.T) {
 
 	totalOccurrences := int64(2)
 	handlerA := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
-	if _, err := handlerA.insertTransaction("EXPENSE", 11000, "Recorrencia Isolada Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-06")), "checking-test", "", "cat-expense-rec", 1, "pending", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, "", false); err != nil {
+	if _, err := handlerA.insertTransaction("EXPENSE", 11000, "Recorrencia Isolada Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-06")), "checking-test", "", "cat-expense-rec", 1, "pending", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, ""); err != nil {
 		t.Fatalf("insert workspace A recurring: %v", err)
 	}
 	handlerB := TransactionHandler{DB: db, WorkspaceID: "ws-other", UserID: "user-other"}
-	if _, err := handlerB.insertTransaction("EXPENSE", 11000, "Recorrencia Isolada Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-06")), "checking-other", "", "cat-expense-other", 1, "pending", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, "", false); err != nil {
+	if _, err := handlerB.insertTransaction("EXPENSE", 11000, "Recorrencia Isolada Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-06")), "checking-other", "", "cat-expense-other", 1, "pending", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, ""); err != nil {
 		t.Fatalf("insert workspace B recurring: %v", err)
 	}
 
@@ -265,7 +253,7 @@ func TestRecurringCardCreatePropagatesSeriesIDToMaterializedOccurrences(t *testi
 
 	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
 	totalOccurrences := int64(3)
-	if _, err := handler.insertTransaction("EXPENSE", 14000, "Recorrencia Cartao Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-07")), "card-test", "", "cat-expense-rec", 1, "paid", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, "", false); err != nil {
+	if _, err := handler.insertTransaction("EXPENSE", 14000, "Recorrencia Cartao Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-07")), "card-test", "", "cat-expense-rec", 1, "paid", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, ""); err != nil {
 		t.Fatalf("insert card recurring: %v", err)
 	}
 
@@ -283,7 +271,7 @@ func TestRecurringCreateSingleEditMarksExceptionAndPreservesSeriesID(t *testing.
 
 	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
 	totalOccurrences := int64(3)
-	if _, err := handler.insertTransaction("EXPENSE", 15000, "Recorrencia Single Nova Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-08")), "checking-test", "", "cat-expense-rec", 1, "pending", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, "", false); err != nil {
+	if _, err := handler.insertTransaction("EXPENSE", 15000, "Recorrencia Single Nova Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-08")), "checking-test", "", "cat-expense-rec", 1, "pending", true, "MONTHLY", "", OptionalCivilWriteDate{}, &totalOccurrences, ""); err != nil {
 		t.Fatalf("insert recurring for single edit: %v", err)
 	}
 	ids := recurringIDsByDescription(t, db, "Recorrencia Single Nova Fase3")
@@ -323,7 +311,7 @@ func TestRecurringCreateFromExistingTransactionCreatesSeriesWithoutDuplicateSequ
 	seedRecurringExpenseCategory(t, db)
 
 	handler := TransactionHandler{DB: db, WorkspaceID: "ws-test", UserID: "user-test"}
-	if _, err := handler.insertTransaction("EXPENSE", 16000, "Transacao Para Fixo Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-09")), "checking-test", "", "cat-expense-rec", 1, "pending", false, "", "", OptionalCivilWriteDate{}, nil, "", false); err != nil {
+	if _, err := handler.insertTransaction("EXPENSE", 16000, "Transacao Para Fixo Fase3", "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-07-09")), "checking-test", "", "cat-expense-rec", 1, "pending", false, "", "", OptionalCivilWriteDate{}, nil, ""); err != nil {
 		t.Fatalf("insert common transaction for conversion: %v", err)
 	}
 	ids := recurringIDsByDescription(t, db, "Transacao Para Fixo Fase3")
@@ -564,9 +552,7 @@ func TestRecurringDailyTogglePaymentOnlySelectedOccurrence(t *testing.T) {
 		true,
 		"DAILY",
 		"", OptionalCivilWriteDate{}, &totalOccurrences,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction recurring daily: %v", err)
 	}
@@ -629,9 +615,7 @@ func TestInstallmentSeriesUpdateUsesAmountPerInstallment(t *testing.T) {
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction installment series: %v", err)
 	}
@@ -716,9 +700,7 @@ func TestInsertTransactionInstallmentsDistributeRemainderToFirstInstallment(t *t
 				false,
 				"",
 				"", OptionalCivilWriteDate{}, nil,
-				"",
-				false,
-			)
+				"")
 			if err != nil {
 				t.Fatalf("insertTransaction: %v", err)
 			}
@@ -784,9 +766,7 @@ func TestRecurringEditBroadScopeRespondsWithListRefreshHeaders(t *testing.T) {
 		true,
 		"MONTHLY",
 		"", OptionalCivilWriteDate{}, &totalOccurrences,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction recurring: %v", err)
 	}
@@ -825,8 +805,8 @@ func TestRecurringEditBroadScopeRespondsWithListRefreshHeaders(t *testing.T) {
 		t.Fatalf("HX-Reswap = %q, want %q", rr.Header().Get("HX-Reswap"), "none")
 	}
 	trigger := rr.Header().Get("HX-Trigger")
-	if trigger != "refreshLancamentosList" {
-		t.Fatalf("HX-Trigger = %q, want %q", trigger, "refreshLancamentosList")
+	if !strings.Contains(trigger, "refreshLancamentosList") || !strings.Contains(trigger, "refreshFinancials") {
+		t.Fatalf("HX-Trigger = %q, want refreshLancamentosList and refreshFinancials", trigger)
 	}
 
 	body := rr.Body.String()
@@ -864,9 +844,7 @@ func TestRecurringEditAllScopeKeepsFutureOccurrenceStatuses(t *testing.T) {
 		true,
 		"DAILY",
 		"", OptionalCivilWriteDate{}, &totalOccurrences,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction recurring: %v", err)
 	}
@@ -923,9 +901,7 @@ func TestRecurringEditFutureScopeDoesNotChangePastOccurrence(t *testing.T) {
 		true,
 		"DAILY",
 		"", OptionalCivilWriteDate{}, &totalOccurrences,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction recurring: %v", err)
 	}
@@ -1068,9 +1044,7 @@ func TestRecurringEditAllScopeDoesNotChangeOtherWorkspace(t *testing.T) {
 		true,
 		"DAILY",
 		"", OptionalCivilWriteDate{}, &totalOccurrences,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction recurring: %v", err)
 	}
@@ -1127,9 +1101,7 @@ func TestRecurringEditSingleScopeKeepsRowSwap(t *testing.T) {
 		true,
 		"MONTHLY",
 		"", OptionalCivilWriteDate{}, &totalOccurrences,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insertTransaction recurring: %v", err)
 	}

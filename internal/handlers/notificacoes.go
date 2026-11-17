@@ -10,15 +10,33 @@ import (
 	"time"
 
 	"github.com/contabase-app/contabase/internal/models"
-
-	"github.com/google/uuid"
 )
 
 type NotificacoesHandler struct {
+	reader      reportQueryer
 	DB          *sql.DB
 	Templates   TemplateEngine
 	WorkspaceID string
 	UserID      string
+
+	// Presentation permissions are resolved from the authenticated member in
+	// cmd/server. Destinations still enforce their own server-side guards.
+	CanReadTransactions    bool
+	CanViewDashboard       bool
+	CanUpdatePaymentStatus bool
+}
+
+const (
+	notificationTargetTransaction = "transaction"
+	notificationTargetInvoice     = "invoice"
+	notificationTargetLimit       = "limit"
+)
+
+func (h *NotificacoesHandler) notificationReader() reportQueryer {
+	if h.reader != nil {
+		return h.reader
+	}
+	return h.DB
 }
 
 type NotificacoesData struct {
@@ -31,6 +49,10 @@ type NotificacoesData struct {
 	ActiveWorkspaceName string
 	IsBusiness          bool
 	Items               []NotificationItem
+
+	CanReadTransactions    bool
+	CanViewDashboard       bool
+	CanUpdatePaymentStatus bool
 }
 
 type NotificationItem struct {
@@ -38,9 +60,26 @@ type NotificationItem struct {
 	Title       string
 	Description string
 	Money       MoneyDisplay
+	HasMoney    bool
 	Icon        string
 	Color       string
 	CreatedAt   int64
+
+	// TargetType/TargetID describe the record behind a computed notification.
+	// They are presentation data only: the destination route re-validates the
+	// workspace and the record before rendering anything.
+	TargetType string
+	TargetID   string
+	CanOpen    bool
+
+	// Payment action data mirrors the existing Lancamentos row contract. The
+	// notification only opens the shared confirmation modal; the POST remains
+	// on the existing status endpoint.
+	CanPay             bool
+	PaymentType        string
+	PaymentAccountID   string
+	PaymentAccountName string
+	PaymentAmount      string
 }
 
 func (h *NotificacoesHandler) HandleExibirNotificacoes(w http.ResponseWriter, r *http.Request) {
@@ -49,9 +88,12 @@ func (h *NotificacoesHandler) HandleExibirNotificacoes(w http.ResponseWriter, r 
 	}
 
 	data := NotificacoesData{
-		Title:               "Notificações",
-		ProfilePhotoURL:     queryUserProfilePhotoURL(h.DB, h.UserID),
-		ActiveWorkspaceName: queryWorkspaceName(h.DB, h.WorkspaceID),
+		Title:                  "Notificações",
+		ProfilePhotoURL:        queryUserProfilePhotoURL(h.DB, h.UserID),
+		ActiveWorkspaceName:    queryWorkspaceName(h.DB, h.WorkspaceID),
+		CanReadTransactions:    h.CanReadTransactions,
+		CanViewDashboard:       h.CanViewDashboard,
+		CanUpdatePaymentStatus: h.CanUpdatePaymentStatus,
 	}
 	data.UserName, data.UserInitials = queryDashboardUser(h.DB, h.UserID)
 	data.Items = append(data.Items, h.pendingOverdueExpenses()...)
@@ -60,9 +102,6 @@ func (h *NotificacoesHandler) HandleExibirNotificacoes(w http.ResponseWriter, r 
 	data.IsBusiness = isBusiness
 	data.AppShellAccess = QueryAppShellAccess(h.DB, h.WorkspaceID, h.UserID, isBusiness)
 	data.Items = append(data.Items, h.exceededCostLimits(isBusiness)...)
-	data.Items = append(data.Items, h.boxesInOverdraft(isBusiness)...)
-	data.Items = append(data.Items, h.completedBoxGoals(isBusiness)...)
-	data.Items = append(data.Items, h.caixinhaPersistedNotifications()...)
 	data.Items = append(data.Items, h.scheduledPaymentNotifications()...)
 	data.Items = h.visibleItemsForUser(data.Items)
 	data.NotificationCount = len(data.Items)
@@ -73,7 +112,12 @@ func (h *NotificacoesHandler) HandleExibirNotificacoes(w http.ResponseWriter, r 
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	buf.WriteString(NotificationBadgeHTML(h.DB, h.UserID, h.WorkspaceID))
+	// OOB-only update: a full document load already renders the sink inside the
+	// app shell. Appending a second #notification-badge here duplicated the id in
+	// the DOM; HTMX responses still receive the OOB span.
+	if r.Header.Get("HX-Request") == "true" {
+		buf.WriteString(NotificationBadgeHTML(h.DB, h.UserID, h.WorkspaceID))
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	buf.WriteTo(w)
@@ -131,12 +175,12 @@ func (h *NotificacoesHandler) visibleItemsForUser(items []NotificationItem) []No
 
 func (h *NotificacoesHandler) lastClearAt() int64 {
 	var clearAt int64
-	h.DB.QueryRow(`SELECT COALESCE(last_notifications_clear_at, 0) FROM users WHERE id = ?`, h.UserID).Scan(&clearAt)
+	h.notificationReader().QueryRow(`SELECT COALESCE(last_notifications_clear_at, 0) FROM users WHERE id = ?`, h.UserID).Scan(&clearAt)
 	return clearAt
 }
 
 func (h *NotificacoesHandler) dismissedKeys() map[string]bool {
-	rows, err := h.DB.Query(`
+	rows, err := h.notificationReader().Query(`
 		SELECT notification_key
 		FROM user_notification_dismissals
 		WHERE user_id = ? AND workspace_id = ?
@@ -159,16 +203,18 @@ func (h *NotificacoesHandler) pendingOverdueExpenses() []NotificationItem {
 	loc := appTimeLocation()
 	nowTZ := time.Now().In(loc)
 	today := time.Date(nowTZ.Year(), nowTZ.Month(), nowTZ.Day(), 0, 0, 0, 0, time.UTC).Unix()
-	rows, err := h.DB.Query(`
-		SELECT id, description, amount, date, updated_at
-		FROM transactions
-		WHERE workspace_id = ?
-		  AND type = ?
-		  AND status = 'pending'
-		  AND date < ?
-		  AND invoice_id IS NULL
-		  AND scheduled_payment_at IS NULL
-		ORDER BY date ASC, created_at ASC
+	rows, err := h.notificationReader().Query(`
+		SELECT t.id, t.description, t.amount, t.date, t.updated_at,
+			t.account_id, COALESCE(a.name, ''), COALESCE(a.type, '')
+		FROM transactions t
+		JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
+		WHERE t.workspace_id = ?
+		  AND t.type = ?
+		  AND t.status = 'pending'
+		  AND t.date < ?
+		  AND t.invoice_id IS NULL
+		  AND t.scheduled_payment_at IS NULL
+		ORDER BY t.date ASC, t.created_at ASC
 		LIMIT 8
 	`, h.WorkspaceID, models.TransactionTypeExpense, today)
 	if err != nil {
@@ -178,27 +224,40 @@ func (h *NotificacoesHandler) pendingOverdueExpenses() []NotificationItem {
 
 	var items []NotificationItem
 	for rows.Next() {
-		var description string
+		var description, accountID, accountName, accountType string
 		var id string
 		var amount, dateUnix, updatedAt int64
-		if err := rows.Scan(&id, &description, &amount, &dateUnix, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &description, &amount, &dateUnix, &updatedAt,
+			&accountID, &accountName, &accountType); err != nil {
 			continue
 		}
+		amountDisplay := MoneyMinor(amount)
 		items = append(items, NotificationItem{
 			Key:         "transaction:" + id,
 			Title:       "Despesa vencida",
 			Description: fmt.Sprintf("%s · vencida em %s", description, formatDateLabel(dateUnix)),
-			Money:       MoneyMinor(amount),
+			Money:       amountDisplay,
+			HasMoney:    true,
 			Icon:        "clock-alert",
 			Color:       "rose",
 			CreatedAt:   updatedAt,
+			TargetType:  notificationTargetTransaction,
+			TargetID:    id,
+			CanOpen:     h.CanReadTransactions,
+			// Scheduling rejects credit-card purchases. Keep the contextual
+			// action only for transactions the existing flow can handle.
+			CanPay:             h.CanUpdatePaymentStatus && accountType != models.AccountTypeCreditCard,
+			PaymentType:        models.TransactionTypeExpense,
+			PaymentAccountID:   accountID,
+			PaymentAccountName: accountName,
+			PaymentAmount:      formatCurrencyLabel(amount),
 		})
 	}
 	return items
 }
 
 func (h *NotificacoesHandler) closedInvoices() []NotificationItem {
-	rows, err := h.DB.Query(`
+	rows, err := h.notificationReader().Query(`
 		SELECT i.id, a.name, i.reference, i.closing_date, i.due_date,
 			COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) - `+invoiceGeneralRefundTotalIASQL+` AS total
 		FROM invoices i
@@ -231,12 +290,16 @@ func (h *NotificacoesHandler) closedInvoices() []NotificationItem {
 			Title:       "Fatura aguardando pagamento",
 			Description: fmt.Sprintf("%s · ref. %s · vence em %s", cardName, reference, formatDateLabel(dueUnix)),
 			Money:       MoneyMinor(total),
+			HasMoney:    true,
 			Icon:        "triangle-alert",
 			Color:       "amber",
 			// The notification is created when the invoice closes, not when it
 			// becomes due. Due dates are often in the future; using them here
 			// made "Limpar tudo" leave those notifications visible.
-			CreatedAt: closingUnix,
+			CreatedAt:  closingUnix,
+			TargetType: notificationTargetInvoice,
+			TargetID:   invoiceID,
+			CanOpen:    h.CanReadTransactions,
 		})
 	}
 	return items
@@ -247,7 +310,7 @@ func (h *NotificacoesHandler) exceededCostLimits(isBusiness bool) []Notification
 	monthStartDate := appMonthStartUTC(time.Now())
 	monthStart := monthStartDate.Unix()
 	nextMonth := monthStartDate.AddDate(0, 1, 0).Unix()
-	rows, err := h.DB.Query(`
+	rows, err := h.notificationReader().Query(`
 		SELECT cl.id, c.name, cl.max_amount_monthly, COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) AS spent, COALESCE(MAX(t.updated_at), 0) AS latest_tx
 		FROM cost_limits cl
 		JOIN categories c ON c.id = cl.category_id AND c.workspace_id = cl.workspace_id
@@ -282,138 +345,20 @@ func (h *NotificacoesHandler) exceededCostLimits(isBusiness bool) []Notification
 			Title:       title,
 			Description: fmt.Sprintf("%s · limite %s", category, formatCurrencyLabel(maxAmount)),
 			Money:       MoneyMinor(spent - maxAmount),
+			HasMoney:    true,
 			Icon:        "gauge",
 			Color:       "red",
 			CreatedAt:   latestTx,
-		})
-	}
-	return items
-}
-
-func (h *NotificacoesHandler) boxesInOverdraft(isBusiness bool) []NotificationItem {
-	_ = isBusiness
-	rows, err := h.DB.Query(`
-		SELECT b.id, b.name, b.target_amount,
-			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS balance,
-			COALESCE(MAX(l.created_at), unixepoch()) AS latest_ledger
-		FROM boxes b
-		LEFT JOIN box_virtual_ledger l ON l.box_id = b.id
-		WHERE b.workspace_id = ?
-		GROUP BY b.id
-		HAVING balance < 0
-		ORDER BY balance ASC
-		LIMIT 8
-	`, h.WorkspaceID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	var items []NotificationItem
-	for rows.Next() {
-		var boxID, name string
-		var target, balance, latestLedger int64
-		if err := rows.Scan(&boxID, &name, &target, &balance, &latestLedger); err != nil {
-			continue
-		}
-		title := "Reserva em excedente"
-		desc := fmt.Sprintf("%s · voce usou mais do que havia reservado nesta reserva", name)
-		items = append(items, NotificationItem{
-			Key:         "box_overdraft:" + boxID,
-			Title:       title,
-			Description: desc,
-			Money:       MoneyMinor(-balance),
-			Icon:        "alert-triangle",
-			Color:       "rose",
-			CreatedAt:   latestLedger,
-		})
-	}
-	return items
-}
-
-func (h *NotificacoesHandler) completedBoxGoals(isBusiness bool) []NotificationItem {
-	_ = isBusiness
-	rows, err := h.DB.Query(`
-		SELECT b.id, b.name, b.target_amount,
-			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS balance,
-			COALESCE(MAX(l.created_at), unixepoch()) AS latest_ledger
-		FROM boxes b
-		LEFT JOIN box_virtual_ledger l ON l.box_id = b.id
-		WHERE b.workspace_id = ?
-		  AND b.target_amount > 0
-		GROUP BY b.id
-		HAVING balance >= b.target_amount
-		ORDER BY balance DESC
-		LIMIT 8
-	`, h.WorkspaceID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	var items []NotificationItem
-	for rows.Next() {
-		var boxID, name string
-		var target, balance, latestLedger int64
-		if err := rows.Scan(&boxID, &name, &target, &balance, &latestLedger); err != nil {
-			continue
-		}
-		title := "Meta de reserva atingida"
-		items = append(items, NotificationItem{
-			Key:         "box_goal:" + boxID,
-			Title:       title,
-			Description: fmt.Sprintf("%s · alcancou a meta de %s", name, formatCurrencyLabel(target)),
-			Money:       MoneyMinor(balance),
-			Icon:        "trophy",
-			Color:       "emerald",
-			CreatedAt:   latestLedger,
-		})
-	}
-	return items
-}
-
-func (h *NotificacoesHandler) caixinhaPersistedNotifications() []NotificationItem {
-	rows, err := h.DB.Query(`
-		SELECT id, title, message, type, created_at
-		FROM user_notifications
-		WHERE user_id = ?
-		  AND workspace_id = ?
-		  AND type LIKE 'caixinha.%'
-		ORDER BY created_at DESC
-		LIMIT 20
-	`, h.UserID, h.WorkspaceID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	var items []NotificationItem
-	for rows.Next() {
-		var id, title, message, notifType string
-		var createdAt int64
-		if err := rows.Scan(&id, &title, &message, &notifType, &createdAt); err != nil {
-			continue
-		}
-		icon := "piggy-bank"
-		color := "violet"
-		if notifType == "caixinha.resgate" {
-			icon = "arrow-up-from-line"
-			color = "amber"
-		}
-		items = append(items, NotificationItem{
-			Key:         "caixinha_notif:" + id,
-			Title:       title,
-			Description: message,
-			Icon:        icon,
-			Color:       color,
-			CreatedAt:   createdAt,
+			TargetType:  notificationTargetLimit,
+			TargetID:    limitID,
+			CanOpen:     h.CanViewDashboard,
 		})
 	}
 	return items
 }
 
 func (h *NotificacoesHandler) scheduledPaymentNotifications() []NotificationItem {
-	rows, err := h.DB.Query(`
+	rows, err := h.notificationReader().Query(`
 		SELECT id, title, message, type, created_at
 		FROM user_notifications
 		WHERE user_id = ?
@@ -446,28 +391,23 @@ func (h *NotificacoesHandler) scheduledPaymentNotifications() []NotificationItem
 			Icon:        icon,
 			Color:       color,
 			CreatedAt:   createdAt,
+			// These rows are execution receipts. user_notifications has no
+			// typed transaction reference, so the card stays informational and
+			// never renders a zero-value amount.
+			HasMoney: false,
 		})
 	}
 	return items
 }
 
-func insertCaixinhaNotification(db *sql.DB, userID, workspaceID, title, message, notificationType string) {
-	userID = strings.TrimSpace(userID)
-	if userID == "" {
-		return
-	}
-	if _, err := db.Exec(`
-		INSERT INTO user_notifications (id, user_id, workspace_id, title, message, type, is_read, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-	`, uuid.NewString(), userID, strings.TrimSpace(workspaceID), strings.TrimSpace(title), strings.TrimSpace(message), strings.TrimSpace(notificationType), time.Now().Unix()); err != nil {
-		log.Printf("insert caixinha notification failed: user=%s ws=%s type=%s err=%v", userID, workspaceID, notificationType, err)
-	}
-}
-
 func NotificationBadgeHTML(db *sql.DB, userID, workspaceID string) string {
 	count := queryDashboardNotificationCount(db, userID, workspaceID)
 	if count > 0 {
-		return fmt.Sprintf(`<span id="notification-badge" hx-swap-oob="true" aria-label="%d notificações não lidas"></span>`, count)
+		label := "notificação não lida"
+		if count > 1 {
+			label = "notificações não lidas"
+		}
+		return fmt.Sprintf(`<span id="notification-badge" hx-swap-oob="true" aria-label="%d %s"></span>`, count, label)
 	}
 	return `<span id="notification-badge" hx-swap-oob="true" class="hidden"></span>`
 }

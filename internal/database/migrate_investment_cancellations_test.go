@@ -16,7 +16,7 @@ import (
 
 func cancellation79Snapshot(t *testing.T, db *sql.DB) map[string][]string {
 	t.Helper()
-	rows, err := db.Query(`SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN('schema_migrations','investment_cancellations','investment_purchase_reversals','investment_record_cancellations') ORDER BY name`)
+	rows, err := db.Query(`SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN('schema_migrations','investment_cancellations','investment_purchase_reversals','investment_record_cancellations','boxes','box_virtual_ledger','box_contribution_lifecycle_events') ORDER BY name`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestMigration79AdditiveUpgradeFreshAndReopen(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if countQueryRows(t, p.DB, `SELECT MAX(version) FROM schema_migrations`) != 82 || countQueryRows(t, p.DB, `SELECT count(*) FROM schema_migrations WHERE version IN(69,78)`) != 0 {
+			if countQueryRows(t, p.DB, `SELECT MAX(version) FROM schema_migrations`) != currentSchemaVersion || countQueryRows(t, p.DB, `SELECT count(*) FROM schema_migrations WHERE version IN(69,78)`) != 0 {
 				t.Fatal("wrong startup registry")
 			}
 			if countQueryRows(t, p.DB, `SELECT count(*) FROM investment_cancellations`) != 0 {
@@ -298,14 +298,22 @@ func TestMigration79BackupFailureStopsBeforeDDL(t *testing.T) {
 	}
 }
 
+func applyMigrations79Through82ForTest(t *testing.T, db *sql.DB) {
+	t.Helper()
+	for _, m := range migrations {
+		if m.version < 79 || m.version > 82 {
+			continue
+		}
+		applyMigrationDirectForTest(t, db, m.version, m.name, m.up)
+	}
+}
+
 func cancellation79ReceiptFixture(t *testing.T) (*sql.DB, map[string]any) {
 	t.Helper()
 	db := migration77Fixture(t)
 	seedInvestmentFixtures(t, db)
 	mustExecOK(t, db, insertValidInvestment)
-	if err := runMigrations(db); err != nil {
-		t.Fatal(err)
-	}
+	applyMigrations79Through82ForTest(t, db)
 	confirmed := time.Date(2026, 10, 31, 15, 0, 0, 0, time.UTC).Unix()
 	mustExecOK(t, db, `INSERT INTO transactions(id,workspace_id,user_id,account_id,destination_account_id,type,amount,date,date_civil,paid_at,paid_date_civil,status,created_at,updated_at)
  VALUES('investment-purchase:initial:inv-1','ws-1','user-1','acc-checking','acc-inv','TRANSFER',100000,unixepoch('2026-01-01 12:00:00'),'2026-01-01',unixepoch('2026-01-01 12:00:00'),'2026-01-01','paid',1,1)`)
@@ -623,7 +631,7 @@ func TestMigration79SupportedHistoricalSchemaAndPartialRefusal(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer p.Close()
-			if countQueryRows(t, p.DB, `SELECT MAX(version) FROM schema_migrations`) != 82 {
+			if countQueryRows(t, p.DB, `SELECT MAX(version) FROM schema_migrations`) != currentSchemaVersion {
 				t.Fatal("historical upgrade did not reach the latest registry")
 			}
 		})

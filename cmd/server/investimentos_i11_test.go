@@ -32,7 +32,6 @@ func investmentI11FinancialState(t *testing.T, h *investimentosRoutesHarness) st
 	t.Helper()
 	var state string
 	err := h.db.QueryRow(`SELECT (SELECT COUNT(*) FROM transactions) || ':' ||
-		(SELECT COUNT(*) FROM box_virtual_ledger) || ':' ||
 		(SELECT COUNT(*) FROM investment_valuations) || ':' ||
 		group_concat(id || ':' || current_balance) FROM (SELECT id,current_balance FROM accounts ORDER BY id)`).Scan(&state)
 	if err != nil {
@@ -233,7 +232,6 @@ func investmentI12LedgerState(t *testing.T, h *investimentosRoutesHarness) strin
 	t.Helper()
 	var state string
 	if err := h.db.QueryRow(`SELECT (SELECT COUNT(*) FROM transactions) || ':' ||
-        (SELECT COUNT(*) FROM box_virtual_ledger) || ':' ||
         group_concat(id || ':' || current_balance) FROM (SELECT id,current_balance FROM accounts ORDER BY id)`).Scan(&state); err != nil {
 		t.Fatal(err)
 	}

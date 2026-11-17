@@ -5,18 +5,23 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/contabase-app/contabase/internal/auth"
 	"github.com/contabase-app/contabase/internal/database"
 	"github.com/contabase-app/contabase/internal/handlers"
+	"github.com/contabase-app/contabase/internal/runtimelease"
+	"github.com/google/uuid"
 )
 
 var (
 	errServerRuntimeUnavailable  = errors.New("server runtime unavailable")
 	errRestoreRevalidationDenied = errors.New("restore revalidation denied")
+	errServerRuntimeBusy         = errors.New("server runtime busy")
 )
 
 const (
@@ -25,6 +30,9 @@ const (
 	serverRuntimeStageScheduled = "scheduled"
 	serverRuntimeStageRecurring = "recurring"
 	serverRuntimeStageSessions  = "sessions"
+
+	serverRuntimeReplaceWait    = 5 * time.Second
+	serverRuntimeImportReadWait = 5 * time.Second
 )
 
 type serverRuntimeStartHooks struct {
@@ -43,7 +51,8 @@ type serverRuntimeOptions struct {
 }
 
 type serverRuntime struct {
-	DBs *database.RuntimeDBs
+	DBs          *database.RuntimeDBs
+	generationID string
 
 	cancel        context.CancelFunc
 	fallback      *handlers.RecurringMaterializationFallback
@@ -214,13 +223,21 @@ func (r *serverRuntime) Close() error {
 }
 
 type serverRuntimeCoordinator struct {
-	mu      sync.RWMutex
-	current *serverRuntime
-	bind    func(*serverRuntime)
+	mu          sync.RWMutex
+	current     *serverRuntime
+	bind        func(*serverRuntime)
+	replaceWait time.Duration
 }
 
 func newServerRuntimeCoordinator(current *serverRuntime, bind func(*serverRuntime)) *serverRuntimeCoordinator {
-	coordinator := &serverRuntimeCoordinator{current: current, bind: bind}
+	if current != nil && current.generationID == "" {
+		current.generationID = uuid.NewString()
+	}
+	coordinator := &serverRuntimeCoordinator{
+		current:     current,
+		bind:        bind,
+		replaceWait: serverRuntimeReplaceWait,
+	}
 	if current != nil && bind != nil {
 		bind(current)
 	}
@@ -242,12 +259,100 @@ func (c *serverRuntimeCoordinator) Read(fn func(*serverRuntime) error) error {
 	return fn(c.current)
 }
 
+// ReadContext acquires the shared runtime lease with a cancellation boundary.
+// A request that gives up while waiting must not keep a latent reader behind a
+// waiting writer; the cleanup goroutine releases the lease if it is acquired
+// after the caller has already returned.
+func (c *serverRuntimeCoordinator) ReadContext(ctx context.Context, fn func(*serverRuntime) error) error {
+	if c == nil {
+		return errServerRuntimeUnavailable
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	acquired := make(chan struct{})
+	go func() {
+		c.mu.RLock()
+		close(acquired)
+	}()
+	select {
+	case <-acquired:
+	case <-ctx.Done():
+		go func() {
+			<-acquired
+			c.mu.RUnlock()
+		}()
+		return ctx.Err()
+	}
+	defer c.mu.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.current == nil || c.current.DBs == nil || c.current.DBs.DB == nil {
+		return errServerRuntimeUnavailable
+	}
+	if fn == nil {
+		return nil
+	}
+	if err := fn(c.current); err != nil {
+		return err
+	}
+	return ctx.Err()
+}
+
+// Replace uses the same bounded admission as ReplaceContext for callers
+// without a request context. Production restore paths use
+// ReplaceContext so a client disconnect cannot leave an import queued forever.
 func (c *serverRuntimeCoordinator) Replace(revalidate func(*serverRuntime) error, swap func(*serverRuntime) (*serverRuntime, error)) error {
+	return c.ReplaceContext(context.Background(), revalidate, swap)
+}
+
+// ReplaceContext waits a bounded amount of time for exclusive runtime access.
+// It probes with TryLock so a timed-out caller leaves no queued writer behind:
+// a pending Lock call would keep blocking new readers even after the request
+// had already received its bounded failure. Under continuous reader traffic the
+// writer may time out with errServerRuntimeBusy, which is preferable to an
+// unbounded queue.
+func (c *serverRuntimeCoordinator) ReplaceContext(ctx context.Context, revalidate func(*serverRuntime) error, swap func(*serverRuntime) (*serverRuntime, error)) error {
 	if c == nil || swap == nil {
 		return errServerRuntimeUnavailable
 	}
-	c.mu.Lock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	wait := c.replaceWait
+	if wait <= 0 {
+		wait = serverRuntimeReplaceWait
+	}
+	start := time.Now()
+	deadline := start.Add(wait)
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			slog.Info("server_runtime_replace_canceled", "wait_ms", time.Since(start).Milliseconds())
+			return err
+		}
+		if !time.Now().Before(deadline) {
+			slog.Warn("server_runtime_replace_lock_timeout", "wait_ms", time.Since(start).Milliseconds())
+			return errServerRuntimeBusy
+		}
+		if c.mu.TryLock() {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			slog.Info("server_runtime_replace_canceled", "wait_ms", time.Since(start).Milliseconds())
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 	defer c.mu.Unlock()
+	slog.Info("server_runtime_replace_lock_acquired", "wait_ms", time.Since(start).Milliseconds())
+	if err := ctx.Err(); err != nil {
+		slog.Info("server_runtime_replace_canceled_after_lock", "wait_ms", time.Since(start).Milliseconds())
+		return err
+	}
 	if c.current == nil {
 		return errServerRuntimeUnavailable
 	}
@@ -257,9 +362,16 @@ func (c *serverRuntimeCoordinator) Replace(revalidate func(*serverRuntime) error
 			return err
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		slog.Info("server_runtime_replace_canceled_before_commit", "wait_ms", time.Since(start).Milliseconds())
+		return err
+	}
 	c.current = nil
 	next, swapErr := swap(old)
 	if next != nil {
+		if next.generationID == "" {
+			next.generationID = uuid.NewString()
+		}
 		if c.bind != nil {
 			c.bind(next)
 		}
@@ -274,11 +386,8 @@ func (c *serverRuntimeCoordinator) Ping() error {
 	})
 }
 
-type runtimeLeaseContextKey struct{}
-
 func runtimeLeaseHeld(ctx context.Context) bool {
-	held, _ := ctx.Value(runtimeLeaseContextKey{}).(bool)
-	return held
+	return runtimelease.Held(ctx)
 }
 
 func (c *serverRuntimeCoordinator) Middleware(next http.Handler, bypass func(*http.Request) bool) http.Handler {
@@ -291,14 +400,17 @@ func (c *serverRuntimeCoordinator) Middleware(next http.Handler, bypass func(*ht
 			http.Error(w, "runtime lease already held", http.StatusInternalServerError)
 			return
 		}
-		err := c.Read(func(_ *serverRuntime) error {
-			ctx := context.WithValue(r.Context(), runtimeLeaseContextKey{}, true)
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return nil
-		})
-		if errors.Is(err, errServerRuntimeUnavailable) {
+		c.mu.RLock()
+		if c.current == nil || c.current.DBs == nil || c.current.DBs.DB == nil {
+			c.mu.RUnlock()
 			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+			return
 		}
+		release := sync.OnceFunc(c.mu.RUnlock)
+		ctx := runtimelease.WithRelease(r.Context(), release)
+		ctx = runtimelease.WithGeneration(ctx, c.current.generationID)
+		defer runtimelease.Release(ctx)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -321,9 +433,8 @@ func isRuntimeLeaseBypassRequest(r *http.Request) bool {
 		return false
 	}
 	switch r.URL.Path {
-	case "/health", "/setup/restaurar", "/admin/backups/importar":
+	case "/health", "/setup/restaurar", "/admin/backups/importar", "/favicon.ico", "/manifest.json":
 		return true
-	default:
-		return false
 	}
+	return strings.HasPrefix(r.URL.Path, "/assets/")
 }

@@ -104,6 +104,7 @@
 
                     <form class="admin-backup-form"
                           data-backup-dropzone
+                          data-backup-import-form
                           hx-post="/admin/backups/importar"
                           hx-encoding="multipart/form-data"
                           hx-target="#settings-dynamic-payload"
@@ -122,6 +123,26 @@
                                 <span>Arquivo selecionado: <strong data-backup-filename></strong></span>
                             </span>
                         </label>
+
+                        <div class="space-y-3 admin-backup-note">
+                            <label class="block space-y-1.5">
+                                <span class="text-[10px] font-bold uppercase tracking-wider">Manifesto SHA-256 (.manifest.json)</span>
+                                <input type="file" name="manifest_file" accept=".json,.manifest.json" class="block w-full text-xs">
+                                <span class="text-[11px] opacity-80">Obrigatório para backups novos. Selecione o arquivo .manifest.json gerado junto do backup .db.</span>
+                            </label>
+                            <label class="flex items-start gap-2 text-[11px]">
+                                <input type="checkbox" name="legacy_restore" value="1" class="mt-0.5">
+                                <span><strong>Restauração legada explícita:</strong> confirma que o backup não possui manifesto e aceita as validações estruturais de schema, integridade e foreign keys. Não use para backups novos com manifesto.</span>
+                            </label>
+                        </div>
+
+                        <p class="admin-backup-note hidden" data-backup-import-state role="status"></p>
+
+                        <div class="hidden" data-backup-import-status tabindex="-1">
+                            <i data-lucide="circle-alert" aria-hidden="true" data-backup-import-status-icon></i>
+                            <span data-backup-import-status-text></span>
+                            <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-backup-import-dismiss>Dispensar</button>
+                        </div>
 
                         <div class="admin-backup-form__actions">
                             <button type="submit" class="ui-btn admin-danger-btn disabled:cursor-wait disabled:opacity-60">

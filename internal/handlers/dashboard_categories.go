@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"fmt"
 	"hash/fnv"
 	"math/big"
@@ -50,7 +49,7 @@ const dashboardCategoriesLimit = 5
 // criterion (transaction date), net of refunds and excluding invoice payments,
 // so a card purchase is counted once and the invoice payment never appears as a
 // second expense. It never invents a historical snapshot or a cash-flow rule.
-func BuildDashboardCategories(db *sql.DB, workspaceID string, now time.Time) DashboardCategoriesData {
+func BuildDashboardCategories(db reportQueryer, workspaceID string, now time.Time) DashboardCategoriesData {
 	data := DashboardCategoriesData{}
 	if db == nil || strings.TrimSpace(workspaceID) == "" {
 		return data
@@ -74,10 +73,12 @@ func BuildDashboardCategories(db *sql.DB, workspaceID string, now time.Time) Das
 
 	currentBars, currentTotal, err := queryDashboardCategoryPeriod(db, workspaceID, currentStart.Unix(), endOfCivilDayUnix(currentEnd))
 	if err != nil {
+		recordDashboardReadError(db, err)
 		return data
 	}
 	previousBars, _, err := queryDashboardCategoryPeriod(db, workspaceID, previousStart.Unix(), endOfCivilDayUnix(previousEnd))
 	if err != nil {
+		recordDashboardReadError(db, err)
 		return data
 	}
 
@@ -239,7 +240,7 @@ func dashboardCategoryTone(id string) int {
 // queryDashboardCategoryPeriod reuses the canonical competence query from
 // Relatórios. Amounts are net of transaction refunds and invoice payments are
 // excluded through the same invoice_payments lineage used by the reports.
-func queryDashboardCategoryPeriod(db *sql.DB, workspaceID string, start, end int64) ([]CategoriaBar, int64, error) {
+func queryDashboardCategoryPeriod(db reportQueryer, workspaceID string, start, end int64) ([]CategoriaBar, int64, error) {
 	rows, err := db.Query(`
 		SELECT
 			COALESCE(c.id, ''),

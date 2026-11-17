@@ -345,10 +345,10 @@ func queryBalanceSeriesLifecycles(ctx context.Context, tx *sql.Tx, workspaceID s
 	return lifecycles, nil
 }
 
-// queryCanonicalActiveRealBalance mirrors the account filter used by
-// services.CalculateWorkspaceReserveBalance for the real balance: every active
-// non-credit-card account. It runs in the same read transaction as the points so
-// the reconciliation anchor and the series share one snapshot.
+// queryCanonicalActiveRealBalance uses the same account filter as the real
+// balance: every active non-credit-card account. It runs in the same read
+// transaction as the points so the reconciliation anchor and the series share
+// one snapshot.
 func queryCanonicalActiveRealBalance(ctx context.Context, tx *sql.Tx, workspaceID string) (int64, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT current_balance

@@ -136,9 +136,6 @@ func TestRuntimeDBsOwnsEachJobExactlyOnceAndCloseIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open runtime dbs: %v", err)
 	}
-	seedMonthlyRechargeWorkspace(t, owner.DB, "ws-runtime-activation")
-	insertMonthlyRechargeBox(t, owner.DB, "box-runtime-activation", "ws-runtime-activation", 1000, 0, time.Now().AddDate(0, -1, 0).Unix())
-
 	assertNoJobEvent(t, started, "dormant owner")
 	activationErrors := make(chan error, 2)
 	for i := 0; i < 2; i++ {
@@ -149,19 +146,18 @@ func TestRuntimeDBsOwnsEachJobExactlyOnceAndCloseIsIdempotent(t *testing.T) {
 			t.Fatalf("concurrent activate runtime dbs: %v", err)
 		}
 	}
-	waitForJobEvents(t, started, 3, "start")
-	waitForAutomaticRecharge(t, owner.DB, "box-runtime-activation", time.Now().UTC().Format("2006-01"), 1)
+	waitForJobEvents(t, started, 2, "start")
 	if err := owner.Close(); err != nil {
 		t.Fatalf("first close: %v", err)
 	}
-	waitForJobEvents(t, stopped, 3, "stop")
+	waitForJobEvents(t, stopped, 2, "stop")
 	if err := owner.Close(); err != nil {
 		t.Fatalf("second close: %v", err)
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
-	for _, name := range []string{"auto_backup", "security_log_pruner", "monthly_engine"} {
+	for _, name := range []string{"auto_backup", "security_log_pruner"} {
 		if starts[name] != 1 || stops[name] != 1 {
 			t.Fatalf("job %s lifecycle starts=%d stops=%d, want 1/1", name, starts[name], stops[name])
 		}
@@ -174,53 +170,6 @@ func TestRuntimeDBsOwnsEachJobExactlyOnceAndCloseIsIdempotent(t *testing.T) {
 	}
 	if err := owner.Activate(); !errors.Is(err, errRuntimeDBsClosed) {
 		t.Fatalf("activate after Close error = %v, want %v", err, errRuntimeDBsClosed)
-	}
-}
-
-func TestOpenRuntimeDBsDormantAbandonmentPersistsNoMonthlyEffect(t *testing.T) {
-	dataDir := t.TempDir()
-	t.Setenv("DATA_DIR", dataDir)
-	t.Setenv("CONTABASE_TIMEZONE", "UTC")
-	dbPath := filepath.Join(dataDir, "dormant-abandonment.db")
-	started := make(chan string, 1)
-	owner, err := openRuntimeDBs("file:"+dbPath, &sqliteRuntimeOpenTestHooks{
-		jobs: &sqliteRuntimeJobHooks{onStart: func(name string) { started <- name }},
-	})
-	if err != nil {
-		t.Fatalf("open dormant runtime dbs: %v", err)
-	}
-
-	seedMonthlyRechargeWorkspace(t, owner.DB, "ws-dormant")
-	insertMonthlyRechargeBox(t, owner.DB, "box-dormant", "ws-dormant", 2500, 0, time.Now().AddDate(0, -1, 0).Unix())
-	beforeCount, beforeSum := monthlyRechargeLedgerCountAndSum(t, owner.DB, "box-dormant")
-	var beforeAnchor sql.NullString
-	if err := owner.DB.QueryRow(`SELECT monthly_recharge_anchor_month FROM boxes WHERE id = 'box-dormant'`).Scan(&beforeAnchor); err != nil {
-		t.Fatalf("query dormant anchor before abandonment: %v", err)
-	}
-	assertNoJobEvent(t, started, "OpenRuntimeDBs")
-
-	if err := owner.Close(); err != nil {
-		t.Fatalf("close dormant runtime dbs: %v", err)
-	}
-	if err := owner.Activate(); !errors.Is(err, errRuntimeDBsClosed) {
-		t.Fatalf("activate abandoned owner error = %v, want %v", err, errRuntimeDBsClosed)
-	}
-
-	reopened, err := OpenRuntimeDBs("file:" + dbPath)
-	if err != nil {
-		t.Fatalf("reopen abandoned database: %v", err)
-	}
-	defer reopened.Close()
-	afterCount, afterSum := monthlyRechargeLedgerCountAndSum(t, reopened.DB, "box-dormant")
-	if afterCount != beforeCount || afterSum != beforeSum {
-		t.Fatalf("dormant abandonment changed ledger: before=(%d,%d) after=(%d,%d)", beforeCount, beforeSum, afterCount, afterSum)
-	}
-	var afterAnchor sql.NullString
-	if err := reopened.DB.QueryRow(`SELECT monthly_recharge_anchor_month FROM boxes WHERE id = 'box-dormant'`).Scan(&afterAnchor); err != nil {
-		t.Fatalf("query dormant anchor after abandonment: %v", err)
-	}
-	if afterAnchor != beforeAnchor {
-		t.Fatalf("dormant abandonment changed anchor: before=%+v after=%+v", beforeAnchor, afterAnchor)
 	}
 }
 
@@ -386,10 +335,10 @@ func TestDatabaseOpenPreservesSinglePoolContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("database.Open: %v", err)
 	}
-	waitForJobEvents(t, started, 3, "legacy start")
+	waitForJobEvents(t, started, 2, "legacy start")
 	jobs.cancel()
 	jobs.wait.Wait()
-	waitForJobEvents(t, stopped, 3, "legacy stop")
+	waitForJobEvents(t, stopped, 2, "legacy stop")
 	defer db.Close()
 	if db.Stats().MaxOpenConnections != 1 {
 		t.Fatalf("MaxOpenConnections = %d, want 1", db.Stats().MaxOpenConnections)
@@ -403,7 +352,7 @@ func TestDatabaseOpenPreservesSinglePoolContract(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	for _, name := range []string{"auto_backup", "security_log_pruner", "monthly_engine"} {
+	for _, name := range []string{"auto_backup", "security_log_pruner"} {
 		if starts[name] != 1 || stops[name] != 1 {
 			t.Fatalf("legacy database.Open job %s starts=%d stops=%d, want 1/1", name, starts[name], stops[name])
 		}

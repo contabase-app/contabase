@@ -356,29 +356,55 @@
   align-items: center;
   justify-content: center;
   gap: 0.375rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  min-height: var(--ui-control-height-sm, 2.125rem);
+  padding: 0 12px;
+  border: var(--ui-border-width, 1px) solid transparent;
+  font: inherit;
+  font-size: var(--ui-fs-action, 0.75rem);
+  font-weight: 620;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: none;
+  text-decoration: none;
+  white-space: nowrap;
   border-radius: var(--ui-radius-button, 12px);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color var(--ui-transition, 160ms ease), border-color var(--ui-transition, 160ms ease), color var(--ui-transition, 160ms ease), transform 120ms ease;
+}
+.cb-button:active { transform: scale(.98); }
+.cb-button:focus-visible {
+  outline: 2px solid var(--ui-focus, var(--cb-border-focus));
+  outline-offset: 2px;
 }
 .cb-button-primary {
-  background-color: var(--cb-accent-solid);
-  color: var(--cb-accent-text);
+  background-color: var(--ui-action-bg, var(--cb-accent-solid));
+  color: var(--ui-action-fg, var(--cb-accent-text));
   border-color: transparent;
+  box-shadow: inset 0 1px 0 #ffffff24;
 }
 .cb-button-primary:hover {
-  background-color: var(--cb-accent-hover);
+  background-color: var(--ui-action-bg-hover, var(--cb-accent-hover));
 }
 .cb-button-secondary {
-  background-color: var(--cb-surface-2);
-  border: 1px solid var(--cb-border-strong);
-  color: var(--cb-text-main);
+  background-color: var(--ui-surface-raised, var(--cb-surface-2));
+  border: 1px solid var(--ui-border, var(--cb-border-subtle));
+  color: var(--ui-text, var(--cb-text-main));
 }
 .cb-button-secondary:hover {
-  background-color: var(--cb-surface-3);
+  border-color: var(--ui-border-strong, var(--cb-border-strong));
+  background-color: var(--ui-surface-hover, var(--cb-surface-3));
+}
+/* Destructive action: semantic danger text on a soft danger surface. Keeping
+   the label on a tinted surface preserves AA in both themes; a solid fill with
+   white text would fail on the light danger step used by dark mode. */
+.cb-button-danger {
+  background-color: color-mix(in srgb, var(--ui-danger, var(--cb-danger)) 12%, var(--ui-surface, var(--cb-surface-1)));
+  border-color: color-mix(in srgb, var(--ui-danger, var(--cb-danger)) 34%, var(--ui-border, var(--cb-border-subtle)));
+  color: var(--ui-danger, var(--cb-danger));
+}
+.cb-button-danger:hover {
+  background-color: color-mix(in srgb, var(--ui-danger, var(--cb-danger)) 18%, var(--ui-surface, var(--cb-surface-1)));
+  border-color: color-mix(in srgb, var(--ui-danger, var(--cb-danger)) 50%, var(--ui-border, var(--cb-border-subtle)));
 }
 
 /* Invoice actions stay full-width rows at every breakpoint for clear priority. */
@@ -429,17 +455,18 @@
 .cb-v2-swipe-hint strong { color: var(--cb-text-main); font-weight: 620; }
 .cb-button-ghost {
   background-color: transparent;
-  color: var(--cb-text-muted);
+  color: var(--ui-text-muted, var(--cb-text-muted));
 }
 .cb-button-ghost:hover {
-  background-color: var(--cb-surface-3);
-  color: var(--cb-text-main);
+  background-color: var(--ui-surface-hover, var(--cb-surface-3));
+  color: var(--ui-text, var(--cb-text-main));
 }
 /* Disabled is a shared state contract for every page that uses .cb-button. */
 .cb-button:disabled,
 .cb-button[aria-disabled="true"] {
   opacity: var(--ui-disabled-opacity, .5);
   cursor: not-allowed;
+  transform: none;
 }
 
 /* FAB (Floating Action Button) */
@@ -513,44 +540,65 @@
 
 /* Input */
 .cb-input {
-  background-color: var(--cb-surface-2);
-  border: 1px solid var(--cb-border-strong);
-  color: var(--cb-text-main);
-  height: 2.5rem;
-  padding-left: 0.75rem;
-  padding-right: 0.75rem;
+  background-color: var(--ui-field-bg, var(--cb-surface-2));
+  border: 1px solid var(--ui-field-border, var(--cb-border-strong));
+  color: var(--ui-text, var(--cb-text-main));
+  min-height: var(--ui-control-height, 2.5rem);
+  height: auto;
+  padding: 0 13px;
   border-radius: var(--ui-radius-control, 12px);
-  font-size: 0.875rem;
+  font: inherit;
+  font-size: var(--ui-fs-md, 0.875rem);
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color var(--ui-transition, 0.2s), background-color var(--ui-transition, 0.2s), box-shadow var(--ui-transition, 0.2s);
   width: 100%;
+}
+textarea.cb-input {
+  min-height: 96px;
+  padding-block: 10px;
+  resize: vertical;
 }
 .cb-input-search {
   padding-left: 2.5rem !important;
 }
+.cb-input:hover {
+  border-color: color-mix(in srgb, var(--ui-border-strong, var(--cb-border-strong)) 70%, var(--ui-text-subtle, var(--cb-text-subtle)));
+}
 .cb-input:focus {
-  border-color: var(--cb-field-focus-border);
+  border-color: var(--ui-field-focus-border, var(--cb-field-focus-border));
+  box-shadow: none;
+}
+html[data-input-modality="keyboard"] .cb-input:focus {
+  outline: 2px solid var(--ui-focus, var(--cb-border-focus));
+  outline-offset: 2px;
+}
+.cb-input:disabled {
+  opacity: var(--ui-disabled-opacity, .5);
+  cursor: not-allowed;
 }
 .cb-input::placeholder {
-  color: var(--cb-text-subtle);
+  color: var(--ui-text-subtle, var(--cb-text-subtle));
+}
+@media (max-width: 767px) {
+  .cb-input { font-size: 16px; }
 }
 
 /* Label */
 .cb-label {
-  color: var(--cb-text-muted);
-  font-size: 0.625rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   display: block;
   margin-bottom: 0.375rem;
+  color: var(--ui-text-muted, var(--cb-text-muted));
+  font-size: var(--ui-fs-label, 0.625rem);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 /* Empty State */
 .cb-empty-state {
-  background-color: color-mix(in srgb, var(--cb-surface-1) 50%, transparent);
-  border: 1px dashed var(--cb-border-subtle);
-  border-radius: 12px;
+  background-color: color-mix(in srgb, var(--ui-surface, var(--cb-surface-1)) 70%, transparent);
+  border: 1px dashed var(--ui-border-strong, var(--cb-border-subtle));
+  border-radius: var(--ui-radius-panel, 12px);
   padding: 2rem;
   display: flex;
   flex-direction: column;
@@ -590,18 +638,16 @@
 
 /* Dense card — mais informação por tela, sem perder touch target */
 .cb-card-dense {
-  background-color: var(--cb-surface-1);
-  border: 1px solid var(--cb-border-subtle);
-  border-radius: 1rem;
+  background-color: var(--ui-surface, var(--cb-surface-1));
+  border: 1px solid var(--ui-border, var(--cb-border-subtle));
+  border-radius: var(--ui-radius-panel, 1rem);
+  box-shadow: var(--ui-shadow-panel, none);
   padding: 0.75rem;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color var(--ui-transition, 0.2s), box-shadow var(--ui-transition, 0.2s);
 }
 .cb-card-dense:hover {
-  border-color: var(--cb-border-strong);
-  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.06);
-}
-.dark .cb-card-dense:hover {
-  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.25);
+  border-color: var(--ui-border-strong, var(--cb-border-strong));
+  box-shadow: var(--ui-shadow-panel, 0 4px 12px -2px rgba(0, 0, 0, 0.06));
 }
 
 /* Status chip — pill discreto, >=11px, contraste AA */
@@ -616,16 +662,11 @@
   font-weight: 700;
   white-space: nowrap;
 }
-.cb-status-chip-success { background: color-mix(in srgb, var(--cb-success) 12%, transparent); color: color-mix(in srgb, var(--cb-success) 75%, var(--cb-text-main)); }
-.cb-status-chip-warning { background: color-mix(in srgb, var(--cb-warning) 12%, transparent); color: color-mix(in srgb, var(--cb-warning) 75%, var(--cb-text-main)); }
-.cb-status-chip-danger  { background: color-mix(in srgb, var(--cb-danger) 12%, transparent); color: color-mix(in srgb, var(--cb-danger) 75%, var(--cb-text-main)); }
-.cb-status-chip-info    { background: var(--cb-accent-soft); color: var(--cb-accent-solid); }
-.cb-status-chip-neutral { background: var(--cb-surface-3); color: var(--cb-text-muted); }
-.dark .cb-status-chip-success { background: color-mix(in srgb, var(--cb-success) 18%, transparent); color: color-mix(in srgb, var(--cb-success) 90%, var(--cb-text-main)); }
-.dark .cb-status-chip-warning { background: color-mix(in srgb, var(--cb-warning) 18%, transparent); color: color-mix(in srgb, var(--cb-warning) 90%, var(--cb-text-main)); }
-.dark .cb-status-chip-danger  { background: color-mix(in srgb, var(--cb-danger) 18%, transparent); color: color-mix(in srgb, var(--cb-danger) 90%, var(--cb-text-main)); }
-.dark .cb-status-chip-info    { background: color-mix(in srgb, var(--cb-accent) 18%, transparent); color: color-mix(in srgb, var(--cb-accent) 90%, var(--cb-text-main)); }
-.dark .cb-status-chip-neutral { background: var(--cb-surface-3); color: var(--cb-text-subtle); }
+.cb-status-chip-success { background: color-mix(in srgb, var(--ui-success, var(--cb-success)) 8%, var(--ui-surface, var(--cb-surface-1))); color: var(--ui-success, var(--cb-success)); }
+.cb-status-chip-warning { background: color-mix(in srgb, var(--ui-warning, var(--cb-warning)) 8%, var(--ui-surface, var(--cb-surface-1))); color: var(--ui-warning, var(--cb-warning)); }
+.cb-status-chip-danger  { background: color-mix(in srgb, var(--ui-danger, var(--cb-danger)) 8%, var(--ui-surface, var(--cb-surface-1))); color: var(--ui-danger, var(--cb-danger)); }
+.cb-status-chip-info    { background: color-mix(in srgb, var(--ui-info, var(--cb-info)) 8%, var(--ui-surface, var(--cb-surface-1))); color: var(--ui-info, var(--cb-info)); }
+.cb-status-chip-neutral { background: var(--ui-surface-raised, var(--cb-surface-3)); color: var(--ui-text-muted, var(--cb-text-muted)); }
 
 /* Superfícies semânticas estáticas para templates autenticados. Valores por
    registro (cor de conta, largura e posição) continuam explícitos no ponto de uso. */
@@ -765,13 +806,6 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--cb-text-muted);
-}
-
-/* Label — rótulo secundário padrão */
-.cb-label {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--cb-text-subtle);
 }
 
 /* Label micro — rótulo menor para métricas compactas */
@@ -1203,3 +1237,13 @@ html[data-input-modality="keyboard"] .cb-icon-search:focus-within {
 
   .cb-icon-grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
 }
+
+/* --- Shared scroll affordance -------------------------------------------- */
+/* Horizontal rails and sheets hide the native scrollbar; the scroll behavior
+   and snap geometry stay page-specific. */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }

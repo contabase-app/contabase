@@ -4,8 +4,6 @@
   var sheetTrigger = null;
   var sheetTriggerDescriptor = null;
   var sheetFocusInstalled = false;
-  var pendingMoneyValue = null;
-  var pendingTabFocus = false;
 
   function closeCaixinha(dd) {
     dd.classList.remove('is-open');
@@ -150,7 +148,7 @@
 
   function resolveSheetTrigger(el) {
     if (!el || typeof el.closest !== 'function') return null;
-    var link = el.closest('[data-sheet-trigger], a[href*="/metas/caixinha/historico"], a[href*="/metas/limite/historico"], [hx-get*="/metas/novo"], [hx-get*="/metas/caixinha/aporte/sheet"], [hx-get*="/metas/caixinha/resgate/sheet"]');
+    var link = el.closest('[data-sheet-trigger], a[href*="/metas/limite/historico"], [hx-get*="/metas/novo"]');
     if (!link) return null;
     var dropdown = link.closest('[data-caixinha-dropdown]');
     if (dropdown) {
@@ -191,89 +189,9 @@
     sheetTriggerDescriptor = describeTrigger(trigger);
   }
 
-  function activeMetasTab() {
-    return document.querySelector('#metas-tabs [role="tab"][aria-selected="true"]');
-  }
-
-  function restorePendingTabFocus() {
-    if (!pendingTabFocus) return;
-    pendingTabFocus = false;
-    var active = activeMetasTab();
-    if (active && typeof active.focus === 'function') active.focus();
-  }
-
   function initHistoryFocus() {
     installSheetFocusBridge();
     focusSheet();
-  }
-
-  function moneyIsPositive(value) {
-    var digits = String(value || '').replace(/\D/g, '');
-    return digits !== '' && Number(digits) > 0;
-  }
-
-  function clearMoneyError(form) {
-    if (!form) return;
-    var error = form.querySelector('.metas-form__field-error');
-    if (error) {
-      error.textContent = '';
-      error.classList.add('hidden');
-    }
-    var input = form.querySelector('[name="amount"]');
-    if (input) input.setAttribute('aria-invalid', 'false');
-  }
-
-  function validateMoneyForm(form) {
-    var input = form.querySelector('[name="amount"]');
-    if (!input) return true;
-    if (moneyIsPositive(input.value)) {
-      clearMoneyError(form);
-      return true;
-    }
-    var error = form.querySelector('.metas-form__field-error');
-    if (error) {
-      error.textContent = 'Informe um valor maior que zero.';
-      error.classList.remove('hidden');
-    }
-    input.setAttribute('aria-invalid', 'true');
-    if (typeof input.focus === 'function') input.focus();
-    return false;
-  }
-
-  function captureMoneyForm(form) {
-    if (!form || !form.hasAttribute('data-metas-money-form')) return;
-    var amount = form.querySelector('[name="amount"]');
-    var box = form.querySelector('[name="box_id"]');
-    pendingMoneyValue = {
-      kind: form.getAttribute('data-metas-form-kind') || '',
-      boxID: box ? box.value : '',
-      value: amount ? amount.value : ''
-    };
-  }
-
-  function restoreMoneyValue() {
-    if (!pendingMoneyValue) return;
-    var sheet = sheetInContainer();
-    if (!sheet) {
-      pendingMoneyValue = null;
-      return;
-    }
-    var form = sheet.querySelector('form[data-metas-money-form][data-metas-form-kind="' + pendingMoneyValue.kind + '"]');
-    if (!form) {
-      pendingMoneyValue = null;
-      return;
-    }
-    var box = form.querySelector('[name="box_id"]');
-    if (box && pendingMoneyValue.boxID && box.value !== pendingMoneyValue.boxID) {
-      pendingMoneyValue = null;
-      return;
-    }
-    var amount = form.querySelector('[name="amount"]');
-    if (amount && !amount.value && pendingMoneyValue.value) {
-      amount.value = pendingMoneyValue.value;
-      if (typeof amount.focus === 'function') amount.focus();
-    }
-    pendingMoneyValue = null;
   }
 
   function handleAfterSettle(event) {
@@ -281,7 +199,6 @@
     var sheet = sheetInContainer();
     if (sheet) {
       focusSheet();
-      restoreMoneyValue();
       return;
     }
     if (target && target.id === 'bottom-sheet-container' && target.innerHTML.trim() === '') {
@@ -349,8 +266,6 @@
   }
 
   document.addEventListener('click', function(e) {
-    var tab = e.target.closest ? e.target.closest('#metas-tabs [role="tab"]') : null;
-    if (tab) pendingTabFocus = true;
     captureSheetTrigger(e.target);
     if (e.target.closest('[data-caixinha-dropdown]')) return;
     document.querySelectorAll('[data-caixinha-dropdown].is-open').forEach(function(dd) {
@@ -359,39 +274,17 @@
   });
 
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') {
-      document.querySelectorAll('[data-caixinha-dropdown].is-open').forEach(function(dd) {
-        // Se o foco estava dentro do menu, ESC devolve o foco ao gatilho; o
-        // fechamento por clique externo não rouba o foco do novo alvo.
-        var hadFocus = dd.contains(document.activeElement);
-        closeCaixinha(dd);
-        if (hadFocus) {
-          var toggle = dd.querySelector('[data-ck-toggle]');
-          if (toggle) toggle.focus();
-        }
-      });
-      return;
-    }
-
-    // As abas da página usam ativação manual: setas movem o foco; Enter/Espaço
-    // acionam o HTMX nativo do botão. O tabindex é roving para não duplicar
-    // paradas de Tab. O foco é restaurado após o swap de #metas-tabs.
-    var tab = e.target.closest ? e.target.closest('#metas-tabs [role="tab"]') : null;
-    if (!tab || e.ctrlKey || e.metaKey || e.altKey) return;
-    var tabs = Array.prototype.slice.call(document.querySelectorAll('#metas-tabs [role="tab"]'));
-    if (tabs.length < 2) return;
-    var index = tabs.indexOf(tab);
-    var next = null;
-    if (e.key === 'ArrowRight') next = tabs[(index + 1) % tabs.length];
-    else if (e.key === 'ArrowLeft') next = tabs[(index - 1 + tabs.length) % tabs.length];
-    else if (e.key === 'Home') next = tabs[0];
-    else if (e.key === 'End') next = tabs[tabs.length - 1];
-    if (!next) return;
-    e.preventDefault();
-    tabs.forEach(function(item) {
-      item.setAttribute('tabindex', item === next ? '0' : '-1');
+    if (e.key !== 'Escape') return;
+    document.querySelectorAll('[data-caixinha-dropdown].is-open').forEach(function(dd) {
+      // Se o foco estava dentro do menu, ESC devolve o foco ao gatilho; o
+      // fechamento por clique externo não rouba o foco do novo alvo.
+      var hadFocus = dd.contains(document.activeElement);
+      closeCaixinha(dd);
+      if (hadFocus) {
+        var toggle = dd.querySelector('[data-ck-toggle]');
+        if (toggle) toggle.focus();
+      }
     });
-    next.focus();
   });
 
   // O seletor de ícones é um <dialog> nativo dentro do sheet. O overlay-stack
@@ -406,26 +299,6 @@
       e.stopImmediatePropagation();
     }, true);
   }
-
-  document.addEventListener('submit', function(e) {
-    var form = e.target;
-    if (!form || !form.hasAttribute || !form.hasAttribute('data-metas-money-form')) return;
-    if (validateMoneyForm(form)) return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-  }, true);
-
-  document.addEventListener('input', function(e) {
-    var form = e.target.closest ? e.target.closest('form[data-metas-money-form]') : null;
-    if (!form || e.target.name !== 'amount') return;
-    clearMoneyError(form);
-  });
-
-  document.body.addEventListener('htmx:beforeRequest', function(e) {
-    var elt = e.detail && e.detail.elt;
-    if (!elt || typeof elt.closest !== 'function') return;
-    captureMoneyForm(elt.closest('form[data-metas-money-form]'));
-  });
 
   // Posiciona o chip de percentual sobre a barra: o CSP impede style= no
   // template e mutação de .style no JS, então o percentual chega em
@@ -453,7 +326,6 @@
     init();
     initProgressChips();
     handleAfterSettle(e);
-    restorePendingTabFocus();
   });
 
   initProgressChips();

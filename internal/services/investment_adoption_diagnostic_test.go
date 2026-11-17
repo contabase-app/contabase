@@ -30,7 +30,7 @@ func adoptionHas(d InvestmentAdoptionDiagnostic, code string) bool {
 func adoptionSnapshot(t *testing.T, db *sql.DB) string {
 	t.Helper()
 	var out strings.Builder
-	for _, table := range []string{"accounts", "transactions", "account_balance_adjustments", "box_virtual_ledger", "investments", "investment_purchases", "investment_valuations", "investment_withdrawals", "investment_withdrawal_allocations", "investment_reference_revisions", "investment_reference_coverage", "investment_financial_revisions", "investment_financial_adjustments", "investment_purchase_funding", "investment_settlement_revisions", "investment_settlement_receipts", "investment_settlement_applications", "investment_settlement_prior_effects", "investment_result_classifications", "schema_migrations"} {
+	for _, table := range []string{"accounts", "transactions", "account_balance_adjustments", "investments", "investment_purchases", "investment_valuations", "investment_withdrawals", "investment_withdrawal_allocations", "investment_reference_revisions", "investment_reference_coverage", "investment_financial_revisions", "investment_financial_adjustments", "investment_purchase_funding", "investment_settlement_revisions", "investment_settlement_receipts", "investment_settlement_applications", "investment_settlement_prior_effects", "investment_result_classifications", "schema_migrations"} {
 		rows, err := db.Query(`SELECT * FROM ` + table + ` ORDER BY rowid`)
 		if err != nil {
 			t.Fatal(err)

@@ -24,7 +24,10 @@ func TestFaturasPremiumFoundationStageIsScopedAndPreservesContracts(t *testing.T
 		}
 	}
 
-	if strings.Index(hub, "premium.css") > strings.Index(hub, "dashboard.css") {
+	if strings.Contains(hub, "dashboard.css") {
+		t.Fatal("hub must not load the legacy dashboard.css stylesheet")
+	}
+	if strings.Index(hub, "premium.css") > strings.Index(hub, "faturas.css") {
 		t.Fatal("premium.css must load before the page stylesheets in the hub")
 	}
 	if strings.Index(detail, "premium.css") > strings.Index(detail, "faturas.css") {
@@ -98,7 +101,7 @@ func TestFaturasPremiumFoundationStageIsScopedAndPreservesContracts(t *testing.T
 		`id="faturas-index-card-rail"`,
 		`hx-get="{{.RefreshCardsURL}}"`,
 		`hx-trigger="refreshFinancials from:body"`,
-		`hx-select="#faturas-index-card-rail"`,
+		`id="faturas-index-state"`,
 		`hx-swap="outerHTML"`,
 		`id="faturas-index-detail"`,
 		`data-faturas-card-prev`,
@@ -156,15 +159,11 @@ func TestFaturasSwipeHintMatchesGestureMapping(t *testing.T) {
 	}
 }
 
-// The hub rail must render every existing card: the legacy 6-card cap belonged
-// to the previous Dashboard rail and is not applied anymore.
-func TestFaturasCardRailDoesNotHideCardsFromDashboardCSS(t *testing.T) {
-	dashboardCSS := readTestFile(t, "assets/css/dashboard.css")
+// The hub rail must render every existing card and keep its own carousel hook.
+// The legacy six-card cap was removed with dashboard.css.
+func TestFaturasCardRailKeepsItsOwnHook(t *testing.T) {
 	hub := readTestFile(t, "templates/pages/faturas_index.html")
 
-	if strings.Contains(dashboardCSS, `.cb-v2-card-rail > [data-v2-card-item]:nth-child(n+7)`) {
-		t.Fatal("dashboard.css must not hide cards from every consumer of .cb-v2-card-rail")
-	}
 	if !strings.Contains(hub, `data-faturas-card-rail`) {
 		t.Fatal("hub must keep its own rail hook for the carousel JS")
 	}

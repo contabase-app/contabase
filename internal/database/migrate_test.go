@@ -1181,9 +1181,9 @@ func TestOpenMigratesLegacyDatabaseAndReopenIsIdempotent(t *testing.T) {
 	assertColumnExists(t, db, "workspaces", "email_preferences")
 	assertColumnExists(t, db, "contacts", "custom_client_id")
 	assertColumnExists(t, db, "workspace_members", "custom_permissions")
-	assertColumnExists(t, db, "boxes", "target_date")
-	assertColumnExists(t, db, "box_virtual_ledger", "source_transaction_id")
-	assertColumnExists(t, db, "box_virtual_ledger", "reversal_of_ledger_id")
+	if schemaObjectExists(t, db, "table", "boxes") || schemaObjectExists(t, db, "table", "box_virtual_ledger") || schemaObjectExists(t, db, "table", "box_contribution_lifecycle_events") {
+		t.Fatal("full upgrade retained reserve tables")
+	}
 	assertColumnExists(t, db, "sessions", "workspace_id")
 	assertTableExists(t, db, "pre_auth_sessions")
 	assertTableExists(t, db, "auth_audit_events")

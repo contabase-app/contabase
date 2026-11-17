@@ -23,9 +23,8 @@ import (
 // Coincide com o default histórico da coluna categories.icon.
 const DefaultKey = "tag"
 
-// FallbackGoal é o ícone de uma Meta/reserva que não tem ícone próprio nem
-// categoria que o defina. Manter a reserva reconhecível como poupança é uma
-// decisão de produto já refletida nas notificações de caixinha.
+// FallbackGoal é o ícone de uma Meta que não tem ícone próprio nem categoria
+// que o defina.
 const FallbackGoal = "piggy-bank"
 
 // Option descreve uma entrada do catálogo.
@@ -258,9 +257,9 @@ func Resolve(keys ...string) string {
 	return DefaultKey
 }
 
-// ResolveGoal resolve o ícone de uma Meta/reserva e fecha a herança com a marca
+// ResolveGoal resolve o ícone de uma Meta e fecha a herança com a marca
 // de poupança em vez do ícone neutro de categoria. É a única implementação
-// dessa precedência: escolha própria -> categoria vinculada -> reserva.
+// dessa precedência: escolha própria -> categoria vinculada -> fallback.
 func ResolveGoal(keys ...string) string {
 	return Resolve(append(keys, FallbackGoal)...)
 }

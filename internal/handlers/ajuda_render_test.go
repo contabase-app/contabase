@@ -54,7 +54,6 @@ func TestAjudaPageRenderContracts(t *testing.T) {
 		`id="cartoes-relatorios"`,
 		`id="exportacoes-relatorios"`,
 		`id="categorias-hierarquia"`,
-		`id="caixinhas-metas"`,
 		`id="motor-temporal"`,
 		`id="limite-gastos"`,
 		`id="seguranca-backups"`,

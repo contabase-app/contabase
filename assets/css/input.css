@@ -80,7 +80,7 @@
     [data-theme-option].border-indigo-600 {
         background-color: var(--cb-accent-soft) !important;
         border-color: var(--cb-accent) !important;
-        color: var(--cb-accent) !important;
+        color: var(--cb-accent-ink) !important;
     }
 }
 

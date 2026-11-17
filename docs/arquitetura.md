@@ -46,7 +46,7 @@ scripts/             # scripts publicos de operacao
 
 ## Camadas de seguranca
 
-A disponibilidade de Investimentos é resolvida em `internal/features.FromEnv`: na candidata Beta 6, somente a flag principal ausente habilita o módulo por padrão. As flags de operações financeiras controladas continuam opt-in. Não há registro persistido de ativação nem migration para alterar esse padrão. As permissões e o filtro `workspace_id` continuam aplicados no servidor; veja [Investimentos](investimentos.md).
+A disponibilidade de Investimentos é resolvida em `internal/features.FromEnv`: no código atual, somente a flag principal ausente habilita o módulo por padrão. As flags de operações financeiras controladas continuam opt-in. Não há registro persistido de ativação nem migration para alterar esse padrão. As permissões e o filtro `workspace_id` continuam aplicados no servidor; veja [Investimentos](investimentos.md).
 
 - HTTPS deve ser usado quando a instancia sair da rede local.
 - `ALLOWED_HOSTS` reduz risco de host inesperado.

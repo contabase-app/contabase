@@ -251,8 +251,11 @@ func TestLegacySeedRecoveryPreserves2FAAndRequiresNewPassword(t *testing.T) {
 			handleRequiredPasswordChangeSubmit(changed, request, dummyTemplateEngine{}, service, db, authContext{
 				UserID: legacySeedUserID, ActiveWorkspaceID: "legacy-personal", Role: "ADMIN", SessionToken: cookie.Value,
 			}, "csrf")
-			if changed.Code != http.StatusSeeOther || changed.Header().Get("Location") != "/" {
+			if changed.Code != http.StatusSeeOther || changed.Header().Get("Location") != "/login" {
 				t.Fatal("mandatory password change failed")
+			}
+			if cleared := findCookie(changed.Result().Cookies(), sessionCookieName); cleared == nil || cleared.MaxAge >= 0 {
+				t.Fatal("mandatory password change did not clear the session cookie")
 			}
 			if _, err := service.Authenticate(legacyFixtureEmail, legacyOwnPassword); err != nil {
 				t.Fatal("new private password rejected")

@@ -602,8 +602,8 @@ func TestInvestmentCancellationReopenRecovery(t *testing.T) {
 	if after := cancellationSnapshot(t, reopened.DB); after != closed {
 		t.Fatalf("reopened replay wrote: %s -> %s", closed, after)
 	}
-	if version := cancellationScalar(t, reopened.DB, `SELECT MAX(version) FROM schema_migrations`); version != "82" {
-		t.Fatalf("schema version=%s", version)
+	if version := cancellationScalar(t, reopened.DB, `SELECT MAX(version) FROM schema_migrations`); version != "83" {
+		t.Fatalf("schema version=%s want 83", version)
 	}
 }
 

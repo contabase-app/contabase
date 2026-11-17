@@ -24,7 +24,6 @@ func TestMetasPremiumIndicatorsKeepRoutePermissionContract(t *testing.T) {
 	}{
 		{name: "metas read", route: `mux.HandleFunc("/metas", withAuth(`, permission: "permDashboardRead"},
 		{name: "metas new sheet", route: `mux.HandleFunc("/metas/novo", withAuth(`, permission: "permGoalsWrite"},
-		{name: "metas create box", route: `mux.HandleFunc("/metas/caixinha", withAuth(`, permission: "permGoalsWrite"},
 		{name: "metas create limit", route: `mux.HandleFunc("/metas/limite", withAuth(`, permission: "permGoalsWrite"},
 	}
 

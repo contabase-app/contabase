@@ -31,7 +31,9 @@
             dateInput: dateInput,
             scheduledDateInput: scheduledDateInput,
             paidDateRow: document.getElementById('payment-paid-date-row'),
+            paidDateLabel: document.getElementById('payment-paid-date-label'),
             scheduledDateRow: document.getElementById('payment-scheduled-date-row'),
+            modeGroup: document.getElementById('payment-mode-group'),
             clearScheduleOption: document.getElementById('payment-clear-schedule-option'),
             context: document.getElementById('payment-confirm-context'),
             title: document.getElementById('payment-confirm-title'),
@@ -42,6 +44,8 @@
             accountReadonly: document.getElementById('payment-account-readonly'),
             accountReadonlyEffect: document.getElementById('payment-account-readonly-effect'),
             accountHint: document.getElementById('payment-account-hint'),
+            transferDestinationRow: document.getElementById('payment-transfer-destination-row'),
+            transferDestination: document.getElementById('payment-transfer-destination'),
             accountSelectRow: document.getElementById('payment-account-select-row'),
             accountSelect: document.getElementById('payment-account-select'),
             accountSelectEffect: document.getElementById('payment-account-select-effect'),
@@ -69,6 +73,10 @@
         return checked ? checked.value : 'paid';
     }
 
+    function isTransferPayment(parts) {
+        return !!parts && !!parts.form && parts.form.dataset.paymentType === 'TRANSFER';
+    }
+
     function clearBulkInputs(form) {
         if (!form) return;
         form.querySelectorAll('[data-payment-bulk-input]').forEach(function (el) {
@@ -90,11 +98,13 @@
         if (!parts.form) return;
         var accountID = source ? (source.getAttribute('data-payment-account-id') || '') : '';
         var accountName = source ? (source.getAttribute('data-payment-account-name') || 'Conta vinculada') : 'Contas dos lançamentos selecionados';
+        var destinationAccountName = source ? (source.getAttribute('data-payment-destination-account-name') || '') : '';
         var canChange = source && source.getAttribute('data-payment-account-change-allowed') === 'true';
         var paymentType = source ? (source.getAttribute('data-payment-type') || '') : '';
 
         parts.form.dataset.paymentAccountID = accountID;
         parts.form.dataset.paymentAccountName = accountName;
+        parts.form.dataset.paymentDestinationAccountName = destinationAccountName;
         parts.form.dataset.paymentAccountChangeAllowed = canChange ? 'true' : 'false';
         parts.form.dataset.paymentType = paymentType;
         if (parts.accountReadonly) parts.accountReadonly.textContent = accountName;
@@ -114,10 +124,11 @@
 
     function updatePaymentAccountMode(parts, action) {
         if (!parts || !parts.form) return;
-        var canChange = parts.form.dataset.paymentAccountChangeAllowed === 'true' && action === 'paid';
+        var isTransfer = isTransferPayment(parts);
+        var canChange = !isTransfer && parts.form.dataset.paymentAccountChangeAllowed === 'true' && action === 'paid';
         var isIncome = parts.form.dataset.paymentType === 'INCOME';
-        var accountLabel = isIncome ? 'Conta de recebimento' : 'Conta de pagamento';
-        var accountEffect = isIncome ? 'Será creditado nesta conta.' : 'Será debitado desta conta.';
+        var accountLabel = isTransfer ? 'Conta de origem' : (isIncome ? 'Conta de recebimento' : 'Conta de pagamento');
+        var accountEffect = isTransfer ? 'Sairá desta conta.' : (isIncome ? 'Será creditado nesta conta.' : 'Será debitado desta conta.');
         Array.prototype.forEach.call(parts.accountLabels || [], function (label) {
             label.textContent = accountLabel;
         });
@@ -128,8 +139,12 @@
         if (parts.accountReadonlyEffect) {
             parts.accountReadonlyEffect.textContent = action === 'paid' ? accountEffect : 'A conta vinculada será mantida ao agendar.';
         }
+        if (parts.transferDestinationRow) parts.transferDestinationRow.classList.toggle('hidden', !isTransfer);
+        if (parts.transferDestination) {
+            parts.transferDestination.textContent = parts.form.dataset.paymentDestinationAccountName || 'Destino não informado';
+        }
         if (parts.accountHint) {
-            parts.accountHint.classList.toggle('hidden', action !== 'paid');
+            parts.accountHint.classList.toggle('hidden', action !== 'paid' || isTransfer);
             parts.accountHint.textContent = 'Para trocar a conta, edite o lançamento antes de pagar.';
         }
     }
@@ -137,13 +152,22 @@
     function updateSummary() {
         var parts = getModalParts();
         if (!parts.summary || !parts.form) return;
-        var action = selectedAction(parts.form);
+        var isTransfer = isTransferPayment(parts);
+        var action = isTransfer ? 'paid' : selectedAction(parts.form);
+        if (parts.modeGroup) parts.modeGroup.classList.toggle('hidden', isTransfer);
+        if (parts.paidDateLabel) parts.paidDateLabel.textContent = isTransfer ? 'Data da transferência' : 'Data de pagamento';
         if (parts.paidDateRow) parts.paidDateRow.classList.toggle('hidden', action !== 'paid');
         if (parts.scheduledDateRow) parts.scheduledDateRow.classList.toggle('hidden', action !== 'scheduled');
         if (parts.dateInput) parts.dateInput.required = action === 'paid';
         if (parts.scheduledDateInput) parts.scheduledDateInput.required = action === 'scheduled';
 
         updatePaymentAccountMode(parts, action);
+        if (isTransfer) {
+            parts.summary.textContent = 'A transferência será concluída em ' + formatDateLabel(parts.dateInput && parts.dateInput.value) + '.';
+            if (parts.submit) parts.submit.innerHTML = '<i data-lucide="arrow-left-right" class="h-4 w-4"></i>Transferir agora';
+            refreshIcons();
+            return;
+        }
         if (action === 'scheduled') {
             parts.summary.textContent = 'Continuará pendente e ficará agendado para ' + formatDateLabel(parts.scheduledDateInput && parts.scheduledDateInput.value);
             if (parts.submit) parts.submit.innerHTML = '<i data-lucide="timer" class="h-4 w-4"></i>Agendar pagamento';
@@ -200,6 +224,7 @@
         var desc = source.getAttribute('data-payment-description') || 'Lançamento';
         var amount = source.getAttribute('data-payment-amount') || '';
         var scheduledAt = source.getAttribute('data-payment-scheduled-at') || '';
+        var isTransfer = (source.getAttribute('data-payment-type') || '') === 'TRANSFER';
 
         configurePaymentAccount(source);
         if (parts.submit) parts.submit.disabled = false;
@@ -222,7 +247,8 @@
             parts.clearScheduleOption.classList.toggle('hidden', !scheduledAt);
             parts.clearScheduleOption.classList.toggle('flex', !!scheduledAt);
         }
-        if (parts.title) parts.title.textContent = 'Confirmar pagamento';
+        if (parts.title) parts.title.textContent = isTransfer ? 'Confirmar transferência' : 'Confirmar pagamento';
+        if (parts.paidDateLabel) parts.paidDateLabel.textContent = isTransfer ? 'Data da transferência' : 'Data de pagamento';
         setSinglePaymentDescription(parts, desc, amount);
 
         updateSummary();
@@ -324,7 +350,7 @@
             parts.scheduledDateInput.setCustomValidity('');
         }
         if (action === 'paid' && !parts.dateInput.value) {
-            parts.dateInput.setCustomValidity('Informe a data de pagamento.');
+            parts.dateInput.setCustomValidity(isTransferPayment(parts) ? 'Informe a data da transferência.' : 'Informe a data de pagamento.');
         } else {
             parts.dateInput.setCustomValidity('');
         }

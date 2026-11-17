@@ -35,6 +35,22 @@ func TestMigration76ClassificationAdditiveAtomic(t *testing.T) {
 		if err := runMigrationsThroughVersionForTest(db, 75); err != nil {
 			t.Fatal(err)
 		}
+		// Re-running migration 76 is meaningful only on the historical schema
+		// it targets; schema 83 no longer has reserve tables.
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = migrateInvestmentClassification(tx); err != nil {
+			tx.Rollback()
+			t.Fatal(err)
+		}
+		if err = tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		if err = assertDatabaseForeignKeyIntegrity(db); err != nil {
+			t.Fatal(err)
+		}
 		before := referenceLegacySnapshot(t, db)
 		if err := runMigrations(db); err != nil {
 			t.Fatal(err)
@@ -48,20 +64,6 @@ func TestMigration76ClassificationAdditiveAtomic(t *testing.T) {
 		}
 		if countQueryRows(t, db, `SELECT COUNT(*) FROM investment_result_classifications`) != 0 {
 			t.Fatal("automatic activation")
-		}
-		tx, err := db.Begin()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer tx.Rollback()
-		if err = migrateInvestmentClassification(tx); err != nil {
-			t.Fatal(err)
-		}
-		if err = tx.Commit(); err != nil {
-			t.Fatal(err)
-		}
-		if err = assertDatabaseForeignKeyIntegrity(db); err != nil {
-			t.Fatal(err)
 		}
 		if countQueryRows(t, db, `SELECT COUNT(*) FROM schema_migrations WHERE version=69`) != 0 {
 			t.Fatal("reserved migration consumed")

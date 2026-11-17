@@ -815,9 +815,6 @@ func evaluateInvestmentPurchaseReversalTx(ctx context.Context, tx *sql.Tx, works
 		for _, link := range investmentCancellationTransferLinks {
 			var count int64
 			query := `SELECT COUNT(*) FROM ` + link.Table + ` WHERE workspace_id=? AND ` + link.Column + `=?`
-			if link.Table == "box_virtual_ledger" {
-				query = `SELECT COUNT(*) FROM box_virtual_ledger v JOIN boxes b ON b.id=v.box_id AND b.workspace_id=? WHERE v.source_transaction_id=?`
-			}
 			if err := tx.QueryRowContext(ctx, query, workspace, state.OriginalTransactionID).Scan(&count); err != nil {
 				return state, nil, err
 			}

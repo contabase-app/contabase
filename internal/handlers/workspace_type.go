@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"strings"
 )
 
@@ -58,9 +57,10 @@ var workspaceThemes = map[string]WorkspaceTheme{
 	},
 }
 
-func workspaceType(db *sql.DB, workspaceID string) string {
+func workspaceType(db reportQueryer, workspaceID string) string {
 	var wsType string
 	if err := db.QueryRow(`SELECT COALESCE(type, 'personal') FROM workspaces WHERE id = ?`, workspaceID).Scan(&wsType); err != nil {
+		recordDashboardReadError(db, err)
 		return "personal"
 	}
 	return normalizeWorkspaceTypeValue(wsType)

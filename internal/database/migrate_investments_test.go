@@ -32,6 +32,12 @@ func openInvestmentsTestDB(t *testing.T) *sql.DB {
 	if _, err := db.Exec(ddl); err != nil {
 		t.Fatal(err)
 	}
+	// Historical investment migration fixtures still exercise schemas before
+	// 83, when the reserve tables existed. Production startup bootstraps these
+	// tables separately for the same historical window.
+	if _, err := db.Exec(legacyReserveDDL); err != nil {
+		t.Fatalf("create legacy reserve fixture tables: %v", err)
+	}
 	return db
 }
 

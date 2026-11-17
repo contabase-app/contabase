@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# O fluxo le secrets; mantenha xtrace desativado ate o fim do processo.
+set +x
 set -euo pipefail
 
 # ==============================================================================
@@ -31,8 +33,11 @@ set -euo pipefail
 REPO="${CONTABASE_REPO:-https://github.com/contabase-app/contabase}"
 TAG="${CONTABASE_VERSION:-}"
 SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
-SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" 2>/dev/null && pwd)"
 PUBLIC_RAW_BASE="${CONTABASE_RAW_BASE:-https://raw.githubusercontent.com/contabase-app/contabase}"
+BUNDLE_COMMIT="${CONTABASE_UPDATER_BUNDLE_COMMIT:-}"
+BUNDLE_MANIFEST_SHA256="${CONTABASE_UPDATER_BUNDLE_MANIFEST_SHA256:-}"
+UPDATE_WRAPPER_PATH="${CONTABASE_UPDATE_WRAPPER_PATH:-}"
+UPDATE_WRAPPER_SHA256="${CONTABASE_UPDATE_WRAPPER_SHA256:-}"
 PORT="${CONTABASE_PORT:-8080}"
 CONTABASE_TIMEZONE_VALUE="${CONTABASE_TIMEZONE:-America/Sao_Paulo}"
 APP_USER="${CONTABASE_USER:-contabase}"
@@ -42,7 +47,7 @@ DB_FILE="${CONTABASE_DB_FILE:-}"
 UPLOADS_DIR="${CONTABASE_UPLOADS_DIR:-}"
 BACKUPS_DIR=""
 CONFIG_DIR="${CONTABASE_CONFIG_DIR:-/etc/contabase}"
-STATE_FILE="${CONFIG_DIR}/install-state.env"
+STATE_FILE="${CONTABASE_STATE_FILE:-${CONFIG_DIR}/install-state.env}"
 INSTALL_CHANNEL="${CONTABASE_CHANNEL:-pinned}"
 ASSUME_YES="${CONTABASE_ASSUME_YES:-0}"
 HEALTHCHECK_ATTEMPTS="${CONTABASE_HEALTHCHECK_ATTEMPTS:-30}"
@@ -53,12 +58,13 @@ ARTIFACT_NAME=""
 ARTIFACT_URL=""
 CHECKSUMS_URL=""
 TMP_DIR=""
+BOOTSTRAP_TMP_DIR=""
 EXTRACT_DIR=""
 STAGING_DIR=""
 PREVIOUS_DIR=""
 ENV_FILE="${CONFIG_DIR}/contabase.env"
 ENV_BACKUP=""
-SERVICE_FILE="/etc/systemd/system/contabase.service"
+SERVICE_FILE="${CONTABASE_SERVICE_FILE:-/etc/systemd/system/contabase.service}"
 SERVICE_BACKUP=""
 NEW_BUNDLE_ACTIVE=false
 NEW_RUNTIME_STARTED=false
@@ -67,6 +73,13 @@ SERVICE_WAS_ACTIVE=false
 STATE_PRESENT=false
 PREVIOUS_VERSION="desconhecida"
 PREVIOUS_VERSION_RESOLVED=false
+BOOTSTRAP_STATE=false
+INSTALL_STATE_SHA256=""
+INSTALLED_UNIT_SHA256=""
+CANDIDATE_COMMIT=""
+CANDIDATE_ARTIFACT_SHA256=""
+CANDIDATE_CHECKSUMS_SHA256=""
+CANDIDATE_BINARY_SHA256=""
 BACKUP_PATH=""
 BACKUP_ID=""
 CANONICAL_BACKUP_HELPER=""
@@ -74,6 +87,8 @@ CANONICAL_RESTORE_HELPER=""
 PERSISTED_RESTORE_HELPER=""
 CANONICAL_BACKUP_SHA256="6b9382927526cdd77b0d46fec7c6ff410bf003b69420a34aa080970d0956bc72"
 CANONICAL_RESTORE_SHA256="dd8685882a5508fe41705280936a9b301d60248411f972b3fa5e8d288e953b5b"
+BOOTSTRAP_CHANNEL_BASE="https://get-contabase.pages.dev"
+BOOTSTRAP_RAW_BASE="https://raw.githubusercontent.com/contabase-app/contabase"
 
 # Recovery evidence is administrative state, never imported from a release bundle.
 # === SAFE_RECOVERY_BLOCK_BEGIN ===
@@ -204,6 +219,232 @@ fail() {
   say "Erro: $*" >&2
   exit 1
 }
+
+
+bundle_sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum < "$1" | awk '{print $1}'
+  else
+    shasum -a 256 < "$1" | awk '{print $1}'
+  fi
+}
+
+bundle_path_unsafe() {
+  local remaining="$1" output="${2:-}" current="" part
+  [ -n "$remaining" ] || return 1
+  case "$remaining" in /*) ;; *) return 0 ;; esac
+  remaining="${remaining#/}"
+  while [ -n "$remaining" ]; do
+    part="${remaining%%/*}"
+    case "$remaining" in
+      */*) remaining="${remaining#*/}" ;;
+      *) remaining="" ;;
+    esac
+    case "$part" in
+      ""|.) continue ;;
+      ..) return 0 ;;
+    esac
+    current="$current/$part"
+    [ -L "$current" ] && return 0
+  done
+  [ -z "$output" ] || printf -v "$output" '%s' "${current:-/}"
+  return 1
+}
+
+# B1: a intencao de bundle autenticado e detectada antes de --help,
+# --validate-only, --dry-run ou qualquer download/mutacao. Qualquer variavel
+# definida (inclusive vazia) ou manifesto presente (inclusive symlink pendente)
+# exige o contrato completo; nao existe fallback para o modo legado.
+bundle_contract_requested=false
+[ -n "${CONTABASE_UPDATER_BUNDLE_COMMIT+x}" ] && bundle_contract_requested=true
+[ -n "${CONTABASE_UPDATER_BUNDLE_MANIFEST_SHA256+x}" ] && bundle_contract_requested=true
+[ -n "${CONTABASE_UPDATE_WRAPPER_PATH+x}" ] && bundle_contract_requested=true
+[ -n "${CONTABASE_UPDATE_WRAPPER_SHA256+x}" ] && bundle_contract_requested=true
+case "$SCRIPT_SOURCE" in
+  /*) ;;
+  *) SCRIPT_SOURCE="$PWD/$SCRIPT_SOURCE" ;;
+esac
+script_dir_raw="${SCRIPT_SOURCE%/*}"
+script_dir_raw="${script_dir_raw:-/}"
+manifest_raw="$script_dir_raw/../updater.sha256"
+if [ -e "$manifest_raw" ] || [ -L "$manifest_raw" ]; then
+  bundle_contract_requested=true
+fi
+script_path_unsafe=false
+script_path_literal=""
+bundle_path_unsafe "$SCRIPT_SOURCE" script_path_literal && script_path_unsafe=true
+if [ "$bundle_contract_requested" = true ]; then
+  [ "$script_path_unsafe" = false ] \
+    || fail "caminho do updater com symlink ou componente inseguro."
+  script_dir_literal="${script_path_literal%/*}"
+  SCRIPT_ROOT="${script_dir_literal%/*}"
+  SCRIPT_ROOT="${SCRIPT_ROOT:-/}"
+  SCRIPT_DIR="$script_dir_literal"
+else
+  SCRIPT_DIR="$(cd "$script_dir_raw" 2>/dev/null && pwd)"
+  SCRIPT_ROOT="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd -P)"
+  if [ -e "$SCRIPT_ROOT/updater.sha256" ] || [ -L "$SCRIPT_ROOT/updater.sha256" ]; then
+    [ "$script_path_unsafe" = false ] \
+      || fail "caminho do updater com symlink ou componente inseguro."
+    bundle_contract_requested=true
+  fi
+fi
+
+validate_external_bundle() {
+  [ "$bundle_contract_requested" = true ] || return 0
+
+  local version="$TAG"
+  local commit="$BUNDLE_COMMIT"
+  local expected="$BUNDLE_MANIFEST_SHA256"
+  local wrapper_path="$UPDATE_WRAPPER_PATH"
+  local wrapper_sha="$UPDATE_WRAPPER_SHA256"
+  local manifest="$SCRIPT_ROOT/updater.sha256"
+  local allowed="VERSION scripts/update-contabase-source.sh scripts/update-contabase-docker.sh scripts/update-contabase-release.sh scripts/lib/contabase-install-state.sh scripts/lib/contabase-recovery.sh scripts/lib/contabase-update-wrapper.sh scripts/lib/contabase-docker-image-update.py"
+  local required_paths=()
+  local header actual entries hash path entry_path file actual_hash verified_file found
+  local verified_files=()
+  local wrapper_real wrapper_manifest_sha running_updater_sha
+
+  required_paths=(VERSION scripts/update-contabase-release.sh \
+    scripts/lib/contabase-update-wrapper.sh)
+
+  [ -n "$version" ] || fail "CONTABASE_VERSION obrigatoria no modo autenticado."
+  [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]] \
+    || fail "versao publica invalida no modo autenticado."
+  for cmd in awk sed grep find tr; do
+    command -v "$cmd" >/dev/null 2>&1 \
+      || fail "comando obrigatorio ausente: $cmd"
+  done
+  [ -n "$commit" ] && [ -n "$expected" ] && [ -n "$wrapper_path" ] && [ -n "$wrapper_sha" ] \
+    || fail "identidade do bundle externo incompleta (commit/manifesto/wrapper)."
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] \
+    || fail "commit autorizado do bundle invalido."
+  [[ "$expected" =~ ^[0-9a-f]{64}$ ]] \
+    || fail "digest autorizado do manifesto invalido."
+  [[ "$wrapper_sha" =~ ^[0-9a-f]{64}$ ]] \
+    || fail "hash do wrapper verificado invalido."
+
+  [ -d "$SCRIPT_ROOT/scripts" ] && [ ! -L "$SCRIPT_ROOT/scripts" ] \
+    || fail "diretorio de scripts do bundle ausente ou inseguro."
+  [ -f "$manifest" ] && [ ! -L "$manifest" ] \
+    || fail "updater.sha256 ausente ou inseguro."
+  LC_ALL=C grep -q $'\r' "$manifest" 2>/dev/null \
+    && fail "CRLF nao permitido no updater.sha256."
+  actual="$(bundle_sha256 "$manifest")" \
+    || fail "falha ao calcular o SHA-256 do manifesto."
+  [ "$actual" = "$expected" ] \
+    || fail "manifesto diverge da identidade autorizada."
+  header="$(sed -n '1p' "$manifest")" \
+    || fail "falha ao ler o cabecalho do manifesto."
+  [ "$header" = "commit=$commit" ] \
+    || fail "commit do manifesto diverge do autorizado."
+
+  entries="$(LC_ALL=C awk -v allowed="$allowed" '
+    BEGIN { n = split(allowed, a, " "); for (i = 1; i <= n; i++) ok[a[i]] = 1 }
+    NR == 1 { next }
+    {
+      if (length($0) < 67) exit 1
+      hash = substr($0, 1, 64)
+      sep = substr($0, 65, 2)
+      path = substr($0, 67)
+      if (length(hash) != 64 || hash ~ /[^0-9a-f]/ || sep != "  " || path == "") exit 1
+      if (path ~ /(^\/|(^|\/)\.\.?(\/|$)|\\|  )/) exit 1
+      if (!(path in ok) || (path in seen)) exit 1
+      if (count && path < prev) exit 1
+      seen[path] = 1
+      prev = path
+      count++
+      print hash "\t" path
+    }
+    END { if (count == 0) exit 1 }
+  ' "$manifest")" || fail "formato, ordem, duplicata ou caminho invalido no manifesto."
+  [ -n "$entries" ] || fail "manifesto vazio."
+
+  # Comparacoes literais em Bash: nenhum nome de arquivo passa por awk -v,
+  # glob ou interpretacao de escape.
+  for path in "${required_paths[@]}"; do
+    found=false
+    while IFS=$'\t' read -r hash entry_path; do
+      [ -n "$hash" ] || continue
+      if [ "$entry_path" = "$path" ]; then
+        found=true
+        break
+      fi
+    done <<< "$entries"
+    [ "$found" = true ] || fail "manifesto incompleto: $path"
+  done
+
+  bundle_path_unsafe "$wrapper_path" wrapper_real \
+    && fail "caminho do wrapper com symlink ou componente inseguro."
+  [ "$wrapper_real" = "$SCRIPT_ROOT/scripts/lib/contabase-update-wrapper.sh" ] \
+    || fail "wrapper verificado fora do caminho canonico."
+  [ -f "$wrapper_real" ] && [ ! -L "$wrapper_real" ] \
+    || fail "wrapper verificado ausente ou inseguro."
+  wrapper_manifest_sha=""
+  while IFS=$'\t' read -r hash entry_path; do
+    [ -n "$hash" ] || continue
+    if [ "$entry_path" = "scripts/lib/contabase-update-wrapper.sh" ]; then
+      wrapper_manifest_sha="$hash"
+      break
+    fi
+  done <<< "$entries"
+  [ -n "$wrapper_manifest_sha" ] \
+    || fail "wrapper verificado ausente do manifesto."
+  [ "$(bundle_sha256 "$wrapper_real")" = "$wrapper_sha" ] \
+    || fail "wrapper verificado diverge do hash autorizado."
+  [ "$wrapper_manifest_sha" = "$wrapper_sha" ] \
+    || fail "wrapper verificado diverge do manifesto."
+
+  while IFS=$'\t' read -r hash path; do
+    [ -n "$hash" ] || continue
+    file="$SCRIPT_ROOT/$path"
+    bundle_path_unsafe "$file" \
+      && fail "caminho com symlink ou componente inseguro: $path"
+    [ -f "$file" ] && [ ! -L "$file" ] \
+      || fail "arquivo ausente ou inseguro no bundle: $path"
+    actual_hash="$(bundle_sha256 "$file")" \
+      || fail "falha ao calcular o SHA-256: $path"
+    [ "$actual_hash" = "$hash" ] \
+      || fail "conteudo divergente no bundle: $path"
+    verified_files+=("$file")
+  done <<< "$entries"
+
+  [ "$(tr -d '[:space:]' < "$SCRIPT_ROOT/VERSION")" = "$version" ] \
+    || fail "VERSION do bundle diverge da versao solicitada."
+  running_updater_sha=""
+  while IFS=$'\t' read -r hash entry_path; do
+    [ -n "$hash" ] || continue
+    if [ "$entry_path" = "scripts/update-contabase-release.sh" ]; then
+      running_updater_sha="$hash"
+      break
+    fi
+  done <<< "$entries"
+  [ -n "$running_updater_sha" ] \
+    || fail "updater Release ausente do manifesto."
+  [ "$(bundle_sha256 "$SCRIPT_SOURCE")" = "$running_updater_sha" ] \
+    || fail "updater Release em execucao diverge do manifesto."
+
+  (
+    inventory="$(mktemp "${TMPDIR:-/tmp}/contabase-updater-inventory.XXXXXX")" \
+      || fail "falha ao criar inventario do bundle."
+    trap 'rm -f -- "$inventory"' EXIT
+    find "$SCRIPT_ROOT" \
+      \( -type l -o \( -type f \( -perm -0100 -o -perm -0010 -o -perm -0001 \) \) \) \
+      -print0 > "$inventory" 2>/dev/null \
+      || fail "falha ao enumerar executaveis do bundle."
+    while IFS= read -r -d '' file; do
+      [ ! -L "$file" ] || fail "symlink no bundle externo."
+      for verified_file in "${verified_files[@]}"; do
+        [ "$file" != "$verified_file" ] || continue 2
+      done
+      fail "arquivo executavel nao declarado no bundle: ${file#"$SCRIPT_ROOT"/}"
+    done < "$inventory"
+  ) || exit 1
+
+  UPDATE_WRAPPER_PATH="$wrapper_real"
+}
+
+validate_external_bundle
 
 # === VERSION_POLICY_BLOCK_BEGIN ===
 # canonicalize_version <version>
@@ -405,6 +646,9 @@ cleanup() {
   if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then
     rm -rf "$TMP_DIR"
   fi
+  if [ -n "$BOOTSTRAP_TMP_DIR" ] && [ -d "$BOOTSTRAP_TMP_DIR" ]; then
+    rm -rf "$BOOTSTRAP_TMP_DIR"
+  fi
 }
 trap cleanup EXIT
 
@@ -513,7 +757,7 @@ validate_numeric_settings() {
 require_commands() {
   local cmd
   local missing=()
-  for cmd in curl tar install openssl awk grep find mktemp cp wc tr sqlite3; do
+  for cmd in curl tar install openssl awk sed grep find mktemp cp wc tr sqlite3; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
   if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
@@ -828,6 +1072,276 @@ validate_existing_env() {
 # Installation detection
 # ==============================================================================
 
+release_safe_path() {
+  local path="$1" current="" part
+  local -a parts
+  [[ "$path" =~ ^/[A-Za-z0-9_./-]+$ ]] && [ "${#path}" -le 240 ] || return 1
+  case "$path" in /|*/|*//*|*/./*|*/../*|*/.|*/..) return 1 ;; esac
+  IFS=/ read -ra parts <<< "${path#/}"
+  for part in "${parts[@]}"; do
+    current="$current/$part"
+    [ ! -L "$current" ] || return 1
+  done
+}
+
+release_state_value() {
+  awk -F= -v key="$1" '
+    $1 == key {
+      v=substr($0,index($0,"=")+1)
+      if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v=substr(v,2,length(v)-2)
+      print v; exit
+    }' "$STATE_FILE"
+}
+
+release_validate_state() {
+  # State is data: reject duplicate keys, shell syntax and secret-bearing fields.
+  [ "$(wc -c < "$STATE_FILE")" -le 32768 ] || return 1
+  [ "$(LC_ALL=C tr -d '\012\040-\176' < "$STATE_FILE" | wc -c)" -eq 0 ] || return 1
+  awk -F= '
+    /^[[:space:]]*$/ || /^#/ { next }
+    {
+      k=$1; v=substr($0,index($0,"=")+1)
+      if (!index($0,"=") || length($0)>2048 || k !~ /^CONTABASE_[A-Z0-9_]+$/ || seen[k]++) exit 1
+      if (k ~ /(SECRET|TOKEN|PASSWORD|KEY|CREDENTIAL)/) exit 1
+      if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v=substr(v,2,length(v)-2)
+      if (v ~ /[^A-Za-z0-9_.\/:@,+= -]/) exit 1
+    }' "$STATE_FILE" || return 1
+  [ "$(release_state_value CONTABASE_STATE_VERSION)" = 1 ] || return 1
+  case "$(release_state_value CONTABASE_INSTALL_METHOD)" in release|binary) ;; *) return 1 ;; esac
+  case "$(release_state_value CONTABASE_CHANNEL)" in beta|stable|pinned) ;; *) return 1 ;; esac
+  canonicalize_version "$(release_state_value CONTABASE_INSTALLED_VERSION)" >/dev/null || return 1
+  [ -z "$(release_state_value CONTABASE_REPO_PATH)" ] || return 1
+}
+
+release_adopt_path() {
+  local key="$1" explicit="$2" current="$3" saved
+  saved="$(release_state_value "$key")"
+  release_safe_path "$saved" || fail "caminho persistido invalido: $key."
+  [ -z "$explicit" ] || [ "$current" = "$saved" ] \
+    || fail "override diverge da instalacao identificada: $key."
+  printf '%s' "$saved"
+}
+
+resolve_release_installation() {
+  local fragment unit_env saved key value
+  # The loaded service identifies the configuration; never search other installs.
+  fragment="$(systemctl show contabase.service --property=FragmentPath --value)" \
+    || fail "nao foi possivel identificar a unit carregada."
+  [ -f "$fragment" ] && release_safe_path "$fragment" && recovery_admin_path "$fragment" \
+    || fail "unit ausente, symlink ou sem protecao administrativa."
+  if [ -n "${CONTABASE_SERVICE_FILE+x}" ]; then
+    [ "$SERVICE_FILE" = "$fragment" ] || fail "unit solicitada diverge da unit carregada."
+  fi
+  SERVICE_FILE="$fragment"
+  unit_env="$(release_unit_value EnvironmentFile)" || fail "EnvironmentFile ambiguo na unit."
+  release_safe_path "$unit_env" || fail "EnvironmentFile inseguro na unit."
+  case "$unit_env" in */contabase.env) ;; *) fail "EnvironmentFile fora do contrato Release." ;; esac
+  saved="${unit_env%/contabase.env}"
+  [ -z "${CONTABASE_CONFIG_DIR+x}" ] || [ "$CONFIG_DIR" = "$saved" ] \
+    || fail "configuracao solicitada diverge da unit."
+  CONFIG_DIR="$saved"
+  ENV_FILE="$unit_env"
+  [ -z "${CONTABASE_STATE_FILE+x}" ] || [ "$STATE_FILE" = "$CONFIG_DIR/install-state.env" ] \
+    || fail "estado solicitado diverge da configuracao da unit."
+  STATE_FILE="$CONFIG_DIR/install-state.env"
+  [ -f "$ENV_FILE" ] && recovery_admin_path "$CONFIG_DIR" && recovery_admin_path "$ENV_FILE" \
+    || fail "configuracao sem protecao administrativa."
+  awk -F= '
+    /^[[:space:]]*$/ || /^[[:space:]]*#/ { next }
+    $1 !~ /^[A-Z][A-Z0-9_]*$/ || seen[$1]++ { exit 1 }
+  ' "$ENV_FILE" || fail "env com chaves duplicadas ou sintaxe ambigua."
+  if [ -e "$STATE_FILE" ] || [ -L "$STATE_FILE" ]; then
+    [ -f "$STATE_FILE" ] && release_safe_path "$STATE_FILE" && recovery_admin_path "$STATE_FILE" \
+      && release_validate_state || fail "install-state.env invalido ou inseguro."
+    INSTALL_STATE_SHA256="$(compute_sha256 "$STATE_FILE")"
+    if [ -n "$(release_state_value CONTABASE_BOOTSTRAP_CONTRACT_VERSION)" ]; then
+      BOOTSTRAP_STATE=true
+      [ "$(release_state_value CONTABASE_BOOTSTRAP_CONTRACT_VERSION)" = 1 ] \
+        && [ "$(release_state_value CONTABASE_BOOTSTRAP_ADAPTER)" = release ] \
+        || fail "contrato Bootstrap Release inconsistente."
+      INSTALL_DIR="$(release_adopt_path CONTABASE_INSTALL_DIR "${CONTABASE_INSTALL_DIR+x}" "$INSTALL_DIR")"
+      DATA_DIR="$(release_adopt_path CONTABASE_DATA_DIR "${CONTABASE_DATA_DIR+x}" "$DATA_DIR")"
+      [ "$(release_state_value CONTABASE_CONFIG_DIR)" = "$CONFIG_DIR" ] \
+        || fail "diretorio de configuracao diverge do estado Bootstrap."
+      for key in CONTABASE_COMMIT CONTABASE_ARTIFACT_SHA256 CONTABASE_CHECKSUMS_SHA256 CONTABASE_HELPER_SHA256; do
+        value="$(release_state_value "$key")"
+        case "$key" in
+          CONTABASE_COMMIT) [[ "$value" =~ ^[0-9a-f]{40}$ ]] ;;
+          *) [[ "$value" =~ ^[0-9a-f]{64}$ ]] ;;
+        esac || fail "identidade Bootstrap invalida: $key."
+      done
+      [ "$(release_state_value CONTABASE_ARTIFACT_PLATFORM)" = "linux/$ARCH" ] \
+        && [ "$(release_state_value CONTABASE_ARTIFACT_NAME)" = "contabase-linux-$ARCH.tar.gz" ] \
+        || fail "arquitetura persistida diverge do host."
+      [ -n "$(release_state_value CONTABASE_UPDATE_SUPPORT)" ] || fail "suporte de update ausente do estado Bootstrap."
+    elif grep -Eq '^CONTABASE_(INSTALL_DIR|DATA_DIR|CONFIG_DIR|NETWORK_PROFILE|BOOTSTRAP_ADAPTER)=' "$STATE_FILE"; then
+      fail "estado Bootstrap incompleto; nenhum fallback legado permitido."
+    fi
+    # Channel changes are not part of this updater correction.
+    saved="$(release_state_value CONTABASE_CHANNEL)"
+    [ -z "${CONTABASE_CHANNEL+x}" ] || [ "$INSTALL_CHANNEL" = "$saved" ] \
+      || fail "canal solicitado diverge do estado instalado."
+    INSTALL_CHANNEL="$saved"
+  else
+    [ -f "$CONFIG_DIR/install-mode" ] && recovery_admin_path "$CONFIG_DIR/install-mode" \
+      && [ "$(cat "$CONFIG_DIR/install-mode")" = release ] \
+      || fail "estado ausente; instalacao legada nao comprovada."
+    if grep -Eq '^[[:space:]]*IPAddress(Deny|Allow)[[:space:]]*=' "$SERVICE_FILE"; then
+      fail "estado ausente em instalacao com filtro de rede; revisao administrativa necessaria."
+    fi
+  fi
+  if [ "$BOOTSTRAP_STATE" = false ]; then
+    # Legacy paths must still be attested by the service and existing env.
+    INSTALL_DIR="$(release_unit_value WorkingDirectory)" || fail "WorkingDirectory ambiguo."
+    [ -z "${CONTABASE_INSTALL_DIR+x}" ] || [ "$INSTALL_DIR" = "$CONTABASE_INSTALL_DIR" ] \
+      || fail "diretorio solicitado diverge da unit legada."
+  fi
+  INSTALLED_UNIT_SHA256="$(compute_sha256 "$SERVICE_FILE")"
+}
+
+release_unit_value() {
+  awk -F= -v key="$1" '
+    { line=$0; sub(/^[ \t]+/,"",line); sub(/[ \t]+$/,"",line) }
+    line ~ /^\[/ { section=line }
+    section=="[Service]" {
+      k=line; sub(/=.*/,"",k); sub(/[ \t]+$/,"",k)
+      if (k==key) {
+        value=substr(line,index(line,"=")+1); sub(/^[ \t]+/,"",value); count++
+      }
+    }
+    END { if(count!=1 || value=="") exit 1; print value }' "$SERVICE_FILE"
+}
+
+release_check_unit_value() {
+  [ "$(release_unit_value "$1")" = "$2" ] || fail "unit/configuracao divergente: $1."
+}
+
+validate_release_installation_contract() {
+  local path first second mode base host bind allowed item ip prefix a b c d part fragment drops reload trusted
+  for path in "$INSTALL_DIR" "$CONFIG_DIR" "$DATA_DIR" "$ENV_FILE" "$STATE_FILE" \
+              "$SERVICE_FILE" "$INSTALL_DIR/contabase" "$INSTALL_DIR/VERSION" "$DB_FILE" "$UPLOADS_DIR" \
+              "$DB_FILE-wal" "$DB_FILE-shm" "$BACKUPS_DIR" "$CONFIG_DIR/ops" "$CONFIG_DIR/install-mode"; do
+    release_safe_path "$path" || fail "path inseguro ou symlink na instalacao."
+  done
+  for first in "$INSTALL_DIR" "$DATA_DIR" "$CONFIG_DIR"; do
+    case "$first" in /etc|/var|/var/lib|/opt|/usr|/usr/local|/home|/root|/run|/tmp) fail "diretorio generico nao permitido." ;; esac
+    for second in "$INSTALL_DIR" "$DATA_DIR" "$CONFIG_DIR"; do
+      [ "$first" = "$second" ] && continue
+      case "$first/" in "$second/"*) fail "diretorios conflitantes na instalacao." ;; esac
+    done
+  done
+  recovery_admin_path "$INSTALL_DIR" && recovery_admin_path "$INSTALL_DIR/contabase" \
+    && recovery_admin_path "$INSTALL_DIR/VERSION" \
+    && recovery_admin_path "$(dirname "$DATA_DIR")" || fail "paths sem protecao administrativa."
+  [ "$(compute_sha256 "$SERVICE_FILE")" = "$INSTALLED_UNIT_SHA256" ] \
+    || fail "unit alterada durante a atualizacao."
+  fragment="$(systemctl show contabase.service --property=FragmentPath --value)" || fail "nao foi possivel ler FragmentPath."
+  drops="$(systemctl show contabase.service --property=DropInPaths --value)" || fail "nao foi possivel ler DropInPaths."
+  reload="$(systemctl show contabase.service --property=NeedDaemonReload --value)" || fail "nao foi possivel ler NeedDaemonReload."
+  [ "$fragment" = "$SERVICE_FILE" ] && [ -z "$drops" ] && [ "$reload" = no ] \
+    || fail "unit carregada diverge do disco ou possui drop-ins; revisar configuracao explicitamente."
+  release_check_unit_value WorkingDirectory "$INSTALL_DIR"
+  release_check_unit_value EnvironmentFile "$ENV_FILE"
+  release_check_unit_value ExecStart "$INSTALL_DIR/contabase"
+  release_check_unit_value User "$APP_USER"
+  release_check_unit_value Group "$APP_USER"
+  # Preserve every directive, but do not allow an override of the validated env.
+  if grep -Eq '^[[:space:]]*((Environment|PassEnvironment|UnsetEnvironment|ExecStartPre|ExecStartPost|RootDirectory|RootImage|Include)[[:space:]]*=|\.include([[:space:]]|$))' "$SERVICE_FILE"; then
+    fail "unit possui overrides fora do contrato; revisao administrativa necessaria."
+  fi
+  if [ "$BOOTSTRAP_STATE" = true ]; then
+    [ "$(release_state_value CONTABASE_DATA_DIR)" = "$DATA_DIR" ] \
+      && [ "$(release_state_value CONTABASE_PORT)" = "$PORT" ] || fail "env diverge dos paths/porta Bootstrap."
+    [ "$(env_load_value DATA_DIR)" = "$DATA_DIR" ] \
+      && [ "$(env_load_value DB_FILE)" = "$DATA_DIR/contabase.db" ] \
+      && [ "$(env_load_value UPLOADS_DIR)" = "$DATA_DIR/uploads" ] \
+      || fail "paths do env divergem do estado Bootstrap."
+    mode="$(release_state_value CONTABASE_ACCESS_MODE)"
+    [ "$mode" = "$(env_load_value CONTABASE_ACCESS_MODE)" ] || fail "perfil de acesso diverge do env."
+    case "$(release_state_value CONTABASE_NETWORK_PROFILE):$mode" in
+      local:local|lan:lan|proxy:proxy|tunnel:proxy|advanced:local|advanced:lan|advanced:proxy) ;;
+      *) fail "perfil de rede inconsistente." ;;
+    esac
+    base="$(env_load_value APP_BASE_URL)"; host="$(host_from_base_url "$base")"
+    case "$base" in *[!A-Za-z0-9:/._~\[\]-]*|*'@'*|*'?'*|*'#'*) fail "URL Bootstrap invalida." ;; esac
+    bind="$(release_state_value CONTABASE_HOST_BIND)"
+    case "$mode" in
+      local) host_is_localhost "$host" && [ "$bind" = 127.0.0.1 ] && [ "$(scheme_from_base_url "$base")" = http ] || fail "rede localhost inconsistente." ;;
+      lan) [ "$bind" = "$host" ] && host_is_private_ipv4 "$host" || fail "rede LAN inconsistente." ;;
+      proxy) [ "$bind" = 127.0.0.1 ] && [ "$(scheme_from_base_url "$base")" = https ] \
+        && [ -n "$(env_load_value TRUSTED_PROXIES)" ] || fail "rede proxy inconsistente." ;;
+      *) fail "modo de acesso invalido." ;;
+    esac
+    allowed="$(env_load_value ALLOWED_HOSTS)"
+    case ",$allowed," in *",$host,"*) ;; *) fail "ALLOWED_HOSTS diverge da URL." ;; esac
+    case "$allowed" in ""|*[!A-Za-z0-9.,:_-]*|,*|*,|*,,*) fail "ALLOWED_HOSTS invalido." ;; esac
+    if [ "$mode" != proxy ]; then
+      [ -z "$(env_load_value TRUSTED_PROXIES)" ] || fail "proxy inesperado no perfil local/LAN."
+      [ "${base##*:}" = "$PORT" ] || fail "porta da URL diverge do estado."
+    fi
+    if [ "$mode" = local ]; then
+      local -a hosts
+      IFS=, read -ra hosts <<< "$allowed"
+      for item in "${hosts[@]}"; do
+        case "$item" in localhost|127.0.0.1|::1) ;; *) fail "host amplia acesso alem de localhost." ;; esac
+      done
+    fi
+    trusted="$(env_load_value TRUSTED_PROXIES)"
+    if [ "$mode" = proxy ]; then
+      case "$host" in *.*) ;; *) fail "dominio proxy invalido." ;; esac
+      case "$host" in *[!A-Za-z0-9.-]*|.*|*.) fail "dominio proxy invalido." ;; esac
+      host_is_private_ipv4 "$host" && fail "proxy exige dominio publico."
+      local -a proxies
+      IFS=, read -ra proxies <<< "$trusted"
+      [ "${#proxies[@]}" -le 16 ] || fail "proxies excessivos."
+      for item in "${proxies[@]}"; do
+        case "$item" in ::1|::1/128) continue ;; esac
+        ip="${item%/*}"; prefix="${item#*/}"
+        [[ "$prefix" =~ ^(2[4-9]|3[0-2])$ ]] || fail "prefixo proxy invalido."
+        [ "$ip" = 127.0.0.1 ] || host_is_private_ipv4 "$ip" || fail "proxy fora de rede restrita."
+      done
+    fi
+    release_check_unit_value NoNewPrivileges true
+    release_check_unit_value PrivateTmp true
+    release_check_unit_value ProtectHome true
+    release_check_unit_value ProtectSystem strict
+    release_check_unit_value ReadWritePaths "$DATA_DIR"
+    release_check_unit_value IPAddressDeny any
+    allowed="$(release_unit_value IPAddressAllow)" || fail "filtro IP ausente ou ambiguo."
+    local -a filters
+    read -ra filters <<< "$allowed"
+    for item in "${filters[@]}"; do
+      case "$item" in localhost|127.0.0.1|127.0.0.1/32|::1|::1/128) continue ;; esac
+      [ "$mode" = lan ] || fail "filtro IP amplia acesso alem de localhost."
+      ip="${item%/*}"; prefix="${item#*/}"
+      [[ "$prefix" =~ ^([0-9]|[12][0-9]|3[0-2])$ ]] || fail "prefixo IP invalido."
+      IFS=. read -r a b c d <<< "$ip"
+      for part in "$a" "$b" "$c" "$d"; do
+        [[ "$part" =~ ^(0|[1-9][0-9]{0,2})$ ]] && [ "$part" -le 255 ] || fail "IPv4 invalido no filtro."
+      done
+      if [ "$a" = 10 ] && [ "$prefix" -ge 8 ]; then :
+      elif [ "$a" = 172 ] && [ "$b" -ge 16 ] && [ "$b" -le 31 ] && [ "$prefix" -ge 12 ]; then :
+      elif [ "$a" = 192 ] && [ "$b" = 168 ] && [ "$prefix" -ge 16 ]; then :
+      else fail "filtro IP amplia acesso alem da LAN privada."; fi
+    done
+  fi
+}
+
+verify_release_runtime() {
+  local pid exe before after
+  (validate_release_installation_contract) || return 1
+  systemctl is-active --quiet contabase.service || return 1
+  pid="$(systemctl show contabase.service --property=MainPID --value)" || return 1
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  exe="$(readlink "/proc/$pid/exe")" || return 1
+  [ "$exe" = "$INSTALL_DIR/contabase" ] || return 1
+  before="$(compute_sha256 "/proc/$pid/exe")" || return 1
+  after="$(compute_sha256 "$INSTALL_DIR/contabase")" || return 1
+  [ "$before" = "$CANDIDATE_BINARY_SHA256" ] && [ "$after" = "$before" ] \
+    && [ "$(cat "$INSTALL_DIR/VERSION")" = "$TAG" ] || return 1
+  [ "$(systemctl show contabase.service --property=MainPID --value)" = "$pid" ] || return 1
+}
+
 validate_existing_installation() {
   say "Verificando instalacao existente..."
 
@@ -1028,6 +1542,11 @@ compute_sha256() {
   fi
 }
 
+# Contrato de recebimento do bundle externo para o updater Release.
+# Roda antes de qualquer mutacao. A autenticidade da referencia
+# (manifesto/commit) e responsabilidade do launcher F3-C; aqui apenas
+# provamos coerencia byte a byte contra a identidade recebida.
+
 validate_checksum() {
   local checksums_file="$1"
   local artifact_file="$2"
@@ -1131,6 +1650,18 @@ download_and_validate_bundle() {
   say "Artifact validado e extraido com seguranca."
 }
 
+resolve_candidate_identity() {
+  # GitHub returns the peeled commit as plain SHA for this media type.
+  CANDIDATE_COMMIT="$(curl -q --fail --silent --show-error --proto '=https' --tlsv1.2 \
+    --max-time 30 --max-filesize 128 -H 'Accept: application/vnd.github.sha' \
+    "https://api.github.com/repos/${REPO#https://github.com/}/commits/$TAG")" \
+    || fail "nao foi possivel vincular a tag ao commit publico."
+  [[ "$CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail "identidade do commit da tag invalida."
+  CANDIDATE_ARTIFACT_SHA256="$(compute_sha256 "$TMP_DIR/$ARTIFACT_NAME")"
+  CANDIDATE_CHECKSUMS_SHA256="$(compute_sha256 "$TMP_DIR/checksums.txt")"
+  CANDIDATE_BINARY_SHA256="$(compute_sha256 "$EXTRACT_DIR/contabase/contabase")"
+}
+
 # ==============================================================================
 # Confirm update
 # ==============================================================================
@@ -1164,40 +1695,12 @@ confirm_update() {
 # ==============================================================================
 
 render_service_file() {
-  local service_staging="${TMP_DIR}/contabase.service.new"
-
-  if [ -f "$SERVICE_FILE" ]; then
-    SERVICE_BACKUP="${TMP_DIR}/contabase.service.previous"
-    cp "$SERVICE_FILE" "$SERVICE_BACKUP" || return 1
-  fi
-
-  {
-    echo "[Unit]"
-    echo "Description=ContaBase - Base Financeira Privada"
-    echo "After=network.target"
-    echo ""
-    echo "[Service]"
-    echo "Type=simple"
-    echo "User=${APP_USER}"
-    echo "Group=${APP_USER}"
-    echo "WorkingDirectory=${INSTALL_DIR}"
-    echo "EnvironmentFile=${ENV_FILE}"
-    echo "ExecStart=${INSTALL_DIR}/contabase"
-    echo "Restart=on-failure"
-    echo "RestartSec=5"
-    echo "NoNewPrivileges=true"
-    echo "PrivateTmp=true"
-    echo "ProtectHome=true"
-    echo "ProtectSystem=strict"
-    echo "ReadWritePaths=${DATA_DIR}"
-    echo ""
-    echo "[Install]"
-    echo "WantedBy=multi-user.target"
-  } > "$service_staging" || return 1
-
-  if ! install -o root -g root -m 0644 "$service_staging" "$SERVICE_FILE"; then
-    return 1
-  fi
+  # Existing restrictions belong to this installation, not to the new bundle.
+  [ -f "$SERVICE_FILE" ] && [ ! -L "$SERVICE_FILE" ] || return 1
+  [ "$(compute_sha256 "$SERVICE_FILE")" = "$INSTALLED_UNIT_SHA256" ] || return 1
+  SERVICE_BACKUP="${TMP_DIR}/contabase.service.previous"
+  cp "$SERVICE_FILE" "$SERVICE_BACKUP" || return 1
+  cmp -s "$SERVICE_FILE" "$SERVICE_BACKUP"
 }
 
 stop_service() {
@@ -1331,54 +1834,223 @@ record_release_recovery() {
   fi
 }
 
-write_install_state() {
+write_install_state() (
+  umask 077
   local method="$1"
   local channel="$2"
   local version="$3"
   local repo_path="${4:-}"
   local tmpfile
 
-  mkdir -p "$CONFIG_DIR"
-  tmpfile="$(mktemp "${TMPDIR:-/tmp}/contabase-install-state.XXXXXX")"
+  [ "$version" = "$TAG" ] && [ "$channel" = "$INSTALL_CHANNEL" ] && [ -z "$repo_path" ] || return 1
+  canonicalize_version "$version" >/dev/null || return 1
+  [[ "$CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || return 1
+  [[ "$CANDIDATE_ARTIFACT_SHA256" =~ ^[0-9a-f]{64}$ ]] \
+    && [[ "$CANDIDATE_CHECKSUMS_SHA256" =~ ^[0-9a-f]{64}$ ]] || return 1
+  release_safe_path "$STATE_FILE" && recovery_admin_path "$CONFIG_DIR" || return 1
+  if [ -n "$INSTALL_STATE_SHA256" ]; then
+    recovery_admin_path "$STATE_FILE" && release_validate_state \
+      && [ "$(compute_sha256 "$STATE_FILE")" = "$INSTALL_STATE_SHA256" ] || return 1
+    method="$(release_state_value CONTABASE_INSTALL_METHOD)"
+  else
+    [ ! -e "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ] || return 1
+  fi
+  tmpfile="$(mktemp "$CONFIG_DIR/.install-state.XXXXXX")" || return 1
+  trap 'rm -f "$tmpfile"' EXIT
+  if [ -n "$INSTALL_STATE_SHA256" ]; then cp "$STATE_FILE" "$tmpfile" || return 1
+  else
+    printf 'CONTABASE_STATE_VERSION=1\nCONTABASE_INSTALL_METHOD=%s\nCONTABASE_CHANNEL=%s\nCONTABASE_INSTALLED_VERSION=%s\nCONTABASE_REPO_PATH=\n' \
+      "$method" "$channel" "$PREVIOUS_VERSION" > "$tmpfile" || return 1
+  fi
+  # Keep the original identity once, and track the newly installed payload.
+  local key original value output="$tmpfile.next"
+  trap 'rm -f "$tmpfile" "$output"' EXIT
+  for key in CONTABASE_INSTALLED_VERSION CONTABASE_COMMIT CONTABASE_ARTIFACT_NAME \
+             CONTABASE_ARTIFACT_PLATFORM CONTABASE_ARTIFACT_SHA256 CONTABASE_CHECKSUMS_SHA256; do
+    case "$key" in
+      CONTABASE_INSTALLED_VERSION) value="$version" ;;
+      CONTABASE_COMMIT) value="$CANDIDATE_COMMIT" ;;
+      CONTABASE_ARTIFACT_NAME) value="$ARTIFACT_NAME" ;;
+      CONTABASE_ARTIFACT_PLATFORM) value="linux/$ARCH" ;;
+      CONTABASE_ARTIFACT_SHA256) value="$CANDIDATE_ARTIFACT_SHA256" ;;
+      CONTABASE_CHECKSUMS_SHA256) value="$CANDIDATE_CHECKSUMS_SHA256" ;;
+    esac
+    [ -n "$value" ] && [[ "$value" =~ ^[A-Za-z0-9_./-]+$ ]] || return 1
+    original="CONTABASE_ORIGIN_${key#CONTABASE_}"
+    awk -F= -v k="$key" -v v="$value" -v origin="$original" '
+      $1==origin { found_origin=1 }
+      $1==k { old=substr($0,index($0,"=")+1); found=1; print k "=" v; next }
+      { print }
+      END { if(!found) print k "=" v; if(found && !found_origin) print origin "=" old }
+    ' "$tmpfile" > "$output" || return 1
+    mv -f "$output" "$tmpfile" || return 1
+  done
+  chmod 0600 "$tmpfile" && chown root:root "$tmpfile" || return 1
+  STATE_FILE="$tmpfile" release_validate_state || return 1
+  mv -f "$tmpfile" "$STATE_FILE" || return 1
+  [ "$(release_state_value CONTABASE_INSTALLED_VERSION)" = "$TAG" ] \
+    && [ "$(release_state_value CONTABASE_COMMIT)" = "$CANDIDATE_COMMIT" ]
+)
+
+# === RELEASE_ISOLATED_BOOTSTRAP_BEGIN ===
+# A beta.7 baixa apenas este script, sem scripts/lib. Nesse modo isolado,
+# autentica o dispatcher da versao alvo pelo canal e entrega o controle a ele.
+# O dispatcher baixa o bundle completo do commit autorizado e revalida tudo.
+bootstrap_channel_for_tag() {
+  case "$1" in
+    v*-beta.*) printf '%s' beta ;;
+    v[0-9]*.[0-9]*.[0-9]*) printf '%s' stable ;;
+    *) return 1 ;;
+  esac
+}
+
+bootstrap_json_string_field() {
+  local key="$1" file="$2"
+  tr '\n' ' ' < "$file" | sed -nE 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p'
+}
+
+bootstrap_json_number_field() {
+  local key="$1" file="$2"
+  tr '\n' ' ' < "$file" | sed -nE 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p'
+}
+
+bootstrap_download() {
+  local url="$1" out="$2" limit="$3" want_json="${4:-0}"
+  local result status content_type effective size
+  result="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+    --max-redirs 0 --max-time 120 --max-filesize "$limit" \
+    -A 'ContaBase-Update/1' -o "$out" \
+    -w '%{http_code}\n%{content_type}\n%{url_effective}' "$url")" \
+    || { rm -f "$out"; fail "bootstrap: falha de rede ao baixar ${url}"; }
+  status=""
+  content_type=""
+  effective=""
   {
-    printf 'CONTABASE_STATE_VERSION=1\n'
-    printf 'CONTABASE_INSTALL_METHOD=%s\n' "$method"
-    printf 'CONTABASE_CHANNEL=%s\n' "$channel"
-    printf 'CONTABASE_INSTALLED_VERSION=%s\n' "$version"
-    printf 'CONTABASE_REPO_PATH=%s\n' "$repo_path"
-  } > "$tmpfile"
-  install -o root -g root -m 0644 "$tmpfile" "$STATE_FILE"
-  rm -f "$tmpfile"
+    IFS= read -r status || true
+    IFS= read -r content_type || true
+    IFS= read -r effective || true
+  } <<< "$result"
+  [ "$status" = "200" ] || { rm -f "$out"; fail "bootstrap: HTTP ${status:-desconhecida} em ${url}"; }
+  [ "$effective" = "$url" ] || { rm -f "$out"; fail "bootstrap: redirecionamento nao autorizado em ${url}"; }
+  [ -f "$out" ] && [ ! -L "$out" ] || { rm -f "$out"; fail "bootstrap: download ausente ou inseguro: ${url}"; }
+  if [ "$want_json" = "1" ]; then
+    case "$content_type" in
+      application/json*) ;;
+      *) rm -f "$out"; fail "bootstrap: content-type nao JSON em ${url}: ${content_type:-ausente}";;
+    esac
+  fi
+  size="$(wc -c < "$out" | tr -d '[:space:]')"
+  [ -n "$size" ] && [ "$size" -gt 0 ] && [ "$size" -le "$limit" ] \
+    || { rm -f "$out"; fail "bootstrap: tamanho invalido em ${url}"; }
+}
+
+bootstrap_standalone_release_wrapper() {
+  # Bundle autenticado ou checkout completo seguem pelo caminho ja existente.
+  [ -z "${BUNDLE_COMMIT}" ] || return 0
+  [ -z "${UPDATE_WRAPPER_PATH}" ] || return 0
+  [ -z "${UPDATE_WRAPPER_SHA256}" ] || return 0
+  local local_wrapper="${SCRIPT_DIR}/lib/contabase-update-wrapper.sh"
+  if [ -e "$local_wrapper" ] || [ -L "$local_wrapper" ]; then
+    return 0
+  fi
+
+  local channel manifest_url manifest_file manifest_sha manifest_commit
+  local updater_url updater_file wrapper_hash wrapper_url wrapper_file actual
+  channel="$(bootstrap_channel_for_tag "$TAG")" \
+    || fail "bootstrap: nao foi possivel inferir o canal de ${TAG}."
+  BOOTSTRAP_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/contabase-release-bootstrap.XXXXXX")" \
+    || fail "bootstrap: nao foi possivel criar diretorio temporario."
+  chmod 0700 "$BOOTSTRAP_TMP_DIR"
+
+  say "Bootstrap isolado detectado; autenticando o updater ${TAG} pelo canal ${channel}..."
+  manifest_file="${BOOTSTRAP_TMP_DIR}/channel.json"
+  manifest_url="${BOOTSTRAP_CHANNEL_BASE%/}/channels/${channel}.json"
+  bootstrap_download "$manifest_url" "$manifest_file" 65536 1
+  [ "$(bootstrap_json_number_field schema_version "$manifest_file")" = "1" ] \
+    || fail "bootstrap: manifest do canal ${channel} tem schema_version invalido."
+  [ "$(bootstrap_json_string_field channel "$manifest_file")" = "$channel" ] \
+    || fail "bootstrap: manifest do canal ${channel} declara canal divergente."
+  [ "$(bootstrap_json_string_field version "$manifest_file")" = "$TAG" ] \
+    || fail "bootstrap: canal ${channel} nao aponta para ${TAG}."
+  manifest_commit="$(bootstrap_json_string_field commit "$manifest_file")"
+  manifest_sha="$(bootstrap_json_string_field updater_manifest_sha256 "$manifest_file")"
+  [[ "$manifest_commit" =~ ^[0-9a-f]{40}$ ]] \
+    || fail "bootstrap: commit do canal ${channel} invalido."
+  [[ "$manifest_sha" =~ ^[0-9a-f]{64}$ ]] \
+    || fail "bootstrap: updater_manifest_sha256 invalido no canal ${channel}."
+
+  updater_file="${BOOTSTRAP_TMP_DIR}/updater.sha256"
+  updater_url="${BOOTSTRAP_CHANNEL_BASE%/}/updaters/${TAG}/updater.sha256"
+  bootstrap_download "$updater_url" "$updater_file" 65536
+  actual="$(compute_sha256 "$updater_file" | tr '[:upper:]' '[:lower:]')"
+  [ "$actual" = "$manifest_sha" ] \
+    || fail "bootstrap: updater.sha256 diverge do canal ${channel}."
+  [ "$(sed -n '1p' "$updater_file")" = "commit=${manifest_commit}" ] \
+    || fail "bootstrap: commit do updater.sha256 diverge do canal ${channel}."
+
+  wrapper_hash="$(awk -v p="scripts/lib/contabase-update-wrapper.sh" '
+    NF >= 2 { f = $2; sub(/^\*/, "", f); if (f == p) print $1 }
+  ' "$updater_file")"
+  [ "$(printf '%s\n' "$wrapper_hash" | wc -l | tr -d '[:space:]')" = "1" ] \
+    || fail "bootstrap: wrapper ausente ou duplicado no updater.sha256."
+  [[ "$wrapper_hash" =~ ^[0-9a-f]{64}$ ]] \
+    || fail "bootstrap: hash do wrapper invalido no updater.sha256."
+
+  wrapper_file="${BOOTSTRAP_TMP_DIR}/contabase-update-wrapper.sh"
+  wrapper_url="${BOOTSTRAP_RAW_BASE%/}/${manifest_commit}/scripts/lib/contabase-update-wrapper.sh"
+  bootstrap_download "$wrapper_url" "$wrapper_file" 1048576
+  actual="$(compute_sha256 "$wrapper_file" | tr '[:upper:]' '[:lower:]')"
+  [ "$actual" = "$wrapper_hash" ] \
+    || fail "bootstrap: wrapper diverge do updater.sha256."
+  chmod 0700 "$wrapper_file"
+
+  say "Updater autenticado pelo canal ${channel}; executando o dispatcher ${TAG}..."
+  local rc=0
+  "$wrapper_file" "$TAG" "$@" || rc=$?
+  rm -rf "$BOOTSTRAP_TMP_DIR"
+  BOOTSTRAP_TMP_DIR=""
+  exit "$rc"
+}
+# === RELEASE_ISOLATED_BOOTSTRAP_END ===
+
+RELEASE_WRAPPER_SOURCE=""
+
+validate_release_update_wrapper() {
+  local wrapper_source="${SCRIPT_DIR}/lib/contabase-update-wrapper.sh"
+  if [ -n "$UPDATE_WRAPPER_PATH" ] || [ -n "$UPDATE_WRAPPER_SHA256" ]; then
+    [ -n "$UPDATE_WRAPPER_PATH" ] && [ -n "$UPDATE_WRAPPER_SHA256" ] \
+      || fail "wrapper verificado incompleto (caminho/hash)."
+    bundle_path_unsafe "$UPDATE_WRAPPER_PATH" \
+      && fail "caminho do wrapper verificado com symlink ou componente inseguro."
+    [ -f "$UPDATE_WRAPPER_PATH" ] && [ ! -L "$UPDATE_WRAPPER_PATH" ] \
+      || fail "wrapper verificado ausente ou inseguro."
+    [ "$(bundle_sha256 "$UPDATE_WRAPPER_PATH")" = "$UPDATE_WRAPPER_SHA256" ] \
+      || fail "wrapper verificado foi alterado antes da instalacao."
+    RELEASE_WRAPPER_SOURCE="$UPDATE_WRAPPER_PATH"
+    return 0
+  fi
+  [ -n "$BUNDLE_COMMIT" ] \
+    && fail "wrapper verificado ausente no caminho autenticado."
+  [ -f "$wrapper_source" ] && [ ! -L "$wrapper_source" ] \
+    || fail "bundle Release sem wrapper autenticado; nenhuma alteracao foi executada."
+  RELEASE_WRAPPER_SOURCE="$wrapper_source"
 }
 
 backfill_update_command() {
   local update_wrapper="/usr/local/bin/contabase-update"
-  local mode_file="/etc/contabase/install-mode"
-  local wrapper_source="${SCRIPT_DIR}/lib/contabase-update-wrapper.sh"
-  local wrapper_url="${PUBLIC_RAW_BASE}/${TAG}/scripts/lib/contabase-update-wrapper.sh"
-  local wrapper_tmp=""
+  local mode_file="${CONFIG_DIR}/install-mode"
 
-  write_install_state "release" "$INSTALL_CHANNEL" "$TAG" ""
-
+  validate_release_update_wrapper
   mkdir -p "$(dirname "$mode_file")"
   printf '%s\n' "release" > "$mode_file"
   chown root:root "$mode_file" 2>/dev/null || true
   chmod 0644 "$mode_file"
 
-  if [ -f "$wrapper_source" ]; then
-    install -o root -g root -m 0755 "$wrapper_source" "$update_wrapper"
-  else
-    command -v curl >/dev/null 2>&1 || fail "curl e obrigatorio para instalar o wrapper de update."
-    wrapper_tmp="$(mktemp "${TMPDIR:-/tmp}/contabase-update-wrapper.XXXXXX")"
-    if ! curl --fail --location --silent --show-error \
-      --proto '=https' --tlsv1.2 \
-      "$wrapper_url" -o "$wrapper_tmp"; then
-      rm -f "$wrapper_tmp"
-      fail "nao foi possivel baixar o wrapper de update da tag ${TAG}."
-    fi
-    install -o root -g root -m 0755 "$wrapper_tmp" "$update_wrapper"
-    rm -f "$wrapper_tmp"
+  if [ -n "$UPDATE_WRAPPER_PATH" ]; then
+    [ "$(bundle_sha256 "$UPDATE_WRAPPER_PATH")" = "$UPDATE_WRAPPER_SHA256" ] \
+      || fail "wrapper verificado foi alterado antes da instalacao."
   fi
+  install -o root -g root -m 0755 "$RELEASE_WRAPPER_SOURCE" "$update_wrapper"
 
   chown root:root "$update_wrapper" 2>/dev/null || true
   chmod 0755 "$update_wrapper"
@@ -1420,6 +2092,7 @@ perform_update() {
   fi
 
   # Real update
+  validate_release_installation_contract
   say ""
   say "====================================================================="
   say "Iniciando atualizacao para ${TAG}..."
@@ -1427,6 +2100,7 @@ perform_update() {
 
   # Stop service
   stop_service
+  validate_release_installation_contract
 
   # O pacote canonico precede qualquer alteracao do ambiente ou do bundle.
   if ! create_canonical_backup; then
@@ -1480,6 +2154,10 @@ perform_update() {
     fail_after_new_runtime "novo bundle falhou no healthcheck; restore de dados exige decisao explicita."
   fi
 
+  if ! verify_release_runtime; then
+    fail_after_new_runtime "processo ativo, unit ou diretorios divergem do candidato."
+  fi
+
   NEW_BUNDLE_ACTIVE=false
   record_release_recovery
 
@@ -1490,6 +2168,10 @@ perform_update() {
 
   # Install/refresh global update command (backfill for existing installs)
   backfill_update_command
+
+  if ! write_install_state "release" "$INSTALL_CHANNEL" "$TAG" ""; then
+    fail_after_new_runtime "nao foi possivel persistir o estado da atualizacao."
+  fi
 
   # Report
   say ""
@@ -1533,20 +2215,42 @@ main() {
     fi
   else
     check_platform
+    resolve_release_installation
     validate_existing_env
+    validate_numeric_settings
+    validate_install_channel
     validate_existing_installation
+    validate_release_installation_contract
     validate_persistent_state
     resolve_current_version
     enforce_version_policy
   fi
 
+  if [ "$VALIDATE_ONLY" != true ]; then
+    bootstrap_standalone_release_wrapper "$@"
+  fi
+
   build_urls
   download_and_validate_bundle
+
+  # B6: no modo autenticado o commit da tag e validado tambem em
+  # --validate-only, antes de qualquer retorno de sucesso.
+  if [ -n "$BUNDLE_COMMIT" ]; then
+    resolve_candidate_identity
+    [ "$CANDIDATE_COMMIT" = "$BUNDLE_COMMIT" ] \
+      || fail "commit da tag diverge do bundle autorizado."
+  fi
 
   if [ "$VALIDATE_ONLY" = true ]; then
     say ""
     say "Validacao concluida; nenhuma instalacao foi alterada."
     return 0
+  fi
+
+  validate_release_update_wrapper
+
+  if [ -z "$BUNDLE_COMMIT" ]; then
+    resolve_candidate_identity
   fi
 
   # Confirm for real update only (dry-run skips interactive prompt)

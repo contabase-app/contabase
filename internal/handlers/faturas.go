@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -119,6 +121,9 @@ type FaturaData struct {
 // Financial mutations remain exclusively in the existing invoice handlers.
 type FaturasIndexData struct {
 	AppShellAccess
+	OOB                 bool
+	OverduePeriodURL    string
+	OverduePeriodLabel  string
 	Title               string
 	UserName            string
 	UserInitials        string
@@ -226,7 +231,7 @@ func (h *FaturasHandler) HandleFaturasIndex(w http.ResponseWriter, r *http.Reque
 
 	templateName := "faturas-index-page"
 	if r.URL.Query().Get("partial") == "cards" && r.Header.Get("HX-Request") != "" {
-		templateName = "faturas-index-card-rail"
+		templateName = "faturas-index-state"
 	}
 	var buf bytes.Buffer
 	if err := h.Templates.ExecuteTemplate(&buf, templateName, data); err != nil {
@@ -291,9 +296,6 @@ func (h *FaturasHandler) buildFaturasIndexData(r *http.Request) (FaturasIndexDat
 	if err != nil {
 		return FaturasIndexData{}, fmt.Errorf("carregar cartões: %w", err)
 	}
-	// Keep the carousel order identical to the Dashboard for the selected
-	// competence: overdue, upcoming, no due date, then paid/zero-value cards.
-	// The sort is stable, so the configured account order remains the tie-break.
 	SortDashboardCardsByPaymentPriority(cards, time.Now())
 
 	selectedCardID := strings.TrimSpace(r.URL.Query().Get("cartao"))
@@ -327,6 +329,18 @@ func (h *FaturasHandler) buildFaturasIndexData(r *http.Request) (FaturasIndexDat
 		NextURL:         faturasIndexURL(selectedCardID, int(next.Month()), next.Year(), faturaSortOrderFromRequest(r)),
 		RefreshCardsURL: faturasIndexCardsURL(selectedCardID, month, year, faturaSortOrderFromRequest(r)),
 	}
+	attention, err := queryFaturasPeriodAttention(h.DB, h.WorkspaceID, time.Now())
+	if err != nil {
+		return FaturasIndexData{}, err
+	}
+	if attention.overdueReference != "" && attention.overdueReference != selectedMonth.Format("2006-01") {
+		overdueYear, overdueMonth, err := parseInvoiceReference(attention.overdueReference)
+		if err != nil {
+			return FaturasIndexData{}, err
+		}
+		data.OverduePeriodURL = faturasIndexURL("", int(overdueMonth), overdueYear, faturaSortOrderFromRequest(r))
+		data.OverduePeriodLabel = faturasIndexPeriodLabel(time.Date(overdueYear, overdueMonth, 1, 0, 0, 0, 0, time.UTC))
+	}
 	if selectedIndex < 0 {
 		return data, nil
 	}
@@ -338,6 +352,20 @@ func (h *FaturasHandler) buildFaturasIndexData(r *http.Request) (FaturasIndexDat
 			return FaturasIndexData{}, fmt.Errorf("carregar fatura selecionada: %w", err)
 		}
 		configureFaturaForIndex(&fatura, selectedCardID, month, year)
+		// Detail reads may materialize existing recurring entries. Query the rail
+		// afterwards so its totals and limits describe the same composition.
+		refreshed, err := queryFaturasIndexCards(h.DB, h.WorkspaceID, year, time.Month(month))
+		if err != nil {
+			return FaturasIndexData{}, err
+		}
+		SortDashboardCardsByPaymentPriority(refreshed, time.Now())
+		for i := range refreshed {
+			refreshed[i].Href = faturasIndexURL(refreshed[i].ID, month, year, faturaSortOrderFromRequest(r))
+			refreshed[i].ContentURL = faturasIndexContentURL(refreshed[i].ID, month, year, faturaSortOrderFromRequest(r))
+			refreshed[i].IsFaturasIndex = true
+			refreshed[i].IsSelected = refreshed[i].ID == selectedCardID
+		}
+		data.Cards = refreshed
 		data.HasSelectedInvoice = true
 		data.SelectedFatura = fatura
 		return data, nil
@@ -351,7 +379,7 @@ func queryFaturasIndexCards(db *sql.DB, workspaceID string, year int, month time
 	return queryFaturasIndexCardsAt(db, workspaceID, year, month, time.Now())
 }
 
-func queryFaturasIndexCardsAt(db *sql.DB, workspaceID string, year int, month time.Month, now time.Time) ([]CreditCardCard, error) {
+func queryFaturasIndexCardsAt(db reportQueryer, workspaceID string, year int, month time.Month, now time.Time) ([]CreditCardCard, error) {
 	rows, err := db.Query(`
 		SELECT a.id, a.name, COALESCE(cc.closing_day, 0), COALESCE(cc.due_day, 0),
 			COALESCE(cc.credit_limit, 0), COALESCE(NULLIF(a.provider_slug, ''), 'custom'),
@@ -417,11 +445,13 @@ func queryFaturasIndexCardsAt(db *sql.DB, workspaceID string, year int, month ti
 		}
 
 		amount := int64(0)
+		var snapshot invoiceFinancialSnapshot
 		if invoiceID != "" {
-			amount, err = sumInvoiceTotal(db, workspaceID, invoiceID)
+			snapshot, err = loadInvoiceFinancialSnapshotDB(db, workspaceID, invoiceID)
 			if err != nil {
 				return nil, err
 			}
+			amount = snapshot.Total
 		}
 		normalizedProvider := normalizeAccountProviderSlug(seed.providerSlug)
 		icon := seed.icon
@@ -454,7 +484,7 @@ func queryFaturasIndexCardsAt(db *sql.DB, workspaceID string, year int, month ti
 			}
 		}
 
-		cards = append(cards, CreditCardCard{
+		card := CreditCardCard{
 			ID:               seed.id,
 			InvoiceID:        invoiceID,
 			Name:             seed.name,
@@ -476,7 +506,18 @@ func queryFaturasIndexCardsAt(db *sql.DB, workspaceID string, year int, month ti
 			ProviderSlug:     normalizedProvider,
 			ProviderMark:     accountProviderMark(normalizedProvider, seed.name),
 			ProviderLogoPath: accountProviderLogoPathForAccount(seed.providerSlug, seed.name),
-		})
+		}
+		if invoiceID != "" {
+			applyCardInvoiceState(&card, snapshot, now)
+			if card.PaymentState.Financial == InvoiceFinancialEmpty {
+				if snapshot.HasMovements {
+					card.StatusLabel = "Sem valor a pagar"
+				} else {
+					card.StatusLabel = "Sem movimentação"
+				}
+			}
+		}
+		cards = append(cards, card)
 	}
 	return cards, nil
 }
@@ -570,6 +611,35 @@ func (h *FaturasHandler) HandleFaturaConceitoPorID(w http.ResponseWriter, r *htt
 	http.Redirect(w, r, destination, http.StatusSeeOther)
 }
 
+func respondInvoiceDataError(w http.ResponseWriter, r *http.Request, err error) {
+	status := http.StatusInternalServerError
+	message := "Erro interno. Tente novamente."
+	switch {
+	case errors.Is(err, errInvoiceNotFound):
+		status = http.StatusNotFound
+		message = "Fatura não encontrada."
+	case errors.Is(err, errInvoiceFinancialUnavailable):
+		status = http.StatusServiceUnavailable
+		message = "Não foi possível carregar os dados financeiros desta fatura agora. Tente novamente."
+	}
+	if r.Header.Get("HX-Request") != "" {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("HX-Reswap", "none")
+		payload, _ := json.Marshal(map[string]any{"mostrarAlerta": map[string]string{"value": message}})
+		w.Header().Set("HX-Trigger", string(payload))
+		w.WriteHeader(status)
+		return
+	}
+	switch status {
+	case http.StatusNotFound:
+		http.Error(w, "fatura não encontrada", status)
+	case http.StatusServiceUnavailable:
+		http.Error(w, "dados financeiros da fatura temporariamente indisponíveis", status)
+	default:
+		http.Error(w, "internal server error", status)
+	}
+}
+
 func (h *FaturasHandler) HandleExibirFaturaPorID(w http.ResponseWriter, r *http.Request, invoiceID string) {
 	if invoiceID == "" {
 		http.Error(w, "fatura obrigatória", http.StatusBadRequest)
@@ -593,7 +663,7 @@ func (h *FaturasHandler) HandleExibirFaturaPorID(w http.ResponseWriter, r *http.
 	data, err := buildFaturaDataForInvoice(h.DB, h.WorkspaceID, invoiceID, faturaSortOrderFromRequest(r))
 	if err != nil {
 		log.Printf("build fatura by id error: %v", err)
-		http.Error(w, "fatura não encontrada", http.StatusNotFound)
+		respondInvoiceDataError(w, r, err)
 		return
 	}
 	h.populateFaturaShellData(&data)
@@ -644,7 +714,7 @@ func (h *FaturasHandler) HandleExibirFaturaPorCartaoMes(w http.ResponseWriter, r
 	data, err := buildFaturaDataForInvoice(h.DB, h.WorkspaceID, invoiceID, faturaSortOrderFromRequest(r))
 	if err != nil {
 		log.Printf("build fatura by card month error: %v", err)
-		http.Error(w, "fatura não encontrada", http.StatusNotFound)
+		respondInvoiceDataError(w, r, err)
 		return
 	}
 	h.populateFaturaShellData(&data)
@@ -689,9 +759,19 @@ func (h *FaturasHandler) HandleAbrirFaturaPorCartaoMes(w http.ResponseWriter, r 
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
+	if r.Header.Get("HX-Request") != "" {
+		if handled, err := h.renderFaturasIndexMutation(w, r, invoiceID, false); handled {
+			if err != nil {
+				log.Printf("render invoice index after open error: %v", err)
+				respondInvoiceDataError(w, r, err)
+			}
+			return
+		}
+	}
 	data, err := buildFaturaDataForInvoice(h.DB, h.WorkspaceID, invoiceID, faturaSortOrderFromRequest(r))
 	if err != nil {
-		http.Error(w, "fatura não encontrada", http.StatusNotFound)
+		log.Printf("build fatura after open error: %v", err)
+		respondInvoiceDataError(w, r, err)
 		return
 	}
 	h.populateFaturaShellData(&data)
@@ -1004,6 +1084,11 @@ func (h *FaturasHandler) buildFaturaData(accountID string, sortOrder string) (Fa
 	return data, nil
 }
 
+var (
+	errInvoiceNotFound             = errors.New("invoice not found")
+	errInvoiceFinancialUnavailable = errors.New("invoice financial data unavailable")
+)
+
 func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder string) (FaturaData, error) {
 	data := FaturaData{
 		Title:               "Fatura",
@@ -1029,6 +1114,9 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 		WHERE i.id = ? AND a.workspace_id = ? AND a.type = ?
 	`, invoiceID, workspaceID, models.AccountTypeCreditCard).Scan(&data.AccountID, &data.Reference, &data.Status, &closingUnix, &dueUnix, &data.CardName, &providerSlug, &cardColor, &creditLimitCents, &data.DefaultPaymentAccountID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return data, fmt.Errorf("%w: %v", errInvoiceNotFound, err)
+		}
 		return data, fmt.Errorf("fatura: %w", err)
 	}
 	data.NextReference, _ = nextInvoiceReference(data.Reference)
@@ -1057,7 +1145,7 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 	switch data.Status {
 	case models.InvoiceStatusOpen:
 		if err := materializeRecurringInvoiceTransactions(db, workspaceID, invoiceID); err != nil {
-			return data, err
+			return data, fmt.Errorf("%w: %v", errInvoiceFinancialUnavailable, err)
 		}
 	case models.InvoiceStatusClosed, models.InvoiceStatusPaid:
 		// Historical page reads never own the terminal recurring decision. The
@@ -1209,7 +1297,11 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 		return data, fmt.Errorf("query invoice refund entries: %w", err)
 	}
 	if data.Status != models.InvoiceStatusPaid {
-		data.Transactions = append(data.Transactions, projectedRecurringInvoiceRows(db, workspaceID, data.AccountID, data.Reference)...)
+		projectedRows, err := projectedRecurringInvoiceRows(db, workspaceID, data.AccountID, data.Reference)
+		if err != nil {
+			return data, fmt.Errorf("%w: %v", errInvoiceFinancialUnavailable, err)
+		}
+		data.Transactions = append(data.Transactions, projectedRows...)
 	}
 	sortTransactionRows(data.Transactions, data.SortOrder)
 	data.TransactionGroups = groupTransactionsByDay(data.Transactions)
@@ -1219,32 +1311,41 @@ func buildFaturaDataForInvoice(db *sql.DB, workspaceID, invoiceID, sortOrder str
 }
 
 type projectedRecurringRuleSeed struct {
-	ruleID           string
-	amount           int64
-	description      string
-	startDate        int64
-	frequency        string
-	paymentStatus    string
-	categoryName     string
-	categoryIcon     string
-	categoryColor    string
-	totalOccurrences sql.NullInt64
+	ruleID                 string
+	seriesID               string
+	effectiveStartSequence int64
+	effectiveEndSequence   sql.NullInt64
+	endDate                sql.NullInt64
+	endDateCivil           sql.NullString
+	amount                 int64
+	description            string
+	startDate              int64
+	frequency              string
+	paymentStatus          string
+	categoryName           string
+	categoryIcon           string
+	categoryColor          string
+	totalOccurrences       sql.NullInt64
 }
 
-func projectedRecurringInvoiceRows(db *sql.DB, workspaceID, accountID, reference string) []TransactionRow {
+func projectedRecurringInvoiceRows(db *sql.DB, workspaceID, accountID, reference string) ([]TransactionRow, error) {
 	refYear, refMonth, err := parseInvoiceReference(reference)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("parse invoice reference: %w", err)
 	}
 
 	var closingDay, dueDay int64
-	if err := db.QueryRow(`
+	err = db.QueryRow(`
 		SELECT cc.closing_day, cc.due_day
 		FROM credit_cards cc
 		JOIN accounts a ON a.id = cc.account_id
 		WHERE cc.account_id = ? AND a.workspace_id = ?
-	`, accountID, workspaceID).Scan(&closingDay, &dueDay); err != nil {
-		return nil
+	`, accountID, workspaceID).Scan(&closingDay, &dueDay)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query credit card cycle: %w", err)
 	}
 
 	cycleStartUnix, cycleEndUnix := invoiceCycleBoundsForReference(refYear, refMonth, closingDay, dueDay)
@@ -1252,7 +1353,9 @@ func projectedRecurringInvoiceRows(db *sql.DB, workspaceID, accountID, reference
 	cycleEnd := time.Unix(cycleEndUnix, 0).UTC()
 
 	rows, err := db.Query(`
-		SELECT rr.id, rr.amount, rr.description, rr.start_date, rr.frequency, rr.default_payment_status, rr.total_occurrences,
+		SELECT rr.id, COALESCE(rr.series_id, ''), COALESCE(rr.effective_start_sequence, 1),
+		       rr.effective_end_sequence, rr.end_date, rr.end_date_civil,
+		       rr.amount, rr.description, rr.start_date, rr.frequency, rr.default_payment_status, rr.total_occurrences,
 		       COALESCE(c.name, 'Sem categoria'),
 		       COALESCE(c.icon, 'repeat'),
 		       COALESCE(c.color, '#6366f1')
@@ -1265,97 +1368,210 @@ func projectedRecurringInvoiceRows(db *sql.DB, workspaceID, accountID, reference
 		  AND rr.start_date < ?
 	`, workspaceID, accountID, models.TransactionTypeExpense, cycleEnd.Unix())
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("query recurring rules: %w", err)
 	}
 
 	var rules []projectedRecurringRuleSeed
 	for rows.Next() {
 		var rule projectedRecurringRuleSeed
 		var catName, catIcon, catColor sql.NullString
-		if err := rows.Scan(&rule.ruleID, &rule.amount, &rule.description, &rule.startDate, &rule.frequency, &rule.paymentStatus, &rule.totalOccurrences, &catName, &catIcon, &catColor); err != nil {
-			continue
+		if err := rows.Scan(&rule.ruleID, &rule.seriesID, &rule.effectiveStartSequence,
+			&rule.effectiveEndSequence, &rule.endDate, &rule.endDateCivil,
+			&rule.amount, &rule.description, &rule.startDate, &rule.frequency, &rule.paymentStatus, &rule.totalOccurrences,
+			&catName, &catIcon, &catColor); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan recurring rule: %w", err)
 		}
 		rule.categoryName = catName.String
 		rule.categoryIcon = catIcon.String
 		rule.categoryColor = catColor.String
 		rules = append(rules, rule)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("iterate recurring rules: %w", err)
+	}
 	if err := rows.Close(); err != nil {
-		return nil
+		return nil, fmt.Errorf("close recurring rules: %w", err)
+	}
+
+	groups := make(map[string][]projectedRecurringRuleSeed)
+	var seriesOrder []string
+	for _, rule := range rules {
+		key := projectedRecurringSeriesID(rule)
+		if _, ok := groups[key]; !ok {
+			seriesOrder = append(seriesOrder, key)
+		}
+		groups[key] = append(groups[key], rule)
 	}
 
 	var projected []TransactionRow
-	for _, rule := range rules {
-		start := time.Unix(rule.startDate, 0).UTC()
-		occurrence := start
-		seq := int64(1)
-		for i := 0; i < 20000 && occurrence.Before(cycleStart); i++ {
-			if rule.totalOccurrences.Valid && rule.totalOccurrences.Int64 > 0 && seq >= rule.totalOccurrences.Int64 {
-				break
-			}
-			next := nextRecurrenceDate(occurrence, rule.frequency)
-			if !next.After(occurrence) {
-				break
-			}
-			occurrence = next
-			seq++
+	for _, seriesID := range seriesOrder {
+		group := groups[seriesID]
+		sort.SliceStable(group, func(i, j int) bool {
+			return group[i].effectiveStartSequence < group[j].effectiveStartSequence
+		})
+		var seriesTotal sql.NullInt64
+		if err := db.QueryRow(`
+			SELECT total_occurrences FROM recurring_series
+			WHERE workspace_id = ? AND id = ?
+		`, workspaceID, seriesID).Scan(&seriesTotal); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("query recurring series total: %w", err)
 		}
-		for i := 0; i < 400 && !occurrence.Before(cycleStart) && occurrence.Before(cycleEnd); i++ {
-			if rule.totalOccurrences.Valid && rule.totalOccurrences.Int64 > 0 && seq > rule.totalOccurrences.Int64 {
-				break
+		for index := range group {
+			rule := group[index]
+			nextStart := int64(0)
+			if index+1 < len(group) {
+				nextStart = group[index+1].effectiveStartSequence
 			}
-			_, _, occRef := calculateInvoiceDates(occurrence, closingDay, dueDay)
-			if occRef == reference {
-				var exists int64
-				db.QueryRow(`
-					SELECT COUNT(1)
-					FROM transactions
-					WHERE workspace_id = ? AND recurring_rule_id = ? AND strftime('%Y-%m-%d', date, 'unixepoch') = strftime('%Y-%m-%d', ?, 'unixepoch')
-				`, workspaceID, rule.ruleID, occurrence.Unix()).Scan(&exists)
-				if exists == 0 {
-					projected = append(projected, projectedInvoiceTransactionRow(rule.amount, occurrence, rule.description, rule.paymentStatus, rule.categoryName, rule.categoryIcon, rule.categoryColor))
+			startSequence, endSequence := recurringRuleSequenceBounds(rule.effectiveStartSequence, rule.effectiveEndSequence, rule.totalOccurrences, seriesTotal, nextStart)
+			if startSequence > endSequence {
+				continue
+			}
+			occurrence := time.Unix(rule.startDate, 0).UTC()
+			for local := int64(0); local < 20000; local++ {
+				sequence := recurringRuleSeriesSequence(rule.effectiveStartSequence, local)
+				if sequence > endSequence {
+					break
 				}
+				if !occurrence.Before(cycleEnd) {
+					break
+				}
+				if recurringRuleEndDateReached(occurrence, rule.endDate, rule.endDateCivil) {
+					break
+				}
+				if !occurrence.Before(cycleStart) {
+					_, _, occRef := calculateInvoiceDates(occurrence, closingDay, dueDay)
+					if occRef == reference {
+						exists, err := projectedRecurringOccurrenceExists(db, workspaceID, seriesID, rule.ruleID, sequence, occurrence.Unix())
+						if err != nil {
+							return nil, err
+						}
+						skipped, blocked, err := projectedRecurringOccurrenceTerminal(db, workspaceID, seriesID, sequence)
+						if err != nil {
+							return nil, err
+						}
+						if !exists && !skipped && !blocked {
+							projected = append(projected, projectedInvoiceTransactionRow(rule.amount, occurrence, rule.description, rule.paymentStatus, rule.categoryName, rule.categoryIcon, rule.categoryColor))
+						}
+					}
+				}
+				next := nextRecurrenceDate(occurrence, rule.frequency)
+				if !next.After(occurrence) {
+					break
+				}
+				occurrence = next
 			}
-			next := nextRecurrenceDate(occurrence, rule.frequency)
-			if !next.After(occurrence) {
-				break
-			}
-			occurrence = next
-			seq++
 		}
 	}
-	return projected
+	return projected, nil
+}
+
+// projectedRecurringSeriesID resolves the series identity that owns durable
+// occurrence skips. Legacy rules without series_id are backfilled with the
+// rule id by EnsureRecurringSeriesForRuleTx.
+func projectedRecurringSeriesID(rule projectedRecurringRuleSeed) string {
+	if seriesID := strings.TrimSpace(rule.seriesID); seriesID != "" {
+		return seriesID
+	}
+	return strings.TrimSpace(rule.ruleID)
+}
+
+// projectedRecurringOccurrenceExists resolves the canonical occurrence
+// identity first. The rule and date fallback exists only for legacy rows that
+// do not carry a usable series sequence.
+func projectedRecurringOccurrenceExists(db *sql.DB, workspaceID, seriesID, ruleID string, sequence, occurrenceUnix int64) (bool, error) {
+	if strings.TrimSpace(seriesID) != "" && sequence > 0 {
+		var exists int
+		if err := db.QueryRow(`
+			SELECT EXISTS (
+				SELECT 1 FROM transactions
+				WHERE workspace_id = ? AND series_id = ? AND recurrence_sequence = ?
+			)
+		`, workspaceID, seriesID, sequence).Scan(&exists); err != nil {
+			return false, fmt.Errorf("query recurring occurrence identity: %w", err)
+		}
+		if exists == 1 {
+			return true, nil
+		}
+	}
+	var exists int
+	if err := db.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1 FROM transactions
+			WHERE workspace_id = ? AND recurring_rule_id = ?
+			  AND strftime('%Y-%m-%d', date, 'unixepoch') = strftime('%Y-%m-%d', ?, 'unixepoch')
+		)
+	`, workspaceID, ruleID, occurrenceUnix).Scan(&exists); err != nil {
+		return false, fmt.Errorf("query legacy recurring occurrence: %w", err)
+	}
+	return exists == 1, nil
+}
+
+// projectedRecurringOccurrenceTerminal reports durable terminal evidence for
+// the series occurrence. Skips and frozen blocks must never be projected.
+func projectedRecurringOccurrenceTerminal(db *sql.DB, workspaceID, seriesID string, sequence int64) (bool, bool, error) {
+	if db == nil || strings.TrimSpace(workspaceID) == "" || seriesID == "" || sequence <= 0 {
+		return false, false, nil
+	}
+	var skipped, blocked int
+	if err := db.QueryRow(`
+		SELECT
+			EXISTS (
+				SELECT 1 FROM recurring_occurrence_skips
+				WHERE workspace_id = ? AND series_id = ? AND recurrence_sequence = ?
+			),
+			EXISTS (
+				SELECT 1 FROM recurring_occurrence_blocks
+				WHERE workspace_id = ? AND series_id = ? AND recurrence_sequence = ?
+			)
+	`, workspaceID, seriesID, sequence, workspaceID, seriesID, sequence).Scan(&skipped, &blocked); err != nil {
+		return false, false, fmt.Errorf("query recurring occurrence terminal evidence: %w", err)
+	}
+	if skipped == 1 && blocked == 1 {
+		return false, false, fmt.Errorf("%w: manual skip contradicts frozen block", errInvoiceStateStructural)
+	}
+	return skipped == 1, blocked == 1, nil
 }
 
 // CalculateVirtualInvoiceTotal calculates the projected total for a future billing cycle
-func CalculateVirtualInvoiceTotal(db *sql.DB, workspaceID, accountID, reference string) (int64, int) {
+func CalculateVirtualInvoiceTotal(db *sql.DB, workspaceID, accountID, reference string) (int64, int, error) {
 	refYear, refMonth, err := parseInvoiceReference(reference)
 	if err != nil {
-		return 0, 0
+		return 0, 0, fmt.Errorf("parse invoice reference: %w", err)
 	}
 
 	var closingDay, dueDay int64
-	if err := db.QueryRow(`
+	err = db.QueryRow(`
 		SELECT cc.closing_day, cc.due_day
 		FROM credit_cards cc
 		JOIN accounts a ON a.id = cc.account_id
 		WHERE cc.account_id = ? AND a.workspace_id = ?
-	`, accountID, workspaceID).Scan(&closingDay, &dueDay); err != nil {
-		return 0, 0
+	`, accountID, workspaceID).Scan(&closingDay, &dueDay)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, nil
+	}
+	if err != nil {
+		return 0, 0, fmt.Errorf("query credit card cycle: %w", err)
 	}
 
 	cycleStart, cycleEnd := invoiceCycleBoundsForReference(refYear, refMonth, closingDay, dueDay)
 
 	var physicalTotal int64
 	var physicalCount int
-	db.QueryRow(`
+	if err := db.QueryRow(`
 		SELECT COALESCE(SUM(amount), 0), COUNT(id)
 		FROM transactions
 		WHERE workspace_id = ? AND account_id = ? AND type = 'EXPENSE'
 		  AND date >= ? AND date < ? AND invoice_id IS NULL AND status != 'CANCELLED'
-	`, workspaceID, accountID, cycleStart, cycleEnd).Scan(&physicalTotal, &physicalCount)
+	`, workspaceID, accountID, cycleStart, cycleEnd).Scan(&physicalTotal, &physicalCount); err != nil {
+		return 0, 0, fmt.Errorf("query virtual invoice physical total: %w", err)
+	}
 
-	projected := projectedRecurringInvoiceRows(db, workspaceID, accountID, reference)
+	projected, err := projectedRecurringInvoiceRows(db, workspaceID, accountID, reference)
+	if err != nil {
+		return 0, 0, err
+	}
 	var projectedTotal int64
 	for _, p := range projected {
 		if p.Type == models.TransactionTypeExpense {
@@ -1363,20 +1579,70 @@ func CalculateVirtualInvoiceTotal(db *sql.DB, workspaceID, accountID, reference 
 		}
 	}
 
-	return physicalTotal + projectedTotal, physicalCount + len(projected)
+	return physicalTotal + projectedTotal, physicalCount + len(projected), nil
 }
 
 type recurringInvoiceRuleSeed struct {
-	id                   string
-	seriesID             sql.NullString
-	userID               string
-	destinationAccountID sql.NullString
-	categoryID           sql.NullString
-	amount               int64
-	description          string
-	startDate            int64
-	frequency            string
-	totalOccurrences     sql.NullInt64
+	id                     string
+	seriesID               sql.NullString
+	userID                 string
+	destinationAccountID   sql.NullString
+	categoryID             sql.NullString
+	amount                 int64
+	description            string
+	startDate              int64
+	frequency              string
+	totalOccurrences       sql.NullInt64
+	effectiveStartSequence int64
+	effectiveEndSequence   sql.NullInt64
+	endDate                sql.NullInt64
+	endDateCivil           sql.NullString
+}
+
+// recurringRuleSequenceBounds resolves the inclusive series sequence range a
+// rule version owns. Both the materializer and the invoice projection use this
+// single interpretation of effective start/end, totals and next version.
+func recurringRuleSequenceBounds(effectiveStart int64, effectiveEnd, ruleTotal, seriesTotal sql.NullInt64, nextStart int64) (int64, int64) {
+	start := effectiveStart
+	if start < 1 {
+		start = 1
+	}
+	end := int64(math.MaxInt64)
+	if effectiveEnd.Valid {
+		if effectiveEnd.Int64 <= 0 {
+			return start, start - 1
+		}
+		end = effectiveEnd.Int64
+	}
+	if ruleTotal.Valid && ruleTotal.Int64 > 0 && ruleTotal.Int64 < end {
+		end = ruleTotal.Int64
+	}
+	if seriesTotal.Valid && seriesTotal.Int64 > 0 && seriesTotal.Int64 < end {
+		end = seriesTotal.Int64
+	}
+	if nextStart > 0 {
+		if nextStart < 1 {
+			nextStart = 1
+		}
+		if nextStart-1 < end {
+			end = nextStart - 1
+		}
+	}
+	return start, end
+}
+
+func recurringRuleSeriesSequence(effectiveStart, localOffset int64) int64 {
+	if effectiveStart < 1 {
+		effectiveStart = 1
+	}
+	return effectiveStart + localOffset
+}
+
+func recurringRuleEndDateReached(occurrence time.Time, endDate sql.NullInt64, endDateCivil sql.NullString) bool {
+	if endDateCivil.Valid && strings.TrimSpace(endDateCivil.String) != "" {
+		return civildate.LegacyUnixToCivilDateUTC(occurrence.Unix()).String() > endDateCivil.String
+	}
+	return endDate.Valid && endDate.Int64 > 0 && occurrence.Unix() > endDate.Int64
 }
 
 func materializeRecurringInvoiceTransactions(db *sql.DB, workspaceID, invoiceID string) error {
@@ -1421,7 +1687,9 @@ func materializeRecurringInvoiceTransactionsTx(tx *sql.Tx, workspaceID, invoiceI
 	cycleEnd := time.Unix(cycleEndUnix, 0).UTC()
 
 	rows, err := tx.Query(`
-		SELECT rr.id, rr.series_id, rr.user_id, rr.destination_account_id, rr.category_id, rr.amount, rr.description, rr.start_date, rr.frequency, rr.total_occurrences
+		SELECT rr.id, rr.series_id, rr.user_id, rr.destination_account_id, rr.category_id,
+		       rr.amount, rr.description, rr.start_date, rr.frequency, rr.total_occurrences,
+		       COALESCE(rr.effective_start_sequence, 1), rr.effective_end_sequence, rr.end_date, rr.end_date_civil
 		FROM recurring_rules rr
 		WHERE rr.workspace_id = ?
 		  AND rr.account_id = ?
@@ -1436,68 +1704,113 @@ func materializeRecurringInvoiceTransactionsTx(tx *sql.Tx, workspaceID, invoiceI
 	var rules []recurringInvoiceRuleSeed
 	for rows.Next() {
 		var rule recurringInvoiceRuleSeed
-		if err := rows.Scan(&rule.id, &rule.seriesID, &rule.userID, &rule.destinationAccountID, &rule.categoryID, &rule.amount, &rule.description, &rule.startDate, &rule.frequency, &rule.totalOccurrences); err != nil {
+		if err := rows.Scan(
+			&rule.id, &rule.seriesID, &rule.userID, &rule.destinationAccountID, &rule.categoryID,
+			&rule.amount, &rule.description, &rule.startDate, &rule.frequency, &rule.totalOccurrences,
+			&rule.effectiveStartSequence, &rule.effectiveEndSequence, &rule.endDate, &rule.endDateCivil,
+		); err != nil {
 			rows.Close()
 			return err
 		}
 		rules = append(rules, rule)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
 	if err := rows.Close(); err != nil {
 		return err
 	}
 
+	groups := make(map[string][]recurringInvoiceRuleSeed)
+	var seriesOrder []string
 	for _, rule := range rules {
 		seriesID, err := EnsureRecurringSeriesForRuleTx(tx, workspaceID, rule.id, now)
 		if err != nil {
 			return err
 		}
 		rule.seriesID = sql.NullString{String: seriesID, Valid: true}
-
-		occurrence := time.Unix(rule.startDate, 0).UTC()
-		seq := int64(1)
-		for guard := 0; guard < 20000 && occurrence.Before(cycleStart); guard++ {
-			if rule.totalOccurrences.Valid && rule.totalOccurrences.Int64 > 0 && seq >= rule.totalOccurrences.Int64 {
-				break
-			}
-			next := nextRecurrenceDate(occurrence, rule.frequency)
-			if !next.After(occurrence) {
-				break
-			}
-			occurrence = next
-			seq++
+		if _, ok := groups[seriesID]; !ok {
+			seriesOrder = append(seriesOrder, seriesID)
 		}
+		groups[seriesID] = append(groups[seriesID], rule)
+	}
 
-		for guard := 0; guard < 400 && !occurrence.Before(cycleStart) && occurrence.Before(cycleEnd); guard++ {
-			if rule.totalOccurrences.Valid && rule.totalOccurrences.Int64 > 0 && seq > rule.totalOccurrences.Int64 {
-				break
+	for _, seriesID := range seriesOrder {
+		group := groups[seriesID]
+		sort.SliceStable(group, func(i, j int) bool {
+			return group[i].effectiveStartSequence < group[j].effectiveStartSequence
+		})
+		var seriesTotal sql.NullInt64
+		if err := tx.QueryRow(`
+			SELECT total_occurrences FROM recurring_series
+			WHERE workspace_id = ? AND id = ?
+		`, workspaceID, seriesID).Scan(&seriesTotal); err != nil {
+			return err
+		}
+		for index := range group {
+			if err := materializeRecurringInvoiceRuleTx(tx, workspaceID, invoiceID, accountID, closingDay, dueDay, reference, cycleStart, cycleEnd, group, index, seriesTotal, now); err != nil {
+				return err
 			}
-			_, _, occRef := calculateInvoiceDates(occurrence, closingDay, dueDay)
-			if occRef == reference {
-				if err := materializeRecurringInvoiceOccurrenceTx(tx, workspaceID, invoiceID, accountID, rule, occurrence.Unix(), seq, now); err != nil {
-					return err
-				}
-			}
-			next := nextRecurrenceDate(occurrence, rule.frequency)
-			if !next.After(occurrence) {
-				break
-			}
-			occurrence = next
-			seq++
 		}
 	}
 	return nil
 }
 
-func materializeRecurringInvoiceOccurrenceTx(tx *sql.Tx, workspaceID, invoiceID, accountID string, rule recurringInvoiceRuleSeed, occurrenceUnix, seq, now int64) error {
+// materializeRecurringInvoiceRuleTx materializes one active version inside the
+// invoice cycle. The series sequence is effective_start_sequence plus the local
+// occurrence offset, matching the canonical recurrence engine.
+func materializeRecurringInvoiceRuleTx(tx *sql.Tx, workspaceID, invoiceID, accountID string, closingDay, dueDay int64, reference string, cycleStart, cycleEnd time.Time, group []recurringInvoiceRuleSeed, index int, seriesTotal sql.NullInt64, now int64) error {
+	rule := group[index]
+	nextStart := int64(0)
+	if index+1 < len(group) {
+		nextStart = group[index+1].effectiveStartSequence
+	}
+	startSequence, endSequence := recurringRuleSequenceBounds(rule.effectiveStartSequence, rule.effectiveEndSequence, rule.totalOccurrences, seriesTotal, nextStart)
+	if startSequence > endSequence {
+		return nil
+	}
+
+	occurrence := time.Unix(rule.startDate, 0).UTC()
+	for local := int64(0); local < 20000; local++ {
+		sequence := recurringRuleSeriesSequence(rule.effectiveStartSequence, local)
+		if sequence > endSequence {
+			break
+		}
+		if !occurrence.Before(cycleEnd) {
+			break
+		}
+		if recurringRuleEndDateReached(occurrence, rule.endDate, rule.endDateCivil) {
+			break
+		}
+		if !occurrence.Before(cycleStart) {
+			_, _, occurrenceReference := calculateInvoiceDates(occurrence, closingDay, dueDay)
+			if occurrenceReference == reference {
+				if err := materializeRecurringInvoiceOccurrenceTx(tx, workspaceID, invoiceID, accountID, rule, occurrence.Unix(), sequence, now); err != nil {
+					return err
+				}
+			}
+		}
+		next := nextRecurrenceDate(occurrence, rule.frequency)
+		if !next.After(occurrence) {
+			break
+		}
+		occurrence = next
+	}
+	return nil
+}
+
+func materializeRecurringInvoiceOccurrenceTx(tx *sql.Tx, workspaceID, invoiceID, accountID string, rule recurringInvoiceRuleSeed, occurrenceUnix, sequence, now int64) error {
 	if _, err := ensureAutomaticInvoiceAcceptsTransactionTx(tx, workspaceID, accountID, invoiceID); err != nil {
 		if errors.Is(err, errAutomaticInvoiceFrozen) {
 			return nil
 		}
 		return err
 	}
+	occurrenceCivil := civildate.LegacyUnixToCivilDateUTC(occurrenceUnix).String()
 
 	if rule.seriesID.Valid && strings.TrimSpace(rule.seriesID.String) != "" {
-		_, skipped, blocked, err := recurringOccurrenceTerminalConflictsTx(tx, workspaceID, rule.seriesID.String, seq)
+		_, skipped, blocked, err := recurringOccurrenceTerminalConflictsTx(tx, workspaceID, rule.seriesID.String, sequence)
 		if err != nil {
 			return err
 		}
@@ -1511,8 +1824,8 @@ func materializeRecurringInvoiceOccurrenceTx(tx *sql.Tx, workspaceID, invoiceID,
 			WorkspaceID:        workspaceID,
 			SeriesID:           rule.seriesID.String,
 			RecurringRuleID:    rule.id,
-			RecurrenceSequence: seq,
-			OccurrenceDate:     MustCivilWriteDate(civildate.LegacyUnixToCivilDateUTC(occurrenceUnix).String()),
+			RecurrenceSequence: sequence,
+			OccurrenceDate:     MustCivilWriteDate(occurrenceCivil),
 			AccountID:          accountID,
 		})
 		if err != nil {
@@ -1520,6 +1833,36 @@ func materializeRecurringInvoiceOccurrenceTx(tx *sql.Tx, workspaceID, invoiceID,
 		}
 		if resolved {
 			return nil
+		}
+	}
+
+	// The canonical identity is (series_id, recurrence_sequence). Looking it up
+	// first keeps versioned occurrences aligned even when a legacy row predates
+	// the series backfill.
+	if rule.seriesID.Valid && strings.TrimSpace(rule.seriesID.String) != "" {
+		var existingID string
+		var existingInvoiceID sql.NullString
+		var existingDate int64
+		err := tx.QueryRow(`
+			SELECT id, invoice_id, date
+			FROM transactions
+			WHERE workspace_id = ? AND series_id = ? AND recurrence_sequence = ?
+			LIMIT 1
+		`, workspaceID, rule.seriesID.String, sequence).Scan(&existingID, &existingInvoiceID, &existingDate)
+		if err == nil {
+			// A different civil date at the same series sequence is structural
+			// inconsistency. Leave the record untouched instead of attaching a
+			// different occurrence to this invoice.
+			if civildate.LegacyUnixToCivilDateUTC(existingDate).String() != occurrenceCivil {
+				return nil
+			}
+			if existingInvoiceID.Valid && existingInvoiceID.String != "" {
+				return nil
+			}
+			return attachExistingRecurringInvoiceTx(tx, workspaceID, invoiceID, rule.seriesID, existingID, now)
+		}
+		if err != sql.ErrNoRows {
+			return err
 		}
 	}
 
@@ -1535,12 +1878,7 @@ func materializeRecurringInvoiceOccurrenceTx(tx *sql.Tx, workspaceID, invoiceID,
 		if existingInvoiceID.Valid && existingInvoiceID.String != "" {
 			return nil
 		}
-		_, execErr := tx.Exec(`
-			UPDATE transactions
-			SET invoice_id = ?, status = 'paid', series_id = COALESCE(series_id, ?), updated_at = ?
-			WHERE id = ? AND workspace_id = ? AND invoice_override_id IS NULL
-		`, invoiceID, nullStringInterface(rule.seriesID), now, existingID, workspaceID)
-		return execErr
+		return attachExistingRecurringInvoiceTx(tx, workspaceID, invoiceID, rule.seriesID, existingID, now)
 	}
 	if err != sql.ErrNoRows {
 		return err
@@ -1558,8 +1896,17 @@ func materializeRecurringInvoiceOccurrenceTx(tx *sql.Tx, workspaceID, invoiceID,
 	_, execErr := tx.Exec(`
 		INSERT OR IGNORE INTO transactions (id, workspace_id, user_id, account_id, destination_account_id, category_id, invoice_id, type, amount, date, description, installment_number, total_installments, parent_id, recurring_rule_id, recurrence_sequence, series_id, status, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, NULL, ?, ?, ?, 'paid', ?, ?)
-	`, id, workspaceID, rule.userID, accountID, destID, catID, invoiceID, models.TransactionTypeExpense, rule.amount, occurrenceUnix, rule.description, rule.id, seq, nullStringInterface(rule.seriesID), now, now)
+	`, id, workspaceID, rule.userID, accountID, destID, catID, invoiceID, models.TransactionTypeExpense, rule.amount, occurrenceUnix, rule.description, rule.id, sequence, nullStringInterface(rule.seriesID), now, now)
 	return execErr
+}
+
+func attachExistingRecurringInvoiceTx(tx *sql.Tx, workspaceID, invoiceID string, seriesID sql.NullString, transactionID string, now int64) error {
+	_, err := tx.Exec(`
+		UPDATE transactions
+		SET invoice_id = ?, status = 'paid', series_id = COALESCE(series_id, ?), updated_at = ?
+		WHERE id = ? AND workspace_id = ? AND invoice_override_id IS NULL
+	`, invoiceID, nullStringInterface(seriesID), now, transactionID, workspaceID)
+	return err
 }
 
 func invoiceReferenceForDate(t time.Time, closingDay int64) string {
@@ -2231,38 +2578,75 @@ func faturasIndexPeriodFromRequest(r *http.Request) (int, int, error) {
 	return month, year, nil
 }
 
-// Initial selection reads persisted OPEN invoices only. A CLOSED invoice has
-// completed its billing cycle, while PAID is settled; neither is an open month.
-// Invoice ownership is established through the credit card's workspace.
-// The upper bound matches faturasIndexPeriodFromRequest's navigable range.
 func initialFaturasIndexPeriod(db *sql.DB, workspaceID string, now time.Time) (int, int, error) {
-	month, year := int(now.Month()), now.Year()
-	var reference string
-	err := db.QueryRow(`
-		SELECT i.reference
+	current := appMonthStartUTC(now)
+	attention, err := queryFaturasPeriodAttention(db, workspaceID, now)
+	if err != nil {
+		return 0, 0, err
+	}
+	if attention.currentPending {
+		return int(current.Month()), current.Year(), nil
+	}
+	if attention.overdueReference != "" {
+		year, month, err := parseInvoiceReference(attention.overdueReference)
+		return int(month), year, err
+	}
+	if attention.currentExists || attention.nextExists {
+		next := current.AddDate(0, 1, 0)
+		return int(next.Month()), next.Year(), nil
+	}
+	return int(current.Month()), current.Year(), nil
+}
+
+type faturasPeriodAttention struct {
+	currentPending   bool
+	currentExists    bool
+	nextExists       bool
+	overdueReference string
+}
+
+// A closed billing cycle is not settled debt. Reuse the canonical payment
+// lineage and refund expressions instead of filtering persisted cycle status.
+func queryFaturasPeriodAttention(db *sql.DB, workspaceID string, now time.Time) (faturasPeriodAttention, error) {
+	var result faturasPeriodAttention
+	current := appMonthStartUTC(now)
+	reference := current.Format("2006-01")
+	nextReference := current.AddDate(0, 1, 0).Format("2006-01")
+	rows, err := db.Query(`
+		SELECT i.reference, i.closing_date, i.due_date,
+			COALESCE((SELECT SUM(`+transactionNetAmountTSQL+`) FROM transactions t
+				WHERE t.workspace_id = a.workspace_id AND t.invoice_id = i.id AND t.type = 'EXPENSE'), 0)
+				- `+invoiceGeneralRefundTotalIASQL+`, `+invoiceEffectivePaidSQLExpr+`
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id
 		WHERE a.workspace_id = ?
 		  AND a.type = ?
 		  AND a.archived_at IS NULL
-		  AND i.status = ?
 		  AND i.reference >= ?
 		  AND i.reference <= ?
 		ORDER BY i.reference ASC
-		LIMIT 1
-	`, workspaceID, models.AccountTypeCreditCard, models.InvoiceStatusOpen,
-		fmt.Sprintf("%04d-%02d", year, month), fmt.Sprintf("%04d-12", year+10)).Scan(&reference)
-	if err == sql.ErrNoRows {
-		return month, year, nil
-	}
+	`, workspaceID, models.AccountTypeCreditCard, "2020-01", nextReference)
 	if err != nil {
-		return 0, 0, err
+		return result, err
 	}
-	selectedYear, selectedMonth, err := parseInvoiceReference(reference)
-	if err != nil {
-		return 0, 0, err
+	defer rows.Close()
+	for rows.Next() {
+		var ref string
+		var closing, due, total, paid int64
+		if err := rows.Scan(&ref, &closing, &due, &total, &paid); err != nil {
+			return result, err
+		}
+		state := computeInvoiceState(total, paid, closing, now)
+		if ref == reference {
+			result.currentExists = true
+			result.currentPending = result.currentPending || state.Pending > 0
+		}
+		result.nextExists = result.nextExists || ref == nextReference
+		if ref < reference && state.Pending > 0 && due > 0 && due < AppCivilDateUTC(now).Unix() && result.overdueReference == "" {
+			result.overdueReference = ref
+		}
 	}
-	return int(selectedMonth), selectedYear, nil
+	return result, rows.Err()
 }
 
 func faturasIndexURL(accountID string, mes, ano int, sortOrder string) string {
@@ -2558,7 +2942,7 @@ func sumInvoiceTotalTx(tx *sql.Tx, workspaceID, invoiceID string) (int64, error)
 	return total, nil
 }
 
-func sumCardOutstandingLimit(db *sql.DB, workspaceID, cardAccountID string) (int64, error) {
+func sumCardOutstandingLimit(db reportQueryer, workspaceID, cardAccountID string) (int64, error) {
 	if strings.TrimSpace(workspaceID) == "" {
 		return 0, fmt.Errorf("workspace_id obrigatorio para soma de limite do cartao")
 	}
@@ -2656,27 +3040,10 @@ func (h *FaturasHandler) renderNoInvoiceForPeriod(w http.ResponseWriter, r *http
 	buf.WriteTo(w)
 }
 
-func (h *FaturasHandler) renderDashboardOOB(w http.ResponseWriter) error {
-	data := BuildDashboardData(h.DB, h.UserID, h.WorkspaceID)
-	data.OOB = true
-	SortDashboardCardsByPaymentPriority(data.Cards, time.Now())
-
-	var buf bytes.Buffer
-	for _, templateName := range dashboardOOBTemplateNames(h.Templates) {
-		if h.Templates.Lookup(templateName) == nil {
-			continue
-		}
-		if err := h.Templates.ExecuteTemplate(&buf, templateName, data); err != nil {
-			return err
-		}
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, err := buf.WriteTo(w)
-	return err
-}
-
 func (h *FaturasHandler) renderInvoiceAndDashboardOOB(w http.ResponseWriter, r *http.Request, invoiceID string) error {
+	if handled, err := h.renderFaturasIndexMutation(w, r, invoiceID, false); handled {
+		return err
+	}
 	invoiceData, err := buildFaturaDataForInvoice(h.DB, h.WorkspaceID, invoiceID, faturaSortOrderFromCurrentRequest(r))
 	if err != nil {
 		return err
@@ -2689,18 +3056,9 @@ func (h *FaturasHandler) renderInvoiceAndDashboardOOB(w http.ResponseWriter, r *
 		return err
 	}
 
-	dashboardData := BuildDashboardData(h.DB, h.UserID, h.WorkspaceID)
-	dashboardData.OOB = true
-	SortDashboardCardsByPaymentPriority(dashboardData.Cards, time.Now())
-	for _, templateName := range dashboardOOBTemplateNames(h.Templates) {
-		if h.Templates.Lookup(templateName) == nil {
-			continue
-		}
-		if err := h.Templates.ExecuteTemplate(&buf, templateName, dashboardData); err != nil {
-			return err
-		}
-	}
-
+	// The Dashboard is never rendered here. It refreshes through the canonical
+	// refreshFinancials event, so no V1 markup can reach a Dashboard renderer.
+	w.Header().Set("HX-Trigger", "refreshFinancials")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, err = buf.WriteTo(w)
 	return err

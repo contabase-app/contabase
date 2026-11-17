@@ -1,0 +1,57 @@
+{{define "configuracoes-admin-self-reset-content"}}
+<div id="settings-dynamic-payload" class="w-full">
+    <section class="ui-panel" aria-labelledby="adminSelfResetTitle">
+        <header class="ui-page-header">
+            <p class="ui-eyebrow">Segurança da conta</p>
+            <h1 id="adminSelfResetTitle" class="ui-page-title">Senha temporária gerada</h1>
+            <p class="ui-page-description">Sua própria senha foi redefinida e todas as sessões foram encerradas. Copie a senha temporária agora; ela não será exibida novamente.</p>
+        </header>
+
+        <div class="mt-5 grid gap-4">
+            <div>
+                <label class="ui-label" for="adminSelfResetEmail">E-mail</label>
+                <input id="adminSelfResetEmail" class="ui-input" value="{{.Email}}" readonly autocomplete="username">
+            </div>
+            <div>
+                <label class="ui-label" for="adminSelfResetPassword">Senha temporária</label>
+                <input id="adminSelfResetPassword" class="ui-input" value="{{.TemporaryPassword}}" readonly autocomplete="off" spellcheck="false">
+            </div>
+        </div>
+
+        <p class="ui-page-description">Expira em 1 hora. No próximo login, o ContaBase exigirá a definição de uma nova senha.</p>
+
+        <div class="mt-5 flex flex-wrap gap-3">
+            <a href="/login" hx-boost="false" class="ui-btn ui-btn--primary">Ir para login</a>
+        </div>
+    </section>
+</div>
+{{end}}
+
+{{define "configuracoes-admin-self-reset-page"}}
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#161a20">
+    <meta name="robots" content="noindex,nofollow">
+    <title>Senha temporária gerada — ContaBase</title>
+    <link rel="shortcut icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
+    <link rel="manifest" href="{{assetPath "/assets/manifest.json"}}">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/style.css"}}">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/geist-sans.css"}}">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/app-shell.css"}}">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/ui-tokens.css"}}">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
+</head>
+<body class="cb-v2-body">
+    <div class="cb-v2" data-ui="premium">
+        <main class="mx-auto w-full max-w-2xl px-5 py-10">
+            {{template "configuracoes-admin-self-reset-content" .}}
+        </main>
+    </div>
+</body>
+</html>
+{{end}}

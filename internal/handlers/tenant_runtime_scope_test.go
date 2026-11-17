@@ -15,8 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/contabase-app/contabase/internal/services"
 )
 
 // Read the actual production statements, rather than testing SQL copied into a
@@ -91,12 +89,10 @@ func seedTenantRuntimeScope(t *testing.T) *sql.DB {
 		execTestSQL(t, db, `INSERT INTO credit_cards (id, account_id, closing_day, due_day) VALUES (?, ?, 20, 10)`, "cc-"+suffix, "card-"+suffix)
 		execTestSQL(t, db, `INSERT INTO invoices (id, account_id, reference, closing_date, due_date, status) VALUES (?, ?, '2099-08', ?, ?, 'OPEN')`, "inv-"+suffix, "card-"+suffix, testUnixDate("2099-07-20"), testUnixDate("2099-08-10"))
 		execTestSQL(t, db, `INSERT INTO categories (id, workspace_id, name, icon, color, type) VALUES (?, ?, ?, 'home', '#22c55e', 'EXPENSE')`, "cat-"+suffix, ws, "Category "+suffix)
-		execTestSQL(t, db, `INSERT INTO boxes (id, workspace_id, name, target_amount) VALUES (?, ?, ?, 100000)`, "box-"+suffix, ws, "Box "+suffix)
 		amount := int64(1100)
 		if suffix == "b" {
 			amount = 7700
 		}
-		execTestSQL(t, db, `INSERT INTO box_virtual_ledger (id, box_id, amount, type, reference_date) VALUES (?, ?, ?, 'BONUS', ?)`, "ledger-"+suffix, "box-"+suffix, amount, testUnixDate("2099-07-25"))
 		execTestSQL(t, db, `INSERT INTO transactions (id, workspace_id, user_id, account_id, type, amount, date, description, status) VALUES (?, ?, 'scope-user', ?, 'EXPENSE', ?, ?, 'Scope purchase', 'paid')`, "tx-"+suffix, ws, "card-"+suffix, amount, testUnixDate("2099-06-25"))
 		execTestSQL(t, db, `INSERT INTO recurring_rules (id, workspace_id, user_id, account_id, category_id, type, amount, start_date, frequency, total_occurrences) VALUES (?, ?, 'scope-user', ?, ?, 'EXPENSE', 2300, ?, 'MONTHLY', 1)`, "rule-"+suffix, ws, "card-"+suffix, "cat-"+suffix, testUnixDate("2099-06-26"))
 	}
@@ -404,29 +400,12 @@ func TestTenantRuntimeScopeStatementsW2W3W4W6W7W8W9W10(t *testing.T) {
 	}
 }
 
-func TestTenantRuntimeScopeW1LedgerOwner(t *testing.T) {
-	db := seedTenantRuntimeScope(t)
-	query := tenantScopeStatement(t, "transacoes.go", "queryDashboardBoxes", "AS total_balance", "icons.FallbackGoal", "workspaceID", "workspaceID")
-	for _, tc := range []struct {
-		ws, box string
-		amount  int64
-	}{{"scope-a", "box-a", 1100}, {"scope-b", "box-b", 7700}} {
-		cards := queryDashboardBoxes(db, tc.ws)
-		if len(cards) != 1 || cards[0].ID != tc.box || cards[0].Balance != MoneyMinor(tc.amount) {
-			t.Fatalf("%s dashboard = %+v", tc.ws, cards)
-		}
-		tenantScopeIndexedPlan(t, db, query, "piggy-bank", tc.ws, tc.ws)
-	}
-	// Independently bind the ledger owner and outer box scopes: even if the
-	// outer selection were wrong, the SUM cannot read the foreign box's ledger.
-	if got := tenantScopeRows(t, db, query, "piggy-bank", "scope-a", "scope-b"); len(got) != 1 || got[0][7] != int64(0) {
-		t.Fatalf("foreign ledger entered outer B projection: %v", got)
-	}
-}
-
 func TestTenantRuntimeScopeW5RecurringCategory(t *testing.T) {
 	db := seedTenantRuntimeScope(t)
-	valid := projectedRecurringInvoiceRows(db, "scope-a", "card-a", "2099-08")
+	valid, err := projectedRecurringInvoiceRows(db, "scope-a", "card-a", "2099-08")
+	if err != nil {
+		t.Fatalf("projection A: %v", err)
+	}
 	if len(valid) != 1 || valid[0].CategoryName != "Category a" || valid[0].Amount != 2300 {
 		t.Fatalf("same workspace projection = %+v", valid)
 	}
@@ -435,19 +414,24 @@ func TestTenantRuntimeScopeW5RecurringCategory(t *testing.T) {
 	if got := tenantScopeRows(t, db, `PRAGMA foreign_key_check`); len(got) != 0 {
 		t.Fatalf("fixture violates foreign keys: %v", got)
 	}
-	query := tenantScopeStatement(t, "faturas.go", "projectedRecurringInvoiceRows", "SELECT rr.id, rr.amount", "workspaceID", "accountID", "models.TransactionTypeExpense", "cycleEnd.Unix()")
+	query := tenantScopeStatement(t, "faturas.go", "projectedRecurringInvoiceRows", "SELECT rr.id, COALESCE(rr.series_id", "workspaceID", "accountID", "models.TransactionTypeExpense", "cycleEnd.Unix()")
 	_, end := invoiceCycleBoundsForReference(2099, 8, 20, 10)
 	args := []any{"scope-a", "card-a", "EXPENSE", end}
 	// Negative control reproduces the old SQL leaking B's category metadata.
 	old := strings.Replace(query, " AND c.workspace_id = rr.workspace_id", "", 1)
-	if got := tenantScopeRows(t, db, old, args...); len(got) != 1 || got[0][7] != "Category b" {
+	if got := tenantScopeRows(t, db, old, args...); len(got) != 1 || got[0][12] != "Category b" {
 		t.Fatalf("old cross-workspace leak not reproduced: %v", got)
 	}
-	got := projectedRecurringInvoiceRows(db, "scope-a", "card-a", "2099-08")
+	got, err := projectedRecurringInvoiceRows(db, "scope-a", "card-a", "2099-08")
+	if err != nil {
+		t.Fatalf("projection A after corruption: %v", err)
+	}
 	if len(got) != 1 || got[0].CategoryName != "Sem categoria" || got[0].CategoryIcon != "repeat" || got[0].CategoryColor != "slate" || got[0].Amount != valid[0].Amount {
 		t.Fatalf("foreign category contributed to A or own rule changed: %+v", got)
 	}
-	if ownB := projectedRecurringInvoiceRows(db, "scope-b", "card-b", "2099-08"); len(ownB) != 1 || ownB[0].CategoryName != "Category b" {
+	if ownB, err := projectedRecurringInvoiceRows(db, "scope-b", "card-b", "2099-08"); err != nil {
+		t.Fatalf("projection B: %v", err)
+	} else if len(ownB) != 1 || ownB[0].CategoryName != "Category b" {
 		t.Fatalf("B same workspace projection = %+v", ownB)
 	}
 }
@@ -456,10 +440,15 @@ func TestTenantRuntimeScopeW3W4W9RuntimeCardConfig(t *testing.T) {
 	db := seedTenantRuntimeScope(t)
 	for _, suffix := range []string{"a", "b"} {
 		ws, card := "scope-"+suffix, "card-"+suffix
-		if got := projectedRecurringInvoiceRows(db, ws, card, "2099-08"); len(got) != 1 {
+		if got, err := projectedRecurringInvoiceRows(db, ws, card, "2099-08"); err != nil {
+			t.Fatalf("same workspace recurring %s: %v", ws, err)
+		} else if len(got) != 1 {
 			t.Fatalf("same workspace recurring %s = %+v", ws, got)
 		}
-		amount, count := CalculateVirtualInvoiceTotal(db, ws, card, "2099-08")
+		amount, count, err := CalculateVirtualInvoiceTotal(db, ws, card, "2099-08")
+		if err != nil {
+			t.Fatalf("same workspace virtual %s: %v", ws, err)
+		}
 		want := int64(3400)
 		if suffix == "b" {
 			want = 10000
@@ -476,10 +465,14 @@ func TestTenantRuntimeScopeW3W4W9RuntimeCardConfig(t *testing.T) {
 	// account. A must not read B's card configuration to project these rows.
 	execTestSQL(t, db, `UPDATE recurring_rules SET account_id = 'card-b' WHERE id = 'rule-a'`)
 	execTestSQL(t, db, `UPDATE transactions SET account_id = 'card-b' WHERE id = 'tx-a'`)
-	if got := projectedRecurringInvoiceRows(db, "scope-a", "card-b", "2099-08"); len(got) != 0 {
+	if got, err := projectedRecurringInvoiceRows(db, "scope-a", "card-b", "2099-08"); err != nil {
+		t.Fatalf("W3 projection: %v", err)
+	} else if len(got) != 0 {
 		t.Fatalf("W3 foreign card config used: %+v", got)
 	}
-	if amount, count := CalculateVirtualInvoiceTotal(db, "scope-a", "card-b", "2099-08"); amount != 0 || count != 0 {
+	if amount, count, err := CalculateVirtualInvoiceTotal(db, "scope-a", "card-b", "2099-08"); err != nil {
+		t.Fatalf("W4 virtual: %v", err)
+	} else if amount != 0 || count != 0 {
 		t.Fatalf("W4 foreign card config used: %d/%d", amount, count)
 	}
 	h := &TransactionHandler{DB: db, WorkspaceID: "scope-a"}
@@ -553,495 +546,11 @@ func TestTenantRuntimeScopeW10DeadHelperHasNoCallers(t *testing.T) {
 	}
 }
 
-// Inserts are extracted from execOneTx so ownership is tested at the mutation
-// itself, independently of the helper's earlier idempotency read.
-func tenantLedgerInsertSQL(t *testing.T, function string, bindings ...string) string {
-	t.Helper()
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "transacoes.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var queries []string
-	for _, decl := range f.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != function {
-			continue
-		}
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			name, ok := call.Fun.(*ast.Ident)
-			if !ok || name.Name != "execOneTx" || len(call.Args) < 2 {
-				return true
-			}
-			literal, ok := call.Args[1].(*ast.BasicLit)
-			if !ok {
-				t.Fatal("expected literal INSERT")
-			}
-			query, err := strconv.Unquote(literal.Value)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var got []string
-			for _, arg := range call.Args[2:] {
-				var b bytes.Buffer
-				if err := printer.Fprint(&b, fset, arg); err != nil {
-					t.Fatal(err)
-				}
-				got = append(got, b.String())
-			}
-			if !reflect.DeepEqual(got, bindings) || strings.Count(query, "?") != len(bindings) {
-				t.Fatalf("%s INSERT bindings = %v, want %v", function, got, bindings)
-			}
-			queries = append(queries, query)
-			return true
-		})
-	}
-	if len(queries) != 1 {
-		t.Fatalf("%s: expected one INSERT, got %d", function, len(queries))
-	}
-	return queries[0]
-}
-
-func tenantLedgerTransactionSQL(t *testing.T, sourceCount int) string {
-	t.Helper()
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "../services/box_ledger_reconciliation.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var queries []string
-	for _, decl := range f.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != "ReconcileWorkspaceBoxLedger" {
-			continue
-		}
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			assignment, ok := n.(*ast.AssignStmt)
-			if !ok || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
-				return true
-			}
-			name, ok := assignment.Lhs[0].(*ast.Ident)
-			if !ok || name.Name != "query" {
-				return true
-			}
-			var render func(ast.Expr) string
-			render = func(expr ast.Expr) string {
-				switch e := expr.(type) {
-				case *ast.BasicLit:
-					s, err := strconv.Unquote(e.Value)
-					if err != nil {
-						t.Fatal(err)
-					}
-					return s
-				case *ast.BinaryExpr:
-					if e.Op != token.ADD {
-						t.Fatal("unexpected dynamic SQL operation")
-					}
-					return render(e.X) + render(e.Y)
-				case *ast.CallExpr:
-					var b bytes.Buffer
-					if err := printer.Fprint(&b, fset, e); err != nil {
-						t.Fatal(err)
-					}
-					if b.String() != "placeholders(len(uniqueSourceIDs))" {
-						t.Fatalf("unexpected dynamic SQL call: %s", b.String())
-					}
-					return strings.TrimSuffix(strings.Repeat("?,", sourceCount), ",")
-				default:
-					t.Fatalf("unexpected SQL expression: %T", expr)
-					return ""
-				}
-			}
-			queries = append(queries, render(assignment.Rhs[0]))
-			return true
-		})
-	}
-	if len(queries) != 1 {
-		t.Fatalf("R9: expected one dynamic SELECT, got %d", len(queries))
-	}
-	return queries[0]
-}
-
-func tenantLedgerSeedEvent(t *testing.T, db *sql.DB, id, box, kind, source, reversal string, amount, date int64) {
-	t.Helper()
-	var target any
-	if reversal != "" {
-		target = reversal
-	}
-	execTestSQL(t, db, `INSERT INTO box_virtual_ledger
-		(id, box_id, type, source_transaction_id, reversal_of_ledger_id, amount, reference_date, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, box, kind, source, target, amount, date, date)
-}
-
 func tenantLedgerSnapshot(t *testing.T, db *sql.DB) map[string][][]any {
 	t.Helper()
 	result := make(map[string][][]any)
-	for _, table := range []string{"boxes", "box_virtual_ledger", "transactions", "accounts"} {
+	for _, table := range []string{"transactions", "accounts"} {
 		result[table] = tenantScopeRows(t, db, "SELECT * FROM "+table+" ORDER BY id")
 	}
 	return result
-}
-
-func TestTenantRuntimeScopeLedgerR1R2S1(t *testing.T) {
-	db := seedTenantRuntimeScope(t)
-	tenantLedgerSeedEvent(t, db, "consume-a", "box-a", "CONSUME", "tx-a", "", -1100, 10)
-	tenantLedgerSeedEvent(t, db, "consume-a-later", "box-a", "CONSUME", "tx-a", "", -500, 20)
-	tenantLedgerSeedEvent(t, db, "consume-b", "box-b", "CONSUME", "tx-a", "", -7700, 10)
-	r1 := tenantScopeStatement(t, "transacoes.go", "insertConsumeLedgerEventTx", "SELECT COUNT(1)",
-		"boxID", "workspaceID", "sourceTransactionID", "workspaceID")
-	r2 := tenantScopeStatement(t, "transacoes.go", "insertReversalLedgerEventTx", "SELECT COUNT(1)",
-		"consumeEvent.LedgerID", "workspaceID", "workspaceID", "consumeEvent.BoxID")
-	s1 := tenantScopeStatement(t, "transacoes.go", "activeConsumeEventsBySourceTransactionTx", "ABS(l.amount)",
-		"workspaceID", "sourceTransactionID", "workspaceID")
-	count := func(query string, want int, args ...any) {
-		t.Helper()
-		var got int
-		if err := db.QueryRow(query, args...).Scan(&got); err != nil {
-			t.Fatal(err)
-		}
-		if got != want {
-			t.Fatalf("count = %d, want %d; args=%v", got, want, args)
-		}
-	}
-	active := func(want []activeConsumeEvent) {
-		t.Helper()
-		tx, err := db.Begin()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer tx.Rollback()
-		got, err := activeConsumeEventsBySourceTransactionTx(tx, "scope-a", "tx-a")
-		if err != nil || !reflect.DeepEqual(got, want) {
-			t.Fatalf("S1 events=%v, want=%v; err=%v", got, want, err)
-		}
-	}
-	wantActive := []activeConsumeEvent{{"consume-a", "box-a", 1100}, {"consume-a-later", "box-a", 500}}
-	count(r1, 2, "box-a", "scope-a", "tx-a", "scope-a")
-	count(r1, 0, "box-b", "scope-a", "tx-a", "scope-a")
-	active(wantActive)
-	// B may share a source ID and even point a reversal at A's consume.
-	// Neither the outer owner nor the reversal owner may be implicit.
-	tenantLedgerSeedEvent(t, db, "foreign-reversal", "box-b", "REVERSAL", "tx-a", "consume-a", 1100, 30)
-	count(r1, 2, "box-a", "scope-a", "tx-a", "scope-a")
-	count(r2, 0, "consume-a", "scope-a", "scope-a", "box-a")
-	active(wantActive)
-	count(r2, 1, "consume-a", "scope-b", "scope-a", "box-a")
-	count(r2, 0, "consume-a", "scope-b", "scope-b", "box-a")
-	count(r1, 1, "box-a", "scope-a", "tx-a", "scope-b")
-	if rows := tenantScopeRows(t, db, s1, "scope-a", "tx-a", "scope-b"); len(rows) != 1 || rows[0][0] != "consume-a-later" {
-		t.Fatalf("S1 independent reversal binding = %v", rows)
-	}
-	tenantLedgerSeedEvent(t, db, "local-reversal", "box-a", "REVERSAL", "tx-a", "consume-a", 1100, 40)
-	count(r1, 1, "box-a", "scope-a", "tx-a", "scope-a")
-	count(r2, 1, "consume-a", "scope-a", "scope-a", "box-a")
-	active(wantActive[1:])
-	for _, item := range []struct {
-		id, query string
-		args      []any
-	}{
-		{"R1", r1, []any{"box-a", "scope-a", "tx-a", "scope-a"}},
-		{"R2", r2, []any{"consume-a", "scope-a", "scope-a", "box-a"}},
-		{"S1", s1, []any{"scope-a", "tx-a", "scope-a"}},
-	} {
-		t.Run(item.id+"-plan", func(t *testing.T) { tenantScopeIndexedPlan(t, db, item.query, item.args...) })
-	}
-}
-
-func TestTenantRuntimeScopeLedgerN3N4AtomicOwnership(t *testing.T) {
-	n3 := tenantLedgerInsertSQL(t, "insertConsumeLedgerEventTx", "uuid.NewString()", "-amount",
-		`"Consumo automático por lançamento"`, "sourceTransactionID", "referenceDate", "now", "boxID", "workspaceID")
-	n4 := tenantLedgerInsertSQL(t, "insertReversalLedgerEventTx", "uuid.NewString()", "consumeEvent.Amount",
-		`"Reversão de consumo"`, "sourceTransactionID", "referenceDate", "now", "consumeEvent.LedgerID", "consumeEvent.BoxID", "workspaceID")
-	for _, tc := range []struct {
-		name, query string
-		args        []any
-		wantRows    int64
-	}{
-		{"N3-local", n3, []any{"insert-a", -1100, "Consumo automático por lançamento", "tx-a", 51, 52, "box-a", "scope-a"}, 1},
-		{"N3-foreign", n3, []any{"insert-b", -7700, "Consumo automático por lançamento", "tx-b", 51, 52, "box-b", "scope-a"}, 0},
-		{"N3-missing", n3, []any{"insert-missing", -1100, "Consumo automático por lançamento", "tx-a", 51, 52, "missing", "scope-a"}, 0},
-		{"N4-local", n4, []any{"insert-reversal", 1100, "Reversão de consumo", "tx-a", 51, 52, "consume-a", "box-a", "scope-a"}, 1},
-		{"N4-foreign", n4, []any{"insert-reversal", 7700, "Reversão de consumo", "tx-b", 51, 52, "consume-b", "box-b", "scope-a"}, 0},
-		{"N4-foreign-target", n4, []any{"insert-reversal", 7700, "Reversão de consumo", "tx-b", 51, 52, "consume-b", "box-a", "scope-a"}, 0},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			db := seedTenantRuntimeScope(t)
-			tenantLedgerSeedEvent(t, db, "consume-a", "box-a", "CONSUME", "tx-a", "", -1100, 10)
-			tenantLedgerSeedEvent(t, db, "consume-b", "box-b", "CONSUME", "tx-b", "", -7700, 10)
-			before := tenantLedgerSnapshot(t, db)
-			tenantScopeIndexedPlan(t, db, tc.query, tc.args...)
-			tx, err := db.Begin()
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer tx.Rollback()
-			result, err := tx.Exec(tc.query, tc.args...)
-			if err != nil {
-				t.Fatal(err)
-			}
-			n, err := result.RowsAffected()
-			if err != nil || n != tc.wantRows {
-				t.Fatalf("RowsAffected=%d, want=%d; err=%v", n, tc.wantRows, err)
-			}
-			if n == 1 {
-				var box, kind, source, description string
-				var amount, referenceDate, createdAt int64
-				var original sql.NullString
-				if err := tx.QueryRow(`SELECT box_id, type, source_transaction_id, description, amount, reference_date, created_at, reversal_of_ledger_id
-					FROM box_virtual_ledger WHERE id = ?`, tc.args[0]).Scan(&box, &kind, &source, &description, &amount, &referenceDate, &createdAt, &original); err != nil {
-					t.Fatal(err)
-				}
-				if box != "box-a" || source != "tx-a" || description != tc.args[2] || amount != int64(tc.args[1].(int)) || referenceDate != 51 || createdAt != 52 {
-					t.Fatalf("INSERT payload changed: %s %s %s %d %d %d", box, source, description, amount, referenceDate, createdAt)
-				}
-				if (kind == "REVERSAL" && (!original.Valid || original.String != "consume-a")) || (kind == "CONSUME" && original.Valid) {
-					t.Fatalf("unexpected original reference: %v", original)
-				}
-			}
-			if err := tx.Rollback(); err != nil {
-				t.Fatal(err)
-			}
-			if after := tenantLedgerSnapshot(t, db); !reflect.DeepEqual(before, after) {
-				t.Fatal("atomic statement probe changed A/B snapshot after rollback")
-			}
-		})
-	}
-}
-
-func TestTenantRuntimeScopeLedgerN3N4RuntimeRollbackAndIdempotency(t *testing.T) {
-	for _, tc := range []struct {
-		name, box, ledger  string
-		reversal, existing bool
-	}{
-		{"N3-foreign", "box-b", "", false, false},
-		{"N3-foreign-existing", "box-b", "", false, true},
-		{"N3-missing", "missing", "", false, false},
-		{"N4-foreign", "box-b", "consume-b", true, false},
-		{"N4-foreign-existing", "box-b", "consume-b", true, true},
-		{"N4-foreign-target", "box-a", "consume-b", true, false},
-		{"N4-foreign-target-existing", "box-a", "consume-b", true, true},
-		{"N4-foreign-box-local-target-existing", "box-b", "consume-a", true, true},
-		{"N4-missing-target", "box-a", "missing", true, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			db := seedTenantRuntimeScope(t)
-			tenantLedgerSeedEvent(t, db, "consume-a", "box-a", "CONSUME", "tx-a", "", -1100, 10)
-			tenantLedgerSeedEvent(t, db, "consume-b", "box-b", "CONSUME", "tx-b", "", -7700, 10)
-			if tc.existing && tc.reversal {
-				owner := "box-b"
-				if tc.ledger == "consume-a" || tc.box == "box-a" {
-					owner = "box-a"
-				}
-				tenantLedgerSeedEvent(t, db, "existing-reversal", owner, "REVERSAL", "tx-b", tc.ledger, 1100, 20)
-			}
-			before := tenantLedgerSnapshot(t, db)
-			tx, err := db.Begin()
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer tx.Rollback()
-			// Simulate work already done in the caller's transaction, including
-			// a valid consume. The owner failure must let it all roll back.
-			if err := execOneTx(tx, `UPDATE transactions SET description = 'pending change' WHERE id = 'tx-a' AND workspace_id = 'scope-a'`); err != nil {
-				t.Fatal(err)
-			}
-			if err := insertConsumeLedgerEventTx(tx, "scope-a", "box-a", "prior-work", 200, 51, 52); err != nil {
-				t.Fatal(err)
-			}
-			if tc.reversal {
-				err = insertReversalLedgerEventTx(tx, "scope-a", activeConsumeEvent{tc.ledger, tc.box, 1100}, "tx-b", 51, 52)
-			} else {
-				err = insertConsumeLedgerEventTx(tx, "scope-a", tc.box, "tx-b", 7700, 51, 52)
-			}
-			if err == nil || err.Error() != "operação não autorizada ou registro não encontrado" {
-				t.Fatalf("ownership mismatch must fail closed through execOneTx: %v", err)
-			}
-			if err := tx.Rollback(); err != nil {
-				t.Fatal(err)
-			}
-			if after := tenantLedgerSnapshot(t, db); !reflect.DeepEqual(before, after) {
-				t.Fatalf("rollback changed A/B: before=%v after=%v", before, after)
-			}
-		})
-	}
-	t.Run("same-tenant-consume-reversal-idempotency", func(t *testing.T) {
-		db := seedTenantRuntimeScope(t)
-		foreignBefore := tenantScopeRows(t, db, `SELECT * FROM box_virtual_ledger WHERE box_id = 'box-b' ORDER BY id`)
-		tx, err := db.Begin()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer tx.Rollback()
-		for i := 0; i < 2; i++ {
-			if err := insertConsumeLedgerEventTx(tx, "scope-a", "box-a", "tx-a", 1100, 51, 52); err != nil {
-				t.Fatal(err)
-			}
-		}
-		events, err := activeConsumeEventsBySourceTransactionTx(tx, "scope-a", "tx-a")
-		if err != nil || len(events) != 1 || events[0].BoxID != "box-a" || events[0].Amount != 1100 {
-			t.Fatalf("same-tenant consume=%v, err=%v", events, err)
-		}
-		for i := 0; i < 2; i++ {
-			if err := insertReversalLedgerEventTx(tx, "scope-a", events[0], "tx-a", 53, 54); err != nil {
-				t.Fatal(err)
-			}
-		}
-		active, err := activeConsumeEventsBySourceTransactionTx(tx, "scope-a", "tx-a")
-		if err != nil || len(active) != 0 {
-			t.Fatalf("same-tenant reversal left active consume: %v, %v", active, err)
-		}
-		if err := tx.Commit(); err != nil {
-			t.Fatal(err)
-		}
-		rows := tenantScopeRows(t, db, `SELECT type, amount, reference_date, created_at FROM box_virtual_ledger WHERE source_transaction_id = 'tx-a' ORDER BY created_at`)
-		want := [][]any{{"CONSUME", int64(-1100), int64(51), int64(52)}, {"REVERSAL", int64(1100), int64(53), int64(54)}}
-		if !reflect.DeepEqual(rows, want) {
-			t.Fatalf("same-tenant committed payload=%v, want=%v", rows, want)
-		}
-		if after := tenantScopeRows(t, db, `SELECT * FROM box_virtual_ledger WHERE box_id = 'box-b' ORDER BY id`); !reflect.DeepEqual(after, foreignBefore) {
-			t.Fatal("same-tenant mutations changed B")
-		}
-	})
-}
-
-func TestTenantRuntimeScopeLedgerReconciliationR9S3S4(t *testing.T) {
-	s3 := tenantScopeStatement(t, "../services/box_ledger_reconciliation.go", "ReconcileWorkspaceBoxLedger", "COUNT(r.id)",
-		"report.WorkspaceID", "report.WorkspaceID")
-	s4 := tenantScopeStatement(t, "../services/box_ledger_reconciliation.go", "ReconcileWorkspaceBoxLedger", "AS target_exists",
-		"report.WorkspaceID", "report.WorkspaceID")
-	r9 := tenantLedgerTransactionSQL(t, 2)
-	seed := func(t *testing.T) *sql.DB {
-		db := seedTenantRuntimeScope(t)
-		for _, suffix := range []string{"a", "b"} {
-			execTestSQL(t, db, `UPDATE boxes SET category_id = ? WHERE id = ?`, "cat-"+suffix, "box-"+suffix)
-			execTestSQL(t, db, `UPDATE transactions SET category_id = ? WHERE id = ?`, "cat-"+suffix, "tx-"+suffix)
-			amount := int64(-1100)
-			if suffix == "b" {
-				amount = -7700
-			}
-			tenantLedgerSeedEvent(t, db, "consume-"+suffix, "box-"+suffix, "CONSUME", "tx-"+suffix, "", amount, 10)
-		}
-		return db
-	}
-	reconcile := func(t *testing.T, db *sql.DB) services.BoxLedgerReconciliationReport {
-		t.Helper()
-		before := tenantLedgerSnapshot(t, db)
-		report, err := services.ReconcileWorkspaceBoxLedger(db, " scope-a ")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if after := tenantLedgerSnapshot(t, db); !reflect.DeepEqual(before, after) {
-			t.Fatal("reconciliation mutated A/B")
-		}
-		return report
-	}
-	t.Run("R9-mixed-source-IDs", func(t *testing.T) {
-		db := seed(t)
-		if baseline := reconcile(t, db); baseline.HasIssues() || baseline.BoxTotals["box-a"] != 0 || len(baseline.SourceSummaries) != 1 {
-			t.Fatalf("same-tenant baseline=%+v", baseline)
-		}
-		rows := tenantScopeRows(t, db, r9, "scope-a", "tx-a", "tx-b")
-		if len(rows) != 1 || rows[0][0] != "tx-a" || rows[0][1] != "scope-a" || rows[0][3] != int64(1100) {
-			t.Fatalf("R9 A result=%v", rows)
-		}
-		rows = tenantScopeRows(t, db, r9, "scope-b", "tx-a", "tx-b")
-		if len(rows) != 1 || rows[0][0] != "tx-b" || rows[0][3] != int64(7700) {
-			t.Fatalf("R9 B positive control=%v", rows)
-		}
-		tenantLedgerSeedEvent(t, db, "consume-cross-source", "box-a", "CONSUME", "tx-b", "", -7700, 20)
-		report := reconcile(t, db)
-		if len(report.Issues) != 1 || report.Issues[0].LedgerID != "consume-cross-source" || report.Issues[0].Code != "active_consume_missing_transaction" {
-			t.Fatalf("foreign transaction must be absent at SQL boundary: %+v", report)
-		}
-		tenantScopeIndexedPlan(t, db, r9, "scope-a", "tx-a", "tx-b")
-	})
-	t.Run("S3-foreign-reversal-and-null-extension", func(t *testing.T) {
-		db := seed(t)
-		baseline := reconcile(t, db)
-		if baseline.HasIssues() {
-			t.Fatalf("same-tenant baseline=%+v", baseline)
-		}
-		tenantLedgerSeedEvent(t, db, "foreign-reversal", "box-b", "REVERSAL", "tx-a", "consume-a", 1100, 20)
-		if report := reconcile(t, db); !reflect.DeepEqual(report, baseline) {
-			t.Fatalf("foreign reversal changed A reconciliation: %+v, baseline=%+v", report, baseline)
-		}
-		rows := tenantScopeRows(t, db, s3, "scope-a", "scope-a")
-		if len(rows) != 1 || rows[0][0] != "consume-a" || rows[0][4] != int64(0) {
-			t.Fatalf("S3 null-extension=%v", rows)
-		}
-		tenantLedgerSeedEvent(t, db, "local-reversal", "box-a", "REVERSAL", "tx-a", "consume-a", 1100, 30)
-		report := reconcile(t, db)
-		if report.HasIssues() || len(report.SourceSummaries) != 1 || report.SourceSummaries[0].ActiveConsumes != 0 || report.SourceSummaries[0].ReversalEvents != 1 || report.BoxTotals["box-a"] != 1100 {
-			t.Fatalf("S3/S4 same-tenant reversal control=%+v", report)
-		}
-		tenantScopeIndexedPlan(t, db, s3, "scope-a", "scope-a")
-	})
-	for _, target := range []string{"consume-b", "", "consume-a"} {
-		t.Run("S4-target-"+target, func(t *testing.T) {
-			db := seed(t)
-			tenantLedgerSeedEvent(t, db, "reversal-a", "box-a", "REVERSAL", "tx-a", target, 1100, 20)
-			rows := tenantScopeRows(t, db, s4, "scope-a", "scope-a")
-			if len(rows) != 1 || rows[0][0] != "reversal-a" {
-				t.Fatalf("S4 lost reversal row: %v", rows)
-			}
-			report := reconcile(t, db)
-			if target == "consume-a" {
-				if report.HasIssues() || rows[0][5] != int64(1) || rows[0][6] != "box-a" || rows[0][8] != int64(-1100) {
-					t.Fatalf("S4 positive target control: rows=%v report=%+v", rows, report)
-				}
-			} else {
-				if rows[0][5] != int64(0) || rows[0][6] != "" || rows[0][7] != "" || rows[0][8] != int64(0) || rows[0][9] != "" {
-					t.Fatalf("S4 foreign/absent target enriched A: %v", rows)
-				}
-				wantCode := "reversal_target_not_found"
-				if target == "" {
-					wantCode = "reversal_missing_target"
-				}
-				if len(report.Issues) != 1 || report.Issues[0].Code != wantCode || report.Issues[0].LedgerID != "reversal-a" {
-					t.Fatalf("S4 foreign/absent target classification=%+v", report)
-				}
-			}
-			tenantScopeIndexedPlan(t, db, s4, "scope-a", "scope-a")
-		})
-	}
-}
-
-func TestTenantRuntimeScopeLedgerS2DeadHelperHasNoProductionCallers(t *testing.T) {
-	err := filepath.WalkDir("..", func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-		if err != nil {
-			return err
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			call, ok := n.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			var name string
-			switch fn := call.Fun.(type) {
-			case *ast.Ident:
-				name = fn.Name
-			case *ast.SelectorExpr:
-				name = fn.Sel.Name
-			}
-			if name == "ListBoxLedgerBySourceTransaction" {
-				t.Errorf("S2 dead helper called in %s", path)
-			}
-			return true
-		})
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 }

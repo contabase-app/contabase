@@ -1,0 +1,113 @@
+name: Promote GHCR Beta
+run-name: Promote GHCR beta to ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Published Beta release tag (e.g. v1.0.0-beta.7)'
+        required: true
+        type: string
+        default: 'v1.0.0-beta.7'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: contabase-ghcr-beta-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote existing multi-arch image without rebuild
+    if: github.repository == 'contabase-app/contabase' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Verify published prerelease and beta branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-beta\.(0|[1-9][0-9]*)$ ]]; then
+            echo '::error::Version must match vX.Y.Z-beta.N'
+            exit 1
+          fi
+          release="$(gh api "repos/${REPOSITORY}/releases/tags/${RELEASE_VERSION}")"
+          jq -e --arg v "$RELEASE_VERSION" '.tag_name == $v and .draft == false and .prerelease == true and .published_at != null' <<< "$release" >/dev/null || {
+            echo '::error::Published prerelease not found'; exit 1;
+          }
+          tag="$(gh api "repos/${REPOSITORY}/git/ref/tags/${RELEASE_VERSION}")"
+          type="$(jq -r '.object.type' <<< "$tag")"
+          sha="$(jq -r '.object.sha' <<< "$tag")"
+          if [[ "$type" == tag ]]; then
+            annotated="$(gh api "repos/${REPOSITORY}/git/tags/${sha}")"
+            type="$(jq -r '.object.type' <<< "$annotated")"
+            sha="$(jq -r '.object.sha' <<< "$annotated")"
+          fi
+          [[ "$type" == commit ]] || { echo '::error::Tag does not point to a commit'; exit 1; }
+          beta_sha="$(gh api "repos/${REPOSITORY}/branches/beta" --jq '.commit.sha')"
+          [[ "$sha" == "$beta_sha" ]] || {
+            echo "::error::Tag commit does not match beta branch HEAD"; exit 1;
+          }
+          echo "Validated ${RELEASE_VERSION}: ${sha}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote and verify OCI index
+        shell: bash
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          source="${IMAGE}:${RELEASE_VERSION}"
+          target="${IMAGE}:beta"
+          docker buildx imagetools inspect --raw "$source" > source.json
+          jq -e '
+            .mediaType == "application/vnd.oci.image.index.v1+json" and
+            ([.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64")] | length) == 1 and
+            ([.manifests[] | select(.platform.os == "linux" and .platform.architecture == "arm64")] | length) == 1
+          ' source.json >/dev/null || {
+            echo '::error::Source is not a multi-architecture OCI index'; exit 1;
+          }
+          expected="sha256:$(sha256sum source.json | awk '{print $1}')"
+          if [[ "$RELEASE_VERSION" == 'v1.0.0-beta.7' && "$expected" != 'sha256:dcb5dacd92d38ffcefd05b141415b56ff7c5888ee95c909e2bbaddbe8e1bb109' ]]; then
+            echo '::error::Beta 7 source digest differs from approved artifact'; exit 1;
+          fi
+          echo "Source digest: $expected"
+          current='missing'
+          if docker buildx imagetools inspect --raw "$target" > previous.json 2>/dev/null; then
+            current="sha256:$(sha256sum previous.json | awk '{print $1}')"
+          fi
+          if [[ "$current" != "$expected" ]]; then
+            docker buildx imagetools create --tag "$target" "$source"
+          else
+            echo ':beta already matches source'
+          fi
+          docker buildx imagetools inspect --raw "$target" > result.json
+          actual="sha256:$(sha256sum result.json | awk '{print $1}')"
+          [[ "$actual" == "$expected" ]] && cmp -s source.json result.json || {
+            echo "::error::Digest/index mismatch expected=${expected} actual=${actual}"; exit 1;
+          }
+          {
+            echo '## GHCR Beta promotion'
+            echo "- Version: \`$RELEASE_VERSION\`"
+            echo "- Previous digest: \`$current\`"
+            echo "- Verified digest: \`$actual\`"
+            echo '- Platforms: linux/amd64 and linux/arm64'
+            echo '- Rebuild: none'
+          } >> "$GITHUB_STEP_SUMMARY"

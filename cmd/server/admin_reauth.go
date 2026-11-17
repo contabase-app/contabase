@@ -20,6 +20,7 @@ var errRecentAdminAuthenticationRequired = errors.New("recent admin authenticati
 type adminReauthPageData struct {
 	CSRFToken             string
 	ReturnTo              string
+	CancelTo              string
 	RequiresCurrentFactor bool
 	Error                 string
 }
@@ -48,6 +49,7 @@ func adminReauthRoute(
 			}
 			returnTo = safeAdminReauthReturnPath(r.FormValue("return_to"))
 		}
+		cancelTo := safeAdminReauthCancelPath(returnTo)
 
 		requiresCurrentFactor, err := authService.IsTOTPEnabled(ctx.UserID)
 		if err != nil {
@@ -59,6 +61,7 @@ func adminReauthRoute(
 			renderAdminReauthPage(w, tpl, adminReauthPageData{
 				CSRFToken:             ctx.CSRFToken,
 				ReturnTo:              returnTo,
+				CancelTo:              cancelTo,
 				RequiresCurrentFactor: requiresCurrentFactor,
 			}, http.StatusOK)
 			return
@@ -74,6 +77,7 @@ func adminReauthRoute(
 			renderAdminReauthPage(w, tpl, adminReauthPageData{
 				CSRFToken:             ctx.CSRFToken,
 				ReturnTo:              returnTo,
+				CancelTo:              cancelTo,
 				RequiresCurrentFactor: requiresCurrentFactor,
 				Error:                 "Não foi possível confirmar sua identidade.",
 			}, http.StatusUnauthorized)
@@ -105,12 +109,21 @@ func requireRecentAuthentication(w http.ResponseWriter, r *http.Request, authSer
 }
 
 func safeAdminReauthReturnPath(raw string) string {
-	switch strings.TrimSpace(raw) {
-	case "/admin/usuarios", "/admin/workspaces", "/admin/backups", "/admin/auditoria":
-		return strings.TrimSpace(raw)
+	path := strings.TrimSpace(raw)
+	switch path {
+	case "/admin/usuarios", "/admin/workspaces", "/admin/backups", "/admin/backups/exportar", "/admin/auditoria":
+		return path
 	default:
 		return "/configuracoes"
 	}
+}
+
+func safeAdminReauthCancelPath(returnTo string) string {
+	returnTo = safeAdminReauthReturnPath(returnTo)
+	if returnTo == "/admin/backups/exportar" {
+		return "/admin/backups"
+	}
+	return returnTo
 }
 
 func redirectToAdminReauthentication(w http.ResponseWriter, r *http.Request, returnTo string) {

@@ -26,10 +26,6 @@ func TestTenantIsolationReadModelsDoNotMixWorkspaces(t *testing.T) {
 	if len(dashboard.Limits) != 1 || dashboard.Limits[0].CategoryName != "A Expense" {
 		t.Fatalf("dashboard limits = %#v, want only A Expense", dashboard.Limits)
 	}
-	if len(dashboard.Boxes) != 1 || dashboard.Boxes[0].ID != "a-box" {
-		t.Fatalf("dashboard boxes = %#v, want only a-box", dashboard.Boxes)
-	}
-
 	txHandler := TransactionHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
 	lancamentos, err := txHandler.buildLancamentosData("", int(now.Month()), now.Year(), LancamentosFilters{Situacoes: []string{"pendente", "vencido", "agendado", "pago"}})
 	if err != nil {
@@ -48,12 +44,11 @@ func TestTenantIsolationReadModelsDoNotMixWorkspaces(t *testing.T) {
 	assertIDs(t, "contacts", contatoRowIDs(contatos), []string{"a-contact"})
 
 	metasHandler := MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
-	metas, err := metasHandler.buildMetasData("", "")
+	metas, err := metasHandler.buildMetasData("")
 	if err != nil {
 		t.Fatalf("buildMetasData: %v", err)
 	}
 	assertIDs(t, "metas limites", limiteCardIDs(metas.Limites), []string{"a-limit"})
-	assertIDs(t, "metas boxes", caixinhaCardIDs(metas.Caixinhas), []string{"a-box"})
 
 	relHandler := RelatoriosHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
 	relatorios, err := relHandler.buildRelatoriosData("", "caixa", "movimentos", int(now.Month()), now.Year())
@@ -89,16 +84,16 @@ func TestTenantIsolationTransactionWritesRejectForeignWorkspaceReferences(t *tes
 	handler := TransactionHandler{DB: db, WorkspaceID: "ws-a", UserID: "user-a"}
 	now := time.Now().UTC().Unix()
 
-	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign account", "", "", civilWriteDateFromLegacyUnix(now), "b-check", "", "a-expense-cat", 1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false); err == nil || !strings.Contains(err.Error(), "conta") {
+	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign account", "", "", civilWriteDateFromLegacyUnix(now), "b-check", "", "a-expense-cat", 1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, ""); err == nil || !strings.Contains(err.Error(), "conta") {
 		t.Fatalf("foreign account insert error = %v, want account authorization error", err)
 	}
-	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign category", "", "", civilWriteDateFromLegacyUnix(now), "a-check", "", "b-expense-cat", 1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false); err == nil || !strings.Contains(err.Error(), "categoria") {
+	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign category", "", "", civilWriteDateFromLegacyUnix(now), "a-check", "", "b-expense-cat", 1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, ""); err == nil || !strings.Contains(err.Error(), "categoria") {
 		t.Fatalf("foreign category insert error = %v, want category authorization error", err)
 	}
-	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign contact", "", "", civilWriteDateFromLegacyUnix(now), "a-check", "", "a-expense-cat", 1, "paid", false, "", "b-contact", OptionalCivilWriteDate{}, nil, "", false); err == nil || !strings.Contains(err.Error(), "contato") {
+	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign contact", "", "", civilWriteDateFromLegacyUnix(now), "a-check", "", "a-expense-cat", 1, "paid", false, "", "b-contact", OptionalCivilWriteDate{}, nil, ""); err == nil || !strings.Contains(err.Error(), "contato") {
 		t.Fatalf("foreign contact insert error = %v, want contact authorization error", err)
 	}
-	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign invoice", "", "", civilWriteDateFromLegacyUnix(now), "a-card", "", "a-expense-cat", 1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "b-invoice", false); err == nil || !strings.Contains(err.Error(), "fatura") {
+	if _, err := handler.insertTransaction("EXPENSE", 1000, "foreign invoice", "", "", civilWriteDateFromLegacyUnix(now), "a-card", "", "a-expense-cat", 1, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "b-invoice"); err == nil || !strings.Contains(err.Error(), "fatura") {
 		t.Fatalf("foreign invoice insert error = %v, want invoice authorization error", err)
 	}
 
@@ -183,19 +178,7 @@ func TestTenantIsolationForeignIDsCannotMutateOtherWorkspace(t *testing.T) {
 	}
 	assertAccountName(t, db, "b-card", "B Card")
 
-	metasHandler := MetasHandler{ActorRole: testMetasAdminRole, DB: db, Templates: testTenantMetasTemplates(t), WorkspaceID: "ws-a", UserID: "user-a"}
-	aporteForm := url.Values{"box_id": {"b-box"}, "amount": {"10,00"}}
-	aporteReq := httptest.NewRequest(http.MethodPost, "/metas/caixinha/aporte", strings.NewReader(aporteForm.Encode()))
-	aporteReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	aporteRR := httptest.NewRecorder()
-	metasHandler.HandleAporteCaixinha(aporteRR, aporteReq)
-	assertBoxLedgerCount(t, db, "b-box", 0)
-
-	deleteBoxReq := httptest.NewRequest(http.MethodDelete, "/metas/caixinha/b-box", nil)
-	deleteBoxRR := httptest.NewRecorder()
-	metasHandler.HandleDeleteCaixinha(deleteBoxRR, deleteBoxReq)
-	assertRowExists(t, db, "boxes", "b-box")
-
+	metasHandler := MetasHandler{ActorRole: testMetasAdminRole, DB: db, Templates: testMetasMutationTemplates(t), WorkspaceID: "ws-a", UserID: "user-a"}
 	deleteLimitReq := httptest.NewRequest(http.MethodDelete, "/metas/limite/b-limit", nil)
 	deleteLimitRR := httptest.NewRecorder()
 	metasHandler.HandleDeleteLimite(deleteLimitRR, deleteLimitReq)
@@ -315,12 +298,6 @@ func seedTenantIsolationScenario(t *testing.T, db *sql.DB) {
 			('a-limit', 'ws-a', 'a-expense-cat', 10000),
 			('b-limit', 'ws-b', 'b-expense-cat', 90000)
 	`)
-	execTestSQL(t, db, `
-		INSERT INTO boxes (id, workspace_id, name, category_id, target_amount, monthly_recharge, created_at, updated_at)
-		VALUES
-			('a-box', 'ws-a', 'A Box', 'a-expense-cat', 20000, 1000, ?, ?),
-			('b-box', 'ws-b', 'B Box', 'b-expense-cat', 90000, 9000, ?, ?)
-	`, nowUnix, nowUnix, nowUnix, nowUnix)
 }
 
 func assertIDs(t *testing.T, label string, got, want []string) {
@@ -389,14 +366,6 @@ func contatoRowIDs(rows []ContatoRow) []string {
 }
 
 func limiteCardIDs(rows []LimiteCard) []string {
-	out := make([]string, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, row.ID)
-	}
-	return out
-}
-
-func caixinhaCardIDs(rows []CaixinhaCard) []string {
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, row.ID)
@@ -499,17 +468,6 @@ func assertAccountName(t *testing.T, db *sql.DB, accountID, want string) {
 	}
 	if got != want {
 		t.Fatalf("account %s name = %q, want %q", accountID, got, want)
-	}
-}
-
-func assertBoxLedgerCount(t *testing.T, db *sql.DB, boxID string, want int) {
-	t.Helper()
-	var got int
-	if err := db.QueryRow(`SELECT COUNT(1) FROM box_virtual_ledger WHERE box_id = ?`, boxID).Scan(&got); err != nil {
-		t.Fatalf("query box ledger count: %v", err)
-	}
-	if got != want {
-		t.Fatalf("box ledger count for %s = %d, want %d", boxID, got, want)
 	}
 }
 

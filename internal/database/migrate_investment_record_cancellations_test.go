@@ -136,8 +136,8 @@ func TestInvestmentRecordCancellationMigration81AdditiveAndRegistered(t *testing
 		t.Fatal(err)
 	}
 	defer p.Close()
-	if got := countQueryRows(t, p.DB, `SELECT MAX(version) FROM schema_migrations`); got != 82 {
-		t.Fatalf("runtime version=%d, want 82", got)
+	if got := countQueryRows(t, p.DB, `SELECT MAX(version) FROM schema_migrations`); got != currentSchemaVersion {
+		t.Fatalf("runtime version=%d, want %d", got, currentSchemaVersion)
 	}
 	older := openInvestmentsTestDB(t)
 	seedAppliedMigrationsBefore(t, older, 1)

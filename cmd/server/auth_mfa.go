@@ -267,16 +267,7 @@ func setPreAuthCookie(w http.ResponseWriter, r *http.Request, token string, expi
 }
 
 func clearPreAuthCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     preAuthCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   shouldUseSecureCookie(r),
-		MaxAge:   -1,
-		Expires:  time.Unix(0, 0),
-	})
+	httpcookies.ClearPreAuth(w, shouldUseSecureCookie(r))
 }
 
 func issueFinalSession(w http.ResponseWriter, r *http.Request, authService *auth.Service, userID string, isRemember bool) error {

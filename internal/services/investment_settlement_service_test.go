@@ -46,7 +46,7 @@ func settlementFinancialSnapshot(t *testing.T, db *sql.DB) string {
 	t.Helper()
 	// Exact row snapshots catch mutations that count/sum-only checks would miss.
 	var out strings.Builder
-	for _, table := range []string{"accounts", "transactions", "account_balance_adjustments", "box_virtual_ledger", "investments", "investment_valuations", "investment_purchases", "investment_withdrawals", "investment_withdrawal_allocations", "investment_reference_revisions", "investment_financial_revisions", "investment_financial_adjustments", "investment_purchase_funding"} {
+	for _, table := range []string{"accounts", "transactions", "account_balance_adjustments", "investments", "investment_valuations", "investment_purchases", "investment_withdrawals", "investment_withdrawal_allocations", "investment_reference_revisions", "investment_financial_revisions", "investment_financial_adjustments", "investment_purchase_funding"} {
 		rows, err := db.Query(`SELECT * FROM ` + table + ` ORDER BY rowid`)
 		if err != nil {
 			t.Fatal(err)
@@ -629,7 +629,16 @@ func TestInvestmentSettlementOnlyExplicitOperationalActivation(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			if d.IsDir() {
+				// Runtime data and hidden staging directories are not Go source.
+				// Other test packages create and remove .contabase-snapshot-*
+				// directories under data/ while the full suite runs.
+				if path != root && (d.Name() == "data" || strings.HasPrefix(d.Name(), ".")) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 				return nil
 			}
 			b, err := os.ReadFile(path)

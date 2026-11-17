@@ -94,7 +94,6 @@ window.initAppShell = function(root) {
 
     runAppShellTask('refreshIcons', window.refreshIcons);
     runAppShellTask('initSwipeRows', window.initSwipeRows, [scope]);
-    runAppShellTask('initDashboardTabs', window.initDashboardTabs, [scope]);
     runAppShellTask('initPrivacyToggle', window.initPrivacyToggle, [scope]);
     runAppShellTask('initClickTooltips', window.initClickTooltips, [scope]);
     runAppShellTask('initHoverTooltips', window.initHoverTooltips, [scope]);
@@ -233,9 +232,10 @@ document.body.addEventListener('htmx:afterSwap', function(event) {
 document.body.addEventListener('htmx:responseError', function(event) {
     var xhr = event && event.detail && event.detail.xhr;
     if (!xhr) return;
+    var trigger = xhr.getResponseHeader('HX-Trigger') || '';
+    var hasSpecificAlert = trigger.indexOf('mostrarAlerta') !== -1;
     if (xhr.status === 429) {
-        var trigger = xhr.getResponseHeader('HX-Trigger') || '';
-        if (trigger.indexOf('mostrarAlerta') !== -1) return;
+        if (hasSpecificAlert) return;
         var retryAfter = parseInt(xhr.getResponseHeader('Retry-After') || '0', 10);
         if (retryAfter > 0) {
             var minutes = Math.max(1, Math.ceil(retryAfter / 60));
@@ -245,6 +245,7 @@ document.body.addEventListener('htmx:responseError', function(event) {
         showGlobalFeedback('Muitas tentativas. Aguarde alguns minutos e tente novamente.', 'error');
         return;
     }
+    if (hasSpecificAlert) return;
     if (xhr.status === 401) {
         showGlobalFeedback('Sessão expirada. Redirecionando para login.', 'error');
         return;

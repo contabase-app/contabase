@@ -9,19 +9,16 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
 
-	"github.com/google/uuid"
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
 	"modernc.org/sqlite"
 
-	"github.com/contabase-app/contabase/internal/boxcontribution"
 	"github.com/contabase-app/contabase/internal/paths"
 )
 
@@ -412,7 +409,64 @@ CREATE TABLE IF NOT EXISTS cost_limits (
     UNIQUE (workspace_id, category_id)
 );
 
-CREATE TABLE IF NOT EXISTS boxes (
+CREATE TABLE IF NOT EXISTS transaction_status_history (
+    id              TEXT PRIMARY KEY,
+    transaction_id  TEXT NOT NULL,
+    workspace_id    TEXT NOT NULL,
+    user_id         TEXT NOT NULL,
+    previous_status TEXT,
+    new_status      TEXT,
+    previous_paid_at INTEGER,
+    new_paid_at     INTEGER,
+    source          TEXT NOT NULL DEFAULT 'manual',
+    created_at      INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_members_user      ON workspace_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_notification_dismissals_workspace ON user_notification_dismissals(workspace_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id        ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at     ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_pre_auth_sessions_user_id ON pre_auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_pre_auth_sessions_expires_at ON pre_auth_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_mfa_setup_challenges_user_id ON mfa_setup_challenges(user_id);
+CREATE INDEX IF NOT EXISTS idx_mfa_setup_challenges_expires_at ON mfa_setup_challenges(expires_at);
+CREATE INDEX IF NOT EXISTS idx_auth_audit_events_user_created ON auth_audit_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_audit_events_type_created ON auth_audit_events(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_lockouts_locked_until ON auth_lockouts(locked_until);
+CREATE INDEX IF NOT EXISTS idx_security_logs_workspace_created ON security_logs(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_logs_event_created ON security_logs(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_notifications_user_read ON user_notifications(user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_accounts_workspace          ON accounts(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_categories_workspace        ON categories(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_account            ON invoices(account_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_status             ON invoices(status);
+CREATE INDEX IF NOT EXISTS idx_invoices_account_reference_status ON invoices(account_id, reference, status);
+CREATE INDEX IF NOT EXISTS idx_recurring_rules_workspace   ON recurring_rules(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_recurring_rules_active      ON recurring_rules(active);
+CREATE INDEX IF NOT EXISTS idx_recurring_rules_start_date  ON recurring_rules(start_date);
+CREATE INDEX IF NOT EXISTS idx_recurring_materialization_state_locked_until ON recurring_materialization_state(locked_until);
+CREATE INDEX IF NOT EXISTS idx_contacts_workspace_name_created ON contacts(workspace_id, name COLLATE NOCASE, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_workspace      ON transactions(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_account        ON transactions(account_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_category       ON transactions(category_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_invoice        ON transactions(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_date           ON transactions(date);
+CREATE INDEX IF NOT EXISTS idx_transactions_type           ON transactions(type);
+CREATE INDEX IF NOT EXISTS idx_transactions_parent         ON transactions(parent_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_workspace_parent ON transactions(workspace_id, parent_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_workspace_parent_date ON transactions(workspace_id, parent_id, date);
+CREATE INDEX IF NOT EXISTS idx_transactions_workspace_date_created ON transactions(workspace_id, date DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_workspace_type_date ON transactions(workspace_id, type, date);
+CREATE INDEX IF NOT EXISTS idx_transactions_workspace_category_type_date ON transactions(workspace_id, category_id, type, date);
+CREATE INDEX IF NOT EXISTS idx_transactions_workspace_invoice_date ON transactions(workspace_id, invoice_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_tsh_transaction ON transaction_status_history(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_tsh_workspace_created ON transaction_status_history(workspace_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_cost_limits_workspace       ON cost_limits(workspace_id);
+`
+
+// legacyReserveDDL exists only so historical migrations 1-82 can run on a
+// database that has not reached schema 83. Schema 83 drops these objects.
+const legacyReserveDDL = `CREATE TABLE IF NOT EXISTS boxes (
     id               TEXT PRIMARY KEY,
     workspace_id     TEXT    NOT NULL,
     name             TEXT    NOT NULL,
@@ -481,59 +535,6 @@ CREATE TABLE IF NOT EXISTS box_contribution_lifecycle_events (
 	FOREIGN KEY (box_id) REFERENCES boxes(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS transaction_status_history (
-    id              TEXT PRIMARY KEY,
-    transaction_id  TEXT NOT NULL,
-    workspace_id    TEXT NOT NULL,
-    user_id         TEXT NOT NULL,
-    previous_status TEXT,
-    new_status      TEXT,
-    previous_paid_at INTEGER,
-    new_paid_at     INTEGER,
-    source          TEXT NOT NULL DEFAULT 'manual',
-    created_at      INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_workspace_members_user      ON workspace_members(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_notification_dismissals_workspace ON user_notification_dismissals(workspace_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_user_id        ON sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_expires_at     ON sessions(expires_at);
-CREATE INDEX IF NOT EXISTS idx_pre_auth_sessions_user_id ON pre_auth_sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_pre_auth_sessions_expires_at ON pre_auth_sessions(expires_at);
-CREATE INDEX IF NOT EXISTS idx_mfa_setup_challenges_user_id ON mfa_setup_challenges(user_id);
-CREATE INDEX IF NOT EXISTS idx_mfa_setup_challenges_expires_at ON mfa_setup_challenges(expires_at);
-CREATE INDEX IF NOT EXISTS idx_auth_audit_events_user_created ON auth_audit_events(user_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_auth_audit_events_type_created ON auth_audit_events(event_type, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_auth_lockouts_locked_until ON auth_lockouts(locked_until);
-CREATE INDEX IF NOT EXISTS idx_security_logs_workspace_created ON security_logs(workspace_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_security_logs_event_created ON security_logs(event_type, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_user_notifications_user_read ON user_notifications(user_id, is_read);
-CREATE INDEX IF NOT EXISTS idx_accounts_workspace          ON accounts(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_categories_workspace        ON categories(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_invoices_account            ON invoices(account_id);
-CREATE INDEX IF NOT EXISTS idx_invoices_status             ON invoices(status);
-CREATE INDEX IF NOT EXISTS idx_invoices_account_reference_status ON invoices(account_id, reference, status);
-CREATE INDEX IF NOT EXISTS idx_recurring_rules_workspace   ON recurring_rules(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_recurring_rules_active      ON recurring_rules(active);
-CREATE INDEX IF NOT EXISTS idx_recurring_rules_start_date  ON recurring_rules(start_date);
-CREATE INDEX IF NOT EXISTS idx_recurring_materialization_state_locked_until ON recurring_materialization_state(locked_until);
-CREATE INDEX IF NOT EXISTS idx_contacts_workspace_name_created ON contacts(workspace_id, name COLLATE NOCASE, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_transactions_workspace      ON transactions(workspace_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_account        ON transactions(account_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_category       ON transactions(category_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_invoice        ON transactions(invoice_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_date           ON transactions(date);
-CREATE INDEX IF NOT EXISTS idx_transactions_type           ON transactions(type);
-CREATE INDEX IF NOT EXISTS idx_transactions_parent         ON transactions(parent_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_workspace_parent ON transactions(workspace_id, parent_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_workspace_parent_date ON transactions(workspace_id, parent_id, date);
-CREATE INDEX IF NOT EXISTS idx_transactions_workspace_date_created ON transactions(workspace_id, date DESC, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_transactions_workspace_type_date ON transactions(workspace_id, type, date);
-CREATE INDEX IF NOT EXISTS idx_transactions_workspace_category_type_date ON transactions(workspace_id, category_id, type, date);
-CREATE INDEX IF NOT EXISTS idx_transactions_workspace_invoice_date ON transactions(workspace_id, invoice_id, date DESC);
-CREATE INDEX IF NOT EXISTS idx_tsh_transaction ON transaction_status_history(transaction_id);
-CREATE INDEX IF NOT EXISTS idx_tsh_workspace_created ON transaction_status_history(workspace_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_cost_limits_workspace       ON cost_limits(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_boxes_workspace             ON boxes(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_boxes_workspace_category    ON boxes(workspace_id, category_id);
 CREATE INDEX IF NOT EXISTS idx_box_virtual_ledger_box      ON box_virtual_ledger(box_id);
@@ -1074,6 +1075,12 @@ func createPreMigrationBackup(db *sql.DB, dbPath string) (string, error) {
 	if err := CreateSQLiteBackupFile(db, dbPath, dest); err != nil {
 		return "", fmt.Errorf("failed to copy pre-migration backup: %w", err)
 	}
+	if err := publishPreMigrationBackupManifest(dest); err != nil {
+		return "", fmt.Errorf("failed to publish pre-migration backup manifest: %w", err)
+	}
+	if err := ValidatePreMigrationBackup(dest); err != nil {
+		return "", fmt.Errorf("failed to validate pre-migration backup: %w", err)
+	}
 
 	return dest, nil
 }
@@ -1087,10 +1094,15 @@ func nextBackupPath(dir, prefix string) (string, error) {
 		}
 
 		path := filepath.Join(dir, name)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
+		if _, err := os.Stat(path); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("failed to inspect backup path: %w", err)
+		}
+		if _, err := os.Stat(preMigrationBackupManifestPath(path)); os.IsNotExist(err) {
 			return path, nil
 		} else if err != nil {
-			return "", fmt.Errorf("failed to inspect backup path: %w", err)
+			return "", fmt.Errorf("failed to inspect backup manifest path: %w", err)
 		}
 	}
 }
@@ -1123,13 +1135,18 @@ func checkpointWAL(db *sql.DB) error {
 	return nil
 }
 
-func HasAnyUser(db *sql.DB) bool {
+// HasAnyUser distinguishes an accessible empty database from a query failure.
+// Callers deciding between setup and the dashboard must not treat an
+// unavailable database as proof that no user exists.
+func HasAnyUser(db *sql.DB) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("has any user check failed: nil database")
+	}
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
-		log.Printf("has any user check failed: %v", err)
-		return false
+		return false, fmt.Errorf("has any user check failed: %w", err)
 	}
-	return count > 0
+	return count > 0, nil
 }
 
 func PruneSecurityLogs(db *sql.DB) error {
@@ -1188,327 +1205,5 @@ func startSQLiteRuntimeJobs(parent context.Context, db *sql.DB, dbPath string, h
 			log.Printf("security logs prune failed: %v", err)
 		}
 	})
-	start("monthly_engine", 6*time.Hour, func(jobContext context.Context) {
-		loc, err := resolveCivilRepairTimezone()
-		if err != nil {
-			log.Printf("monthly box recharge timezone failed: %v", err)
-		} else if err := materializeMonthlyBoxRecharges(jobContext, db, time.Now().In(loc)); err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("monthly box recharge failed: %v", err)
-		}
-	})
 	return jobs
-}
-
-// materializeMonthlyBoxRecharges creates at most one automatic recharge for
-// each eligible box in civilNow's month. The caller supplies civilNow in the
-// configured financial timezone so the financial core does not read a global
-// clock. A BEGIN IMMEDIATE transaction serializes balance, lifecycle and
-// ledger decisions; the partial unique index remains the final database
-// invariant for (box_id, automatic_recharge_month).
-func materializeMonthlyBoxRecharges(ctx context.Context, db *sql.DB, civilNow time.Time) (err error) {
-	if db == nil {
-		return fmt.Errorf("monthly box recharge: nil database")
-	}
-	if civilNow.IsZero() {
-		return fmt.Errorf("monthly box recharge: zero civil time")
-	}
-
-	civilMonth := civilNow.Format("2006-01")
-	materializedAt := civilNow.Unix()
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("monthly box recharge acquire connection: %w", err)
-	}
-	defer conn.Close()
-
-	if _, err = conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
-		return fmt.Errorf("monthly box recharge begin immediate: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_, _ = conn.ExecContext(context.Background(), `ROLLBACK`)
-		}
-	}()
-
-	// CONTROL-PLANE GLOBAL: this internal job discovers only workspace IDs.
-	// Eligibility and all financial data are read in the scoped query below.
-	workspaceRows, err := conn.QueryContext(ctx, `SELECT id FROM workspaces ORDER BY id`)
-	if err != nil {
-		return fmt.Errorf("monthly box recharge discover workspaces: %w", err)
-	}
-	var workspaceIDs []string
-	for workspaceRows.Next() {
-		var workspaceID string
-		if err := workspaceRows.Scan(&workspaceID); err != nil {
-			_ = workspaceRows.Close()
-			return fmt.Errorf("monthly box recharge scan workspace: %w", err)
-		}
-		workspaceIDs = append(workspaceIDs, workspaceID)
-	}
-	if err := workspaceRows.Err(); err != nil {
-		_ = workspaceRows.Close()
-		return fmt.Errorf("monthly box recharge discover workspaces: %w", err)
-	}
-	if err := workspaceRows.Close(); err != nil {
-		return fmt.Errorf("monthly box recharge close workspaces: %w", err)
-	}
-	type monthlyBox struct {
-		id                  string
-		workspaceID         string
-		target              int64
-		recharge            int64
-		continueAfterTarget int64
-		state               BoxAutomaticContributionState
-		anchor              sql.NullString
-		createdAt           int64
-	}
-	var boxes []monthlyBox
-	for _, workspaceID := range workspaceIDs {
-		rows, err := conn.QueryContext(ctx, `
-			SELECT id, workspace_id, target_amount, monthly_recharge,
-				continue_after_target, automatic_contribution_state,
-				monthly_recharge_anchor_month, created_at
-			FROM boxes
-			WHERE workspace_id = ? AND monthly_recharge > 0
-			ORDER BY id
-		`, workspaceID)
-		if err != nil {
-			return fmt.Errorf("monthly box recharge select eligible boxes for workspace %q: %w", workspaceID, err)
-		}
-		for rows.Next() {
-			var box monthlyBox
-			if err := rows.Scan(
-				&box.id,
-				&box.workspaceID,
-				&box.target,
-				&box.recharge,
-				&box.continueAfterTarget,
-				&box.state,
-				&box.anchor,
-				&box.createdAt,
-			); err != nil {
-				_ = rows.Close()
-				return fmt.Errorf("monthly box recharge scan eligible box: %w", err)
-			}
-			boxes = append(boxes, box)
-		}
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("monthly box recharge eligible boxes: %w", err)
-		}
-		if err := rows.Close(); err != nil {
-			return fmt.Errorf("monthly box recharge close eligible boxes: %w", err)
-		}
-	}
-	// The previous global query processed boxes by id. Keep that order while
-	// sourcing each box from a workspace-scoped query.
-	sort.Slice(boxes, func(i, j int) bool { return boxes[i].id < boxes[j].id })
-	for _, box := range boxes {
-		if !box.state.valid() {
-			return fmt.Errorf("monthly box recharge box %q has invalid contribution state %q", box.id, box.state)
-		}
-		if box.continueAfterTarget != 0 && box.continueAfterTarget != 1 {
-			return fmt.Errorf("monthly box recharge box %q has invalid continue-after-target value %d", box.id, box.continueAfterTarget)
-		}
-	}
-
-	for _, box := range boxes {
-		anchorMonth := box.anchor.String
-		if !box.anchor.Valid || anchorMonth == "" {
-			anchorMonth = time.Unix(box.createdAt, 0).In(civilNow.Location()).Format("2006-01")
-			if err := setMonthlyBoxRechargeAnchor(ctx, conn, box.workspaceID, box.id, anchorMonth); err != nil {
-				return fmt.Errorf("monthly box recharge set anchor for box %q: %w", box.id, err)
-			}
-		}
-		if civilMonth < anchorMonth {
-			continue
-		}
-
-		balance, err := monthlyBoxLedgerBalance(ctx, conn, box.workspaceID, box.id)
-		if err != nil {
-			return fmt.Errorf("monthly box recharge calculate balance for box %q: %w", box.id, err)
-		}
-
-		if box.state == BoxAutomaticContributionStateBlocked {
-			if balance >= box.recharge {
-				continue
-			}
-			changed, err := transitionBoxAutomaticContributionState(
-				ctx,
-				conn,
-				box.workspaceID,
-				box.id,
-				BoxAutomaticContributionStateActive,
-				materializedAt,
-			)
-			if err != nil {
-				return fmt.Errorf("monthly box recharge reactivate box %q: %w", box.id, err)
-			}
-			if !changed {
-				return fmt.Errorf("monthly box recharge box %q was not reactivated", box.id)
-			}
-			box.state = BoxAutomaticContributionStateActive
-		}
-
-		decision := boxcontribution.NextAutomaticContribution(boxcontribution.NextAutomaticContributionInput{
-			BalanceCents:        balance,
-			TargetCents:         box.target,
-			MonthlyCents:        box.recharge,
-			TargetDefined:       box.target > 0,
-			ContinueAfterTarget: box.continueAfterTarget == 1,
-			Active:              true,
-		})
-		if decision.TargetReached && decision.AmountCents == 0 {
-			if err := recordBoxContributionGoalReached(ctx, conn, box.workspaceID, box.id, materializedAt); err != nil {
-				return fmt.Errorf("monthly box recharge recognize reached target for box %q: %w", box.id, err)
-			}
-			changed, err := transitionBoxAutomaticContributionState(
-				ctx,
-				conn,
-				box.workspaceID,
-				box.id,
-				BoxAutomaticContributionStateBlocked,
-				materializedAt,
-			)
-			if err != nil {
-				return fmt.Errorf("monthly box recharge block reached box %q: %w", box.id, err)
-			}
-			if !changed {
-				return fmt.Errorf("monthly box recharge reached box %q was not blocked", box.id)
-			}
-			continue
-		}
-
-		alreadyMaterialized, err := monthlyBoxRechargeExists(ctx, conn, box.workspaceID, box.id, civilMonth)
-		if err != nil {
-			return fmt.Errorf("monthly box recharge read identity for box %q month %s: %w", box.id, civilMonth, err)
-		}
-		if alreadyMaterialized {
-			continue
-		}
-
-		automaticAmount := decision.AmountCents
-		blocksAfterRecharge := decision.TargetReached
-		if automaticAmount <= 0 {
-			return fmt.Errorf("monthly box recharge calculated non-positive amount %d for box %q", automaticAmount, box.id)
-		}
-
-		inserted, err := insertMonthlyBoxRecharge(ctx, conn, box.workspaceID, box.id, automaticAmount, civilMonth, materializedAt)
-		if err != nil {
-			return fmt.Errorf("monthly box recharge materialize box %q month %s: %w", box.id, civilMonth, err)
-		}
-		if !inserted {
-			continue
-		}
-
-		if blocksAfterRecharge {
-			if err := recordBoxContributionGoalReached(ctx, conn, box.workspaceID, box.id, materializedAt); err != nil {
-				return fmt.Errorf("monthly box recharge record reached target for box %q: %w", box.id, err)
-			}
-			changed, err := transitionBoxAutomaticContributionState(
-				ctx,
-				conn,
-				box.workspaceID,
-				box.id,
-				BoxAutomaticContributionStateBlocked,
-				materializedAt,
-			)
-			if err != nil {
-				return fmt.Errorf("monthly box recharge block box %q after reaching target: %w", box.id, err)
-			}
-			if !changed {
-				return fmt.Errorf("monthly box recharge box %q was not blocked after reaching target", box.id)
-			}
-		}
-	}
-
-	if _, err = conn.ExecContext(ctx, `COMMIT`); err != nil {
-		return fmt.Errorf("monthly box recharge commit: %w", err)
-	}
-	committed = true
-	return nil
-}
-
-func setMonthlyBoxRechargeAnchor(ctx context.Context, store boxContributionLifecycleStore, workspaceID, boxID, month string) error {
-	result, err := store.ExecContext(ctx, `
-		UPDATE boxes
-		SET monthly_recharge_anchor_month = ?
-		WHERE id = ? AND workspace_id = ? AND monthly_recharge_anchor_month IS NULL
-	`, month, boxID, workspaceID)
-	if err != nil {
-		return err
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("monthly box recharge anchor result: %w", err)
-	}
-	if rowsAffected != 1 {
-		return fmt.Errorf("monthly box recharge anchor affected %d rows; expected one owned unanchored box", rowsAffected)
-	}
-	return nil
-}
-
-func monthlyBoxLedgerBalance(ctx context.Context, store boxContributionLifecycleStore, workspaceID, boxID string) (int64, error) {
-	var balance int64
-	err := store.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(l.amount), 0)
-		FROM boxes b
-		LEFT JOIN box_virtual_ledger l ON l.box_id = b.id
-		WHERE b.id = ? AND b.workspace_id = ?
-		GROUP BY b.id
-	`, boxID, workspaceID).Scan(&balance)
-	return balance, err
-}
-
-func monthlyBoxRechargeExists(ctx context.Context, store boxContributionLifecycleStore, workspaceID, boxID, month string) (bool, error) {
-	var exists int
-	err := store.QueryRowContext(ctx, `
-		SELECT EXISTS (
-			SELECT 1
-			FROM box_virtual_ledger l
-			WHERE l.box_id = b.id AND l.automatic_recharge_month = ?
-		)
-		FROM boxes b
-		WHERE b.id = ? AND b.workspace_id = ?
-	`, month, boxID, workspaceID).Scan(&exists)
-	return exists != 0, err
-}
-
-func insertMonthlyBoxRecharge(ctx context.Context, store boxContributionLifecycleStore, workspaceID, boxID string, amount int64, month string, at int64) (bool, error) {
-	result, err := store.ExecContext(ctx, `
-		INSERT INTO box_virtual_ledger (
-			id, box_id, reference_date, amount, type, description,
-			automatic_recharge_month, created_at
-		)
-		SELECT ?, b.id, ?, ?, 'RECHARGE', 'Aporte Automático', ?, ?
-		FROM boxes b
-		WHERE b.id = ? AND b.workspace_id = ?
-		ON CONFLICT(box_id, automatic_recharge_month)
-		WHERE automatic_recharge_month IS NOT NULL
-		DO NOTHING
-	`, uuid.NewString(), at, amount, month, at, boxID, workspaceID)
-	if err != nil {
-		return false, err
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("monthly box recharge insert result: %w", err)
-	}
-	if rowsAffected == 1 {
-		return true, nil
-	}
-	if rowsAffected != 0 {
-		return false, fmt.Errorf("monthly box recharge insert affected %d rows; expected at most one", rowsAffected)
-	}
-	// The same transaction distinguishes a valid monthly conflict from a
-	// missing/foreign box or an otherwise suppressed insert.
-	exists, err := monthlyBoxRechargeExists(ctx, store, workspaceID, boxID, month)
-	if err != nil {
-		return false, fmt.Errorf("monthly box recharge verify zero-row insert ownership: %w", err)
-	}
-	if !exists {
-		return false, fmt.Errorf("monthly box recharge insert affected zero rows without monthly identity")
-	}
-	return false, nil
 }

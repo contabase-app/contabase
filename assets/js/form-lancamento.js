@@ -11,6 +11,11 @@
         return root.querySelector ? root.querySelector(selector) : document.querySelector(selector);
     }
 
+    function isCardOriginType(value) {
+        var normalized = (value || '').toString().trim().toUpperCase();
+        return normalized === 'CARTAO' || normalized === 'CARTÃO' || normalized === 'CREDIT_CARD';
+    }
+
     // --- Pure monetary helpers ---
 
     ns.parseMoneyCents = function(value) {
@@ -397,9 +402,6 @@
         if (!categoryIdInput || !categoryNameEl || !categoryIconEl || !categoryIconWrapEl) return;
 
         categoryIdInput.value = payload.id;
-        categoryIdInput.dataset.boxId = payload.boxId || '';
-        categoryIdInput.dataset.boxReserved = payload.boxReserved || '0';
-        categoryIdInput.dataset.boxName = payload.boxName || '';
         categoryIdInput.dataset.limitMax = payload.limitMax || '0';
         categoryIdInput.dataset.limitSpent = payload.limitSpent || '0';
 
@@ -423,8 +425,6 @@
         if (typeof cb.onCategoryInputSync === 'function') cb.onCategoryInputSync();
 
         ns.updateCategoryInfoWarnings();
-
-        if (typeof cb.onBoxOverdraftChange === 'function') cb.onBoxOverdraftChange();
 
         if (typeof cb.onCloseModal === 'function') cb.onCloseModal();
     };
@@ -653,6 +653,43 @@
         }
 
         if (typeof cb.onUpdateTypeLabels === 'function') cb.onUpdateTypeLabels(type);
+        if (ns.syncDateLabel) ns.syncDateLabel();
+    };
+
+    ns.syncDateLabel = function() {
+        var form = document.getElementById('lancamento-form');
+        var label = document.getElementById('dataLancamentoLabel');
+        if (!form || !label) return;
+
+        var isBusiness = form.dataset.isBusiness === 'true';
+        var type = ns.currentFormType ? ns.currentFormType() : '';
+        var statusInput = document.getElementById('statusPagamentoHidden');
+        var status = statusInput ? statusInput.value : 'paid';
+        var originInput = document.getElementById('origemTipo');
+        var originType = originInput ? originInput.value : '';
+        var explicitDueDiffers = form.dataset.explicitDueDiffers === 'true';
+        var text;
+
+        if (isBusiness) {
+            text = 'Data de competência';
+        } else if (type === 'transferencia') {
+            text = 'Data da transferência';
+        } else if (explicitDueDiffers) {
+            text = 'Data do lançamento';
+        } else if (type === 'receita') {
+            text = status === 'pending' ? 'Data de recebimento prevista' : 'Data do lançamento';
+        } else if (type === 'despesa') {
+            if (isCardOriginType(originType)) {
+                text = 'Data da compra';
+            } else if (status === 'pending') {
+                text = 'Data de vencimento';
+            } else {
+                text = 'Data do lançamento';
+            }
+        } else {
+            text = 'Data do lançamento';
+        }
+        label.textContent = text;
     };
 
     // --- Payment status bridge (Phase D.5.3.9.b.1) ---
@@ -730,6 +767,7 @@
             dueSection.setAttribute('aria-hidden', isPaid ? 'true' : 'false');
         }
 
+        if (ns.syncDateLabel) ns.syncDateLabel();
         ns.updatePaymentScheduleNotice();
     };
 
@@ -951,15 +989,10 @@
         var limitInfo = document.getElementById('categoryLimitInfo');
         var limitInfoText = document.getElementById('limitInfoText');
         var limitOverdraftWarn = document.getElementById('limitOverdraftWarn');
-        var reserveInfo = document.getElementById('categoryReserveInfo');
-        var reserveInfoText = document.getElementById('reserveInfoText');
         var valueInput = document.getElementById('valor');
 
         var limitMax = parseInt(categoryIdInput.dataset.limitMax || '0', 10);
         var limitSpent = parseInt(categoryIdInput.dataset.limitSpent || '0', 10);
-        var boxId = categoryIdInput.dataset.boxId || '';
-        var boxName = categoryIdInput.dataset.boxName || '';
-        var boxReserved = parseInt(categoryIdInput.dataset.boxReserved || '0', 10);
 
         // Limit info
         if (limitMax > 0 && limitInfo && limitInfoText) {
@@ -980,13 +1013,6 @@
             limitInfo.classList.add('hidden');
         }
 
-        // Reserve info
-        if (boxId && reserveInfo && reserveInfoText) {
-            reserveInfoText.textContent = ' ' + boxName + ' · R$ ' + ns.formatCurrencyCents(boxReserved) + ' disponível.';
-            reserveInfo.classList.remove('hidden');
-        } else if (reserveInfo) {
-            reserveInfo.classList.add('hidden');
-        }
     };
 
     ns.formatCurrencyCents = function(cents) {
@@ -994,89 +1020,6 @@
         var frac = Math.abs(cents) % 100;
         var s = reais.toLocaleString('pt-BR') + ',' + (frac < 10 ? '0' : '') + frac;
         return cents < 0 ? '-' + s : s;
-    };
-
-    // --- Box Overdraft Warnings (Phase D.5.3.9.e.1) ---
-
-    ns.syncAllowBoxOverdraftInput = function(root) {
-        var allowBoxOverdraftInput = findInRoot(root, '#permitirExcedenteCaixinha');
-        var allowBoxOverdraftCheckbox = findInRoot(root, '#allowBoxOverdraftCheckbox');
-        if (!allowBoxOverdraftInput) return;
-        allowBoxOverdraftInput.value = allowBoxOverdraftCheckbox && allowBoxOverdraftCheckbox.checked ? '1' : '0';
-    };
-
-    ns.setBoxOverdraftVisible = function(visible, root) {
-        var boxOverdraftWarning = findInRoot(root, '#boxOverdraftWarning');
-        var allowBoxOverdraftCheckbox = findInRoot(root, '#allowBoxOverdraftCheckbox');
-        if (!boxOverdraftWarning) return;
-        boxOverdraftWarning.classList.toggle('hidden', !visible);
-        if (!visible && allowBoxOverdraftCheckbox && allowBoxOverdraftCheckbox.checked) {
-            allowBoxOverdraftCheckbox.checked = false;
-            allowBoxOverdraftCheckbox.dispatchEvent(new Event('input', { bubbles: true }));
-            allowBoxOverdraftCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-        ns.syncAllowBoxOverdraftInput(root);
-    };
-
-    ns.updateBoxOverdraftWarning = function(root) {
-        var transactionType = findInRoot(root, '#tipoLancamento');
-        if (!transactionType || transactionType.value !== 'despesa') {
-            ns.setBoxOverdraftVisible(false, root);
-            return;
-        }
-
-        var categoryId = findInRoot(root, '#categoriaId');
-        if (!categoryId || !categoryId.value) {
-            ns.setBoxOverdraftVisible(false, root);
-            return;
-        }
-
-        var option = findInRoot(root, '.category-option[data-category-id="' + categoryId.value + '"]');
-        var boxId = option ? option.dataset.boxId : categoryId.dataset.boxId;
-        if (!boxId) {
-            ns.setBoxOverdraftVisible(false, root);
-            return;
-        }
-
-        var valueInput = findInRoot(root, '#valor');
-        var amountCents = ns.parseMoneyCents(valueInput ? valueInput.value : '');
-        if (amountCents <= 0) {
-            ns.setBoxOverdraftVisible(false, root);
-            return;
-        }
-
-        var reserved = parseInt((option ? option.dataset.boxReserved : categoryId.dataset.boxReserved) || '0', 10);
-        if (!Number.isFinite(reserved)) reserved = 0;
-        ns.setBoxOverdraftVisible(amountCents > reserved, root);
-    };
-
-    ns.scheduleBoxOverdraftWarningUpdate = function(root) {
-        ns.updateCategoryInfoWarnings();
-        ns.updateBoxOverdraftWarning(root);
-        window.setTimeout(function() {
-            ns.updateCategoryInfoWarnings();
-            ns.updateBoxOverdraftWarning(root);
-        }, 0);
-    };
-
-    window.updateBoxOverdraftWarning = function() {
-        ns.updateBoxOverdraftWarning();
-    };
-
-    var boxOverdraftInitSet = new WeakSet();
-
-    ns.initBoxOverdraft = function(root) {
-        var formEl = findInRoot(root, '#lancamento-form');
-        if (!formEl || boxOverdraftInitSet.has(formEl)) return;
-        boxOverdraftInitSet.add(formEl);
-
-        var allowBoxOverdraftCheckbox = findInRoot(root, '#allowBoxOverdraftCheckbox');
-        if (allowBoxOverdraftCheckbox && allowBoxOverdraftCheckbox.dataset.boxOverdraftEnhanced !== 'true') {
-            allowBoxOverdraftCheckbox.dataset.boxOverdraftEnhanced = 'true';
-            allowBoxOverdraftCheckbox.addEventListener('change', function() {
-                ns.syncAllowBoxOverdraftInput(root);
-            });
-        }
     };
 
     // --- Series Modal Visual Helpers (Phase D.5.3.9.e.3) ---
@@ -1280,12 +1223,6 @@
                 }
             });
         }
-
-        function updateBoxOverdraftWarning() {
-            if (ns.updateBoxOverdraftWarning) ns.updateBoxOverdraftWarning();
-        }
-
-        window.updateBoxOverdraftWarning = updateBoxOverdraftWarning;
 
         function getInvoiceText(closingDay, dueDay) {
             var selectedDate = dateInput && dateInput.value ? new Date(dateInput.value + 'T12:00:00') : new Date();
@@ -1742,15 +1679,11 @@
                     icon: option.dataset.categoryIcon,
                     color: option.dataset.categoryColor,
                     type: option.dataset.categoryType || '',
-                    boxId: option.dataset.boxId,
-                    boxReserved: option.dataset.boxReserved,
-                    boxName: option.dataset.boxName || '',
                     limitMax: option.dataset.limitMax || '0',
                     limitSpent: option.dataset.limitSpent || '0'
                 },
                 {
                     visualMode: 'local-option',
-                    onBoxOverdraftChange: updateBoxOverdraftWarning,
                     onCloseModal: closeModal,
                     onCategoryInputSync: function() {
                         var categoryQueryInput = document.querySelector('#categoriaPicker input[type="text"]');
@@ -1764,13 +1697,12 @@
             );
         }
 
-        window.selectPickerItem = function(id, name, icon, color, type, boxId, boxReserved, boxName, limitMax, limitSpent) {
+        window.selectPickerItem = function(id, name, icon, color, type, limitMax, limitSpent) {
             if (!ns.applyCategorySelection) return;
             ns.applyCategorySelection(
-                { id: id, name: name, icon: icon, color: color, type: type || undefined, boxId: boxId, boxReserved: boxReserved, boxName: boxName || '', limitMax: limitMax || '0', limitSpent: limitSpent || '0' },
+                { id: id, name: name, icon: icon, color: color, type: type || undefined, limitMax: limitMax || '0', limitSpent: limitSpent || '0' },
                 {
                     visualMode: 'htmx-picker',
-                    onBoxOverdraftChange: function() { if (window.updateBoxOverdraftWarning) window.updateBoxOverdraftWarning(); },
                     onRefreshIcons: function() { if (typeof window.refreshIcons === 'function') window.refreshIcons(); }
                 }
             );
@@ -1833,8 +1765,6 @@
             if (categoryType.value === expected && categoryId.value) return;
             categoryId.value = '';
             categoryType.value = '';
-            categoryId.dataset.boxId = '';
-            categoryId.dataset.boxReserved = '0';
             if (categoryName) {
                 categoryName.textContent = 'Selecione uma categoria';
             }
@@ -1847,7 +1777,6 @@
                 categoryQueryInput.dispatchEvent(new Event('input', { bubbles: true }));
                 categoryQueryInput.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            updateBoxOverdraftWarning();
         }
 
         function setType(type) {
@@ -1870,13 +1799,12 @@
                 }
             }
             if (isTransfer) {
-                if (categoryId) { categoryId.value = ''; categoryId.dataset.boxId = ''; categoryId.dataset.boxReserved = '0'; }
+                if (categoryId) { categoryId.value = ''; }
                 if (categoryType) categoryType.value = '';
             } else {
                 ensureCategoryForType(type);
             }
             updateInvoiceNotice();
-            updateBoxOverdraftWarning();
             ns.updatePaymentScheduleNotice();
         }
 
@@ -1918,7 +1846,6 @@
         if (valueInput) {
             valueInput.addEventListener('input', function() {
                 if (ns.updateInstallmentsSummary) ns.updateInstallmentsSummary();
-                if (ns.scheduleBoxOverdraftWarningUpdate) ns.scheduleBoxOverdraftWarningUpdate();
             });
         }
         if (dateInput) {
@@ -1931,8 +1858,6 @@
         setType((transactionType && transactionType.value) || 'despesa');
         syncPaymentStatusUI();
         ns.updatePaymentScheduleNotice();
-        if (ns.syncAllowBoxOverdraftInput) ns.syncAllowBoxOverdraftInput();
-        updateBoxOverdraftWarning();
         var csrfInput = findInRoot(root, '#csrfToken');
         if (csrfInput && typeof csrfToken === 'function') csrfInput.value = csrfToken();
         if (typeof window.refreshIcons === 'function') window.refreshIcons();
@@ -1956,12 +1881,19 @@
             return null;
         }
 
-        function deleteSeriesTransactionAndRefresh(txId, scope) {
+        function deleteSeriesTransactionAndRefresh(txId, scope, returnContext) {
             var client = htmxClient();
             if (!client || !txId) {
                 if (typeof window.deleteTransactionAndRefresh === 'function') {
                     window.deleteTransactionAndRefresh(txId, scope);
                 }
+                return;
+            }
+            var originSuffix = returnContext === 'notificacoes' ? '&origem=notificacoes' : '';
+            if (returnContext === 'notificacoes') {
+                // The Notifications page has no #tx-{id} row. The server answers
+                // with HX-Refresh; keep the request scoped to the same endpoint.
+                client.ajax('DELETE', '/transacoes/' + txId + '?escopo=' + scope + originSuffix, { swap: 'none' });
                 return;
             }
             if (scope !== 'single') {
@@ -2071,7 +2003,7 @@
                             window.htmx.ajax('DELETE', '/transacoes/' + transactionID + '?escopo=' + scope + '&invoice_id=' + returnInvoiceID + '&from_sheet=1', { swap: 'none' });
                         }
                     } else {
-                        deleteSeriesTransactionAndRefresh(transactionID, scope);
+                        deleteSeriesTransactionAndRefresh(transactionID, scope, form.dataset.returnContext);
                     }
                     if (typeof window.closeBottomSheet === 'function') window.closeBottomSheet();
                 });
@@ -2113,7 +2045,6 @@
         initContactCombobox(document);
         initInstallmentRecurrenceVisuals(document);
         ns.initPaymentStatusControls(document);
-        ns.initBoxOverdraft(document);
         ns.initFormModals(document);
         ns.initFormWiring(document);
     });
@@ -2123,7 +2054,6 @@
         initContactCombobox(target);
         initInstallmentRecurrenceVisuals(target);
         ns.initPaymentStatusControls(target);
-        ns.initBoxOverdraft(target);
         ns.initFormModals(target);
         ns.initFormWiring(target);
     });

@@ -116,7 +116,7 @@
                             Agendado
                         </label>
                         <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
-                            {{if .StatusPagoOn}}border-emerald-600/30 bg-emerald-600/10 text-emerald-600 dark:border-emerald-400/50 dark:bg-emerald-500/20 dark:text-emerald-200
+                            {{if .StatusPagoOn}}border-emerald-600/30 bg-emerald-600/10 dark:border-emerald-400/50 dark:bg-emerald-500/20
                             {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-emerald-300{{end}}">
                             <i data-lucide="check-circle-2" class="w-3 h-3"></i>
                             <input class="sr-only" type="checkbox" name="situacao" value="pago" {{if .StatusPagoOn}}checked{{end}}>
@@ -138,7 +138,7 @@
                     <div class="border-t border-[var(--cb-border-subtle)] px-4 py-3">
                         <div class="flex flex-wrap gap-1.5">
                         <label data-filter-chip class="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 px-3 py-1.5 text-[11px] font-semibold transition-all
-                            {{if hasString .Filters.Tipos "receita"}}border-emerald-600/30 bg-emerald-600/10 text-emerald-600 dark:border-emerald-400/50 dark:bg-emerald-500/20 dark:text-emerald-200
+                            {{if hasString .Filters.Tipos "receita"}}border-emerald-600/30 bg-emerald-600/10 dark:border-emerald-400/50 dark:bg-emerald-500/20
                             {{else}}bg-[var(--cb-surface-1)] text-[var(--cb-text-muted)] border-[var(--cb-border-strong)] hover:border-emerald-300{{end}}">
                             <i data-lucide="arrow-down-left" class="w-3 h-3"></i>
                             <input class="sr-only" type="checkbox" name="tipo" value="receita" {{if hasString .Filters.Tipos "receita"}}checked{{end}}>
@@ -218,7 +218,7 @@
                             <button type="button" data-category-id="{{.ID}}" data-category-name="{{.Name}}" data-category-type="{{.Type}}" class="lancamentos-category-item flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left {{if hasString $.Filters.Categorias .ID}}bg-violet-500/10 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300{{else}}text-[var(--cb-text-muted)] hover:bg-[var(--cb-surface-3)]{{end}}">
                                 <span class="block w-2.5 h-2.5 rounded-full shrink-0 bg-slate-500"></span>
                                 <span class="flex-1 truncate text-[11px] font-medium">{{.Name}}</span>
-                                <span class="text-[10px] {{if eq .Type "INCOME"}}text-emerald-600 dark:text-emerald-400{{else}}text-red-600 dark:text-red-400{{end}}">{{if eq .Type "INCOME"}}R{{else}}D{{end}}</span>
+                                <span class="text-[10px] {{if eq .Type "INCOME"}}text-[var(--ui-success)]{{else}}text-[var(--ui-danger)]{{end}}">{{if eq .Type "INCOME"}}R{{else}}D{{end}}</span>
                             </button>
                             {{end}}
                         </div>
@@ -340,55 +340,62 @@
                 </aside>
             </section>
             <div class="bulk-action-bar" data-bulk-bar>
-                <div class="flex items-center justify-between gap-2">
-                    <span class="text-xs font-bold text-[var(--cb-text-main)]">
-                        <span class="text-violet-600 dark:text-violet-400" data-bulk-count-num>0</span> selecionados
+                <div class="bulk-action-bar__row">
+                    <span class="bulk-action-count">
+                        <span class="bulk-action-count-num" data-bulk-count-num>0</span> selecionado(s)
                     </span>
-                    <div class="flex items-center gap-1.5">
+                    <div class="bulk-action-buttons">
                         <form data-bulk-paid-form hx-post="/transacoes/bulk/update" hx-target="#lancamentos-table-body" hx-swap="outerHTML" data-hx-after="resetBulkSelection" class="contents">
                             <input type="hidden" name="status_pagamento" value="paid">
                             <input type="hidden" name="ids[]" value="" data-bulk-form-ids data-action="paid">
-                            <button type="button" data-bulk-mark-paid class="inline-flex h-9 items-center gap-1.5 rounded-xl border-2 border-emerald-500 bg-emerald-500/10 px-3 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20">
-                                <i data-lucide="check" class="w-3.5 h-3.5"></i>Pago
+                            <button type="button" data-bulk-mark-paid class="ui-btn ui-btn--secondary bulk-action-paid">
+                                <i data-lucide="check" aria-hidden="true"></i>Pago
                             </button>
                         </form>
                         <form hx-post="/transacoes/bulk/update" hx-target="#lancamentos-table-body" hx-swap="outerHTML" hx-confirm="Marcar como pendentes?" data-hx-after="resetBulkSelection" class="contents">
                             <input type="hidden" name="status_pagamento" value="pending">
                             <input type="hidden" name="ids[]" value="" data-bulk-form-ids data-action="pending">
-                            <button type="submit" data-bulk-mark-pending class="inline-flex h-9 items-center gap-1.5 rounded-xl border-2 border-amber-500 bg-amber-500/10 px-3 text-[11px] font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-500/20">
-                                <i data-lucide="clock" class="w-3.5 h-3.5"></i>Pend.
+                            <button type="submit" data-bulk-mark-pending class="ui-btn ui-btn--secondary bulk-action-pending">
+                                <i data-lucide="clock" aria-hidden="true"></i>Pend.
                             </button>
                         </form>
                         <form data-bulk-delete-form hx-post="/transacoes/bulk/delete" hx-target="#lancamentos-table-body" hx-swap="outerHTML" data-hx-after="resetBulkSelectionDel" class="contents">
                             <input type="hidden" name="bulk_scope" value="selected_only" data-bulk-delete-scope>
                             <input type="hidden" name="ids[]" value="" data-bulk-form-ids data-action="delete">
-                            <button type="button" data-bulk-delete-btn class="inline-flex h-9 w-9 items-center justify-center rounded-xl border-2 border-red-500 bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20">
-                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            <button type="button" data-bulk-delete-btn class="ui-btn ui-btn--secondary bulk-action-delete" aria-label="Excluir lançamentos selecionados">
+                                <i data-lucide="trash-2" aria-hidden="true"></i>
                             </button>
                         </form>
                     </div>
                 </div>
             </div>
-            <div class="fixed inset-0 z-50 items-center justify-center bg-black/70 p-4 hidden" data-bulk-modal>
-                <div class="w-full max-w-xs rounded-xl border border-[var(--cb-border-strong)] bg-[var(--cb-surface-1)] p-5 shadow-xl">
-                    <div class="flex items-center gap-2 mb-2">
-                        <i data-lucide="alert-circle" class="w-4 h-4 text-rose-400"></i>
-                        <p class="text-[10px] font-bold uppercase tracking-wider text-rose-400">Recorrencia detectada</p>
-                    </div>
-                    <h3 class="text-sm font-bold text-[var(--cb-text-main)]">Excluir serie?</h3>
-                    <div class="mt-3 space-y-2">
-                        <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-2.5">
-                            <input type="radio" name="bulk_delete_scope" value="selected_only" data-bulk-delete-choice checked class="accent-rose-500">
-                            <span class="text-[11px] text-[var(--cb-text-main)]">So selecionados</span>
+            <div class="bulk-delete-overlay hidden" data-bulk-modal>
+                <div class="ui-panel bulk-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="bulk-delete-title" aria-describedby="bulk-delete-description bulk-delete-count bulk-delete-warning" tabindex="-1">
+                    <header class="bulk-delete-head">
+                        <span class="bulk-delete-icon" aria-hidden="true"><i data-lucide="alert-triangle"></i></span>
+                        <div>
+                            <p class="ui-eyebrow">Confirmar exclusão</p>
+                            <h3 id="bulk-delete-title" class="bulk-delete-title" data-bulk-delete-title>Excluir lançamentos?</h3>
+                            <p id="bulk-delete-description" class="bulk-delete-description" data-bulk-delete-description>Confirme a exclusão dos lançamentos marcados.</p>
+                        </div>
+                    </header>
+                    <p id="bulk-delete-count" class="bulk-delete-count"><strong data-bulk-modal-count>0</strong> lançamento(s) selecionado(s)</p>
+                    <p id="bulk-delete-warning" class="bulk-delete-description">Esta ação exclui os lançamentos e não pode ser desfeita.</p>
+                    <p class="bulk-delete-description hidden" data-bulk-delete-error role="alert"></p>
+                    <fieldset class="bulk-delete-scopes" data-bulk-delete-scopes>
+                        <legend class="ui-label">Escopo da exclusão</legend>
+                        <label class="bulk-delete-scope">
+                            <input type="radio" name="bulk_delete_scope" value="selected_only" data-bulk-delete-choice checked>
+                            <span><strong>Somente selecionados</strong><small>Remove apenas os lançamentos marcados.</small></span>
                         </label>
-                        <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-2.5">
-                            <input type="radio" name="bulk_delete_scope" value="with_future" data-bulk-delete-choice class="accent-rose-500">
-                            <span class="text-[11px] text-[var(--cb-text-main)]">+ futuros</span>
+                        <label class="bulk-delete-scope">
+                            <input type="radio" name="bulk_delete_scope" value="with_future" data-bulk-delete-choice>
+                            <span><strong>Selecionados e futuros</strong><small>Remove também as ocorrências futuras desta série.</small></span>
                         </label>
-                    </div>
-                    <div class="mt-4 flex justify-end gap-2">
-                        <button type="button" class="h-9 rounded-lg border border-[var(--cb-border-subtle)] px-3 text-[11px] font-semibold text-[var(--cb-text-muted)]" data-action="cancel-delete">Cancelar</button>
-                        <button type="button" class="h-9 rounded-lg bg-rose-600 px-4 text-[11px] font-bold text-white hover:bg-rose-700 active:scale-95 transition-all" data-action="confirm-delete">Confirmar</button>
+                    </fieldset>
+                    <div class="bulk-delete-actions">
+                        <button type="button" class="ui-btn ui-btn--secondary" data-action="cancel-delete">Cancelar</button>
+                        <button type="button" class="ui-btn bulk-delete-confirm" data-action="confirm-delete">Confirmar exclusão</button>
                     </div>
                 </div>
             </div>
@@ -563,15 +570,15 @@
             <span class="lancamentos-row-date">{{.DateLabel}}</span>
         </span>
         <span class="tx-desktop-actions">
-            <button type="button" data-ignore-select class="ui-row__action" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Editar {{.Description}}">
+            <button type="button" data-ignore-select class="ui-row__action" hx-get="/transacoes/{{.ID}}" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false" aria-label="Editar {{.Description}}" data-tooltip-hover data-tooltip-text="Editar lançamento">
                 <i data-lucide="pencil" aria-hidden="true"></i>
             </button>
             {{if .CanGenerateReceipt}}
-            <a href="/transacoes/{{.ID}}/recibo" target="_blank" rel="noopener" class="ui-row__action" aria-label="Recibo de {{.Description}}">
+            <a href="/transacoes/{{.ID}}/recibo" target="_blank" rel="noopener" class="ui-row__action" aria-label="Recibo de {{.Description}}" data-tooltip-hover data-tooltip-text="Abrir recibo">
                 <i data-lucide="receipt" aria-hidden="true"></i>
             </a>
             {{end}}
-            <button type="button" data-ignore-select class="ui-row__action lancamentos-action-danger" data-row-delete="{{.ID}}"{{if .IsSeries}} data-row-is-series="true"{{end}} aria-label="Excluir {{.Description}}">
+            <button type="button" data-ignore-select class="ui-row__action lancamentos-action-danger" data-row-delete="{{.ID}}"{{if .IsSeries}} data-row-is-series="true"{{end}} aria-label="Excluir {{.Description}}" data-tooltip-hover data-tooltip-text="Excluir lançamento">
                 <i data-lucide="trash-2" aria-hidden="true"></i>
             </button>
         </span>

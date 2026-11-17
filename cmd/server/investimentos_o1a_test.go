@@ -58,7 +58,7 @@ func (f *o1aFixture) form(t *testing.T, position string, version int64) url.Valu
 func (f *o1aFixture) confirm(t *testing.T) url.Values {
 	t.Helper()
 	form := f.form(t, f.position, 0)
-	before := o1aSnapshot(t, f.h, "accounts", "transactions", "box_virtual_ledger", "investment_valuations", "account_balance_adjustments")
+	before := o1aSnapshot(t, f.h, "accounts", "transactions", "investment_valuations", "account_balance_adjustments")
 	rr := f.h.request(t, "POST", f.path("referencia"), f.h.admin, form, true, false)
 	requireInvestimentosStatus(t, rr, 200)
 	var r services.InvestmentReferenceOperationResult
@@ -69,7 +69,7 @@ func (f *o1aFixture) confirm(t *testing.T) url.Values {
 		t.Fatalf("reference %+v", r)
 	}
 	f.root = r.ID
-	if before != o1aSnapshot(t, f.h, "accounts", "transactions", "box_virtual_ledger", "investment_valuations", "account_balance_adjustments") {
+	if before != o1aSnapshot(t, f.h, "accounts", "transactions", "investment_valuations", "account_balance_adjustments") {
 		t.Fatal("initial reference moved finances")
 	}
 	return form
@@ -124,9 +124,6 @@ func o1aWorkspaceSnapshot(t *testing.T, h *investimentosRoutesHarness, workspace
 		query := `SELECT * FROM ` + table + ` WHERE workspace_id=? ORDER BY rowid`
 		if table == "financial_transactions" {
 			query = `SELECT * FROM financial_transactions WHERE workspace_id=? ORDER BY id`
-		}
-		if table == "box_virtual_ledger" {
-			query = `SELECT l.* FROM box_virtual_ledger l JOIN boxes b ON b.id=l.box_id WHERE b.workspace_id=? ORDER BY l.rowid`
 		}
 		if table == "investment_purchase_reversals" {
 			// Schema 80 receipts are WITHOUT ROWID: order by the primary key.
@@ -232,7 +229,7 @@ func TestInvestimentosO1AReferenceAndReadOnlyState(t *testing.T) {
 	}
 	form.Set("reason", "Outro payload")
 	requireInvestimentosStatus(t, h.request(t, "POST", f.path("referencia"), h.admin, form, true, false), 409)
-	tables := []string{"accounts", "transactions", "box_virtual_ledger", "investment_reference_revisions", "investment_reference_coverage", "investment_financial_revisions", "investment_purchase_funding", "investment_valuations", "account_balance_adjustments"}
+	tables := []string{"accounts", "transactions", "investment_reference_revisions", "investment_reference_coverage", "investment_financial_revisions", "investment_purchase_funding", "investment_valuations", "account_balance_adjustments"}
 	before := o1aSnapshot(t, h, tables...)
 	s := f.state(t)
 	if s.ReferenceState != "VALID" || s.BlockReason != "ROOT_ACTIVATION_REQUIRED" {
@@ -260,7 +257,7 @@ func TestInvestimentosO1AChangesReplayAndAtomicCorrection(t *testing.T) {
 			f := newO1A(t)
 			f.activate(t)
 			h := f.h
-			legacy := o1aSnapshot(t, h, "transactions", "box_virtual_ledger")
+			legacy := o1aSnapshot(t, h, "transactions")
 			f.valuation(t, "next", "2026-03-01", tc.amount)
 			form := f.form(t, "next", 1)
 			// Payload authority is ignored in favor of the real authenticated context.
@@ -287,7 +284,7 @@ func TestInvestimentosO1AChangesReplayAndAtomicCorrection(t *testing.T) {
 			if err := h.db.QueryRow(`SELECT created_by FROM investment_financial_revisions WHERE workspace_id='workspace-rbac' AND id=?`, r.ID).Scan(&author); err != nil || author != "admin-user" {
 				t.Fatalf("author %q %v", author, err)
 			}
-			if legacy != o1aSnapshot(t, h, "transactions", "box_virtual_ledger") {
+			if legacy != o1aSnapshot(t, h, "transactions") {
 				t.Fatal("integration wrote revenue/transfer/ledger")
 			}
 			form = f.form(t, "next", 2)
@@ -338,7 +335,7 @@ func TestInvestimentosO1APurchaseFundingAndRequiredExample(t *testing.T) {
 		t.Fatalf("pending %+v", s)
 	}
 	form.Set("funding", `[{"PurchaseID":"`+pid+`","TransferID":"o1a-transfer","AmountCents":200000}]`)
-	legacy := o1aSnapshot(t, h, "transactions", "box_virtual_ledger")
+	legacy := o1aSnapshot(t, h, "transactions")
 	r := f.integrate(t, form, 200)
 	if r.NetAdjustmentCents != 0 || r.BalanceCents != 700000 {
 		t.Fatalf("fictitious purchase return %+v", r)
@@ -348,7 +345,7 @@ func TestInvestimentosO1APurchaseFundingAndRequiredExample(t *testing.T) {
 	if r.NetAdjustmentCents != 30000 || r.BalanceCents != 730000 {
 		t.Fatalf("required example %+v", r)
 	}
-	if legacy != o1aSnapshot(t, h, "transactions", "box_virtual_ledger") {
+	if legacy != o1aSnapshot(t, h, "transactions") {
 		t.Fatal("created income or transfer")
 	}
 }
@@ -357,14 +354,14 @@ func TestInvestimentosO1APendingWithdrawalAndLegacyPreservation(t *testing.T) {
 	f := newO1A(t)
 	f.activate(t)
 	h := f.h
-	before := o1aSnapshot(t, h, "accounts", "transactions", "box_virtual_ledger", "account_balance_adjustments", "investment_financial_revisions")
+	before := o1aSnapshot(t, h, "accounts", "transactions", "account_balance_adjustments", "investment_financial_revisions")
 	form := investmentI22Form("initial:" + f.id)
 	form.Set("withdrawal_date", "2026-02-15")
 	requireInvestimentosStatus(t, h.request(t, "POST", "/investimentos/"+f.id+"/retiradas", h.admin, form, true, false), 303)
 	// Existing valuation HTTP flow stays manual, even with the new feature ON.
 	legacy := url.Values{"valuation_date": {"2026-03-01"}, "amount_cents": {"490000"}}
 	requireInvestimentosStatus(t, h.request(t, "POST", "/investimentos/"+f.id+"/valuations", h.admin, legacy, true, false), 303)
-	if before != o1aSnapshot(t, h, "accounts", "transactions", "box_virtual_ledger", "account_balance_adjustments", "investment_financial_revisions") {
+	if before != o1aSnapshot(t, h, "accounts", "transactions", "account_balance_adjustments", "investment_financial_revisions") {
 		t.Fatal("legacy flow auto-activated finances")
 	}
 	var position string
@@ -542,21 +539,19 @@ func TestInvestimentosO1AConcurrentVersionsAndReplay(t *testing.T) {
 	}
 }
 
-func TestInvestimentosO1ASnapshotLedgerScopeAndSensitivity(t *testing.T) {
+func TestInvestimentosO1ASnapshotWorkspaceScopeAndSensitivity(t *testing.T) {
 	f := newO1A(t)
 	h := f.h
 	for _, workspace := range []string{"workspace-rbac", "workspace-b"} {
 		h.exec(t, `INSERT INTO categories(id,workspace_id,name,type) VALUES(?,?,?,'EXPENSE')`, "cat:"+workspace, workspace, "Snapshot")
-		h.exec(t, `INSERT INTO boxes(id,workspace_id,name,category_id) VALUES(?,?,?,?)`, "box:"+workspace, workspace, "Snapshot", "cat:"+workspace)
-		h.exec(t, `INSERT INTO box_virtual_ledger(id,box_id,amount,type,reference_date) VALUES(?,?,100,'RECHARGE',1)`, "ledger:"+workspace, "box:"+workspace)
 	}
-	before := o1aSnapshot(t, h, "box_virtual_ledger")
-	h.exec(t, `UPDATE box_virtual_ledger SET amount=200 WHERE id='ledger:workspace-b'`)
-	if before != o1aSnapshot(t, h, "box_virtual_ledger") {
-		t.Fatal("snapshot included foreign ledger")
+	before := o1aSnapshot(t, h, "categories")
+	h.exec(t, `UPDATE categories SET name='Foreign' WHERE id='cat:workspace-b'`)
+	if before != o1aSnapshot(t, h, "categories") {
+		t.Fatal("snapshot included foreign category")
 	}
-	h.exec(t, `UPDATE box_virtual_ledger SET amount=300 WHERE id='ledger:workspace-rbac'`)
-	if before == o1aSnapshot(t, h, "box_virtual_ledger") {
+	h.exec(t, `UPDATE categories SET name='Local' WHERE id='cat:workspace-rbac'`)
+	if before == o1aSnapshot(t, h, "categories") {
 		t.Fatal("snapshot missed local financial mutation")
 	}
 }

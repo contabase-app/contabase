@@ -210,7 +210,7 @@ func TestRelatoriosActiveTabsUsePremiumSelection(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		`bg-[var(--cb-accent)]`,
+		`bg-[var(--ui-accent)]`,
 		`text-white`,
 		`shadow-sm`,
 	} {
@@ -466,7 +466,7 @@ func TestRelatoriosExtratoTemplateParsesAndRenders(t *testing.T) {
 				RawAccumulated:     120000,
 				HasIncome:          true,
 				NetPositive:        true,
-				NetClass:           "text-[var(--cb-success)]",
+				NetClass:           "text-[var(--ui-success)]",
 			},
 		},
 		ExtratoMovementCount: 1,
@@ -923,8 +923,8 @@ func TestRelatoriosBusinessRenderizaContabil(t *testing.T) {
 	if !strings.Contains(body, "Conta Corrente") {
 		t.Fatalf("business contabil deveria listar contas")
 	}
-	if !strings.Contains(body, "text-[var(--cb-success)]") {
-		t.Fatalf("saldo total positivo deveria usar classe verde (cb-success)")
+	if !strings.Contains(body, "text-[var(--ui-success)]") {
+		t.Fatalf("saldo total positivo deveria usar classe verde (ui-success)")
 	}
 	for _, notWant := range []string{"Atalhos do fechamento contábil", "Ver Competência completa", "Ver Fluxo de Caixa", "Tabela DRE contábil", "Tabela caixa contábil", "Tabela de movimentos contábil", "Fechamento Diário", "Saldo Atual por Conta", "saldo final do mês"} {
 		if strings.Contains(body, notWant) {
@@ -976,10 +976,10 @@ func TestRelatoriosContabilSaldoTotalCores(t *testing.T) {
 		return buf.String()
 	}
 
-	positiveClass := "text-[var(--cb-success)]"
-	negativeClass := "text-[var(--cb-danger)]"
-	neutralClass := "text-[var(--cb-text-muted)]"
-	accentClass := "text-[var(--cb-accent)]"
+	positiveClass := "text-[var(--ui-success)]"
+	negativeClass := "text-[var(--ui-danger)]"
+	neutralClass := "text-[var(--ui-text-muted)]"
+	accentClass := "text-[var(--ui-accent)]"
 
 	totalLine := func(body string) string {
 		t.Helper()

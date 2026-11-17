@@ -2,7 +2,6 @@
 {{template "app-v2-document-head-start" .}}
 <link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/credit-cards.css"}}">
-<link rel="stylesheet" href="{{assetPath "/assets/css/dashboard.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/faturas.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/faturas-index.css"}}">
 {{template "app-v2-document-head-end" .}}
@@ -30,14 +29,14 @@
             </div>
             <a href="{{.NextURL}}" class="month-control" aria-label="Mês seguinte"><i data-lucide="chevron-right"></i></a>
         </section>
-        {{template "faturas-index-card-rail" .}}
-        <div id="faturas-index-detail" class="cb-faturas-index-detail" aria-live="polite">
-            {{if .HasSelectedInvoice}}{{template "faturas-content" .SelectedFatura}}{{else}}{{template "faturas-empty-content" .SelectedEmpty}}{{end}}
-        </div>
+        {{template "faturas-index-state" .}}
         {{else}}
-        <section class="cb-v2-empty-card cb-faturas-index-empty" aria-label="Nenhum cartão cadastrado">
-            <i data-lucide="credit-card"></i><span><strong>Cadastre seu primeiro cartão</strong><small>Ao cadastrar um cartão, suas faturas aparecerão aqui.</small></span><a href="/configuracoes/cartoes">Cadastrar cartão</a>
-        </section>
+        <div class="ui-empty cb-faturas-index-empty" role="status">
+            <span class="ui-empty__icon" aria-hidden="true"><i data-lucide="credit-card"></i></span>
+            <p class="ui-empty__title">Cadastre seu primeiro cartão</p>
+            <p class="ui-empty__text">Ao cadastrar um cartão, suas faturas aparecerão aqui.</p>
+            <a class="ui-btn ui-btn--primary" href="/configuracoes/cartoes">Cadastrar cartão</a>
+        </div>
         {{end}}
     </div>
 </main>
@@ -47,9 +46,19 @@
 {{template "app-v2-document-end" .}}
 {{end}}
 
+{{define "faturas-index-state"}}
+<div id="faturas-index-state"{{if .OOB}} hx-swap-oob="outerHTML"{{end}} hx-get="{{.RefreshCardsURL}}" hx-trigger="refreshFinancials from:body" hx-swap="outerHTML">
+    {{if .OverduePeriodURL}}<p class="cb-faturas-overdue-notice" role="status">Há faturas com saldo vencido em <a href="{{.OverduePeriodURL}}">{{.OverduePeriodLabel}}</a>.</p>{{end}}
+    {{template "faturas-index-card-rail" .}}
+    <div id="faturas-index-detail" class="cb-faturas-index-detail" aria-live="polite">
+        {{if .HasSelectedInvoice}}{{template "faturas-content" .SelectedFatura}}{{else}}{{template "faturas-empty-content" .SelectedEmpty}}{{end}}
+    </div>
+</div>
+{{end}}
+
 {{define "faturas-index-card-rail"}}
-<section id="faturas-index-card-rail" class="cb-v2-card-section cb-faturas-index-card-section" hx-get="{{.RefreshCardsURL}}" hx-trigger="refreshFinancials from:body" hx-select="#faturas-index-card-rail" hx-swap="outerHTML">
-    <div class="cb-v2-section-heading"><div><p class="cb-v2-eyebrow">{{.PeriodLabel}}</p><h2>Cartões</h2></div><div class="cb-v2-carousel-controls" role="group" aria-label="Navegação do carrossel de cartões"><button type="button" class="cb-v2-carousel-control" data-faturas-card-prev aria-label="Cartão anterior" aria-controls="faturas-index-card-track" disabled><i data-lucide="chevron-left"></i></button><button type="button" class="cb-v2-carousel-control" data-faturas-card-next aria-label="Próximo cartão" aria-controls="faturas-index-card-track" disabled><i data-lucide="chevron-right"></i></button></div></div>
+<section id="faturas-index-card-rail" class="ui-panel cb-v2-card-section cb-faturas-index-card-section">
+    <div class="cb-v2-section-heading"><div><p class="ui-eyebrow">{{.PeriodLabel}}</p><h2>Cartões</h2></div><div class="cb-v2-carousel-controls" role="group" aria-label="Navegação do carrossel de cartões"><button type="button" class="cb-v2-carousel-control" data-faturas-card-prev aria-label="Cartão anterior" aria-controls="faturas-index-card-track" disabled><i data-lucide="chevron-left"></i></button><button type="button" class="cb-v2-carousel-control" data-faturas-card-next aria-label="Próximo cartão" aria-controls="faturas-index-card-track" disabled><i data-lucide="chevron-right"></i></button></div></div>
     <div class="cb-v2-card-carousel cb-faturas-index-carousel">
         <div id="faturas-index-card-track" class="cb-v2-card-rail" data-faturas-card-rail role="region" aria-label="Cartões de crédito">
             {{range .Cards}}{{template "credit-card-tile" .}}{{end}}

@@ -149,7 +149,7 @@ func (f *o1b2Fixture) apply(t *testing.T) services.InvestmentSettlementApplicati
 
 func (f *o1b2Fixture) financial(t *testing.T) string {
 	t.Helper()
-	return o1aSnapshot(t, f.h, "accounts", "financial_transactions", "account_balance_adjustments", "box_virtual_ledger",
+	return o1aSnapshot(t, f.h, "accounts", "financial_transactions", "account_balance_adjustments",
 		"investments", "investment_valuations", "investment_purchases", "investment_withdrawals", "investment_withdrawal_allocations",
 		"investment_reference_revisions", "investment_financial_revisions", "investment_financial_adjustments", "investment_purchase_funding",
 		"investment_settlement_revisions", "investment_settlement_receipts", "investment_settlement_applications", "investment_settlement_prior_effects")
@@ -171,7 +171,7 @@ func TestInvestimentosO1B2FinancialAndClassificationScenarios(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newO1B2(t, tc.scenario)
-			stable := o1aSnapshot(t, f.h, "transactions", "box_virtual_ledger", "investments", "investment_withdrawals", "investment_withdrawal_allocations", "investment_reference_revisions", "investment_financial_revisions", "investment_settlement_revisions", "investment_settlement_receipts")
+			stable := o1aSnapshot(t, f.h, "transactions", "investments", "investment_withdrawals", "investment_withdrawal_allocations", "investment_reference_revisions", "investment_financial_revisions", "investment_settlement_revisions", "investment_settlement_receipts")
 			before := f.stable(t)
 			state := f.read(t, 200)
 			if before != f.stable(t) || state.State != services.InvestmentSettlementReconciled {
@@ -182,7 +182,7 @@ func TestInvestimentosO1B2FinancialAndClassificationScenarios(t *testing.T) {
 			if a.ResidualCents != tc.residual || a.BalanceCents != wantBalance || a.State != services.InvestmentSettlementFinancialApplied || a.ID == "" {
 				t.Fatalf("financial result: %+v", a)
 			}
-			if stable != o1aSnapshot(t, f.h, "transactions", "box_virtual_ledger", "investments", "investment_withdrawals", "investment_withdrawal_allocations", "investment_reference_revisions", "investment_financial_revisions", "investment_settlement_revisions", "investment_settlement_receipts") {
+			if stable != o1aSnapshot(t, f.h, "transactions", "investments", "investment_withdrawals", "investment_withdrawal_allocations", "investment_reference_revisions", "investment_financial_revisions", "investment_settlement_revisions", "investment_settlement_receipts") {
 				t.Fatal("C2A modified legacy facts or created income/transfer")
 			}
 			state = f.read(t, 200)

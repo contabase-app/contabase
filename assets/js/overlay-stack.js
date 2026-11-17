@@ -550,6 +550,45 @@
         e.preventDefault();
     }, true);
 
+    // A swap can replace an open dialog before its close function runs. Drop
+    // the orphaned sentinel without navigating or touching a still-open overlay.
+    function _reconcileRemovedOverlays() {
+        var open = getAllOpenOverlays();
+        _syncOverlayScrollLock();
+        if (open.length > 0) {
+            var openIDs = Object.create(null);
+            for (var i = 0; i < open.length; i++) openIDs[open[i].id] = true;
+            for (var id in _registeredOpenOverlayIds) {
+                if (!openIDs[id]) delete _registeredOpenOverlayIds[id];
+            }
+            _lastAction = 'reconcile-overlay-still-open';
+            return false;
+        }
+        _registeredOpenOverlayIds = Object.create(null);
+        if (!_sentinelPushed) {
+            _lastAction = 'reconcile-no-sentinel';
+            return true;
+        }
+        _sentinelPushed = false;
+        _lastAction = 'reconcile-removed-overlay-sentinel-discarded';
+        if (history.state && history.state.contabaseOverlay) {
+            try {
+                var cleanState = _mergeState({});
+                delete cleanState.contabaseOverlay;
+                history.replaceState(cleanState, '', window.location.pathname + window.location.search);
+            } catch (ignore) {}
+        }
+        return true;
+    }
+    window.overlayReconcile = _reconcileRemovedOverlays;
+
+    function _reconcileAfterSwap() {
+        _reconcileRemovedOverlays();
+    }
+    document.body.addEventListener('htmx:afterSwap', _reconcileAfterSwap);
+    document.body.addEventListener('htmx:oobAfterSwap', _reconcileAfterSwap);
+    document.body.addEventListener('htmx:afterSettle', _reconcileAfterSwap);
+
     document.body.addEventListener('htmx:afterSwap', function(e) {
         var target = e.detail && e.detail.target;
         if (_suppressOpen) return;

@@ -59,7 +59,7 @@ func TestMetasMoneyFormInputsAlignLeft(t *testing.T) {
 		t.Fatalf("metas money form inputs must align left, got %q", rule)
 	}
 	form := readTestFile(t, "templates/components/form_meta.html")
-	if count := strings.Count(form, "metas-form__money"); count != 3 {
-		t.Fatalf("expected the three reserve/limit money inputs, found %d", count)
+	if count := strings.Count(form, "metas-form__money"); count != 1 {
+		t.Fatalf("expected the limit money input, found %d", count)
 	}
 }

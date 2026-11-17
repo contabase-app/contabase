@@ -23,6 +23,9 @@ function resetAllSwipes() {
     document.querySelectorAll('[data-swipe-row="true"]').forEach(resetSwipe);
 }
 
+// Direction contract: dragging right maps to side 'left' and runs the
+// destructive URL flow; dragging left maps to side 'right' and opens the
+// shared payment confirmation when the row opts in.
 function runSwipeAction(row, side) {
     var txId = row.dataset.txId;
     var url;

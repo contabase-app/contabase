@@ -315,7 +315,7 @@ func TestInvestmentFinancialSimpleChangesAndPreservation(t *testing.T) {
 				n = 0
 			}
 			financeWant(t, p.DB, tc.value, n)
-			if r.NetAdjustmentCents != tc.delta || countRows(t, p.DB, `SELECT COUNT(*) FROM transactions`) != 0 || countRows(t, p.DB, `SELECT COUNT(*) FROM box_virtual_ledger`) != 0 {
+			if r.NetAdjustmentCents != tc.delta || countRows(t, p.DB, `SELECT COUNT(*) FROM transactions`) != 0 || countRows(t, p.DB, `SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('boxes','box_virtual_ledger')`) != 0 {
 				t.Fatal("incorrect effect or income")
 			}
 			if controls != queryScalar(t, p.DB, `SELECT group_concat(id||':'||current_balance) FROM (SELECT id,current_balance FROM accounts WHERE id!='acc-inv-a' ORDER BY id)`) {

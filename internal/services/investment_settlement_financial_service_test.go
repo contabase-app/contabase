@@ -118,7 +118,7 @@ func c2aApply(t *testing.T, p *database.RuntimeDBs, in ApplyInvestmentSettlement
 func c2aStableSnapshot(t *testing.T, db *sql.DB) string {
 	t.Helper()
 	var out strings.Builder
-	for _, table := range []string{"transactions", "investments", "investment_valuations", "investment_purchases", "investment_withdrawals", "investment_withdrawal_allocations", "investment_reference_revisions", "investment_financial_revisions", "investment_financial_adjustments", "investment_purchase_funding", "investment_settlement_revisions", "investment_settlement_receipts", "box_virtual_ledger"} {
+	for _, table := range []string{"transactions", "investments", "investment_valuations", "investment_purchases", "investment_withdrawals", "investment_withdrawal_allocations", "investment_reference_revisions", "investment_financial_revisions", "investment_financial_adjustments", "investment_purchase_funding", "investment_settlement_revisions", "investment_settlement_receipts"} {
 		rows, err := db.Query(`SELECT * FROM ` + table + ` ORDER BY rowid`)
 		if err != nil {
 			t.Fatal(err)
@@ -499,12 +499,22 @@ func TestInvestmentSettlementFinancialConcurrencyRollbackAndSeals(t *testing.T) 
 }
 
 func TestInvestmentSettlementFinancialNoActivation(t *testing.T) {
-	for _, dir := range []string{"../handlers", "../../cmd/server"} {
-		err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	scan := func(root string) ([]string, error) {
+		var findings []string
+		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			if d.IsDir() {
+				// Runtime data and hidden staging directories are not Go source.
+				// Other test packages create and remove .contabase-snapshot-*
+				// directories under data/ while the full suite runs.
+				if path != root && (d.Name() == "data" || strings.HasPrefix(d.Name(), ".")) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 				return nil
 			}
 			b, err := os.ReadFile(path)
@@ -514,19 +524,57 @@ func TestInvestmentSettlementFinancialNoActivation(t *testing.T) {
 			calls := strings.Count(string(b), "ApplyInvestmentSettlement(")
 			if filepath.Clean(path) == filepath.Clean("../handlers/investment_settlement_effects.go") {
 				if calls != 1 {
-					t.Errorf("expected one explicit O1B2 C2A invocation: %s", path)
+					findings = append(findings, fmt.Sprintf("expected one explicit O1B2 C2A invocation: %s", path))
 				}
 				return nil // The O1B2 HTTP suite verifies opt-in and explicit POST.
 			}
 			if calls != 0 {
-				t.Errorf("automatic C2A activation: %s", path)
+				findings = append(findings, fmt.Sprintf("automatic C2A activation: %s", path))
 			}
 			return nil
 		})
+		return findings, err
+	}
+	for _, dir := range []string{"../handlers", "../../cmd/server"} {
+		findings, err := scan(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
+		for _, finding := range findings {
+			t.Error(finding)
+		}
 	}
+	t.Run("detects synthetic activation", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "synthetic.go"), []byte("package synthetic\n\nfunc activate() { ApplyInvestmentSettlement() }\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		findings, err := scan(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 1 || !strings.Contains(findings[0], "automatic C2A activation") {
+			t.Fatalf("synthetic activation not detected: %v", findings)
+		}
+	})
+	t.Run("ignores runtime data and hidden staging", func(t *testing.T) {
+		root := t.TempDir()
+		for _, dir := range []string{"data", ".contabase-snapshot-test"} {
+			if err := os.MkdirAll(filepath.Join(root, dir), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, dir, "synthetic.go"), []byte("package synthetic\n\nfunc activate() { ApplyInvestmentSettlement() }\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		findings, err := scan(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 0 {
+			t.Fatalf("runtime data scanned: %v", findings)
+		}
+	})
 }
 
 func TestInvestmentSettlementFinancialConcurrentDifferentKeysAndInvestments(t *testing.T) {

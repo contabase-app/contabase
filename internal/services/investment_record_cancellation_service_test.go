@@ -549,8 +549,8 @@ func TestInvestmentRecordCancellationReopenWithUpdatedSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { reopened.Close() })
-	if version := cancellationScalar(t, reopened.DB, `SELECT MAX(version) FROM schema_migrations`); version != "82" {
-		t.Fatalf("schema version=%s", version)
+	if version := cancellationScalar(t, reopened.DB, `SELECT MAX(version) FROM schema_migrations`); version != "83" {
+		t.Fatalf("schema version=%s want 83", version)
 	}
 	saved, err := GetInvestmentRecordCancellation(ctx, reopened.DB, "ws-a", inv.ID)
 	if err != nil || saved.ID != result.Cancel.ID {

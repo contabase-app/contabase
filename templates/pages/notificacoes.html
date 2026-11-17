@@ -14,11 +14,11 @@
 
 {{define "notificacoes-content"}}
 <div class="cb-v2-content cb-v2-notificacoes-content">
-    <header class="cb-v2-notificacoes-header">
+    <header class="cb-v2-notificacoes-header ui-page-header">
         <div class="min-w-0">
-            <p class="cb-v2-eyebrow">Central</p>
-            <h1>Notificações</h1>
-            <p>Acompanhe os avisos que exigem sua atenção neste workspace.</p>
+            <p class="ui-eyebrow">Central</p>
+            <h1 class="ui-page-title">Notificações</h1>
+            <p class="ui-page-description">Acompanhe os avisos que exigem sua atenção neste workspace.</p>
         </div>
         <div class="cb-v2-notificacoes-actions">
             <button type="button" class="ui-btn ui-btn--ghost ui-btn--sm" data-privacy-toggle aria-pressed="false" aria-label="Ocultar valores financeiros" data-tooltip-hover data-tooltip-text="Ocultar valores financeiros"><i data-lucide="eye" data-privacy-icon aria-hidden="true"></i></button>
@@ -39,9 +39,44 @@
         <section class="cb-v2-notificacoes-grid" aria-label="Notificações ativas">
             {{range .Items}}
             <article data-swipe-notification
-                 class="cb-v2-notificacao-card">
+                 class="cb-v2-notificacao-card"
+                 {{if .CanPay}}data-payment-id="{{.TargetID}}"
+                 data-payment-context="notificacoes"
+                 data-payment-post-url="/transacoes/{{.TargetID}}/status-pagamento"
+                 data-payment-target="#main-content"
+                 data-payment-swap="outerHTML"
+                 data-payment-description="{{.Description}}"
+                 data-payment-amount="{{.PaymentAmount}}"
+                 data-payment-type="{{.PaymentType}}"
+                 data-payment-account-id="{{.PaymentAccountID}}"
+                 data-payment-account-name="{{.PaymentAccountName}}"
+                 data-payment-account-change-allowed="false"{{end}}>
 
                 <button data-swipe-delete class="hidden" hx-delete="/notificacoes/{{.Key}}" hx-target="closest article" hx-swap="delete"></button>
+
+                {{if .CanOpen}}
+                    {{if eq .TargetType "invoice"}}
+                    <a data-notification-open class="cb-v2-notificacao-open"
+                       href="/cartoes/faturas/{{.TargetID}}"
+                       aria-label="Abrir fatura: {{.Description}}"></a>
+                    {{else if eq .TargetType "limit"}}
+                    <a data-notification-open class="cb-v2-notificacao-open"
+                       href="/metas/limite/historico?limit_id={{.TargetID}}"
+                       hx-get="/metas/limite/historico?limit_id={{.TargetID}}"
+                       hx-target="#bottom-sheet-container"
+                       hx-swap="innerHTML"
+                       hx-push-url="false"
+                       aria-label="Abrir histórico do limite: {{.Description}}"></a>
+                    {{else if eq .TargetType "transaction"}}
+                    <a data-notification-open class="cb-v2-notificacao-open"
+                       href="/transacoes/{{.TargetID}}?origem=notificacoes"
+                       hx-get="/transacoes/{{.TargetID}}?origem=notificacoes"
+                       hx-target="#bottom-sheet-container"
+                       hx-swap="innerHTML"
+                       hx-push-url="false"
+                       aria-label="Editar lançamento: {{.Description}}"></a>
+                    {{end}}
+                {{end}}
 
                 <div class="cb-v2-notificacao-card-row">
                     <div class="cb-v2-notificacao-copy">
@@ -51,7 +86,7 @@
                         <div>
                             <div class="cb-v2-notificacao-title-row">
                                 <h2>{{.Title}}</h2>
-                                <span data-sensitive>R$ {{.Money.Reais}}{{.Money.Cents}}</span>
+                                {{if .HasMoney}}<span data-sensitive>R$ {{.Money.Reais}}{{.Money.Cents}}</span>{{end}}
                             </div>
                             <p>{{.Description}}</p>
                         </div>
@@ -67,6 +102,14 @@
                         <i data-lucide="x" class="w-3.5 h-3.5"></i>
                     </button>
                 </div>
+
+                {{if .CanPay}}
+                <div class="cb-v2-notificacao-actions">
+                    <button type="button" class="ui-btn ui-btn--secondary cb-v2-notificacao-pay" data-payment-confirm>
+                        <i data-lucide="check" aria-hidden="true"></i><span>Pagar</span>
+                    </button>
+                </div>
+                {{end}}
             </article>
             {{end}}
         </section>

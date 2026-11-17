@@ -19,7 +19,7 @@ import (
 func patrimonyDatabaseState(t *testing.T, db *sql.DB) string {
 	t.Helper()
 	state := make(map[string][][]any)
-	for _, table := range []string{"accounts", "transactions", "box_virtual_ledger", "account_balance_adjustments", "investments", "investment_purchases", "investment_valuations", "investment_withdrawals", "investment_withdrawal_allocations", "schema_migrations"} {
+	for _, table := range []string{"accounts", "transactions", "account_balance_adjustments", "investments", "investment_purchases", "investment_valuations", "investment_withdrawals", "investment_withdrawal_allocations", "schema_migrations"} {
 		rows, err := db.Query(`SELECT * FROM ` + table + ` ORDER BY rowid`)
 		if err != nil {
 			t.Fatal(err)

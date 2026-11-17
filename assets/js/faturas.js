@@ -380,7 +380,7 @@
         if (!target) return;
         // The swap target is #main-content for full-page swaps, #faturas-content for
         // OOB swaps, or #faturas-index-detail when the hub loads another card.
-        if (target.id === 'main-content' || target.id === 'faturas-content' || target.id === 'faturas-index-detail' ||
+        if (target.id === 'main-content' || target.id === 'faturas-content' || target.id === 'faturas-index-detail' || target.id === 'faturas-index-state' ||
             target.closest('#faturas-content') || target.closest('#faturas-index-detail')) {
             // Use setTimeout to let Lucide icons and DOM settle before binding
             setTimeout(bindPaymentModals, 10);

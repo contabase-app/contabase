@@ -1,12 +1,13 @@
 /* Contas — página piloto do Premium Fintech.
    A fundação (tokens, painéis, KPIs, campos, tabs e linhas) vive em
-   premium.css. Este arquivo contém apenas layout e tons específicos desta
-   página. Nenhum hook de HTMX, swipe ou pagamento é definido aqui. */
+   premium.css. Este arquivo contém layout, tons específicos desta página e
+   a superfície visual do swipe da aba A Transferir. Nenhum hook de HTMX ou
+   de pagamento é definido aqui. */
 
 .cb-v2-contas-content {
-    width: min(100%, 1180px);
-    margin: 0 auto;
-    padding: 30px 0 12px;
+    /* Data surface: width, centering and top padding come from .cb-v2-content
+       (--ui-content-max). Only the page bottom clearance is local. */
+    padding-bottom: 12px;
 }
 
 /* Ações superiores: o controle de privacidade compartilha o eixo do cabeçalho
@@ -156,4 +157,132 @@
 /* Valores que fecham a linha à direita mascaram alinhados à direita. */
 .privacy-enabled .cb-v2-contas-main .ui-row__amount[data-sensitive]::after {
     justify-content: flex-end;
+}
+
+/* === Aba A Transferir ===
+   Transferência interna é neutra: não usa is-expense/is-income. O valor
+   permanece informativo, com a situação no badge. */
+.cb-v2-contas-panels .ui-row__amount.is-transfer {
+    color: var(--ui-info);
+}
+
+.contas-transfer-row {
+    cursor: default;
+}
+
+.contas-transfer-row__date-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.contas-transfer-row__route {
+    display: inline-flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px 6px;
+}
+
+.contas-transfer-row__account {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contas-transfer-row__arrow {
+    flex: 0 0 auto;
+    color: var(--ui-text-subtle);
+}
+
+.contas-transfer-row__end {
+    display: grid;
+    min-width: 0;
+    justify-items: end;
+    gap: 2px;
+}
+
+.contas-transfer-row__date {
+    color: var(--ui-text-subtle);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.contas-transfer-row__badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
+}
+
+@media (max-width: 767px) {
+    /* Três abas precisam caber em 320px. No mobile, o texto é o rótulo
+       principal e os ícones decorativos saem para preservar a leitura. */
+    .cb-v2-contas-panels .ui-tabs {
+        gap: 3px;
+    }
+
+    .cb-v2-contas-panels .ui-tab {
+        gap: 0;
+        padding: 0 4px;
+        font-size: 11.5px;
+    }
+
+    .cb-v2-contas-panels .ui-tab svg {
+        display: none;
+    }
+
+    .contas-transfer-row {
+        grid-template-columns: 44px minmax(0, 1fr);
+        grid-template-areas:
+            "icon main"
+            "end end";
+        row-gap: 6px;
+    }
+
+    .contas-transfer-row__icon {
+        grid-area: icon;
+    }
+
+    .contas-transfer-row > .ui-row__main {
+        grid-area: main;
+    }
+
+    .contas-transfer-row__end {
+        grid-area: end;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+    }
+
+    .contas-transfer-row__badges {
+        justify-content: flex-start;
+    }
+
+    .contas-transfer-row__route {
+        display: grid;
+        width: 100%;
+        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-areas:
+            "origin origin"
+            "arrow destination";
+        gap: 2px 6px;
+    }
+
+    .contas-transfer-row__route > .ui-row__account:first-child {
+        grid-area: origin;
+    }
+
+    .contas-transfer-row__route > .ui-row__account:last-child {
+        grid-area: destination;
+    }
+
+    .contas-transfer-row__arrow {
+        grid-area: arrow;
+        justify-self: end;
+    }
 }

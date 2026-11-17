@@ -682,15 +682,6 @@ func TestCivilDateBackfillPreservesScopeExcludedData(t *testing.T) {
 		t.Fatalf("tsh.previous_paid_at = %d, want 0", tshPrevPaidAt.Int64)
 	}
 
-	// boxes.target_date untouched.
-	var boxTargetDate int64
-	if err := db.QueryRow(`SELECT target_date FROM boxes WHERE id = 'box-backfill'`).Scan(&boxTargetDate); err != nil {
-		t.Fatalf("read boxes.target_date: %v", err)
-	}
-	if boxTargetDate != midnight {
-		t.Fatalf("boxes.target_date = %d, want %d", boxTargetDate, midnight)
-	}
-
 	// Transaction amount preserved.
 	var txAmount int64
 	if err := db.QueryRow(`SELECT amount FROM transactions WHERE id = 'tx-backfill'`).Scan(&txAmount); err != nil {
@@ -797,7 +788,6 @@ func seedCivilDateBackfillFixture(t *testing.T, db *sql.DB) {
 			VALUES ('payment-backfill', 'ws-backfill', 'invoice-backfill', 'account-backfill', 'tx-backfill', 1000, ?, 'manual', ?)`, args: []any{midnight, midnight}},
 		{query: `INSERT INTO transaction_status_history (id, transaction_id, workspace_id, user_id, previous_status, new_status, previous_paid_at, new_paid_at, created_at)
 			VALUES ('history-backfill', 'tx-backfill', 'ws-backfill', 'user-backfill', 'pending', 'paid', 0, ?, ?)`, args: []any{midnight, midnight}},
-		{query: `INSERT INTO boxes (id, workspace_id, name, target_amount, target_date) VALUES ('box-backfill', 'ws-backfill', 'Fixture', 1000, ?)`, args: []any{midnight}},
 	}
 	for _, statement := range statements {
 		if _, err := db.Exec(statement.query, statement.args...); err != nil {
@@ -847,15 +837,12 @@ func assertCivilDateBackfillLegacyAndExcludedData(t *testing.T, db *sql.DB) {
 	if err := db.QueryRow(`SELECT paid_at FROM invoices WHERE id = 'invoice-backfill'`).Scan(&invoicePaidAt); err != nil || invoicePaidAt != midnight {
 		t.Fatalf("invoices.paid_at changed: value=%d err=%v", invoicePaidAt, err)
 	}
-	var historyPaidAt, boxTargetDate int64
+	var historyPaidAt int64
 	if err := db.QueryRow(`SELECT new_paid_at FROM transaction_status_history WHERE id = 'history-backfill'`).Scan(&historyPaidAt); err != nil {
 		t.Fatalf("read transaction_status_history: %v", err)
 	}
-	if err := db.QueryRow(`SELECT target_date FROM boxes WHERE id = 'box-backfill'`).Scan(&boxTargetDate); err != nil {
-		t.Fatalf("read box target date: %v", err)
-	}
-	if historyPaidAt != midnight || boxTargetDate != midnight {
-		t.Fatalf("excluded dates changed: history=%d box=%d", historyPaidAt, boxTargetDate)
+	if historyPaidAt != midnight {
+		t.Fatalf("excluded history date changed: %d", historyPaidAt)
 	}
 }
 

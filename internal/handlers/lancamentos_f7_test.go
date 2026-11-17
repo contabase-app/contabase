@@ -67,7 +67,6 @@ func TestFormLancamentoF7SheetContract(t *testing.T) {
 			`aria-live="assertive"`,
 			`id="transferDirectionHint"`,
 			`id="limitInfoText" data-sensitive`,
-			`id="reserveInfoText" data-sensitive`,
 		} {
 			assertContains(t, html, want)
 		}
@@ -117,6 +116,93 @@ func TestFormLancamentoF7SheetContract(t *testing.T) {
 			`data-type="despesa" aria-pressed="false"`,
 		} {
 			assertContains(t, html, want)
+		}
+	})
+
+	t.Run("date labels follow the persisted field semantics", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			data       FormTransacaoData
+			label      string
+			dueUI      bool
+			business   bool
+			competence bool
+			dueMeta    bool
+		}{
+			{name: "pending expense", data: FormTransacaoData{TipoInicial: "despesa", StatusInicial: "pending"}, label: "Data de vencimento"},
+			{name: "paid expense", data: FormTransacaoData{TipoInicial: "despesa", StatusInicial: "paid"}, label: "Data do lançamento"},
+			{name: "paid card expense", data: FormTransacaoData{TipoInicial: "despesa", StatusInicial: "paid", OrigemTipo: "cartao"}, label: "Data da compra"},
+			{name: "pending card expense", data: FormTransacaoData{TipoInicial: "despesa", StatusInicial: "pending", OrigemTipo: "cartao"}, label: "Data da compra"},
+			{name: "pending income", data: FormTransacaoData{TipoInicial: "receita", StatusInicial: "pending"}, label: "Data de recebimento prevista"},
+			{name: "received income", data: FormTransacaoData{TipoInicial: "receita", StatusInicial: "paid"}, label: "Data do lançamento"},
+			{name: "transfer", data: FormTransacaoData{TipoInicial: "transferencia", StatusInicial: "paid"}, label: "Data da transferência"},
+			{name: "explicit due differs", data: FormTransacaoData{TipoInicial: "despesa", StatusInicial: "pending", DataPreenchida: "2026-11-10", DueDatePreenchida: "2026-11-15", VencimentoDisplay: "15/11/2026"}, label: "Data do lançamento", dueMeta: true},
+			{name: "business competence", data: FormTransacaoData{TipoInicial: "despesa", StatusInicial: "pending", IsBusiness: true}, label: "Data de competência", dueUI: true, business: true, competence: true},
+			{name: "business explicit due", data: FormTransacaoData{TipoInicial: "despesa", StatusInicial: "pending", IsBusiness: true, DataPreenchida: "2026-11-10", DueDatePreenchida: "2026-11-15"}, label: "Data de competência", dueUI: true, business: true, competence: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				data := tc.data
+				data.IsEdit = true
+				html := render(data)
+				labelStart := strings.Index(html, `id="dataLancamentoLabel"`)
+				if labelStart < 0 {
+					t.Fatal("primary date label is missing")
+				}
+				labelEnd := strings.Index(html[labelStart:], `</label>`)
+				if labelEnd < 0 {
+					t.Fatal("primary date label is not closed")
+				}
+				primaryLabel := html[labelStart : labelStart+labelEnd]
+				if !strings.Contains(primaryLabel, tc.label) {
+					t.Fatalf("primary date label = %q, want %q", primaryLabel, tc.label)
+				}
+				if got := strings.Contains(html, "Competência"); got != tc.competence {
+					t.Fatalf("competence meta = %t, want %t", got, tc.competence)
+				}
+				if got := strings.Contains(html, ">Vencimento<"); got != tc.dueMeta {
+					t.Fatalf("due meta = %t, want %t", got, tc.dueMeta)
+				}
+				if got := strings.Contains(html, `id="dueDateSection"`); got != tc.dueUI {
+					t.Fatalf("due date section = %t, want %t", got, tc.dueUI)
+				}
+				if got := strings.Contains(html, `data-is-business="true"`); got != tc.business {
+					t.Fatalf("business marker = %t, want %t", got, tc.business)
+				}
+				if got := strings.Contains(html, `data-explicit-due-differs="true"`); got != tc.data.ExplicitDueDiffers() {
+					t.Fatalf("explicit due marker = %t, want %t", got, tc.data.ExplicitDueDiffers())
+				}
+			})
+		}
+	})
+
+	t.Run("paid_at is shown separately and follows the transaction type", func(t *testing.T) {
+		expense := render(FormTransacaoData{TipoInicial: "despesa", StatusInicial: "paid", IsEdit: true, DataPreenchida: "2026-11-10", PaidAtDisplay: "05/11/2026"})
+		assertContains(t, expense, "Data do lançamento")
+		assertContains(t, expense, `name="data" value="2026-11-10"`)
+		assertContains(t, expense, "05/11/2026")
+		if got := strings.Count(expense, "Data de pagamento"); got != 1 {
+			t.Fatalf("payment date label count = %d, want only the paid_at meta row", got)
+		}
+		if strings.Contains(expense, "Competência") {
+			t.Fatal("Personal paid expense must not show competence meta")
+		}
+
+		income := render(FormTransacaoData{TipoInicial: "receita", StatusInicial: "paid", IsEdit: true, DataPreenchida: "2026-11-10", PaidAtDisplay: "05/11/2026"})
+		assertContains(t, income, "Data do lançamento")
+		assertContains(t, income, `name="data" value="2026-11-10"`)
+		assertContains(t, income, "05/11/2026")
+		if got := strings.Count(income, "Data de recebimento"); got != 1 {
+			t.Fatalf("receipt date label count = %d, want only the paid_at meta row", got)
+		}
+		if strings.Contains(income, "Data de pagamento") {
+			t.Fatal("income paid_at must be labeled as receipt")
+		}
+
+		businessIncome := render(FormTransacaoData{TipoInicial: "receita", StatusInicial: "paid", IsBusiness: true, IsEdit: true, DataPreenchida: "2026-11-10", PaidAtDisplay: "05/11/2026"})
+		assertContains(t, businessIncome, "Data de competência")
+		assertContains(t, businessIncome, "Data de pagamento")
+		if strings.Contains(businessIncome, "Data de recebimento") {
+			t.Fatal("Business paid_at label must remain unchanged")
 		}
 	})
 }

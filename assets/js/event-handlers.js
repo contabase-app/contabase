@@ -117,9 +117,6 @@ window.contabaseInspectUI = function () {
                     el.getAttribute('data-picker-icon') || '',
                     el.getAttribute('data-picker-color') || '',
                     (el.closest('[data-picker-type]') || el).getAttribute('data-picker-type') || '',
-                    el.getAttribute('data-picker-box-id') || '',
-                    el.getAttribute('data-picker-box-reserved') || '0',
-                    el.getAttribute('data-picker-box-name') || '',
                     el.getAttribute('data-picker-limit-max') || '0',
                     el.getAttribute('data-picker-limit-spent') || '0'
                 );

@@ -29,14 +29,14 @@ window.openGlobalConfirm = function(msg, onConfirm, isDestructive, customTitle) 
     };
 
     if (isDestructive) {
-        confirmBtn.className = "btn-tactile h-9 rounded-xl bg-rose-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-rose-700 active:scale-95 transition-all";
+        confirmBtn.className = "cb-button cb-button-danger btn-tactile h-9 rounded-xl px-4 text-xs font-semibold";
         if (titleEl) titleEl.textContent = customTitle || "Confirmar Exclusão";
-        if (iconBg) iconBg.className = "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400";
+        if (iconBg) iconBg.className = "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-danger-soft)] text-[var(--ui-danger)]";
         if (icon) icon.setAttribute('data-lucide', 'alert-triangle');
     } else {
-        confirmBtn.className = "btn-tactile h-9 rounded-xl bg-indigo-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 active:scale-95 transition-all dark:bg-indigo-500";
+        confirmBtn.className = "cb-button cb-button-primary btn-tactile h-9 rounded-xl px-4 text-xs font-semibold";
         if (titleEl) titleEl.textContent = customTitle || "Confirmação";
-        if (iconBg) iconBg.className = "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400";
+        if (iconBg) iconBg.className = "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-accent-soft)] text-[var(--ui-accent-text)]";
         if (icon) icon.setAttribute('data-lucide', 'circle-help');
     }
     if (typeof window.refreshIcons === 'function') window.refreshIcons();

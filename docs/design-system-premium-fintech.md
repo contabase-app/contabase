@@ -7,11 +7,12 @@ financeira.
 
 > **Estado atual (consolidação do shell):** a fundação global está em
 > `assets/css/ui-tokens.css`, carregada depois de `app-shell.css` e antes de
-> qualquer CSS de página. A referência de cores estruturais é a página
-> `/contas` (paleta do shell autenticado). O acabamento dos componentes Premium
-> continua sendo o Dashboard. O Dashboard não redefine mais canvas, sidebar,
-> superfícies, bordas, texto, acento ou semântica; ele apenas mantém os tokens
-> exclusivos da sua composição (categorias, cartões, medidores).
+> qualquer CSS de página. A referência de cores estruturais, navegação e
+> superfícies é a identidade B10.2 do Dashboard, promovida a todas as páginas
+> autenticadas na R1.3-D4-A. O acabamento de componentes específicos continua
+> sendo responsabilidade de cada página. O Dashboard não redefine canvas,
+> sidebar, superfícies, bordas, texto, acento ou semântica; ele apenas mantém
+> os tokens exclusivos da sua composição (raio de painel e dois tons).
 >
 > **Shell é fonte única:** sidebar, item ativo, botão de recolher, appbar,
 > bottom navigation, FAB e seletor de workspace são definidos apenas em
@@ -19,14 +20,14 @@ financeira.
 > a geometria, o estado ativo ou os controles do shell. Ver seção 20
 > (Contratos Canônicos de Componentes).
 >
-> **Estado da candidata Beta 6:** Metas, Relatórios, Contatos, Configurações e
+> **Estado da consolidação visual:** Metas, Relatórios, Contatos, Configurações e
 > Administração já receberam suas fases Premium; ver a matriz da seção 21.3.
 > As seções 16, 17, 18 e 21.2 registram pendências do marco de consolidação do
 > shell e devem ser lidas como histórico quando superadas pelas fases de página.
 > As microfases de 29–30/10/2026 alinham Configurações/Administração, corrigem
 > máscaras, contraste, áreas de toque e nomes acessíveis e estendem o controle
 > global de privacidade a Contas, Investimentos e Notificações. São mudanças do
-> checkout candidato, sem implicar publicação da Beta 6.
+> checkout de desenvolvimento, sem implicar publicação de uma nova Beta.
 
 ## 1. Princípios visuais
 
@@ -56,28 +57,27 @@ A paleta foi dividida em dois papéis, para não misturar base visual com
 identidade de componente:
 
 - **Estrutural:** fundo, sidebar, superfícies, bordas, textos e trilhos. A
-  referência é a página `/contas` (valores renderizados pelo shell). Esses
-  valores vivem em `app-shell.css` (`--v2-*`) e são expostos como `--ui-*`.
+  referência é a identidade B10.2 promovida globalmente na R1.3-D4-A. Esses
+  valores vivem em `ui-tokens.css` como `--ui-*`.
 - **Marca e semântica:** acento violeta e estados financeiros. A referência é a
-  identidade Premium aprovada no Dashboard. Os valores claros já eram iguais;
-  no escuro convergem para os tons do Dashboard.
+  identidade Premium aprovada no Dashboard, também unificada em `--ui-*`.
 
-### 2.1 Paleta estrutural (referência `/contas`)
+### 2.1 Paleta estrutural (B10.2 global)
 
 | Papel | Dark | Light |
 | --- | --- | --- |
-| Canvas | `#161a20` | `#f3f4f6` |
-| Sidebar | `#181d24` | `#fafbfc` |
-| Surface | `#1e242d` | `#ffffff` |
-| Surface raised | `#232a34` | `#f7f8fa` |
-| Surface hover | `#29313c` | `#eef1f5` |
-| Border | `#2c3542` | `#e1e5eb` |
-| Border strong | `#3d4858` | `#cbd3dd` |
-| Text | `#eef1f5` | `#1b2430` |
-| Muted | `#a3acb9` | `#556274` |
-| Subtle | `#8b95a4` | `#657183` |
+| Canvas | `#0e1013` | `#f4f5f7` |
+| Sidebar | `#121519` | `#fbfcfd` |
+| Surface | `#16191e` | `#ffffff` |
+| Surface raised | `#1c2026` | `#f8f9fb` |
+| Surface hover | `#232830` | `#eef1f5` |
+| Border | `rgba(255,255,255,.08)` | `#e4e7ec` |
+| Border strong | `rgba(255,255,255,.16)` | `#cfd5dd` |
+| Text | `#f1f3f5` | `#161a22` |
+| Muted | `#a6adb8` | `#5f6b7a` |
+| Subtle | `#9aa2ae` | `#666f7c` |
 | Detail surface | `#1b2129` | `#f7f9fb` |
-| Progress track | `#303a47` | `#dde4ec` |
+| Progress track | `#2a3038` | `#eef1f5` |
 
 O Dashboard mantém apenas um gradiente radial discreto de profundidade sobre o
 canvas canônico. Ele não é uma segunda paleta e não altera a cor base.
@@ -86,13 +86,13 @@ canvas canônico. Ele não é uma segunda paleta e não altera a cor base.
 
 | Papel | Dark | Light |
 | --- | --- | --- |
-| Accent | `#8b5cf6` | `#6d4de0` |
+| Accent | `#8b5cf6` | `#6c47ff` |
 | Accent strong | `#a78bfa` | `#5b2fcc` |
-| Accent soft | `#241f3d` | `#eee9fb` |
-| Positive | `#34d399` | `#0f7a52` |
-| Danger | `#fb7185` | `#c04355` |
-| Warning | `#fbbf24` | `#9a6500` |
-| Info | `#60a5fa` | `#1e6fa8` |
+| Accent soft | `rgba(139,92,246,.14)` | `#f0ebff` |
+| Positive | `#34d399` | `#0b6f4b` |
+| Danger | `#fb7185` | `#b3274a` |
+| Warning | `#fbbf24` | `#8a5a00` |
+| Info | `#60a5fa` | `#2a5fc5` |
 
 O violeta é a única cor de marca. Ele indica ação, seleção e foco; não representa
 entrada/saída de dinheiro. Verde, vermelho, âmbar e azul só aparecem com estado
@@ -100,18 +100,18 @@ financeiro definido.
 
 ### 2.3 O que mudou em relação ao Dashboard isolado
 
-| Papel | Antes (Dashboard) | Agora (canônico) |
+| Papel | Antes (Dashboard) | Agora (canônico global) |
 | --- | --- | --- |
-| Canvas dark | `#111322` | `#161a20` |
-| Canvas light | `#eef1f7` | `#f3f4f6` |
-| Surface dark | `#1a1d2e` | `#1e242d` |
-| Surface raised dark | `#242840` | `#232a34` |
-| Border dark | `#2e3552` | `#2c3542` |
-| Text dark | `#f3f4f8` | `#eef1f5` |
+| Canvas dark | `#111322` | `#0e1013` |
+| Canvas light | `#eef1f7` | `#f4f5f7` |
+| Surface dark | `#1a1d2e` | `#16191e` |
+| Surface raised dark | `#242840` | `#1c2026` |
+| Border dark | `#2e3552` | `rgba(255,255,255,.08)` |
+| Text dark | `#f3f4f8` | `#f1f3f5` |
 
-O acento e os tons semânticos do Dashboard foram preservados. A página `/contas`
-passou a consumir o mesmo acento, em vez de manter um violeta ligeiramente
-diferente.
+O acento e os tons semânticos do Dashboard foram preservados e promovidos a
+todas as páginas autenticadas na R1.3-D4-A. A página `/contas` e as demais
+consomem a mesma fundação.
 
 ### 2.4 Compatibilidade com o design system legado
 
@@ -130,23 +130,25 @@ primeiro verifique se ele não é apenas uma mistura de `--ui-accent`,
 
 A matéria-prima tem três camadas, nesta ordem:
 
-1. `--v2-*` em `app-shell.css`: valores primitivos e theme-aware do shell.
-2. `--ui-*` em `ui-tokens.css`: vocabulário canônico consumido por páginas e
-   componentes. Nenhuma página redefine `--ui-*`.
-3. `--cb-*` dentro de `.cb-v2`: ponte de compatibilidade para o legado.
+1. `--ui-*` em `ui-tokens.css`: fonte única de valores primitivos, semânticos,
+   geometria e estados; consumida por páginas e componentes. Nenhuma página
+   redefine `--ui-*`.
+2. `--v2-*` e `--cb-*`, também em `ui-tokens.css`: aliases de compatibilidade
+   sem valor próprio, mantidos enquanto houver consumidores legados.
 
 | Grupo | Tokens canônicos | Observação |
 | --- | --- | --- |
-| Estrutura | `--ui-canvas`, `--ui-sidebar`, `--ui-surface`, `--ui-surface-raised`, `--ui-surface-hover`, `--ui-border`, `--ui-border-strong` | Aliases de `--v2-*`; referência `/contas`. |
+| Estrutura | `--ui-canvas`, `--ui-sidebar`, `--ui-surface`, `--ui-surface-raised`, `--ui-surface-hover`, `--ui-border`, `--ui-border-strong` | Fonte única em `ui-tokens.css`; `--v2-*` é alias sem valor próprio. |
 | Texto | `--ui-text`, `--ui-text-muted`, `--ui-text-subtle` | `subtle` é o menor contraste permitido para metadados. |
-| Marca | `--ui-accent`, `--ui-accent-strong`, `--ui-accent-soft`, `--ui-focus`, `--ui-action-bg`, `--ui-action-fg` | Violeta institucional; `action-bg` é mais escuro para AA com texto branco. |
+| Marca | `--ui-accent`, `--ui-accent-text`, `--ui-accent-strong`, `--ui-accent-soft`, `--ui-focus`, `--ui-action-bg`, `--ui-action-fg` | `accent` é preenchimento; `accent-text` é texto/links com AA; `action-bg` é mais escuro para texto branco. |
 | Semântica | `--ui-success`, `--ui-warning`, `--ui-danger`, `--ui-info` | Sempre acompanhados de rótulo/sinal/ícone. |
 | Superfície de campo | `--ui-field-bg`, `--ui-field-border` | Inputs, selects, textarea e busca. |
 | Abas | `--ui-tab-bg`, `--ui-tab-active-bg`, `--ui-tab-active-fg`, `--ui-tab-active-border` | Container neutro; ativo com superfície violeta perceptível. |
 | Mês | `--ui-month-active-bg`, `--ui-month-active-fg`, `--ui-month-active-border` | Uma única versão para Contas, Lançamentos, Relatórios e Faturas. |
 | Geometria | `--ui-radius-panel/card/control/button/tab/tab-item/badge/pill`, `--ui-radius-tile`, `--ui-border-width`, `--ui-control-height`, `--ui-control-height-sm/lg` | Ver seção 7. |
-| Navegação | `--ui-nav-width`, `--ui-nav-width-collapsed`, `--ui-nav-item-height`, `--ui-nav-item-height-sm`, `--ui-nav-group-height`, `--ui-nav-item-radius`, `--ui-nav-item-radius-sm`, `--ui-nav-item-pad`, `--ui-nav-gap`, `--ui-nav-active-bg/fg/icon`, `--ui-nav-active-indicator(+width)` | Shell autenticado: sidebar, drawer e bottom nav. Ver seção 20.1. |
+| Navegação | `--ui-nav-width`, `--ui-nav-width-collapsed`, `--ui-nav-item-height`, `--ui-nav-item-height-sm`, `--ui-nav-group-height`, `--ui-nav-item-radius`, `--ui-nav-item-radius-sm`, `--ui-nav-item-pad`, `--ui-nav-gap`, `--ui-nav-active-bg/fg/icon`, `--ui-quick-action-height` | Shell autenticado: sidebar, drawer e bottom nav. Ver seção 20.1. |
 | Controles do shell | `--ui-icon-button-size/sm/xs`, `--ui-icon-button-radius/bg/border` | Recolher, tema, notificações, appbar. |
+| Conteúdo | `--ui-content-max`, `--ui-content-standard` | `max` é a medida do shell e de páginas de dados (`1560px`); `standard` é a medida ergonômica de formulários, configurações, detalhe e leitura (`1180px`). |
 | Espaço | `--ui-panel-pad`, `--ui-gap`, `--ui-section-gap` | `22/18/24px` desktop; `16/14/18px` mobile. |
 | Sombra | `--ui-shadow-panel`, `--ui-shadow-raised`, `--ui-shadow-floating` | Painel/superfície elevada; `floating` para barra fixa. Nunca em linha. |
 | Transição | `--ui-transition: 160ms ease` | `prefers-reduced-motion` zera transições. |
@@ -180,28 +182,31 @@ Os nomes abaixo existem de verdade em `ui-tokens.css`. Use-os em vez de criar
 apelidos locais.
 
 ```css
+/* ui-tokens.css owns the raw values. Aliases are value-free. */
 .cb-v2,
 .cb-v2-body {
-  --ui-canvas: var(--v2-canvas);
-  --ui-sidebar: var(--v2-sidebar);
-  --ui-surface: var(--v2-surface);
-  --ui-surface-raised: var(--v2-surface-raised);
-  --ui-surface-hover: var(--v2-surface-hover);
-  --ui-border: var(--v2-border);
-  --ui-border-strong: var(--v2-border-strong);
-  --ui-text: var(--v2-text);
-  --ui-text-muted: var(--v2-muted);
-  --ui-text-subtle: var(--v2-subtle);
-  --ui-accent: var(--v2-accent);
-  --ui-accent-strong: var(--v2-accent-strong);
-  --ui-accent-soft: var(--v2-accent-soft);
-  --ui-focus: var(--v2-accent-strong);
-  --ui-success: var(--v2-positive);
-  --ui-warning: var(--v2-warning);
-  --ui-danger: var(--v2-danger);
-  --ui-info: var(--v2-info);
+  --ui-canvas: #0e1013;
+  --ui-surface: #16191e;
+  --ui-text: #f1f3f5;
+  --ui-accent: #8b5cf6;       /* fill, icon, border */
+  --ui-accent-text: #a78bfa;  /* text/links, AA on dark surfaces */
+  --ui-accent-strong: var(--ui-accent-text);
+  --ui-success: #34d399;
+  --ui-action-bg: #6d4de0;
+
+  /* Compatibility only: no independent values. */
+  --v2-canvas: var(--ui-canvas);
+  --cb-accent: var(--ui-accent);
+  --cb-accent-ink: var(--ui-accent-text);
 }
 ```
+
+O bloco `.cb-preview.cb-v2` em `ui-tokens.css` mantém apenas o contexto
+exclusivo da composição do Dashboard B10.2 (raio de painel 20px e dois tons).
+Paleta estrutural, acento, semântica e geometria de navegação foram promovidos
+à fundação global na R1.3-D4-A. O Dashboard consome `--ui-*` diretamente;
+`--cbp-*` foi removido na R1.3-D2-B. `--v2-*` e `--cb-*` continuam apenas como
+pontes sem valor próprio para as páginas ainda não migradas.
 
 | Token | Uso | Não usar para |
 | --- | --- | --- |
@@ -215,7 +220,8 @@ apelidos locais.
 | `--ui-text` | Título e valor monetário | Texto auxiliar |
 | `--ui-text-muted` | Descrição, data, metadado | Valor principal |
 | `--ui-text-subtle` | Metadado de menor ênfase | Texto de corpo |
-| `--ui-accent` | Foco, seleção, indicador de marca | Valor financeiro |
+| `--ui-accent` | Preenchimento, ícone, borda, seleção e indicador de marca | Texto normal (use `--ui-accent-text`) |
+| `--ui-accent-text` | Links, rótulos e texto de ação sobre superfície | Preenchimento decorativo |
 | `--ui-action-bg` | Fundo de botão primário | Fundo decorativo |
 | `--ui-success` | Entrada, saldo positivo, meta concluída | Decoração |
 | `--ui-danger` | Saída, atraso, limite excedido | Ação secundária |
@@ -338,10 +344,9 @@ selects principais, painéis grandes ou barras de navegação segmentada.
 | Segmented filter | `.wallet-period` | Sim, mesma geometria de tabs | `aria-pressed`, ativo violeta, compacto |
 | Input/select/search | `.ui-input`, `.ui-select`, `.ui-search`, `.cb-input` | Sim, via tokens + ponte | raio `12px`, altura 42/44, foco com anel |
 | Month selector | `[data-month-selector]` + `.month-btn` | Sim, uma única versão | ativo com `--ui-month-active-*`; usado em Contas/Lançamentos/Relatórios/Faturas |
-| Progress | `progress` + `.cb-v2-progress*` | Sim, mas separar consumo de meta | valor, máximo, tom, label |
+| Progress | `progress` + `.cb-v2-progress*` | Sim, mas separar consumo de limite | valor, máximo, tom, label |
 | Financial row | `.ui-row`, `.cb-v2-account-row`, `.cb-v2-action-row` | Parcial | ícone, duas linhas, valor, link |
 | Category share | `.wallet-category-row` | Sim, domínio financeiro | nome, ícone, valor, variação, barra |
-| Goal ring | `.wallet-goal-ring` | Sim, domínio | percentual, tom, label |
 | Credit card tile | `.wallet-card` (Dashboard) e `.cb-v2-credit-card` (Faturas) | Não unificar agora | face, status, fatura, limite |
 | Chart | `balance-evolution.js` + `.wallet-evolution*` | Sim, domínio | série, tooltip, tabela, caveats |
 | Modal/dropdown | `overlay-stack.js`, `.cb-modal`, `.cb-dropdown` | Sim | foco, ESC, backdrop, retorno |
@@ -353,11 +358,10 @@ selects principais, painéis grandes ou barras de navegação segmentada.
 Não promover automaticamente para o global:
 
 - Composição `.wallet` e as duas colunas independentes.
-- `wallet-kpi-total`/`wallet-kpi-secondary` e a hierarquia Reservado/Disponível.
+- `wallet-kpi-total`/`wallet-kpi-secondary` e a hierarquia Saldo total/Obrigações.
 - `wallet-card`/carrossel de cartões com face tonal e seleção.
 - `wallet-category-row` e a barra de participação por categoria.
 - `wallet-evolution` (gráfico, tooltip, tabela, caveats).
-- `wallet-goal-ring` e o agrupamento de metas.
 - `.wallet-shortcuts`, `.wallet-privacy` e a ordem mobile específica.
 
 Esses componentes dependem de viewmodels e regras do Dashboard. Extrair apenas
@@ -578,7 +582,7 @@ CSS de página em `pages`. Até lá, a especificidade máxima recomendada segue
 | 3 | **Contas (piloto)** | **Concluído nesta etapa** | Busca, mês, tabs, KPIs e lista | M | Baixo |
 | 4 | Faturas | Fundamentos aplicados | Card tile, badges, modais de pagamento | L | Alto |
 | 5 | Lançamentos | Fundamentos aplicados | Lista densa, filtros, swipe, bulk, formulário | XL | Alto |
-| 6 | Metas | Fundamentos + tabs aplicados | Limites, metas, anéis, reservas | L | Alto |
+| 6 | Metas | Fundamentos aplicados (somente Limites) | Limites, cards e histórico | L | Alto |
 | 7 | Relatórios | Fundamentos aplicados | Tabelas, gráficos, exportação e tabs próprias | L | Médio |
 | 8 | Configurações | Fundamentos aplicados | Formulários, categorias, contas, cartões | L | Médio |
 | 9 | Administração | **Concluído na ADM3** | Usuários, workspaces, backups, auditoria com envelope premium próprio | M | Baixo |
@@ -739,7 +743,7 @@ de sidebar, com `getComputedStyle` e `CSS.getMatchedStylesForNode` (CDP).
 
 | Componente | Diferença encontrada | Causa real | Arquivo responsável | Correção aplicada |
 | --- | --- | --- | --- | --- |
-| Item ativo da sidebar | Dashboard: gradiente violeta + anel `inset 0 0 0 1px` + texto branco. Contas: fundo `accent-soft` + barra lateral de 2px + texto violeta claro | `dashboard-wallet.css` redefinia `.cb-v2-nav-link.is-active` com especificidade igual e carregava depois | `dashboard-wallet.css` (override) → `app-shell.css` (fonte) | Override removido. Estado canônico único: `--ui-nav-active-bg`, `--ui-nav-active-fg`, `--ui-nav-active-icon` e indicador de 2px |
+| Item ativo da sidebar | Dashboard: gradiente violeta + anel `inset 0 0 0 1px` + texto branco. Contas: fundo `accent-soft` + barra lateral de 2px + texto violeta claro | `dashboard-wallet.css` redefinia `.cb-v2-nav-link.is-active` com especificidade igual e carregava depois | `dashboard-wallet.css` (override) → `app-shell.css` (fonte) | Override removido. Estado canônico único: `--ui-nav-active-bg`, `--ui-nav-active-fg`, `--ui-nav-active-icon`; a D4-A final removeu a barra e mantém superfície uniforme |
 | Geometria do item de navegação | 42px de altura e raio 11px (Dashboard) x 40px e 8px (Contas) | Override de `min-height`/`border-radius` no CSS do Dashboard | `dashboard-wallet.css` | Removido. `--ui-nav-item-height`, `--ui-nav-item-radius` |
 | Botão de recolher | Dashboard: 34×34 com borda e superfície. Contas: ícone sem caixa | `.cb-v2-sidebar .cb-v2-icon-button` só existia no CSS do Dashboard | `dashboard-wallet.css` | Tratamento com borda/superfície movido para `app-shell.css`; tamanho `--ui-icon-button-size-sm` |
 | Controles do rodapé (tema/notificações) | 28×32 sem caixa (Contas) x 28×32 com caixa (Dashboard) | mesma duplicação de `.cb-v2-sidebar .cb-v2-icon-button` | `dashboard-wallet.css` | Fonte única no shell; variante compacta de 30×30 (`--ui-icon-button-size-xs`) para preservar o nome do workspace |
@@ -759,7 +763,7 @@ Diferenças **legítimas** mantidas (não são inconsistências):
 - Composição do Dashboard (`.wallet`, colunas, KPI total, carrossel de cartões,
   categorias, gráfico de evolução) — identidade e viewmodel próprios.
 - Gradiente radial do canvas do Dashboard: profundidade sobre o mesmo
-  `--v2-canvas`, sem segunda paleta.
+  `--ui-canvas`, sem segunda paleta.
 - Título do Dashboard menor que o page title: hierarquia greeting x página,
   agora ambos na mesma escala canônica.
 - Altura/conteúdo de `main` e largura de descrição: dependem do conteúdo.
@@ -773,8 +777,8 @@ style.css (Tailwind compilado)
 geist-sans.css
 design-system.css      # legado .cb-* + tabs canônicas para páginas sem premium.css
 /workspace/colors.css  # dinâmico por workspace
-app-shell.css          # shell + primitivos --v2-*
-ui-tokens.css          # fundação canônica --ui-* + ponte --cb-*
+app-shell.css          # shell, geometria e estados (consome --ui-*)
+ui-tokens.css          # fundação canônica --ui-* + aliases --v2-*/--cb-*
 CSS da página          # premium.css + contas.css | dashboard.css + dashboard-wallet.css | <pagina>.css
 ```
 
@@ -787,15 +791,17 @@ CSS da página          # premium.css + contas.css | dashboard.css + dashboard-w
 
 ### 19.3 Evidência de igualdade (mesma viewport, tema e estado)
 
-Medição por `getComputedStyle` em Dashboard x Contas, Dark e Light:
+Medição por `getComputedStyle` em Dashboard x Contas, Dark e Light. A tabela
+registra a consolidação original; a geometria foi elevada aos valores B10.2 na
+D4-A (ver 19.5).
 
 | Propriedade | Antes | Depois |
 | --- | --- | --- |
 | `.cb-v2-nav-link.is-active` `background-color` | `transparent` x `accent-soft` | idêntico |
 | `background-image` | gradiente x `none` | idêntico (`none`) |
-| `box-shadow` | anel 1px + highlight x barra 2px | idêntico (barra 2px) |
-| `border-radius` | 11px x 8px | idêntico (10px) |
-| `min-height` | 42px x 40px | idêntico (40px) |
+| `box-shadow` | anel 1px + highlight x barra 2px | idêntico (sem anel/barra na D4-A final) |
+| `border-radius` | 11px x 8px | idêntico (12px na D4-A) |
+| `min-height` | 42px x 40px | idêntico (42px na D4-A) |
 | `color` | texto principal x `accent-on-soft` | idêntico |
 | Botão de recolher | 34×34 com borda x 34×34 sem borda | 34×34 com borda nos dois |
 | Appbar mobile | blur + tint x transparente | idêntico |
@@ -835,6 +841,60 @@ toggle de grupo passam a renderizar exatamente o que declaram, em todas as
 páginas. É a causa-raiz de parte do "mesmo componente com aparências
 diferentes" e não uma decisão estética por página.
 
+### 19.5 R1.3-D4-A — padronização global do menu lateral e App Shell
+
+A identidade B10.2 deixou de ser um contexto exclusivo do Dashboard e passou a
+ser a fundação do shell autenticado:
+
+| Dimensão | Antes (global) | Depois (D4-A) |
+| --- | --- | --- |
+| Canvas / sidebar | `#161a20` / `#181d24` | `#0e1013` / `#121519` |
+| Superfícies | `#1e242d` / `#232a34` / `#29313c` | `#16191e` / `#1c2026` / `#232830` |
+| Bordas | `#2c3542` / `#3d4858` | `rgba(255,255,255,.08)` / `rgba(255,255,255,.16)` |
+| Sidebar | 248 px / 72 px recolhida | 264 px / 80 px recolhida |
+| Item de navegação | 40 px / raio 10 px / barra 2 px | 42 px / raio 12 px / superfície uniforme sem barra |
+| Ações rápidas | herdavam 40 px | 40 px explícitos (`--ui-quick-action-height`) |
+| Conteúdo | sem medida canônica no shell | `--ui-content-max: 1560px` |
+| Appbar mobile | 68/72 px, fluxo normal | 66 px, sticky, blur e borda |
+| Padding do main | 40/28/16/12 px | 36/20/14/10 px |
+
+O Dashboard permaneceu pixel-idêntico: as regras `.cbp-sidebar`,
+`.cbp-appbar`, `.cbp-main` e `.cbp-canvas` que apenas repetiam a geometria do
+shell foram removidas do `dashboard-preview.css`. A sidebar do Dashboard passou
+a usar o mesmo template `app-v2-desktop-sidebar` e o mesmo agrupamento
+`app-v2-primary-nav` das demais páginas.
+
+O badge de notificações passou a ter um único `id="notification-badge"` como
+sink de OOB e N cópias visíveis com `[data-notification-badge]`. O
+`app-shell.js` sincroniza classe e rótulo após `htmx:afterSwap` e
+`htmx:oobAfterSwap`. O gatilho do drawer mobile é delegado no `[data-app-shell]`
+para continuar funcionando depois que o `#main-content` é substituído pelo
+HTMX.
+
+### 19.6 R1.3-D4-B — componentes compartilhados
+
+A camada legada `cb-*` passou a consumir o mesmo contrato visual da camada
+Premium `ui-*`, sem migrar markup nem redesenhar páginas:
+
+| Componente | Consolidação |
+| --- | --- |
+| `.cb-button` | tipografia 12,5 px/620 sem caixa alta forçada; raio, cores de ação, hover, focus-visible e disabled iguais a `.ui-btn`; `.cb-button-danger` para ações destrutivas |
+| `.cb-input` | altura 42 px (44 px na variante de Investimentos), fonte 13 px desktop/16 px mobile, hover/focus/teclado/disabled e `textarea` com altura própria |
+| `.cb-label` | uma única definição, 10,5 px/650, `.04em`, alinhada a `.ui-label` (a duplicata foi removida) |
+| `.cb-status-chip-*` | mesmos tokens semânticos de `.ui-badge-*`, sem overrides `.dark`; info usa `--ui-info` ajustado para AA |
+| `.cb-card-dense` / `.cb-empty-state` | raio de painel, borda, superfície, sombra e fundo alinhados a `.ui-panel`/`.ui-empty` |
+| Confirmação global | botões primary/danger compartilhados no JS e no delete-scope, sem utilitários indigo/rose |
+| `--ui-info` Light | `#2a5fc5` para garantir 4,5:1 em texto sobre superfícies tintadas; o Dark permanece `#60a5fa` |
+
+**CSS legado:** `dashboard.css` foi removido na D4-C5 depois da migração das
+classes `cb-v2-card-section`, `cb-v2-section-heading` e do empty card para
+`faturas-index.css`/`ui-empty`. `scrollbar-hide` passou a ser utilitário único
+em `design-system.css`, e `btn-tactile`/`icon-colored`/`emblem-wrap-solid`
+ficaram somente nas folhas globais. `f1-info.css` não é carregado pelo
+Dashboard V2: o V2 usa `.cbp-info-btn`/`.cbp-info-panel` e
+`financial-info.js`. O arquivo permanece preservado. Tabelas e paginação
+continuam específicas de página (D4-C5).
+
 ## 20. Contratos Canônicos de Componentes
 
 Cada componente abaixo tem **um** arquivo responsável. Consumidores usam as
@@ -844,20 +904,24 @@ classes e os tokens; não redefinem geometria, estado ou cor.
 
 - **Fonte:** `app-shell.css` (estrutura, geometria, estados) + `ui-tokens.css`
   (tokens). Markup: `templates/components/app_shell.html`
-  (`app-v2-desktop-sidebar`, `app-v2-nav-links`, `app-v2-settings-nav`).
+  (`app-v2-desktop-sidebar`, `app-v2-primary-nav`, `app-v2-nav-links`,
+  `app-v2-settings-nav`).
 - **Tokens:** `--ui-nav-width`, `--ui-nav-width-collapsed`,
   `--ui-nav-item-height`, `--ui-nav-item-height-sm`, `--ui-nav-group-height`,
   `--ui-nav-item-radius`, `--ui-nav-item-radius-sm`, `--ui-nav-item-pad`,
   `--ui-nav-gap`, `--ui-nav-active-bg`, `--ui-nav-active-fg`,
-  `--ui-nav-active-icon`, `--ui-nav-active-indicator(+width)`,
+  `--ui-nav-active-icon`, `--ui-quick-action-height`,
   `--ui-icon-button-size*`, `--ui-border`, `--ui-surface*`, `--ui-text*`.
-- **Variantes:** expandida (248px), recolhida (72px, só símbolo), drawer mobile.
+- **Variantes:** expandida (264px), recolhida (80px, só símbolo), drawer mobile.
+  A geometria B10.2 é global desde a R1.3-D4-A: item 42px, raio 12px,
+  superfície ativa uniforme e ações rápidas em 40px.
 - **Estados:** default, hover (`--ui-surface-hover`), active
-  (`.is-active`/`aria-current="page"`: superfície violeta + barra de 2px),
-  focus-visible (outline 2px, `outline-offset: -2px`), grupo aberto/fechado
-  (`aria-expanded` no toggle), submenu ativo.
+  (`.is-active`/`aria-current="page"`: superfície violeta uniforme, sem barra,
+  anel ou pseudo-elemento), focus-visible (outline 2px,
+  `outline-offset: -2px`), disabled (`--ui-disabled-opacity`), grupo
+  aberto/fechado (`aria-expanded` no toggle), submenu ativo.
 - **Semântica:** `aria-current="page"` no item atual; o estado ativo nunca
-  depende só de cor (fundo + barra + ícone).
+  depende só de cor (fundo + texto + ícone).
 - **Escopo:** qualquer rota autenticada.
 - **Páginas consumidoras:** todas.
 - **Customização:** nenhuma página redefine `.cb-v2-nav-link`,
@@ -957,12 +1021,14 @@ classes e os tokens; não redefinem geometria, estado ou cor.
 - **Tokens:** `--ui-radius-button`, `--ui-radius-pill`, `--ui-radius-badge`,
   `--ui-control-height(-sm)`, `--ui-action-bg(-hover/-fg)`,
   `--ui-disabled-opacity`, `--ui-focus`.
-- **Variantes:** primary, secondary, ghost, `sm`; badge
+- **Variantes:** primary, secondary, ghost, danger, `sm`; badge
   neutral/accent/success/warning/danger/info; pill de ação compacta.
 - **Estados:** default, hover, active (`scale(.98)`), focus-visible, disabled.
-- **Regras:** pills só para chips/ações curtas. `.cb-button` legado mantém
-  caixa alta e peso 700; a unificação tipográfica com `.ui-btn` é migração de
-  página (seção 21).
+- **Regras:** pills só para chips/ações curtas. `.cb-button` legado é uma
+  ponte tipográfica e de estados para `.ui-btn`: mesma fonte 12,5px/620, sem
+  caixa alta forçada, mesmo raio, cores de ação e foco. Alturas continuam
+  definidas pelo consumidor (h-9/h-10/h-11) ou pelo mínimo compartilhado de
+  34px. Badges/chips usam os mesmos tokens semânticos e passam AA em Dark/Light.
 
 ### 20.9 Tabs
 
@@ -1002,26 +1068,32 @@ classes e os tokens; não redefinem geometria, estado ou cor.
 
 - **Fonte:** `premium.css` (`.ui-input`, `.ui-select`, `.ui-textarea`,
   `.ui-search`, `.ui-label`, `.ui-toolbar`); ponte legada `.cb-input` em
-  `design-system.css` + foco compartilhado em `app-shell.css`.
+  `design-system.css`, consumindo os mesmos tokens e o mesmo foco.
 - **Tokens:** `--ui-control-height(-sm/lg)`, `--ui-radius-control`,
-  `--ui-field-bg`, `--ui-field-border`, `--ui-accent`, `--ui-text-subtle`,
-  `--ui-disabled-opacity`.
-- **Estados:** default, hover, focus (anel de 3px), placeholder, disabled.
+  `--ui-field-bg`, `--ui-field-border`, `--ui-field-focus-border`,
+  `--ui-focus`, `--ui-text-subtle`, `--ui-disabled-opacity`.
+- **Estados:** default, hover, focus (borda neutra; anel de 2px no teclado),
+  placeholder, disabled.
 - **Regras:** busca ocupa 100% do container em Contas; `font-size: 16px` no
-  mobile para evitar zoom. `.cb-input` legado mantém 40px de altura até a
-  migração da página.
+  mobile para evitar zoom. `.cb-input` usa altura 42px (44px em Investimentos,
+  que mantém sua variante de página), fonte 13px no desktop e 16px no mobile.
 
 ### 20.12 Empty, loading, modal e progresso
 
-- **Fonte:** `premium.css` (`.ui-empty`, `.ui-skeleton`, `.ui-swipe*`) e
-  `app-shell.css`/`overlay-stack.js` (`.cb-modal`, overlays, `#bottom-sheet-container`).
+- **Fonte:** `premium.css` (`.ui-empty`, `.ui-skeleton`, `.ui-swipe*`),
+  `design-system.css` (`.cb-empty-state`, `.cb-card-dense`) e
+  `app-shell.css`/`overlay-stack.js` (`.cb-modal`, overlays,
+  `#bottom-sheet-container`).
 - **Tokens:** `--ui-radius-panel`, `--ui-surface*`, `--ui-border*`, `--ui-text*`,
   `--ui-shadow-panel`, `--ui-transition`.
 - **Estados:** vazio com CTA, loading (`aria-busy`), aberto/fechado,
   `prefers-reduced-motion`.
 - **Semântica:** foco preso no modal, ESC fecha, retorno de foco ao gatilho.
 - **Customização:** páginas não recriam overlay global; usam os containers do
-  shell.
+  shell. `.cb-empty-state` e `.cb-card-dense` compartilham raio de painel,
+  borda, superfície e sombra com `.ui-empty`/`.ui-panel`. Os botões do
+  confirmation/delete-scope global usam `.cb-button-primary` e
+  `.cb-button-danger`, não utilitários indigo/rose.
 
 ### 20.13 Contrato de manutenção
 
@@ -1042,6 +1114,27 @@ classes e os tokens; não redefinem geometria, estado ou cor.
    Administração, Contatos — Dark/Light, 320/390/768/1280/1440/1600.
 6. **Um novo agente consulta esta documentação antes de modernizar outra
    página** e atualiza os contratos quando criar um componente reutilizável.
+
+### 20.14 Notificações acionáveis
+
+- **Fonte:** `notificacoes.css` + `templates/pages/notificacoes.html`.
+- **Estrutura:** um único link esticado por card acionável
+  (`[data-notification-open]`, absoluto, `z-index: 0`). Apagar e Pagar são
+  botões irmãos com `z-index` acima do link; nenhum controle fica aninhado.
+- **Destinos:** fatura usa `GET /cartoes/faturas/{invoiceID}` (redireciona ao
+  hub com cartão, mês e ano da referência armazenada); limite usa
+  `GET /metas/limite/historico?limit_id=` no `#bottom-sheet-container`;
+  lançamento usa `GET /transacoes/{id}?origem=notificacoes` no mesmo sheet.
+- **Retorno:** o editor aberto pela origem `notificacoes` salva com
+  `hx-swap="none"` e recebe `HX-Refresh`; nunca tenta mirar `#tx-{id}` em uma
+  página que não possui a linha. Exclusões usam o mesmo contexto apenas para a
+  apresentação.
+- **Pagamento:** o botão Pagar existe só para despesa vencida elegível e com
+  `invoices:status_update`; ele abre o modal global (`data-payment-confirm`) e
+  não dispara POST. O endpoint e as regras permanecem os existentes.
+- **Estados:** card informativo (pagamento executado) não tem link nem valor
+  sintético; valores continuam com `data-sensitive`; foco visível e alvos de
+  44px são obrigatórios. Os destinos revalidam `workspace_id` e permissão.
 
 ## 21. Pendências atualizadas e próxima fase
 
@@ -1106,7 +1199,7 @@ classes e os tokens; não redefinem geometria, estado ou cor.
   `ui-page-description`; ações `ui-btn`; privacidade no header com 44px no
   shell touch.
 - **Indicadores:** `ui-panel` + `ui-kpi-grid`/`ui-kpi`, com `tabular-nums`,
-  resumo de limites e planejamento de reservas.
+  resumo de limites e gastos do mês.
 - **Cards:** superfície `--ui-surface`, raio 14, borda canônica e sombra
   funcional; tons semânticos de `ui_tones.go`; barra de progresso própria
   com chip clampado (WAAPI), preservada.
@@ -1120,11 +1213,10 @@ classes e os tokens; não redefinem geometria, estado ou cor.
   preservados, erros com `aria-live`/`aria-invalid` e foco por modality.
 - **Privacidade:** `privacy.js` + `data-sensitive` + `body.privacy-enabled`;
   máscara `••••` mantém geometria; inputs editáveis não são mascarados.
-- **Abas:** `role="tablist"`/`tab`/`tabpanel`, `aria-selected`,
-  `aria-controls`, roving `tabindex`, setas/Home/End, ativação por
-  Enter/Espaço e retorno de foco após o swap HTMX.
-- **Empty states:** `ui-empty` + `role="status"` em Limites e Reservas;
-  históricos M5 e mensagens aprovadas preservados.
+- **Sem abas:** a página de Metas apresenta somente Limites; componentes de
+  tabs permanecem disponíveis apenas onde outras telas ainda os usam.
+- **Empty states:** `ui-empty` + `role="status"` em Limites; histórico de
+  Limites e mensagens aprovadas preservados.
 - **App Shell:** appbar com 44×44 no mobile/tablet (tema, notificações e
   menu); sidebar e appbar desktop mantêm a geometria original.
 
@@ -1154,7 +1246,7 @@ classes e os tokens; não redefinem geometria, estado ou cor.
 
 
 > **Não iniciar novas fases** de modernização sem autorização própria.
-> Metas/Reservas (M2–M8), Relatórios (R2–R8), Contatos (C1–C5), Configurações
+> Metas (M2–M8, somente Limites), Relatórios (R2–R8), Contatos (C1–C5), Configurações
 > (CFG2–CFG5) e Administração (ADM3–ADM4) já tiveram suas fases de página.
 
 #### Contatos — padrões finais (C2–C5)

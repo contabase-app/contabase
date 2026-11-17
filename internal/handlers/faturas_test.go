@@ -326,6 +326,13 @@ func TestFaturasIndexUsesDashboardCardPriorityOrder(t *testing.T) {
 		{ID: "zero", Status: models.InvoiceStatusOpen, Amount: 0, DueDateUnix: now.AddDate(0, 0, -1).Unix()},
 	}
 
+	for i := range cards {
+		paid := int64(0)
+		if cards[i].Status == models.InvoiceStatusPaid {
+			paid = cards[i].Amount
+		}
+		cards[i].PaymentState = computeInvoiceState(cards[i].Amount, paid, 0, now)
+	}
 	SortDashboardCardsByPaymentPriority(cards, now)
 	got := make([]string, len(cards))
 	for i := range cards {
@@ -481,9 +488,6 @@ func TestHandlePagarFaturaLiquidaFaturaDebitaContaECriaProxima(t *testing.T) {
 
 	templates := template.Must(template.New("test").Parse(`
 {{define "faturas-content"}}<main id="faturas-content">{{template "invoice-summary" .}}{{template "invoice-transactions" .}}</main>{{end}}
-{{define "dashboard-balance"}}<section id="dashboard-balance" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
-{{define "dashboard-accounts"}}<section id="dashboard-accounts" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
-{{define "dashboard-cards"}}<section id="dashboard-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-summary"}}<section id="invoice-summary" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-transactions"}}<section id="invoice-transactions" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 `))
@@ -510,8 +514,11 @@ func TestHandlePagarFaturaLiquidaFaturaDebitaContaECriaProxima(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), `hx-swap-oob="outerHTML"`) {
-		t.Fatalf("expected OOB dashboard fragments, got %q", rr.Body.String())
+	if strings.Contains(rr.Body.String(), `id="dashboard-`) {
+		t.Fatalf("invoice payment must not inject Dashboard markup, got %q", rr.Body.String())
+	}
+	if trigger := rr.Header().Get("HX-Trigger"); !strings.Contains(trigger, "refreshFinancials") {
+		t.Fatalf("HX-Trigger = %q, want refreshFinancials", trigger)
 	}
 
 	var status string
@@ -724,9 +731,6 @@ func TestHandlePagarFaturaJaPagaNaoCriaNovoInvoicePayment(t *testing.T) {
 
 	templates := template.Must(template.New("test").Parse(`
 {{define "faturas-content"}}<main id="faturas-content">{{template "invoice-summary" .}}{{template "invoice-transactions" .}}</main>{{end}}
-{{define "dashboard-balance"}}<section id="dashboard-balance" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
-{{define "dashboard-accounts"}}<section id="dashboard-accounts" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
-{{define "dashboard-cards"}}<section id="dashboard-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-summary"}}<section id="invoice-summary" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-transactions"}}<section id="invoice-transactions" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 `))
@@ -857,9 +861,6 @@ func TestHandlePagarFaturaComPagamentoParcialQuitaApenasSaldoPendente(t *testing
 
 	templates := template.Must(template.New("test").Parse(`
 {{define "faturas-content"}}<main id="faturas-content">{{template "invoice-summary" .}}{{template "invoice-transactions" .}}</main>{{end}}
-{{define "dashboard-balance"}}<section id="dashboard-balance" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
-{{define "dashboard-accounts"}}<section id="dashboard-accounts" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
-{{define "dashboard-cards"}}<section id="dashboard-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-summary"}}<section id="invoice-summary" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-transactions"}}<section id="invoice-transactions" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 `))
@@ -1002,10 +1003,14 @@ func TestHandlePagarFaturaPagamentoParcialMenorQueSaldoMantemAberta(t *testing.T
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %q", rr.Code, rr.Body.String())
 	}
-	for _, fragment := range []string{`id="faturas-content"`, `id="dashboard-balance" hx-swap-oob="outerHTML"`, `id="dashboard-accounts" hx-swap-oob="outerHTML"`, `id="dashboard-cards" hx-swap-oob="outerHTML"`} {
-		if !strings.Contains(rr.Body.String(), fragment) {
-			t.Fatalf("missing HTMX/OOB fragment %q in %q", fragment, rr.Body.String())
-		}
+	if !strings.Contains(rr.Body.String(), `id="faturas-content"`) {
+		t.Fatalf("missing invoice fragment in %q", rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), `id="dashboard-`) {
+		t.Fatalf("invoice payment must not inject Dashboard markup, got %q", rr.Body.String())
+	}
+	if trigger := rr.Header().Get("HX-Trigger"); !strings.Contains(trigger, "refreshFinancials") {
+		t.Fatalf("HX-Trigger = %q, want refreshFinancials", trigger)
 	}
 
 	var status string
@@ -1405,8 +1410,14 @@ func TestHandleMoverFaturaAvulsaMoveParaProximaFatura(t *testing.T) {
 	}
 	assertTransactionInvoiceReference(t, db, "purchase-test", scenario.NextRef)
 	assertInvoiceExists(t, db, "card-test", scenario.NextRef, "OPEN")
-	if !strings.Contains(rr.Body.String(), `id="invoice-summary"`) || !strings.Contains(rr.Body.String(), `id="dashboard-cards"`) {
-		t.Fatalf("expected invoice and dashboard OOB fragments, got %q", rr.Body.String())
+	if !strings.Contains(rr.Body.String(), `id="invoice-summary"`) {
+		t.Fatalf("expected invoice OOB fragment, got %q", rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), `id="dashboard-`) {
+		t.Fatalf("invoice move must not inject Dashboard markup, got %q", rr.Body.String())
+	}
+	if trigger := rr.Header().Get("HX-Trigger"); !strings.Contains(trigger, "refreshFinancials") {
+		t.Fatalf("HX-Trigger = %q, want refreshFinancials", trigger)
 	}
 }
 
@@ -1530,9 +1541,7 @@ func TestInsertTransactionCriaNovaFaturaQuandoCompetenciaAtualJaFoiPaga(t *testi
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"",
-		false,
-	)
+		"")
 	if err != nil {
 		t.Fatalf("insert transaction: %v", err)
 	}
@@ -2168,9 +2177,7 @@ func TestInsertTransactionParceladaComFaturaManualDistribuiParcelas(t *testing.T
 		false,
 		"",
 		"", OptionalCivilWriteDate{}, nil,
-		"invoice-2026-08",
-		false,
-	)
+		"invoice-2026-08")
 	if err != nil {
 		t.Fatalf("insertTransaction: %v", err)
 	}
@@ -2419,7 +2426,6 @@ func testOOBTemplates(t *testing.T) *template.Template {
 	t.Helper()
 
 	return template.Must(template.New("test").Parse(`
-{{define "dashboard-cards"}}<section id="dashboard-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-summary"}}<section id="invoice-summary" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-transactions"}}<section id="invoice-transactions" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 `))
@@ -2430,9 +2436,6 @@ func testInvoicePaymentTemplates(t *testing.T) *template.Template {
 
 	return template.Must(template.New("test").Parse(`
 {{define "faturas-content"}}<main id="faturas-content">{{template "invoice-summary" .}}{{template "invoice-transactions" .}}</main>{{end}}
-{{define "dashboard-balance"}}<section id="dashboard-balance" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
-{{define "dashboard-accounts"}}<section id="dashboard-accounts" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
-{{define "dashboard-cards"}}<section id="dashboard-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-summary"}}<section id="invoice-summary" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}>{{if .HasPayments}}has-payments{{end}}</section>{{end}}
 {{define "invoice-transactions"}}<section id="invoice-transactions" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 `))
@@ -2884,9 +2887,9 @@ func TestInvoiceHubMutationRendersOneAtomicDetailReplacement(t *testing.T) {
 
 	templates := template.Must(template.New("test").Parse(`
 {{define "faturas-content"}}<section id="faturas-content" {{if .OOBContent}}hx-swap-oob="outerHTML"{{end}}>R$ {{.Total.Reais}}{{.Total.Cents}}</section>{{end}}
+{{define "faturas-index-state"}}<div id="faturas-index-state" hx-swap-oob="outerHTML">{{template "faturas-content" .SelectedFatura}}</div>{{end}}
 {{define "invoice-summary"}}<section id="invoice-summary" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-transactions"}}<section id="invoice-transactions" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
-{{define "dashboard-cards"}}<section id="dashboard-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 `))
 	h := TransactionHandler{DB: db, Templates: templates, WorkspaceID: "ws-test", UserID: "user-test"}
 	req := httptest.NewRequest(http.MethodPost, "/transacoes/purchase-test/salvar", nil)
@@ -2896,7 +2899,7 @@ func TestInvoiceHubMutationRendersOneAtomicDetailReplacement(t *testing.T) {
 		t.Fatalf("render invoice hub context: %v", err)
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, `id="faturas-content" hx-swap-oob="outerHTML"`) {
+	if !strings.Contains(body, `id="faturas-index-state" hx-swap-oob="outerHTML"`) {
 		t.Fatalf("invoice hub response must atomically replace its content: %s", body)
 	}
 	if strings.Contains(body, `id="invoice-summary" hx-swap-oob="outerHTML"`) || strings.Contains(body, `id="invoice-transactions" hx-swap-oob="outerHTML"`) {
@@ -3043,9 +3046,6 @@ func TestHandlePagarFaturaRenderContemSecaoPagamentos(t *testing.T) {
 
 	templates := template.Must(template.New("test").Parse(`
 {{define "faturas-content"}}<main id="faturas-content">{{if .HasLegacyPaymentSummary}}legacy{{else if .HasPayments}}has-payments{{else}}empty{{end}}</main>{{end}}
-{{define "dashboard-balance"}}<section id="dashboard-balance" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
-{{define "dashboard-accounts"}}<section id="dashboard-accounts" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
-{{define "dashboard-cards"}}<section id="dashboard-cards" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-summary"}}<section id="invoice-summary" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 {{define "invoice-transactions"}}<section id="invoice-transactions" {{if .OOB}}hx-swap-oob="outerHTML"{{end}}></section>{{end}}
 `))
@@ -3072,8 +3072,11 @@ func TestHandlePagarFaturaRenderContemSecaoPagamentos(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
-	if !strings.Contains(rr.Body.String(), `hx-swap-oob="outerHTML"`) {
-		t.Fatalf("expected OOB dashboard fragments, got %q", rr.Body.String())
+	if strings.Contains(rr.Body.String(), `id="dashboard-`) {
+		t.Fatalf("invoice payment must not inject Dashboard markup, got %q", rr.Body.String())
+	}
+	if trigger := rr.Header().Get("HX-Trigger"); !strings.Contains(trigger, "refreshFinancials") {
+		t.Fatalf("HX-Trigger = %q, want refreshFinancials", trigger)
 	}
 
 	var ipCount int

@@ -32,6 +32,16 @@ nao revela o caminho absoluto do servidor e nao cria links adicionais. A
 presenca na lista nao comprova integridade nem substitui um teste periodico de
 restore. Dias em que a aplicacao ficou desligada nao podem ser recriados.
 
+## Restauração pelo painel
+
+O restore administrativo normal exige o arquivo `.db` e o manifesto `.manifest.json` gerado junto do backup pré-migration. O painel valida o nome do arquivo, SHA-256, tamanho, schema, `integrity_check` e `foreign_key_check` antes de substituir o banco. Manifesto ausente, inválido ou de outro arquivo bloqueia a restauração.
+
+O export rápido do painel gera apenas um `.db` avulso. Para restaurá-lo no fluxo normal, forneça também um `.manifest.json` correspondente; caso contrário, use o modo legado explícito.
+
+Backups antigos ou sem manifesto usam o **modo legado explícito** do formulário. Ele não é ativado automaticamente pela ausência do arquivo e continua validando schema, integridade e foreign keys. O checksum do manifesto é evidência de integridade, não autenticação contra adulteração intencional.
+
+Restaurar um backup descarta todas as gravações feitas depois dele. Use um binário compatível com o schema restaurado e preserve uma cópia do banco atual se houver dados recentes a analisar.
+
 ## Backup operacional
 
 O pacote operacional canonico reune, em um unico diretorio versionado:
@@ -62,8 +72,9 @@ Nao selecione o backup por glob, timestamp aproximado ou "mais recente".
 
 `scripts/update-contabase-docker.sh` para a stack e, quando encontra
 `data/contabase.db`, cria obrigatoriamente um pacote canonico antes de alterar
-configuracao, checkout ou runtime. O helper vem do commit Git alvo e sua
-identidade e conferida antes do uso.
+configuracao, checkout ou runtime. Os updaters Release e Source da Beta 8
+seguem o mesmo contrato fail-closed de backup canonico antes da mutacao. O
+helper vem do commit Git alvo e sua identidade e conferida antes do uso.
 
 - banco e uploads ausentes: estado inexistente, update pode continuar sem pacote;
 - banco ausente e uploads presentes: estado inconsistente, update falha;
@@ -71,6 +82,12 @@ identidade e conferida antes do uso.
 - `--no-backup`: recusado; nao existe bypass de backup.
 
 O resumo mostra o caminho do pacote, o `backup_id` e a versao anterior gravada.
+
+Na Beta 8, o updater tambem publica o snapshot pre-migration com
+`.manifest.json` de integridade. Preserve o caminho/ID do pacote e o manifesto:
+eles sao a referencia para o restore normal e para o retorno explicito a Beta 7.
+O schema 83 remove as estruturas de Reservas e nao possui down migration; depois
+que o banco for aberto pela Beta 8, nao existe downgrade in-place.
 
 ## O que precisa ser preservado
 

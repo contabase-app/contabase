@@ -1359,7 +1359,7 @@ func TestInstallmentAllScopeOnInvoiceDoesNotRegress(t *testing.T) {
 	seedRecurringExpenseCategory(t, db)
 
 	insertHandler := deleteHandler(t, db)
-	_, err := insertHandler.insertTransaction("EXPENSE", 12000, desc, "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-06-24")), "card-test", "", "cat-expense-rec", 3, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false)
+	_, err := insertHandler.insertTransaction("EXPENSE", 12000, desc, "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-06-24")), "card-test", "", "cat-expense-rec", 3, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "")
 	if err != nil {
 		t.Fatalf("insert installment: %v", err)
 	}
@@ -1400,7 +1400,7 @@ func TestInstallmentFutureScopeOnInvoiceDoesNotRegress(t *testing.T) {
 	seedRecurringExpenseCategory(t, db)
 
 	insertHandler := deleteHandler(t, db)
-	_, err := insertHandler.insertTransaction("EXPENSE", 12000, desc, "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-06-24")), "card-test", "", "cat-expense-rec", 3, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "", false)
+	_, err := insertHandler.insertTransaction("EXPENSE", 12000, desc, "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-06-24")), "card-test", "", "cat-expense-rec", 3, "paid", false, "", "", OptionalCivilWriteDate{}, nil, "")
 	if err != nil {
 		t.Fatalf("insert installment: %v", err)
 	}
@@ -1438,7 +1438,7 @@ func TestInstallmentAllScopeNoInvoiceDoesNotRegress(t *testing.T) {
 	seedRecurringExpenseCategory(t, db)
 
 	insertHandler := deleteHandler(t, db)
-	_, err := insertHandler.insertTransaction("EXPENSE", 12000, desc, "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-06-24")), "checking-test", "", "cat-expense-rec", 3, "pending", false, "", "", OptionalCivilWriteDate{}, nil, "", false)
+	_, err := insertHandler.insertTransaction("EXPENSE", 12000, desc, "", "", civilWriteDateFromLegacyUnix(testUnixDate("2026-06-24")), "checking-test", "", "cat-expense-rec", 3, "pending", false, "", "", OptionalCivilWriteDate{}, nil, "")
 	if err != nil {
 		t.Fatalf("insert installment: %v", err)
 	}

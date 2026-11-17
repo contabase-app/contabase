@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
+# O fluxo le secrets; mantenha xtrace desativado ate o fim do processo.
+set +x
 set -Eeuo pipefail
+
+if [ "${CONTABASE_BOOTSTRAP_CONTRACT_VERSION+x}" = x ] \
+  || [ "${CONTABASE_BOOTSTRAP_ADAPTER+x}" = x ] \
+  || [ "${CONTABASE_INSTALL_MODE:-}" = source-bootstrap ]; then
+  printf '%s\n' 'Erro: Source Bootstrap indisponivel nesta fase; instalacao adiada e sem atualizacao suportada.' >&2
+  printf '%s\n' 'Nenhuma alteracao foi executada. Para VPS/LXC, use o binario da Release; Source legado e um metodo separado.' >&2
+  exit 1
+fi
 
 if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
   GREEN="$(tput setaf 2)"
@@ -16,20 +26,37 @@ else
 fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+STATE_LIB="${REPO_ROOT}/scripts/lib/contabase-install-state.sh"
+[ -f "$STATE_LIB" ] || { echo "Erro: biblioteca de estado ausente: $STATE_LIB" >&2; exit 1; }
+# shellcheck source=lib/contabase-install-state.sh
+. "$STATE_LIB" || { echo "Erro: falha ao carregar o contrato de estado." >&2; exit 1; }
 ENV_TEMPLATE="${REPO_ROOT}/docs/binario/contabase.env.example"
-ENV_FILE="/etc/contabase/contabase.env"
-STATE_FILE="/etc/contabase/install-state.env"
-SERVICE_FILE="/etc/systemd/system/contabase.service"
-APP_DIR="/opt/contabase"
-DATA_DIR="${DATA_DIR:-/var/lib/contabase}"
+CONFIG_DIR="${CONTABASE_CONFIG_DIR:-/etc/contabase}"
+ENV_FILE="${CONFIG_DIR}/contabase.env"
+STATE_FILE="${CONFIG_DIR}/install-state.env"
+SERVICE_FILE="${CONTABASE_SERVICE_FILE:-/etc/systemd/system/contabase.service}"
+APP_DIR="${CONTABASE_INSTALL_DIR:-/opt/contabase}"
+if [ -n "${CONTABASE_DATA_DIR:-}" ]; then
+  DATA_DIR="$CONTABASE_DATA_DIR"
+else
+  DATA_DIR="${DATA_DIR:-/var/lib/contabase}"
+fi
 UPLOADS_DIR="${UPLOADS_DIR:-${DATA_DIR}/uploads}"
 PROFILE_UPLOADS_DIR="${UPLOADS_DIR}/profile"
 WORKSPACE_UPLOADS_DIR="${UPLOADS_DIR}/workspaces"
 BACKUPS_DIR="${DATA_DIR}/backups"
+PORT="${CONTABASE_PORT:-8080}"
 TMP_BINARY="/tmp/contabase"
-HEALTH_URL="http://127.0.0.1:8080/health"
+HEALTH_URL="http://127.0.0.1:${PORT}/health"
 APP_VERSION=""
 INSTALL_CHANNEL="${CONTABASE_CHANNEL:-}"
+CONTABASE_HOST_BIND_VALUE="${CONTABASE_HOST_BIND:-}"
+CONTABASE_NETWORK_PROFILE_VALUE="${CONTABASE_NETWORK_PROFILE:-}"
+CONTABASE_ACCESS_MODE_VALUE="${CONTABASE_ACCESS_MODE:-}"
+BOOTSTRAP_MODE=false
+if [ "${CONTABASE_BOOTSTRAP_CONTRACT_VERSION:-}" = "1" ]; then
+  BOOTSTRAP_MODE=true
+fi
 
 error_handler() {
   echo ""
@@ -115,7 +142,17 @@ write_install_state() {
   local channel="$2"
   local version="$3"
   local repo_path="$4"
+  local kind="${5:-}"
+  local ref="${6:-}"
+  local commit="${7:-}"
+  local origin="${8:-}"
   local tmpfile
+
+  if [ "$method" = "source" ]; then
+    state_write_atomic "$STATE_FILE" "source" "$channel" "$version" "$repo_path" \
+      "$kind" "$ref" "$commit" "$origin" || return 1
+    return 0
+  fi
 
   install -d -o root -g root -m 0755 /etc/contabase
   tmpfile="$(mktemp "${TMPDIR:-/tmp}/contabase-install-state.XXXXXX")"
@@ -125,6 +162,22 @@ write_install_state() {
     printf 'CONTABASE_CHANNEL=%s\n' "$channel"
     printf 'CONTABASE_INSTALLED_VERSION=%s\n' "$version"
     printf 'CONTABASE_REPO_PATH=%s\n' "$repo_path"
+    if [ "$BOOTSTRAP_MODE" = true ] && [ "$method" = "source-bootstrap" ]; then
+      printf 'CONTABASE_COMMIT=%s\n' "$CONTABASE_COMMIT"
+      printf 'CONTABASE_BOOTSTRAP_CONTRACT_VERSION=1\n'
+      printf 'CONTABASE_BOOTSTRAP_ADAPTER=source\n'
+      printf 'CONTABASE_SOURCE_ARCHIVE_SHA256=%s\n' "$CONTABASE_SOURCE_ARCHIVE_SHA256"
+      printf 'CONTABASE_SOURCE_ARCHIVE_KIND=%s\n' "$CONTABASE_SOURCE_ARCHIVE_KIND"
+      printf 'CONTABASE_HELPER_SHA256=%s\n' "$CONTABASE_HELPER_SHA256"
+      printf 'CONTABASE_NETWORK_PROFILE=%s\n' "$CONTABASE_NETWORK_PROFILE_VALUE"
+      printf 'CONTABASE_ACCESS_MODE=%s\n' "$CONTABASE_ACCESS_MODE_VALUE"
+      printf 'CONTABASE_HOST_BIND=%s\n' "$CONTABASE_HOST_BIND_VALUE"
+      printf 'CONTABASE_PORT=%s\n' "$PORT"
+      printf 'CONTABASE_INSTALL_DIR=%s\n' "$APP_DIR"
+      printf 'CONTABASE_DATA_DIR=%s\n' "$DATA_DIR"
+      printf 'CONTABASE_CONFIG_DIR=%s\n' "$CONFIG_DIR"
+      printf 'CONTABASE_UPDATE_SUPPORT=none\n'
+    fi
   } > "$tmpfile"
   install -o root -g root -m 0644 "$tmpfile" "$STATE_FILE"
   rm -f "$tmpfile"
@@ -167,9 +220,17 @@ check_linux_systemd() {
   fi
 }
 
+require_flock() {
+  if ! command -v flock >/dev/null 2>&1; then
+    log_error "Erro: flock obrigatorio para atualizacao segura. Instale util-linux antes de continuar."
+    exit 1
+  fi
+}
+
 require_commands() {
   local cmd
   local missing=()
+  require_flock
   for cmd in git go node npm curl systemctl sqlite3 openssl tar install; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       missing+=("$cmd")
@@ -251,9 +312,18 @@ ensure_group_user() {
 }
 
 ensure_directories() {
-  install -d -o root -g root -m 0755 "$APP_DIR"
-  install -d -o root -g root -m 0755 /etc/contabase
-  install -d -o contabase -g contabase -m 0750 "$DATA_DIR"
+  if [ "$BOOTSTRAP_MODE" = true ]; then
+    bootstrap_create_dir_exclusive "$APP_DIR" root root 0755 \
+      || { log_error "Erro: nao foi possivel criar ${APP_DIR} sem sobrescrever."; exit 1; }
+    bootstrap_create_dir_exclusive "$CONFIG_DIR" root root 0755 \
+      || { log_error "Erro: nao foi possivel criar ${CONFIG_DIR} sem sobrescrever."; exit 1; }
+    bootstrap_create_dir_exclusive "$DATA_DIR" contabase contabase 0750 \
+      || { log_error "Erro: nao foi possivel criar ${DATA_DIR} sem sobrescrever."; exit 1; }
+  else
+    install -d -o root -g root -m 0755 "$APP_DIR"
+    install -d -o root -g root -m 0755 "$CONFIG_DIR"
+    install -d -o contabase -g contabase -m 0750 "$DATA_DIR"
+  fi
   install -d -o contabase -g contabase -m 0750 "$UPLOADS_DIR"
   install -d -o contabase -g contabase -m 0750 "$PROFILE_UPLOADS_DIR"
   install -d -o contabase -g contabase -m 0750 "$WORKSPACE_UPLOADS_DIR"
@@ -261,19 +331,19 @@ ensure_directories() {
 }
 
 render_default_env() {
-  cat > "$ENV_FILE" <<'EOF'
+  cat > "$ENV_FILE" <<EOF
 # ContaBase binary/systemd defaults
 APP_ENV=production
 APP_DEBUG=false
-PORT=8080
-DATABASE_URL=file:/var/lib/contabase/contabase.db
-DATA_DIR=/var/lib/contabase
-DB_FILE=/var/lib/contabase/contabase.db
-UPLOADS_DIR=/var/lib/contabase/uploads
-APP_BASE_URL=https://financeiro.seu-dominio.com
-ALLOWED_HOSTS=financeiro.seu-dominio.com
-TRUSTED_PROXIES=
-CONTABASE_ACCESS_MODE=proxy
+PORT=${PORT}
+DATABASE_URL=file:${DATA_DIR}/contabase.db
+DATA_DIR=${DATA_DIR}
+DB_FILE=${DATA_DIR}/contabase.db
+UPLOADS_DIR=${DATA_DIR}/uploads
+APP_BASE_URL=${APP_BASE_URL:-https://financeiro.seu-dominio.com}
+ALLOWED_HOSTS=${ALLOWED_HOSTS:-financeiro.seu-dominio.com}
+TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+CONTABASE_ACCESS_MODE=${CONTABASE_ACCESS_MODE:-proxy}
 CONTABASE_FEATURE_INVESTMENTS=false
 CONTABASE_SETUP_TOKEN=__PREENCHA_APENAS_NO_SETUP_INICIAL__
 AUTH_ENCRYPTION_KEY=
@@ -283,7 +353,15 @@ EOF
 
 ensure_env_file() {
   if [ ! -f "$ENV_FILE" ]; then
-    if [ -f "$ENV_TEMPLATE" ]; then
+    if [ "$BOOTSTRAP_MODE" = true ]; then
+      if [ -f "$ENV_TEMPLATE" ]; then
+        (set -o noclobber; cat "$ENV_TEMPLATE" > "$ENV_FILE") \
+          || { log_error "Erro: nao foi possivel criar ${ENV_FILE} sem sobrescrever."; exit 1; }
+      else
+        (set -o noclobber; render_default_env) \
+          || { log_error "Erro: nao foi possivel criar ${ENV_FILE} sem sobrescrever."; exit 1; }
+      fi
+    elif [ -f "$ENV_TEMPLATE" ]; then
       cp "$ENV_TEMPLATE" "$ENV_FILE"
     else
       render_default_env
@@ -455,15 +533,16 @@ set_secret_value_if_missing_or_invalid() {
 ensure_env_values() {
   set_env_value_if_missing "APP_ENV" "production"
   set_env_value_if_missing "APP_DEBUG" "false"
-  set_env_value_if_missing "PORT" "8080"
-  set_env_value_if_missing "DATABASE_URL" "file:/var/lib/contabase/contabase.db"
-  set_env_value_if_missing "DATA_DIR" "/var/lib/contabase"
-  set_env_value_if_missing "DB_FILE" "/var/lib/contabase/contabase.db"
-  set_env_value_if_missing "UPLOADS_DIR" "/var/lib/contabase/uploads"
-  set_env_value_if_missing "APP_BASE_URL" "https://financeiro.seu-dominio.com"
-  set_env_value_if_missing "ALLOWED_HOSTS" "financeiro.seu-dominio.com"
-  set_env_value_if_missing "TRUSTED_PROXIES" ""
-  set_env_value_if_missing "CONTABASE_ACCESS_MODE" "proxy"
+  set_env_value_if_missing "PORT" "$PORT"
+  set_env_value_if_missing "DATABASE_URL" "file:${DATA_DIR}/contabase.db"
+  set_env_value_if_missing "DATA_DIR" "$DATA_DIR"
+  set_env_value_if_missing "DB_FILE" "${DATA_DIR}/contabase.db"
+  set_env_value_if_missing "UPLOADS_DIR" "${DATA_DIR}/uploads"
+  set_env_value_if_missing "APP_BASE_URL" "${APP_BASE_URL:-https://financeiro.seu-dominio.com}"
+  set_env_value_if_missing "ALLOWED_HOSTS" "${ALLOWED_HOSTS:-financeiro.seu-dominio.com}"
+  set_env_value_if_missing "TRUSTED_PROXIES" "${TRUSTED_PROXIES:-}"
+  set_env_value_if_missing "CONTABASE_ACCESS_MODE" "${CONTABASE_ACCESS_MODE:-proxy}"
+  set_env_value_if_missing "CONTABASE_FEATURE_INVESTMENTS" "false"
   set_secret_value_if_missing_or_invalid "CONTABASE_SETUP_TOKEN" "$(generate_setup_token)"
   set_secret_value_if_missing_or_invalid "AUTH_ENCRYPTION_KEY" "$(generate_auth_key)"
   set_secret_value_if_missing_or_invalid "SECURITY_MASTER_KEY" "$(generate_master_key)"
@@ -487,6 +566,14 @@ build_release_binary() {
 }
 
 install_bundle() {
+  if [ "$BOOTSTRAP_MODE" = true ]; then
+    [ ! -e "${APP_DIR}/templates" ] && [ ! -L "${APP_DIR}/templates" ] \
+      || { log_error "Erro: ${APP_DIR}/templates ja existe; instalacao inicial bloqueada."; exit 1; }
+    [ ! -e "${APP_DIR}/assets" ] && [ ! -L "${APP_DIR}/assets" ] \
+      || { log_error "Erro: ${APP_DIR}/assets ja existe; instalacao inicial bloqueada."; exit 1; }
+    [ ! -e "${APP_DIR}/contabase" ] && [ ! -L "${APP_DIR}/contabase" ] \
+      || { log_error "Erro: ${APP_DIR}/contabase ja existe; instalacao inicial bloqueada."; exit 1; }
+  fi
   install -o root -g root -m 0755 "$TMP_BINARY" "${APP_DIR}/contabase"
   rm -rf "${APP_DIR}/templates" "${APP_DIR}/assets"
   cp -R templates "${APP_DIR}/templates"
@@ -500,7 +587,14 @@ install_bundle() {
 }
 
 render_service_file() {
-  cat > "$SERVICE_FILE" <<'EOF'
+  local network_lines=""
+  if [ "$BOOTSTRAP_MODE" = true ]; then
+    [ ! -e "$SERVICE_FILE" ] && [ ! -L "$SERVICE_FILE" ] \
+      || { log_error "Erro: unit systemd apareceu durante a instalacao; operacao bloqueada."; exit 1; }
+    network_lines="$(bootstrap_unit_network_lines)" \
+      || { log_error "Erro: perfil de rede sem restricao systemd suportada."; exit 1; }
+  fi
+  cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=ContaBase - Base Financeira Privada
 After=network.target
@@ -509,16 +603,21 @@ After=network.target
 Type=simple
 User=contabase
 Group=contabase
-WorkingDirectory=/opt/contabase
-EnvironmentFile=/etc/contabase/contabase.env
-ExecStart=/opt/contabase/contabase
+WorkingDirectory=${APP_DIR}
+EnvironmentFile=${ENV_FILE}
+ExecStart=${APP_DIR}/contabase
 Restart=on-failure
 RestartSec=5
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 NoNewPrivileges=true
-ReadWritePaths=/var/lib/contabase
+ReadWritePaths=${DATA_DIR}
+EOF
+  if [ -n "$network_lines" ]; then
+    printf '%s\n' "$network_lines" >> "$SERVICE_FILE"
+  fi
+  cat >> "$SERVICE_FILE" <<'EOF'
 
 [Install]
 WantedBy=multi-user.target
@@ -564,12 +663,27 @@ print_summary() {
   echo -e "${BLUE}Resumo final:${NC}"
   echo "Commit fonte:      $(git log --oneline -1)"
   echo "Versao:            ${APP_VERSION}"
+  if [ "$BOOTSTRAP_MODE" = true ]; then
+    echo "Metodo:            Source Bootstrap (experimental)"
+    echo "Atualizacao:       nao suportada"
+  else
+    echo "Metodo:            Source legado (checkout persistente)"
+    echo "Atualizacao:       contabase-update / update-contabase-source.sh"
+  fi
   echo "Binario:           ${APP_DIR}/contabase"
   echo "Env:               ${ENV_FILE}"
   echo "Servico:           ${SERVICE_FILE}"
   echo "Healthcheck:       ${HEALTH_URL}"
   echo "Status do servico: $(systemctl is-active contabase 2>/dev/null || echo desconhecido)"
   echo ""
+  if [ "$BOOTSTRAP_MODE" = true ]; then
+    log_warn "Source Bootstrap e experimental e NAO possui atualizacao automatica suportada."
+    log_warn "Nao confundir com Source legado; esta instalacao nao recebe contabase-update."
+  else
+    log_warn "Source Bootstrap e um metodo separado, experimental, sem atualizacao automatica suportada."
+    log_warn "Nao confundir este Source legado com Source Bootstrap."
+  fi
+  log_warn "Para novas instalacoes VPS/LXC, prefira o binario da Release."
   log_warn "Edite ${ENV_FILE} para ajustar APP_BASE_URL, ALLOWED_HOSTS, TRUSTED_PROXIES e CONTABASE_ACCESS_MODE."
   log_warn "Apos concluir o setup inicial, remova ou comente CONTABASE_SETUP_TOKEN em ${ENV_FILE} e reinicie o servico."
   log_warn "Configure backup regular antes de operar com dados reais."
@@ -577,171 +691,145 @@ print_summary() {
 
 install_update_command() {
   local update_wrapper="/usr/local/bin/contabase-update"
-  local mode_file="/etc/contabase/install-mode"
+  local mode_file="${CONTABASE_MODE_FILE:-${CONFIG_DIR}/install-mode}"
   local repo_path installed_channel wrapper_source
   repo_path="$REPO_ROOT"
   installed_channel="$(infer_install_channel)"
   wrapper_source="${repo_path}/scripts/lib/contabase-update-wrapper.sh"
 
-  write_install_state "source" "$installed_channel" "$APP_VERSION" "$repo_path"
+  if [ "$BOOTSTRAP_MODE" != true ] \
+    && { [ ! -f "$wrapper_source" ] || [ -L "$wrapper_source" ]; }; then
+    log_error "Erro: dispatcher autenticado ausente ou inseguro: $wrapper_source"
+    log_error "Nenhum contabase-update foi instalado ou substituido."
+    return 1
+  fi
+
+  if [ "$BOOTSTRAP_MODE" = true ]; then
+    write_install_state "source-bootstrap" "$installed_channel" "$APP_VERSION" ""
+    printf '%s\n' "source-bootstrap" > "$mode_file"
+    chown root:root "$mode_file" 2>/dev/null || true
+    chmod 0644 "$mode_file"
+    echo ""
+    log_warn "Atualizacao automatica NAO instalada para este metodo."
+    log_warn "O updater Source legado exige branch/upstream e rejeita HEAD destacado."
+    log_warn "Esta instalacao permanece BLOQUEADA para producao ate homologacao do update."
+    return 0
+  fi
+
+  write_install_state "source" "$installed_channel" "$APP_VERSION" "$repo_path" \
+    "$PROVENANCE_KIND" "$PROVENANCE_REF" "$PROVENANCE_COMMIT" "$PROVENANCE_ORIGIN"
   printf '%s\n' "source" > "$mode_file"
   printf '%s\n' "$repo_path" >> "$mode_file"
   chown root:root "$mode_file" 2>/dev/null || true
   chmod 0644 "$mode_file"
 
-  if [ -f "$wrapper_source" ]; then
-    install -o root -g root -m 0755 "$wrapper_source" "$update_wrapper"
-    if [ ! -e /usr/local/bin/cb-update ]; then
-      ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
-    fi
-    echo ""
-    echo -e "${GREEN}Comando de atualizacao instalado:${NC}"
-    echo "  sudo contabase-update"
-    echo "  sudo cb-update"
-    return 0
-  fi
-
-  cat > "$update_wrapper" <<'WRAPPER_EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-MODE_FILE="/etc/contabase/install-mode"
-PUBLIC_RAW_BASE="${CONTABASE_RAW_BASE:-https://raw.githubusercontent.com/contabase-app/contabase}"
-
-say() { printf '%s\n' "$*"; }
-
-usage() {
-  cat <<EOF
-Uso:
-  sudo contabase-update [VERSAO]
-  sudo contabase-update vMAJOR.MINOR.PATCH[-beta.N]
-
-Atualiza o ContaBase detectando automaticamente o modo de instalacao
-(binary, docker ou source) e chamando o script de update correto.
-
-Opcional: sudo cb-update (atalho curto).
-
-Variaveis de ambiente:
-  CONTABASE_ASSUME_YES=1   Modo nao interativo (quando suportado).
-EOF
-}
-
-if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  usage
-  exit 0
-fi
-
-if [ ! -f "$MODE_FILE" ]; then
-  say "Nao foi possivel detectar o modo de instalacao do ContaBase."
-  say "Arquivo ausente: $MODE_FILE"
-  say ""
-  say "Se voce instalou manualmente, execute o script de update correspondente:"
-  say "  Release/LXC:  sudo env CONTABASE_VERSION=vX.Y.Z bash scripts/update-contabase-release.sh"
-  say "  Docker:       ./scripts/update-contabase-docker.sh"
-  say "  Source:       sudo ./scripts/update-contabase-source.sh"
-  exit 1
-fi
-
-MODE="$(head -n1 "$MODE_FILE" | awk '{print $1}' | tr -d '[:space:]')"
-
-case "$MODE" in
-  binary)
-    if [ "$(id -u)" -ne 0 ]; then
-      say "Este modo exige root. Execute com sudo:"
-      say "  sudo contabase-update [VERSAO]"
-      exit 1
-    fi
-
-    VERSION="${1:-}"
-    if [ -z "$VERSION" ]; then
-      if [ -t 0 ]; then
-        read -r -p "Versao para atualizar (ex.: vMAJOR.MINOR.PATCH[-beta.N]): " VERSION
-      else
-        say "Erro: informe a versao. Exemplo: sudo contabase-update vMAJOR.MINOR.PATCH[-beta.N]"
-        exit 1
-      fi
-    fi
-
-    case "$VERSION" in
-      *-internal*) say "Erro: versoes com -internal sao privadas."; exit 1 ;;
-    esac
-    if [[ ! "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
-      say "Erro: versao invalida: $VERSION"
-      exit 1
-    fi
-
-    TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/contabase-update.XXXXXX")"
-    # shellcheck disable=SC2064
-    trap 'rm -rf "$TMP_DIR"' EXIT
-
-    INSTALL_SCRIPT="${TMP_DIR}/install.sh"
-    INSTALL_URL="${PUBLIC_RAW_BASE}/${VERSION}/scripts/install.sh"
-
-    say "Baixando instalador da versao ${VERSION}..."
-    if ! curl --fail --location --silent --show-error \
-      --proto '=https' --tlsv1.2 \
-      "$INSTALL_URL" -o "$INSTALL_SCRIPT"; then
-      say "Erro: nao foi possivel baixar o instalador da versao ${VERSION}."
-      exit 1
-    fi
-
-    say "Executando atualizacao para ${VERSION}..."
-    exec env \
-      CONTABASE_INSTALL_METHOD=update-release \
-      CONTABASE_VERSION="$VERSION" \
-      CONTABASE_ASSUME_YES="${CONTABASE_ASSUME_YES:-0}" \
-      bash "$INSTALL_SCRIPT"
-    ;;
-
-  docker)
-    REPO_PATH="$(sed -n '2p' "$MODE_FILE" 2>/dev/null | tr -d '[:space:]')"
-    if [ -z "$REPO_PATH" ] || [ ! -d "$REPO_PATH" ]; then
-      say "Erro: repositorio Docker nao encontrado."
-      say "Va ate o diretorio do ContaBase e execute:"
-      say "  ./scripts/update-contabase-docker.sh"
-      exit 1
-    fi
-    cd "$REPO_PATH"
-    exec ./scripts/update-contabase-docker.sh "$@"
-    ;;
-
-  source)
-    if [ "$(id -u)" -ne 0 ]; then
-      say "Este modo exige root. Execute com sudo:"
-      say "  sudo contabase-update"
-      exit 1
-    fi
-
-    REPO_PATH="$(sed -n '2p' "$MODE_FILE" 2>/dev/null | tr -d '[:space:]')"
-    if [ -z "$REPO_PATH" ] || [ ! -d "$REPO_PATH" ]; then
-      say "Erro: repositorio source nao encontrado."
-      say "Va ate o diretorio do ContaBase e execute:"
-      say "  sudo ./scripts/update-contabase-source.sh"
-      exit 1
-    fi
-    cd "$REPO_PATH"
-    exec ./scripts/update-contabase-source.sh "$@"
-    ;;
-
-  *)
-    say "Modo de instalacao desconhecido: $MODE"
-    say "Valores aceitos: binary, docker, source"
-    exit 1
-    ;;
-esac
-WRAPPER_EOF
-
-  chown root:root "$update_wrapper" 2>/dev/null || true
-  chmod 0755 "$update_wrapper"
-
+  install -o root -g root -m 0755 "$wrapper_source" "$update_wrapper" || {
+    log_error "Erro: nao foi possivel instalar o dispatcher autenticado."
+    return 1
+  }
   if [ ! -e /usr/local/bin/cb-update ]; then
     ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
   fi
-
   echo ""
   echo -e "${GREEN}Comando de atualizacao instalado:${NC}"
   echo "  sudo contabase-update"
   echo "  sudo cb-update"
+  return 0
+}
+
+verify_running_source() {
+  [ "$BOOTSTRAP_MODE" = true ] || return 0
+  bootstrap_verify_running_binary "$APP_DIR" "$APP_VERSION" \
+    || { log_error "Erro: runtime nao corresponde ao binario e a versao instalados."; exit 1; }
+  if command -v go >/dev/null 2>&1 && go version -m "$APP_DIR/contabase" >/dev/null 2>&1; then
+    if ! go version -m "$APP_DIR/contabase" | grep -F -- "Version=${APP_VERSION}" >/dev/null 2>&1; then
+      log_error "Erro: binario em execucao nao registra a versao ${APP_VERSION}."
+      exit 1
+    fi
+  fi
+  log_ok "Runtime confirmado: processo principal executa ${APP_DIR}/contabase (${APP_VERSION})."
+}
+
+bootstrap_source_main() {
+  local lib_path archive
+  [ "$#" -eq 0 ] || { log_error "Erro: adaptador Bootstrap nao aceita argumentos avulsos."; exit 1; }
+  lib_path="${REPO_ROOT}/scripts/lib/contabase-bootstrap-adapter.sh"
+  bootstrap_verify_file_digest "${BASH_SOURCE[0]}" "$CONTABASE_HELPER_SHA256" "helper Source" \
+    || { log_error "Erro: helper Source divergente do snapshot homologado."; exit 1; }
+  bootstrap_verify_file_digest "$lib_path" "$CONTABASE_ADAPTER_LIB_SHA256" "biblioteca do adaptador" \
+    || { log_error "Erro: biblioteca do adaptador divergente do snapshot homologado."; exit 1; }
+  bootstrap_validate_source_contract || exit 1
+  bootstrap_validate_network source || exit 1
+  bootstrap_validate_paths source || exit 1
+  bootstrap_validate_no_existing_state || exit 1
+
+  [ "$(cd "${CONTABASE_BOOTSTRAP_CHECKOUT:-}" 2>/dev/null && pwd -P)" = "$REPO_ROOT" ] \
+    || { log_error "Erro: diretorio do helper diverge do checkout preparado."; exit 1; }
+  archive="${CONTABASE_SOURCE_ARCHIVE:-}"
+  bootstrap_verify_file_digest "$archive" "$CONTABASE_SOURCE_ARCHIVE_SHA256" "archive Source" \
+    || { log_error "Erro: archive Source divergente do snapshot homologado."; exit 1; }
+  bootstrap_verify_checkout_identity "$REPO_ROOT" "${CONTABASE_VERSION}" "${CONTABASE_COMMIT}" \
+    || exit 1
+
+  require_root
+  require_repo_root
+  detect_app_version
+  [ "$APP_VERSION" = "$CONTABASE_VERSION" ] \
+    || { log_error "Erro: VERSION do checkout diverge da versao fixada."; exit 1; }
+
+  log_step "[1/8] Preflight de sistema e comandos"
+  check_linux_systemd
+  require_commands
+  require_node_version
+  require_go_version
+  log_ok "Preflight basico concluido."
+
+  log_step "[2/8] Preparando usuario e diretorios"
+  ensure_group_user
+  ensure_directories
+  log_ok "Usuario e diretorios preparados."
+
+  log_step "[3/8] Preparando ${ENV_FILE}"
+  ensure_env_file
+  ensure_env_values
+  set_env_value "PORT" "$PORT"
+  set_env_value "APP_BASE_URL" "$APP_BASE_URL"
+  set_env_value "ALLOWED_HOSTS" "$ALLOWED_HOSTS"
+  set_env_value "TRUSTED_PROXIES" "$TRUSTED_PROXIES"
+  set_env_value "CONTABASE_ACCESS_MODE" "$CONTABASE_ACCESS_MODE"
+  set_env_value "CONTABASE_FEATURE_INVESTMENTS" "false"
+  chown root:root "$ENV_FILE"
+  chmod 0600 "$ENV_FILE"
+  log_ok "Arquivo de ambiente preparado sem segredos em stdout."
+
+  TMP_BINARY="$(mktemp "${TMPDIR:-/tmp}/contabase-build.XXXXXX")" \
+    || { log_error "Erro: nao foi possivel criar temporario de build."; exit 1; }
+
+  log_step "[4/8] Validacoes locais de build"
+  run_local_validations
+  log_ok "npm ci, build CSS, go test e go build concluidos."
+
+  log_step "[5/8] Compilando binario final"
+  build_release_binary
+  log_ok "Binario final compilado em ${TMP_BINARY}."
+
+  log_step "[6/8] Instalando bundle da aplicacao"
+  install_bundle
+  rm -f "$TMP_BINARY"
+  log_ok "Binario, templates e assets instalados em ${APP_DIR}."
+
+  log_step "[7/8] Renderizando unit systemd"
+  render_service_file
+  log_ok "Unit escrita em ${SERVICE_FILE}."
+
+  log_step "[8/8] Ativando servico e validando healthcheck"
+  start_and_check_service
+  verify_running_source
+  log_ok "ContaBase instalado e saudavel."
+
+  install_update_command
+
+  print_summary
 }
 
 main() {
@@ -753,6 +841,11 @@ main() {
   require_root
   require_repo_root
   detect_app_version
+  if ! provenance_detect "$REPO_ROOT" "$APP_VERSION"; then
+    log_error "Nao foi possivel provar a Tag/branch, o commit ou a origem oficial do checkout."
+    log_error "Use um checkout de tag publica ou uma branch com upstream da origem oficial."
+    exit 1
+  fi
 
   log_step "[1/8] Preflight de sistema e comandos"
   check_linux_systemd
@@ -797,5 +890,15 @@ main() {
 
   print_summary
 }
+
+if [ "$BOOTSTRAP_MODE" = true ]; then
+  BOOTSTRAP_LIB="${REPO_ROOT}/scripts/lib/contabase-bootstrap-adapter.sh"
+  [ -f "$BOOTSTRAP_LIB" ] || { log_error "Erro: biblioteca do adaptador Bootstrap ausente."; exit 1; }
+  # shellcheck source=lib/contabase-bootstrap-adapter.sh
+  . "$BOOTSTRAP_LIB" || { log_error "Erro: falha ao carregar o contrato do adaptador Bootstrap."; exit 1; }
+  bootstrap_sanitized_reexec "${BASH_SOURCE[0]}" "$@"
+  bootstrap_source_main "$@"
+  exit $?
+fi
 
 main "$@"

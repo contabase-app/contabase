@@ -7,7 +7,6 @@ const vm = require('node:vm');
 // testes fixam os contratos que não são cobertos pelo render Go:
 //   - carregar o script duas vezes não duplica listeners nem embrulha
 //     closeBottomSheet outra vez;
-//   - as máscaras continuam globais (o picker inline de Lançamentos usa);
 //   - 422 mantém o sheet aberto, escreve a mensagem e foca o erro.
 function runtime() {
     const bodyListeners = [];
@@ -74,26 +73,6 @@ test('loading the controller twice keeps a single listener set and a single clos
 
     rt.window.closeBottomSheet();
     assert.equal(rt.closeCalls(), 1, 'closeBottomSheet must be wrapped exactly once');
-});
-
-test('contact masks remain global for the inline picker', () => {
-    const rt = runtime();
-
-    const documentInput = { value: '12345678900' };
-    rt.window.maskCnpjCpfContato(documentInput);
-    assert.equal(documentInput.value, '123.456.789-00');
-
-    const cnpjInput = { value: '12345678000190' };
-    rt.window.maskCnpjCpfContato(cnpjInput);
-    assert.equal(cnpjInput.value, '12.345.678/0001-90');
-
-    const phoneInput = { value: '11999998888' };
-    rt.window.maskPhoneContato(phoneInput);
-    assert.equal(phoneInput.value, '(11) 99999-8888');
-
-    const landline = { value: '1133334444' };
-    rt.window.maskPhoneContato(landline);
-    assert.equal(landline.value, '(11) 3333-4444');
 });
 
 test('422 keeps the sheet open, reports the message and focuses the error region', () => {

@@ -1,15 +1,16 @@
 {{define "ajuda-page"}}
 {{template "app-v2-document-head-start" .}}
+<link rel="stylesheet" href="{{assetPath "/assets/css/premium.css"}}">
 <link rel="stylesheet" href="{{assetPath "/assets/css/ajuda.css"}}">
 {{template "app-v2-document-head-end" .}}
 <main id="main-content" class="cb-v2-main cb-v2-ajuda-main" data-page-section="help" data-page-title="{{.Title}}">
     {{template "app-v2-appbar" .}}
     <div class="cb-v2-content cb-v2-ajuda-content">
-        <header class="cb-v2-ajuda-header">
+        <header class="cb-v2-ajuda-header ui-page-header">
             <div>
-                <p class="cb-v2-eyebrow">Suporte</p>
-                <h1>Central de ajuda</h1>
-                <p>Guias claros para usar o ContaBase com segurança e contexto.</p>
+                <p class="ui-eyebrow">Suporte</p>
+                <h1 class="ui-page-title">Central de ajuda</h1>
+                <p class="ui-page-description">Guias claros para usar o ContaBase com segurança e contexto.</p>
             </div>
         </header>
 
@@ -17,7 +18,7 @@
     <section class="cb-card-dense p-6 md:p-8">
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
             <div class="space-y-1.5">
-                <p class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-accent)]">Suporte ao Usuário</p>
+                <p class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-accent)] dark:text-[var(--ui-accent-text)]">Suporte ao Usuário</p>
                 <h2 class="text-xl md:text-2xl font-bold text-[var(--cb-text-main)]">Como podemos ajudar hoje?</h2>
                 <p class="text-sm text-[var(--cb-text-muted)] max-w-md">Documentação e guias práticos para compreensão das regras de negócio, métricas e relatórios do sistema.</p>
             </div>
@@ -79,7 +80,7 @@
                     <p class="leading-relaxed text-[var(--cb-text-muted)]">Usa pagamentos e recebimentos confirmados. O modo <span class="font-semibold">Realizado</span> considera o que já foi pago ou recebido; <span class="font-semibold">Previsão</span> soma pendências futuras.</p>
                 </article>
                 <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
-                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-accent)]">Competência / DRE</p>
+                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-accent)] dark:text-[var(--ui-accent-text)]">Competência / DRE</p>
                     <p class="leading-relaxed text-[var(--cb-text-muted)]">Usa a data de competência, isto é, a origem econômica do lançamento. Pode ser diferente do caixa quando a compra e o pagamento acontecem em meses distintos.</p>
                 </article>
                 <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
@@ -108,7 +109,7 @@
             <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">No Business, o Grupo Macro da categoria funciona como Natureza Econômica. Classificações erradas mudam onde o valor aparece no Relatório Contábil, nos alertas e nos PDFs.</p>
             <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs md:grid md:grid-cols-2 xl:grid-cols-4 md:gap-4 space-y-3 md:space-y-0">
                 <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
-                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-accent)]">Resultado operacional</p>
+                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-accent)] dark:text-[var(--ui-accent-text)]">Resultado operacional</p>
                     <p class="leading-relaxed text-[var(--cb-text-muted)]">Mostra o desempenho da operação por competência. Retiradas/Distribuição, Investimentos/Patrimonial e Investimentos/Outros ficam fora desse resultado.</p>
                 </article>
                 <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
@@ -173,75 +174,8 @@
             <h2 class="text-base font-bold text-[var(--cb-text-main)]">Categorias e Hierarquia</h2>
             <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">O sistema organiza o plano de contas em uma relação hierárquica para manter a consistência e a coerência dos lançamentos.</p>
             <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
-                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-accent)]">Categoria Pai:</span> Define o contexto macro e o Grupo Macro (ex: Alimentação).</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-accent)] dark:text-[var(--ui-accent-text)]">Categoria Pai:</span> Define o contexto macro e o Grupo Macro (ex: Alimentação).</p>
                 <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-text-muted)]">Categoria Filho:</span> Subcategorias de detalhe (ex: Supermercado, Restaurantes) que herdam automaticamente as parametrizações e o Grupo Macro do Pai.</p>
-            </div>
-        </section>
-
-        <!-- Caixinhas de Metas -->
-        <section id="caixinhas-metas"
-
-            class="bg-[var(--cb-surface-1)] border border-[var(--cb-border-subtle)] rounded-xl p-6 flex flex-col transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--cb-border-strong)] md:col-span-2 lg:col-span-3">
-            <div class="mb-4 flex h-11 w-11 items-center justify-center rounded-xl cb-tone-accent cb-tone-icon cb-tone-icon-bordered">
-                <i data-lucide="piggy-bank" class="h-5 w-5 text-[var(--cb-accent)]"></i>
-            </div>
-            <h2 class="text-base font-bold text-[var(--cb-text-main)]">Reservas de Metas</h2>
-            <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">As reservas são reservas virtuais com objetivos de curto, medio e longo prazo. <span class="font-semibold text-[var(--cb-accent)]">Reserva não é conta:</span> ela não guarda dinheiro de verdade — apenas bloqueia uma parte do seu saldo total para criar disciplina financeira.</p>
-
-            <!-- Saldos -->
-            <h3 class="mt-5 mb-2 text-sm font-bold text-[var(--cb-text-main)]">Os três saldos</h3>
-            <div class="mt-2 pt-2 border-t border-[var(--cb-border-subtle)] text-xs md:grid md:grid-cols-3 md:gap-4 space-y-3 md:space-y-0">
-                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
-                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-info)]">Saldo em Contas</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Soma do saldo atual de todas as suas contas que não são cartão de crédito. Representa o dinheiro real que você possui.</p>
-                </article>
-                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
-                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-warning)]">Saldo Reservado</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Valor separado virtualmente no ledger das reservas. Esse dinheiro ainda está nas suas contas, mas está comprometido com {{if $.IsBusiness}}suas metas{{else}}suas metas{{end}}.</p>
-                </article>
-                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
-                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-success)]">Saldo Disponível</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Saldo em Contas menos Saldo Reservado. Indica quanto dinheiro você tem livre para usar {{if $.IsBusiness}}sem comprometer seus orçamentos{{else}}sem comprometer suas metas{{end}}.</p>
-                </article>
-            </div>
-
-            <!-- Ações -->
-            <h3 class="mt-5 mb-2 text-sm font-bold text-[var(--cb-text-main)]">Ações disponíveis</h3>
-            <div class="mt-2 pt-2 border-t border-[var(--cb-border-subtle)] text-xs md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0">
-                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
-                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-accent)]">Aporte</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Aumenta o saldo reservado da reserva. O dinheiro sai do saldo disponível e passa a ser reserva virtual. <span class="font-semibold">Não altera o saldo real da conta.</span></p>
-                </article>
-                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
-                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-warning)]">Liberação de Reserva</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Reduz o saldo reservado e devolve valor ao saldo disponível. <span class="font-semibold">Não cria receita</span> — apenas desfaz a reserva.</p>
-                </article>
-                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
-                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-info)]">Consumo Automático</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Ao lançar uma despesa em categoria ou subcategoria vinculada à reserva, a reserva é consumida automaticamente. A despesa continua saindo da conta ou cartão real; a reserva apenas reduz a reserva.</p>
-                </article>
-                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
-                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-accent)]">Histórico / Extrato</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Clique no card da reserva para ver aportes, liberações, consumos automáticos e ajustes. Tudo registrado no ledger virtual da reserva.</p>
-                </article>
-            </div>
-
-            <!-- Excedente e Projeção -->
-            <h3 class="mt-5 mb-2 text-sm font-bold text-[var(--cb-text-main)]">Excedente e Projeção</h3>
-            <div class="mt-2 pt-2 border-t border-[var(--cb-border-subtle)] text-xs md:grid md:grid-cols-2 md:gap-4 space-y-3 md:space-y-0">
-                <article class="rounded-xl p-3.5 space-y-2 cb-tone-danger cb-tone-state-panel">
-                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-danger)]">Excedente</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">Ocorre quando o consumo ultrapassa o valor reservado. A reserva fica com saldo negativo e exibe <span class="font-semibold text-[var(--cb-danger)]">"Em excedente"</span>. Só acontece com confirmação explícita. Corrige com um novo aporte.</p>
-                </article>
-                <article class="rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3.5 space-y-2">
-                    <p class="text-[11px] font-bold tracking-wide text-[var(--cb-success)]">Rentabilidade Estimada</p>
-                    <p class="leading-relaxed text-[var(--cb-text-muted)]">É <span class="font-semibold">apenas projeção</span> — não altera saldo real, não cria receita. Use a taxa mensal (% a.m.) para estimar quanto tempo falta para atingir {{if $.IsBusiness}}a meta{{else}}a meta{{end}} com juros compostos.</p>
-                </article>
-            </div>
-
-            <div class="mt-5 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5">
-                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-accent)]">Data-alvo e aporte sugerido:</span> ao definir um prazo (mês/ano), a reserva calcula quanto você precisa aportar por mês para atingir {{if $.IsBusiness}}a meta{{else}}a meta{{end}}. Se já houver rentabilidade estimada, o cálculo considera os juros compostos.</p>
-                <p class="leading-relaxed text-[var(--cb-text-muted)]"><span class="font-semibold text-[var(--cb-text-muted)]">Recarga mensal automática:</span> quando configurada, a reserva recebe aportes automáticos todo dia 1º de cada mês, registrados no ledger como "Aporte Automático".</p>
             </div>
         </section>
 
@@ -255,7 +189,7 @@
             <h2 class="text-base font-bold text-[var(--cb-text-main)]">Motor Temporal Automático</h2>
             <p class="mt-2 text-sm leading-relaxed text-[var(--cb-text-muted)]">O ContaBase conta com um motor assíncrono que processa lógicas de contabilidade e orçamento na virada do mês.</p>
             <div class="mt-4 pt-4 border-t border-[var(--cb-border-subtle)] text-xs space-y-2.5 flex-1">
-                <p class="leading-relaxed text-[var(--cb-text-muted)]">Os limites de gastos são reiniciados e os aportes recorrentes das reservas são processados automaticamente todo dia 1º de cada mês.</p>
+                <p class="leading-relaxed text-[var(--cb-text-muted)]">Os limites de gastos são reiniciados automaticamente todo dia 1º de cada mês.</p>
             </div>
         </section>
 

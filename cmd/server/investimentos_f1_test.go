@@ -45,7 +45,7 @@ func TestF1CreationFormShowsBothModesAndRecordOnlyCreatesWithoutTransfer(t *test
 		"Transferir agora",
 		"Dinheiro já está na conta de investimento",
 		"Sem transferência automática",
-		`name="source_account_id" class="cb-input" required`,
+		`name="source_account_id" class="ui-select" required`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("creation form missing %q", want)

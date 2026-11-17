@@ -226,7 +226,7 @@ func TestTransactionRefundExactCallerFamilies(t *testing.T) {
 		}
 	})
 	t.Run("metas", func(t *testing.T) {
-		data, err := (&MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-test", UserID: "user-test"}).buildMetasData("", "limites")
+		data, err := (&MetasHandler{ActorRole: testMetasAdminRole, DB: db, WorkspaceID: "ws-test", UserID: "user-test"}).buildMetasData("")
 		if err != nil || len(data.Limites) != 1 || data.Limites[0].Spent.rawCents() != want {
 			t.Fatalf("limits=%v err=%v", data.Limites, err)
 		}

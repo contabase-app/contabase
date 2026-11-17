@@ -53,6 +53,8 @@ func TestContasPageUsesGlobalAppShell(t *testing.T) {
 		`id="payment-confirm-modal"`,
 		`/assets/css/contas.css?v=test`,
 		`/assets/js/payment-confirm.js?v=test`,
+		`A Transferir`,
+		`/contas?aba=transferir&partial=lista`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("contas page missing %q", expected)
@@ -253,8 +255,9 @@ func TestContasBodyRendersWithSummaryAndRefresh(t *testing.T) {
 
 	for _, want := range []string{
 		`id="contas-body"`,
-		`refreshFinancials`,
+		`hx-trigger="refreshFinancials from:body"`,
 		`hx-get="/contas?partial=content"`,
+		`hx-include="#contasFilters, #contas-list"`,
 		`hx-disinherit="*"`,
 		`id="contasFilters"`,
 		`id="contas-list"`,

@@ -310,7 +310,7 @@ html[data-input-modality="keyboard"] .sheet-file-input:focus {
 
 .sheet-file-input::file-selector-button {
     background: var(--cb-accent-soft);
-    color: var(--cb-accent);
+    color: var(--cb-accent-ink);
 }
 
 .dark .sheet-file-input {
@@ -319,7 +319,7 @@ html[data-input-modality="keyboard"] .sheet-file-input:focus {
 
 .dark .sheet-file-input::file-selector-button {
     background: var(--cb-accent-soft);
-    color: var(--cb-accent);
+    color: var(--cb-accent-ink);
 }
 
 .sheet-details-toggle {
@@ -397,12 +397,12 @@ html[data-input-modality="keyboard"] .sheet-file-input:focus {
 }
 
 #faturaQuickActions button.is-selected {
-    color: var(--cb-accent);
+    color: var(--cb-accent-ink);
     text-decoration-color: color-mix(in srgb, var(--cb-accent) 50%, transparent);
 }
 
 .dark #faturaQuickActions button.is-selected {
-    color: var(--cb-accent);
+    color: var(--cb-accent-ink);
 }
 
 .sheet-series-overlay {
@@ -630,6 +630,11 @@ html.dark .sheet-shell.sheet-lancamento-dialog {
     padding: 14px 20px 0;
 }
 
+.tab-button {
+    white-space: nowrap;
+    font-size: clamp(10.5px, 3.1vw, 12px);
+}
+
 .sheet-lancamento-dialog .sheet-tabs {
     gap: 4px;
     padding: 4px;
@@ -641,6 +646,7 @@ html.dark .sheet-shell.sheet-lancamento-dialog {
 .sheet-lancamento-body {
     padding: 16px 20px 20px;
     overscroll-behavior: contain;
+    scroll-padding-bottom: 12px;
     -webkit-overflow-scrolling: touch;
 }
 
@@ -659,8 +665,32 @@ html.dark .sheet-shell.sheet-lancamento-dialog {
 
 .sheet-lancamento-form {
     display: grid;
-    gap: 14px;
+    gap: 16px;
     min-width: 0;
+}
+
+.sheet-form-section-head {
+    display: grid;
+    gap: 2px;
+    margin-top: 2px;
+    padding-top: 14px;
+    border-top: 1px solid var(--ui-border);
+}
+
+.sheet-form-section-title {
+    margin: 0;
+    color: var(--ui-text);
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: -.01em;
+    line-height: 1.3;
+}
+
+.sheet-form-section-hint {
+    margin: 0;
+    color: var(--ui-text-muted);
+    font-size: 11.5px;
+    line-height: 1.4;
 }
 
 .sheet-lancamento-form > .hidden { display: none; }
@@ -669,10 +699,12 @@ html.dark .sheet-shell.sheet-lancamento-dialog {
 
 .sheet-amount-panel--premium {
     display: grid;
-    gap: 6px;
+    gap: 8px;
     margin: 0;
-    padding: 12px 0 16px;
-    border-bottom: 1px solid var(--ui-border);
+    padding: 16px;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-card);
+    background: color-mix(in srgb, var(--ui-accent) 4%, var(--ui-field-bg));
     text-align: left;
 }
 
@@ -711,11 +743,11 @@ html.dark .sheet-shell.sheet-lancamento-dialog {
     align-items: center;
     justify-content: center;
     min-width: 0;
-    height: 56px;
+    height: 60px;
     padding: 0 14px;
     border: 1px solid var(--ui-field-border);
     border-radius: var(--ui-radius-control);
-    background: var(--ui-field-bg);
+    background: var(--ui-surface);
     transition: border-color var(--ui-transition), background-color var(--ui-transition), box-shadow var(--ui-transition);
 }
 
@@ -787,7 +819,7 @@ html[data-input-modality="keyboard"] .sheet-amount-input-shell:focus-within {
     align-items: center;
     justify-content: center;
     gap: 7px;
-    height: 56px;
+    height: 60px;
     min-width: 108px;
     padding: 0 12px;
     border: 1px solid var(--ui-border);
@@ -840,7 +872,7 @@ html[data-input-modality="keyboard"] .sheet-amount-input-shell:focus-within {
 
 .sheet-field-group {
     display: grid;
-    gap: 14px;
+    gap: 16px;
     min-width: 0;
 }
 
@@ -1106,7 +1138,7 @@ html[data-input-modality="keyboard"] .sheet-lancamento-dialog .sheet-select:focu
 }
 
 .sheet-inline-action:hover {
-    color: var(--ui-accent);
+    color: var(--ui-accent-text);
     text-decoration: underline;
     text-underline-offset: 3px;
 }
@@ -1175,6 +1207,34 @@ html[data-input-modality="keyboard"] .sheet-lancamento-dialog .sheet-select:focu
 /* Installments and recurrence ------------------------------------------ */
 
 .sheet-options { padding: 6px 14px; }
+
+.sheet-options-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0 4px;
+    border-bottom: 1px solid var(--ui-border);
+    margin-bottom: 2px;
+}
+
+.sheet-options-title {
+    margin: 0;
+    color: var(--ui-text);
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: -.01em;
+    line-height: 1.3;
+}
+
+.sheet-options-hint {
+    margin: 0;
+    color: var(--ui-text-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+}
 
 .sheet-option { min-width: 0; }
 
@@ -1450,6 +1510,8 @@ html[data-input-modality="keyboard"] .sheet-lancamento-dialog .sheet-select:focu
 /* Footer ---------------------------------------------------------------- */
 
 .sheet-form-footer {
+    position: relative;
+    z-index: 2;
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -1457,6 +1519,7 @@ html[data-input-modality="keyboard"] .sheet-lancamento-dialog .sheet-select:focu
     padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--ui-border);
     background: var(--ui-surface);
+    box-shadow: 0 -18px 32px -30px rgb(15 23 42 / 45%);
 }
 
 .sheet-footer-btn {
@@ -1660,7 +1723,7 @@ html[data-input-modality="keyboard"] .sheet-lancamento-dialog .sheet-select:focu
     .sheet-status-btn {
         width: 48px;
         min-width: 48px;
-        height: 56px;
+        height: 60px;
         padding: 0;
         gap: 0;
     }
@@ -1689,6 +1752,7 @@ html[data-input-modality="keyboard"] .sheet-lancamento-dialog .sheet-select:focu
     .sheet-form-footer { padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
     .sheet-title { font-size: 18px; }
     .sheet-subtitle { font-size: 12px; }
+    .sheet-amount-panel--premium { padding: 12px; }
     .sheet-card { padding: 12px; }
     .sheet-options { padding: 4px 12px; }
     .sheet-danger-zone { padding: 12px; }
@@ -1710,10 +1774,3 @@ html[data-input-modality="keyboard"] .sheet-lancamento-dialog .sheet-select:focu
         transition: none;
     }
 }
-
-.scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-}
-
-.scrollbar-hide::-webkit-scrollbar { display: none; }

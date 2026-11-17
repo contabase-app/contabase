@@ -60,6 +60,7 @@ assert_contains "$release" '.name == "Release Preflight"'
 assert_contains "$release" "origin/beta no longer points to the tagged commit"
 assert_contains "$release" "No successful Release Preflight exists"
 assert_absent "$release" "ghcr.io/contabase-app/contabase:beta"
+assert_contains "$validation" "./.github/scripts/check-public-paths.sh"
 assert_contains "$validation" "TZ=UTC go test -timeout=20m ./... -count=1"
 assert_absent "$validation" "-short"
 assert_contains "$validation" "summarize-go-test-durations.sh"

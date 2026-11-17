@@ -30,6 +30,7 @@ import (
 	"github.com/contabase-app/contabase/internal/paths"
 	"github.com/contabase-app/contabase/internal/repository"
 	"github.com/contabase-app/contabase/internal/security"
+	"github.com/contabase-app/contabase/internal/updates"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -46,6 +47,8 @@ const (
 )
 
 type ConfiguracoesHandler struct {
+	Updates             *updates.Checker
+	UpdatesCSRFToken    string
 	DB                  *sql.DB
 	Templates           TemplateEngine
 	AuthService         *auth.Service
@@ -59,6 +62,9 @@ type ConfiguracoesHandler struct {
 	AuditEventFilter    string
 	AuditSeverityFilter string
 	SessionToken        string
+	// SecureCookie mirrors the request cookie policy so handlers that revoke
+	// authentication can expire the cookie with the same Secure attribute.
+	SecureCookie bool
 }
 
 func triggerWorkspaceColorsChanged(w http.ResponseWriter) {
@@ -66,16 +72,20 @@ func triggerWorkspaceColorsChanged(w http.ResponseWriter) {
 }
 
 type ConfiguracoesData struct {
-	Features            features.Flags
-	Title               string
-	UserName            string
-	UserFirstName       string
-	UserInitials        string
-	ProfilePhotoURL     string
-	NotificationCount   int
-	IsBusiness          bool
-	ActiveWorkspaceName string
-	Section             string
+	Updates               updates.Result
+	UpdatesCSRFToken      string
+	UpdatesLastCheck      AppTimeDisplay
+	UpdatesHealthcheckURL string
+	Features              features.Flags
+	Title                 string
+	UserName              string
+	UserFirstName         string
+	UserInitials          string
+	ProfilePhotoURL       string
+	NotificationCount     int
+	IsBusiness            bool
+	ActiveWorkspaceName   string
+	Section               string
 
 	Success                   string
 	Error                     string
@@ -539,20 +549,26 @@ func (h *ConfiguracoesHandler) HandlePasswordChange(w http.ResponseWriter, r *ht
 		h.renderPasswordChangeArea(w, "Erro interno. Tente novamente.", "")
 		return
 	}
-	var currentToken string
-	if cookie, err := r.Cookie(httpcookies.Session); err == nil {
-		currentToken = cookie.Value
-	} else if h.SessionToken != "" {
-		currentToken = h.SessionToken
-	}
-	if err := h.AuthService.ChangePasswordAndRevokeAuthArtifacts(h.UserID, string(hash), currentToken); err != nil {
+	if err := h.AuthService.ChangePasswordAndRevokeAuthArtifacts(h.UserID, string(hash), ""); err != nil {
 		log.Printf("password change transaction failed: user=%s err=%v", h.UserID, err)
 		h.renderPasswordChangeArea(w, "Não foi possível atualizar a senha.", "")
 		return
 	}
 
 	slog.Info("password_changed", "user_id", h.UserID)
-	h.renderPasswordChangeArea(w, "", "Senha alterada com sucesso. Outros dispositivos foram desconectados.")
+	h.clearAuthCookies(w)
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Trigger", "contabase:logout")
+		w.Header().Set("HX-Redirect", "/login")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func (h *ConfiguracoesHandler) clearAuthCookies(w http.ResponseWriter) {
+	httpcookies.ClearSession(w, h.SecureCookie)
+	httpcookies.ClearPreAuth(w, h.SecureCookie)
 }
 
 func (h *ConfiguracoesHandler) renderPasswordChangeArea(w http.ResponseWriter, errMsg, okMsg string) {
@@ -759,17 +775,114 @@ func (h *ConfiguracoesHandler) HandleCategoriasInlineSave(w http.ResponseWriter,
 	h.renderCategoryRow(w, categoryID)
 }
 
+// categoryDeleteBlockedReason é o motivo único e genérico de recusa por
+// dependência: a guarda conta vínculos globalmente e não distingue (nem pode
+// revelar) a origem do dependente.
+const categoryDeleteBlockedReason = "Categoria em uso e não pode ser removida."
+
+// categoryDeleteBlockedReasonTx devolve o motivo da recusa quando a categoria
+// ainda possui dependentes, ou "" quando pode ser excluída.
+//
+// As quatro primeiras consultas NÃO filtram workspace no lado dependente: IDs
+// de categoria são globais e as FKs single-column com ações destrutivas
+// (transactions/recurring_rules ON DELETE SET NULL, cost_limits e
+// categories.parent_id ON DELETE CASCADE) tornam a contagem global o único
+// mecanismo em-handler que impede mutação cross-tenant sobre vínculos legados
+// inconsistentes — a leitura serve exclusivamente para bloquear a exclusão,
+// nunca para selecionar ou divulgar conteúdo estrangeiro.
+//
+// investment_result_classifications é a exceção escopada: sua FK composta
+// (category_id, workspace_id) REFERENCES categories(id, workspace_id) torna
+// referências cross-tenant estruturalmente impossíveis, então a consulta
+// filtra workspace_id explicitamente.
+func categoryDeleteBlockedReasonTx(tx *sql.Tx, workspaceID, categoryID string) (string, error) {
+	globalDependencyChecks := []string{
+		`SELECT COUNT(*) FROM transactions WHERE category_id = ?`,
+		`SELECT COUNT(*) FROM recurring_rules WHERE category_id = ?`,
+		`SELECT COUNT(*) FROM cost_limits WHERE category_id = ?`,
+		`SELECT COUNT(*) FROM categories WHERE parent_id = ?`,
+	}
+	var n int
+	for _, query := range globalDependencyChecks {
+		if err := tx.QueryRow(query, categoryID).Scan(&n); err != nil {
+			return "", err
+		}
+		if n > 0 {
+			return categoryDeleteBlockedReason, nil
+		}
+	}
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM investment_result_classifications WHERE category_id = ? AND workspace_id = ?`, categoryID, workspaceID).Scan(&n); err != nil {
+		return "", err
+	}
+	if n > 0 {
+		return categoryDeleteBlockedReason, nil
+	}
+	return "", nil
+}
+
 func (h *ConfiguracoesHandler) HandleCategoriasDelete(w http.ResponseWriter, r *http.Request, id string) {
-	if err := execOne(h.DB, `DELETE FROM categories WHERE id = ? AND workspace_id = ?`, id, h.WorkspaceID); err != nil {
-		if strings.Contains(strings.ToUpper(err.Error()), "FOREIGN KEY") {
-			h.renderConfigSectionWithFlash(w, "categorias", "Categoria possui lançamentos vinculados e não pode ser removida.", "")
+	// Toda a decisão transacional acontece antes da renderização: o renderer de
+	// flash consulta o mesmo pool do handler e não pode disputar a conexão de
+	// uma transação ainda aberta.
+	status := http.StatusInternalServerError
+	errMsg := "Não foi possível remover a categoria agora. Tente novamente."
+	okMsg := ""
+	func() {
+		tx, err := h.DB.Begin()
+		if err != nil {
+			log.Printf("delete category begin error: %v", err)
 			return
 		}
-		log.Printf("delete category error: %v", err)
-		h.renderConfigSectionWithFlash(w, "categorias", "Categoria não encontrada ou não autorizada.", "")
-		return
-	}
-	h.renderConfigSectionWithFlash(w, "categorias", "", "Categoria removida.")
+		defer tx.Rollback()
+
+		var exists int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM categories WHERE id = ? AND workspace_id = ?`, id, h.WorkspaceID).Scan(&exists); err != nil {
+			log.Printf("delete category exists check error: %v", err)
+			return
+		}
+		if exists == 0 {
+			status = http.StatusNotFound
+			errMsg = "Categoria não encontrada ou não autorizada."
+			return
+		}
+
+		// Guarda e DELETE na mesma transação: nenhum dependente é destruído por
+		// SET NULL/CASCADE e uma vinculação concorrente esbarra na FK (409 abaixo).
+		reason, err := categoryDeleteBlockedReasonTx(tx, h.WorkspaceID, id)
+		if err != nil {
+			log.Printf("delete category dependency check error: %v", err)
+			return
+		}
+		if reason != "" {
+			status = http.StatusConflict
+			errMsg = reason
+			return
+		}
+
+		res, err := tx.Exec(`DELETE FROM categories WHERE id = ? AND workspace_id = ?`, id, h.WorkspaceID)
+		if err != nil {
+			if strings.Contains(strings.ToUpper(err.Error()), "FOREIGN KEY") {
+				status = http.StatusConflict
+				errMsg = categoryDeleteBlockedReason
+				return
+			}
+			log.Printf("delete category error: %v", err)
+			return
+		}
+		if affected, _ := res.RowsAffected(); affected == 0 {
+			status = http.StatusNotFound
+			errMsg = "Categoria não encontrada ou não autorizada."
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			log.Printf("delete category commit error: %v", err)
+			return
+		}
+		status = http.StatusOK
+		errMsg = ""
+		okMsg = "Categoria removida."
+	}()
+	h.renderConfigSectionWithFlashStatus(w, "categorias", errMsg, okMsg, status)
 }
 
 func (h *ConfiguracoesHandler) HandleContasCreate(w http.ResponseWriter, r *http.Request) {
@@ -1903,8 +2016,40 @@ func (h *ConfiguracoesHandler) HandleAdminUsersResetPassword(w http.ResponseWrit
 		h.renderConfigSectionWithFlash(w, "admin-users", "Não foi possível gerar a senha temporária.", "")
 		return
 	}
+	if target.UserID == h.UserID {
+		// The reset already revoked every session, including this one. Do not
+		// render the authenticated admin list again: show only the one-time
+		// credential and require a fresh login.
+		h.clearAuthCookies(w)
+		h.renderAdminSelfPasswordReset(w, r, adminSelfPasswordResetData{
+			Email:             result.Email,
+			TemporaryPassword: result.TemporaryPassword,
+		})
+		return
+	}
 	success := fmt.Sprintf("Senha temporária gerada para %s: %s. Copie agora. Esta senha não será exibida novamente. Expira em 1 hora e exigirá troca no próximo login.", result.Email, result.TemporaryPassword)
 	h.renderConfigSectionWithFlashStatus(w, "admin-users", "", success, http.StatusOK)
+}
+
+type adminSelfPasswordResetData struct {
+	Email             string
+	TemporaryPassword string
+}
+
+func (h *ConfiguracoesHandler) renderAdminSelfPasswordReset(w http.ResponseWriter, r *http.Request, data adminSelfPasswordResetData) {
+	templateName := "configuracoes-admin-self-reset-page"
+	if r.Header.Get("HX-Request") == "true" {
+		templateName = "configuracoes-admin-self-reset-content"
+	}
+	var buf bytes.Buffer
+	if err := h.Templates.ExecuteTemplate(&buf, templateName, data); err != nil {
+		log.Printf("template %s error: %v", templateName, err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	buf.WriteTo(w)
 }
 
 func (h *ConfiguracoesHandler) HandleAdminUsersDisable2FA(w http.ResponseWriter, r *http.Request) {

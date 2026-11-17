@@ -4,6 +4,53 @@
     let activeRailSection = null;
     let activeRailUpdate = null;
     let activeRailObserver = null;
+    let activeRailSelect = null;
+    let generation = 0;
+    let mutationXHR = null;
+    let restoreCardFocus = null;
+
+    // HTMX response headers (including history changes) run after beforeOnLoad.
+    // Discard obsolete GETs there, before any nested/OOB region can be touched.
+    document.body?.addEventListener('htmx:beforeRequest', (event) => {
+        const detail = event.detail || {};
+        const config = detail.requestConfig || {};
+        const path = String(config.path || '').split('?')[0];
+        const verb = String(config.verb || 'get').toLowerCase();
+        const read = verb === 'get' && (path === '/faturas' || path === '/faturas/conteudo');
+        const mutation = verb !== 'get' && /^\/(cartoes|transacoes)(\/|$)/.test(path);
+        if (!document.querySelector('[data-faturas-index]') || (!read && !mutation)) return;
+        if (read && config.triggeringEvent?.detail?.invoiceSnapshot) {
+            event.preventDefault();
+            return;
+        }
+        if (mutationXHR) {
+            event.preventDefault();
+            return;
+        }
+        if (!detail.xhr) return;
+        detail.xhr.faturasGeneration = ++generation;
+        if (mutation) mutationXHR = detail.xhr;
+    });
+    document.body?.addEventListener('htmx:beforeOnLoad', (event) => {
+        const xhr = event.detail?.xhr;
+        if (xhr?.faturasGeneration && xhr.faturasGeneration !== generation) event.preventDefault();
+    });
+    document.body?.addEventListener('htmx:afterRequest', (event) => {
+        if (event.detail?.xhr === mutationXHR) mutationXHR = null;
+    });
+    document.addEventListener('click', (event) => {
+        if (mutationXHR && event.target?.closest?.('[data-faturas-card], [data-month-selector] a, [hx-post], [hx-put], [hx-delete]')) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+    }, true);
+    // Capture before HTMX can queue another submit behind the active request.
+    document.addEventListener('submit', (event) => {
+        if (mutationXHR) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+    }, true);
 
     function updateActiveRail() {
         if (activeRailSection && activeRailSection.isConnected && typeof activeRailUpdate === 'function') {
@@ -113,14 +160,18 @@
         const syncRefreshURL = (card) => {
             const pageURL = new URL(card.href, window.location.origin);
             pageURL.searchParams.set('partial', 'cards');
-            section.setAttribute('hx-get', pageURL.pathname + pageURL.search);
+            const state = document.getElementById('faturas-index-state');
+            if (state) {
+                state.setAttribute('hx-get', pageURL.pathname + pageURL.search);
+                if (typeof window.htmx?.process === 'function') window.htmx.process(state);
+            }
             document.querySelectorAll('[data-month-selector] a').forEach((link) => {
                 const destination = new URL(link.href, window.location.origin);
                 destination.searchParams.set('cartao', card.dataset.faturasCardId);
                 link.href = destination.pathname + destination.search;
             });
         };
-        const setActive = (card) => {
+        const setActive = (card, options = {}) => {
             cards().forEach((item) => {
                 const active = item === card;
                 item.classList.toggle('is-selected', active);
@@ -129,8 +180,10 @@
             });
             syncDotsToIndex(cards().indexOf(card));
             syncRefreshURL(card);
+            if (options.reveal) revealCard(card, { smooth: true });
         };
         const loadCard = (card) => {
+            if (mutationXHR) return;
             const url = card.dataset.faturasContentUrl;
             const target = document.getElementById('faturas-index-detail');
             if (!url || !target || !window.htmx) return;
@@ -139,6 +192,7 @@
             window.htmx.trigger(target, 'htmx:abort');
             setActive(card);
             target.setAttribute('aria-busy', 'true');
+            target.inert = true;
             window.htmx.ajax('GET', url, { source: target, target: '#faturas-index-detail', swap: 'innerHTML' })
                 .catch(() => { /* HTMX reports failures; replacing a selection intentionally aborts its request. */ });
         };
@@ -178,6 +232,7 @@
         };
 
         cards().forEach((card) => card.addEventListener('click', (event) => {
+            if (mutationXHR) { event.preventDefault(); return; }
             if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button > 0 || !window.htmx) return;
             event.preventDefault();
             revealCard(card, { smooth: true });
@@ -223,10 +278,17 @@
         if (selected) {
             setActive(selected);
             revealCard(selected);
+            if (window.location.pathname === '/faturas' && window.history?.replaceState) {
+                const current = new URL(window.location.href);
+                if (!current.searchParams.has('mes') && !current.searchParams.has('ano')) {
+                    window.history.replaceState(window.history.state, '', selected.href);
+                }
+            }
         }
 
         activeRailSection = section;
         activeRailUpdate = updateControls;
+        activeRailSelect = setActive;
         if (activeRailObserver) {
             activeRailObserver.disconnect();
             activeRailObserver = null;
@@ -250,15 +312,68 @@
 
     function bindAll() {
         document.querySelectorAll('#faturas-index-card-rail').forEach(bindRail);
+        if (restoreCardFocus) {
+            const cardID = restoreCardFocus;
+            restoreCardFocus = null;
+            // HTMX restores element IDs after its OOB swaps. Restore the card
+            // afterwards so a removed payment form cannot take focus back.
+            const restore = () => {
+                const active = document.activeElement;
+                if (active && active !== document.body && !active.closest?.('#faturas-index-state')) return;
+                const card = Array.from(document.querySelectorAll(cardSelector)).find((item) => item.dataset.faturasCardId === cardID);
+                card?.focus({ preventScroll: true });
+            };
+            if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(restore);
+            else restore();
+        }
         refreshIcons();
     }
 
+    const rememberFocus = (event) => {
+        const target = event.detail?.target;
+        if (target?.id !== 'faturas-index-state') return;
+        const active = document.activeElement;
+        const card = active?.closest?.(cardSelector);
+        if (card) restoreCardFocus = card.dataset.faturasCardId;
+        else if (active?.closest?.('#invoice-summary, #bottom-sheet-container')) {
+            restoreCardFocus = document.querySelector('[data-faturas-card].is-selected')?.dataset.faturasCardId;
+        }
+    };
+    document.body?.addEventListener('htmx:beforeSwap', rememberFocus);
+    document.body?.addEventListener('htmx:oobBeforeSwap', rememberFocus);
+    document.body?.addEventListener('htmx:oobAfterSwap', bindAll);
+
     document.addEventListener('DOMContentLoaded', bindAll);
     document.body?.addEventListener('htmx:afterSwap', (event) => {
-        if (event.target?.id === 'faturas-index-detail') event.target.removeAttribute('aria-busy');
+        if (event.target?.id === 'faturas-index-detail') {
+            event.target.removeAttribute('aria-busy');
+            event.target.inert = false;
+        }
         bindAll();
     });
     document.body?.addEventListener('htmx:afterRequest', (event) => {
-        if (event.detail?.elt?.id === 'faturas-index-detail') event.detail.elt.removeAttribute('aria-busy');
+        const detail = event.detail || {};
+        if (detail.xhr?.faturasGeneration && detail.xhr.faturasGeneration !== generation) return;
+        if (detail.elt?.id === 'faturas-index-detail') {
+            detail.elt.removeAttribute('aria-busy');
+            detail.elt.inert = false;
+            if (detail.failed && window.location.href) {
+                const selectedID = new URL(window.location.href).searchParams.get('cartao');
+                const card = Array.from(document.querySelectorAll(cardSelector)).find((item) => item.dataset.faturasCardId === selectedID);
+                if (card && activeRailSelect) activeRailSelect(card, { reveal: true });
+            }
+        }
+    });
+
+    document.body?.addEventListener('htmx:historyRestore', (event) => {
+        const syncSelection = () => {
+            const restored = event.detail?.path || window.location.href;
+            const cardID = new URL(restored, window.location.origin).searchParams.get('cartao');
+            if (!cardID) return;
+            const card = Array.from(document.querySelectorAll(cardSelector)).find((item) => item.dataset.faturasCardId === cardID);
+            if (card && activeRailSelect) activeRailSelect(card, { reveal: true });
+        };
+        if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(syncSelection);
+        else syncSelection();
     });
 })();

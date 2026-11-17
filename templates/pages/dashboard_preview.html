@@ -1,0 +1,104 @@
+{{define "dashboard-preview-page"}}
+{{template "app-v2-document-head-start" .}}
+    <link rel="stylesheet" href="{{assetPath "/assets/css/credit-cards.css"}}">
+    <link rel="stylesheet" href="{{assetPath "/assets/css/dashboard-preview.css"}}">
+    <noscript><link rel="stylesheet" href="{{assetPath "/assets/css/dashboard-preview-nojs.css"}}"></noscript>
+</head>
+<body class="cb-v2-body cbp-body">
+    <div id="htmx-indicator" class="cb-v2-indicator" aria-live="polite">
+        <img src="{{assetPath "/assets/branding/logo-mark.png"}}" alt="" aria-hidden="true">
+        Processando…
+    </div>
+    <div id="global-feedback" class="cb-v2-feedback hidden" aria-live="polite"></div>
+    <div class="cb-v2 cb-preview" data-app-shell>
+        {{template "app-v2-notification-sink" .}}
+        {{template "app-v2-desktop-sidebar" .}}
+        <main id="main-content" class="cb-v2-main cbp-main" data-dashboard data-page-section="dashboard" data-page-title="Dashboard">
+            {{template "dashboard-preview-appbar" .}}
+            {{template "app-v2-setup-token-notice" .}}
+            <div class="cbp-canvas">
+                {{template "dashboard-preview-head" .}}
+                {{if not .MonthFilter.IsCurrent}}
+                <div class="cbp-temporal-notice" role="note">
+                    <i data-lucide="history" aria-hidden="true"></i>
+                    <p><strong>{{.SelectedMonthLabel}}.</strong> Indicadores mensais em destaque. Cartões exibem a fatura da competência; demais cards podem ser revelados em “Ver dados atuais”.</p>
+                </div>
+                {{end}}
+                <div id="dashboard-content" class="wallet cbp-grid{{if .MonthFilter.IsCurrent}} cbp-grid--contract{{if .LayoutPending}} is-layout-pending{{end}}{{end}}{{if not .MonthFilter.IsCurrent}} is-historical-focus{{if .CardsPeriodAware}} is-cards-period{{else}} is-cards-fallback{{end}}{{end}}" data-cbp-refresh-root hx-get="{{.DashboardRefreshURL}}" hx-trigger="refreshFinancials from:body" hx-select="#dashboard-content" hx-swap="outerHTML" hx-push-url="false" hx-sync="this:replace" hx-indicator="#htmx-indicator">
+                    {{if .MonthFilter.IsCurrent}}
+                    {{/* B10.1: DOM canônico (mobile) no SSR. As regiões do desktop são
+                         montadas por dashboard-preview-layout.js na primeira carga e a
+                         ordem canônica é restaurada ao voltar para <=1199px. */}}
+                    <div class="cbp-region cbp-region--left" data-cbp-region="left"></div>
+                    <div class="cbp-region cbp-region--right" data-cbp-region="right">
+                        <div class="cbp-region-pair" data-cbp-region-pair></div>
+                    </div>
+                    {{template "dashboard-preview-hero" .}}
+                    {{template "dashboard-preview-financial" .}}
+                    {{template "dashboard-preview-cashflow" .}}
+                    {{template "dashboard-preview-accounts" .}}
+                    {{template "dashboard-preview-commitments" .}}
+                    {{template "dashboard-preview-cards" .}}
+                    {{template "dashboard-preview-categories" .}}
+                    {{template "dashboard-preview-goals" .}}
+                    {{else}}
+                    {{template "dashboard-preview-financial" .}}
+                    {{template "dashboard-preview-categories" .}}
+                    {{template "dashboard-preview-goals" .}}
+                    {{if .CardsPeriodAware}}{{template "dashboard-preview-cards" .}}{{end}}
+                    {{template "dashboard-preview-hero" .}}
+                    {{template "dashboard-preview-cashflow" .}}
+                    {{template "dashboard-preview-commitments" .}}
+                    {{template "dashboard-preview-accounts" .}}
+                    {{if not .CardsPeriodAware}}{{template "dashboard-preview-cards" .}}{{end}}
+                    {{end}}
+                </div>
+                {{if .MonthFilter.IsCurrent}}<script src="{{assetPath "/assets/js/dashboard-preview-layout.js"}}"></script>{{end}}
+            </div>
+        </main>
+        {{template "app-v2-shell-after-main" .}}
+    <script src="{{assetPath "/assets/js/credit-cards.js"}}"></script>
+    <script src="{{assetPath "/assets/js/dashboard.js"}}"></script>
+    <script src="{{assetPath "/assets/js/financial-info.js"}}"></script>
+    <script src="{{assetPath "/assets/js/dashboard-preview.js"}}"></script>
+    <script src="{{assetPath "/assets/js/dashboard-preview-refresh.js"}}"></script>
+{{template "app-v2-document-end" .}}
+{{end}}
+
+{{define "dashboard-preview-appbar"}}
+<header class="cb-v2-appbar cbp-appbar">
+    <div class="cb-v2-appbar-start cbp-appbar-start">
+        <button type="button" class="cb-v2-icon-button cb-v2-menu-button" data-v2-menu-trigger aria-label="Abrir navegação"><i data-lucide="menu"></i></button>
+        <div class="cbp-appbar-greeting"><span>Painel</span><strong>Olá, {{.UserFirstName}}</strong></div>
+    </div>
+    <div class="cb-v2-appbar-actions cbp-appbar-actions">
+        <button type="button" class="cb-v2-icon-button" data-theme-toggle data-v2-theme-toggle aria-label="Alternar tema claro ou escuro" title="Alternar tema claro ou escuro"><i class="cb-v2-theme-icon-dark" data-lucide="sun" aria-hidden="true"></i><i class="cb-v2-theme-icon-light" data-lucide="moon" aria-hidden="true"></i></button>
+        <a class="cb-v2-icon-button cb-v2-notification-button" href="/notificacoes" aria-label="Notificações" title="Notificações">
+            <i data-lucide="bell"></i><span class="cb-v2-notification-badge{{if gt .NotificationCount 0}}{{else}} hidden{{end}}" data-notification-badge{{if gt .NotificationCount 0}} aria-label="{{.NotificationCount}} {{if gt .NotificationCount 1}}notificações não lidas{{else}}notificação não lida{{end}}"{{end}}></span>
+        </a>
+    </div>
+</header>
+{{end}}
+
+{{define "dashboard-preview-head"}}
+<header class="cbp-page-head">
+    <div class="cbp-page-head-copy">
+        <h1>Olá, {{.UserFirstName}}</h1>
+        <p>Sua carteira, em perspectiva.</p>
+    </div>
+    <div class="cbp-head-actions">
+        {{template "dashboard-preview-month-filter" .}}
+        <button type="button" class="cbp-btn cbp-btn-primary cbp-desktop-action" hx-get="/transacoes/nova" hx-target="#bottom-sheet-container" hx-swap="innerHTML" hx-push-url="false"><i data-lucide="plus" aria-hidden="true"></i>Novo lançamento</button>
+    </div>
+</header>
+{{end}}
+
+{{define "dashboard-preview-month-filter"}}
+<div class="cbp-month-filter" role="group" aria-label="Período de referência dos indicadores mensais" title="Mês de referência de orçamento, categorias, metas e indicadores mensais">
+    <span class="cbp-month-filter-label">Mês</span>
+    <a class="cbp-month-arrow" data-cbp-month-link href="{{.MonthFilter.PreviousHref}}" aria-label="Mês anterior: {{.MonthFilter.PreviousLabel}}" title="Mês anterior: {{.MonthFilter.PreviousLabel}}"><i data-lucide="chevron-left" aria-hidden="true"></i></a>
+    <span class="cbp-month-value"><i data-lucide="calendar-days" aria-hidden="true"></i>{{.MonthFilter.Label}}</span>
+    {{if .MonthFilter.CanGoNext}}<a class="cbp-month-arrow" data-cbp-month-link href="{{.MonthFilter.NextHref}}" aria-label="Próximo mês: {{.MonthFilter.NextLabel}}" title="Próximo mês: {{.MonthFilter.NextLabel}}"><i data-lucide="chevron-right" aria-hidden="true"></i></a>{{else}}<span class="cbp-month-arrow is-disabled" aria-hidden="true" title="Mês atual"><i data-lucide="chevron-right" aria-hidden="true"></i></span>{{end}}
+    {{if not .MonthFilter.IsCurrent}}<a class="cbp-month-reset" data-cbp-month-link href="{{.MonthFilter.CurrentHref}}" title="Voltar ao mês atual">Atual</a>{{end}}
+</div>
+{{end}}

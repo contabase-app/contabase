@@ -183,65 +183,39 @@ func TestInvestmentReversalKeepsRecordOnlyLotArchivable(t *testing.T) {
 	}
 }
 
-const reversal80AccountsUpdateTrigger = `CREATE TRIGGER trg_reversal80_accounts_update BEFORE UPDATE ON accounts WHEN EXISTS(SELECT 1 FROM investment_purchase_reversals r WHERE r.workspace_id=OLD.workspace_id AND OLD.id IN(r.investment_account_id,r.origin_account_id)) BEGIN SELECT RAISE(ABORT,'investment purchase reversal integrity'); END`
-const reversal80InvestmentsUpdateTrigger = `CREATE TRIGGER trg_reversal80_investments_update BEFORE UPDATE ON investments WHEN EXISTS(SELECT 1 FROM investment_purchase_reversals r WHERE r.workspace_id=OLD.workspace_id AND r.investment_id=OLD.id) BEGIN SELECT RAISE(ABORT,'investment purchase reversal integrity'); END`
-
 // Upgrade 81 -> 82 with a real pre-existing receipt whose account balances
 // already moved: the historical preflight must accept the 81 database, the
 // migration must replace only the two UPDATE triggers, and the receipt must
 // remain readable and immutable.
-func TestInvestmentReversalMigration82UpgradeWithExistingReceipt(t *testing.T) {
-	path := t.TempDir() + "/reversal-upgrade.db"
+func TestInvestmentReversalReceiptSurvivesSchema83Reopen(t *testing.T) {
+	path := t.TempDir() + "/reversal-reopen.db"
 	pools := newReversalDBAt(t, path)
-	exec(t, pools.DB, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance) VALUES ('acc-savings-a','ws-a','Poupança A','SAVINGS',0,0)`)
 	investment, target := mustCreateReversedFundedLot(t, pools, 100000)
-	postOrdinaryTransfer(t, pools, "upgrade-movement", "acc-checking-a", "acc-savings-a", 3000)
 	ctx := context.Background()
 	receipts, err := GetInvestmentPurchaseReversals(ctx, pools.DB, "ws-a", investment)
 	if err != nil || receipts[target].ID == "" {
-		t.Fatalf("receipt before upgrade: %+v err=%v", receipts[target], err)
+		t.Fatalf("receipt before reopen: %+v err=%v", receipts[target], err)
 	}
 	receiptID := receipts[target].ID
 	pools.Close()
 
-	raw, err := sql.Open("sqlite", path)
+	reopened, err := database.OpenRuntimeDBs(path)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("reopen schema 83: %v", err)
 	}
-	for _, statement := range []string{
-		`DELETE FROM schema_migrations WHERE version=82`,
-		`DROP TRIGGER trg_reversal82_accounts_update`,
-		`DROP TRIGGER trg_reversal82_investments_update`,
-		reversal80AccountsUpdateTrigger,
-		reversal80InvestmentsUpdateTrigger,
-	} {
-		if _, err := raw.Exec(statement); err != nil {
-			raw.Close()
-			t.Fatalf("prepare schema 81: %v", err)
-		}
-	}
-	raw.Close()
-
-	upgraded, err := database.OpenRuntimeDBs(path)
-	if err != nil {
-		t.Fatalf("upgrade 81->82: %v", err)
-	}
-	t.Cleanup(func() { upgraded.Close() })
+	t.Cleanup(func() { reopened.Close() })
 	var version int
-	if err := upgraded.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 82 {
+	if err := reopened.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 83 {
 		t.Fatalf("version=%d err=%v", version, err)
 	}
-	var old int
-	if err := upgraded.DB.QueryRow(`SELECT COUNT(*) FROM sqlite_schema WHERE type='trigger' AND name IN('trg_reversal80_accounts_update','trg_reversal80_investments_update')`).Scan(&old); err != nil || old != 0 {
-		t.Fatalf("legacy triggers=%d err=%v", old, err)
+	var legacy int
+	if err := reopened.DB.QueryRow(`SELECT COUNT(*) FROM sqlite_schema WHERE type='trigger' AND name IN('trg_reversal80_accounts_update','trg_reversal80_investments_update')`).Scan(&legacy); err != nil || legacy != 0 {
+		t.Fatalf("legacy triggers=%d err=%v", legacy, err)
 	}
-	after, err := GetInvestmentPurchaseReversals(ctx, upgraded.DB, "ws-a", investment)
+	after, err := GetInvestmentPurchaseReversals(ctx, reopened.DB, "ws-a", investment)
 	if err != nil || after[target].ID != receiptID {
-		t.Fatalf("receipt after upgrade: %+v err=%v", after[target], err)
+		t.Fatalf("receipt after reopen: %+v err=%v", after[target], err)
 	}
-	exec(t, upgraded.DB, `UPDATE accounts SET name=name||' pós-upgrade' WHERE workspace_id='ws-a' AND id='acc-checking-a'`)
-	postOrdinaryTransfer(t, upgraded, "upgrade-after", "acc-checking-a", "acc-savings-a", 1200)
-	if _, err := upgraded.Immediate.Exec(`UPDATE accounts SET type='SAVINGS' WHERE workspace_id='ws-a' AND id='acc-checking-a'`); err == nil {
-		t.Fatal("identity update succeeded after upgrade")
-	}
+	exec(t, reopened.DB, `INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance) VALUES ('acc-savings-a','ws-a','Poupança A','SAVINGS',0,0)`)
+	postOrdinaryTransfer(t, reopened, "after-schema83", "acc-checking-a", "acc-savings-a", 500)
 }

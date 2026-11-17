@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HELPER="$ROOT/.github/scripts/release-state.sh"
-WORKFLOW="$ROOT/.github/workflows/release-artifacts.yml"
+WORKFLOW="${CONTABASE_RELEASE_WORKFLOW:-$ROOT/.github/workflows/release-artifacts.yml}"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/release-state-test.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
@@ -333,6 +333,49 @@ capture_state "$TAG" "$TAG_COMMIT"
 assert_result 'AA: duplicate releases for one tag rejected' unknown 1
 
 # Structural checks are exact, contextual checks of the relevant workflow declarations.
+workflow_job_block() {
+  local job="$1"
+  awk -v job="$job" '
+    /^  [A-Za-z0-9_.-]+:[ \t]*$/ {
+      name=$0
+      sub(/^  /,"",name)
+      sub(/:[ \t]*$/,"",name)
+      if (started && name != job) exit
+      if (name == job) started=1
+    }
+    started { print }
+  ' "$WORKFLOW"
+}
+
+workflow_job_needs() {
+  workflow_job_block "$1" | awk '
+    /^    needs:[ \t]*\[/ {
+      line=$0
+      sub(/^    needs:[ \t]*\[/,"",line)
+      sub(/\][ \t]*$/,"",line)
+      n=split(line, parts, ",")
+      for (i=1; i<=n; i++) { gsub(/[ \t]/,"",parts[i]); if (parts[i] != "") print parts[i] }
+      next
+    }
+    /^    needs:[ \t]*$/ { inlist=1; next }
+    /^    needs:[ \t]+[^\[]/ {
+      line=$0
+      sub(/^    needs:[ \t]+/,"",line)
+      gsub(/[ \t]/,"",line)
+      if (line != "") print line
+      next
+    }
+    /^    [A-Za-z0-9_.-]+:/ { inlist=0 }
+    inlist && /^      - / {
+      line=$0
+      sub(/^      - /,"",line)
+      gsub(/[ \t]/,"",line)
+      if (line != "") print line
+      next
+    }
+  '
+}
+
 if ! grep -Fqx '  workflow_dispatch:' "$WORKFLOW" &&
    grep -Fqx '      - "v*-beta.*"' "$WORKFLOW" &&
    grep -Fqx '          if [[ "$EVENT_NAME" != "push" || "$REF_TYPE" != "tag" ]]; then' "$WORKFLOW" &&
@@ -359,15 +402,24 @@ else
   fail 'S2: release action contract'
 fi
 
-if grep -Fqx '  group: release-artifacts-${{ github.repository }}-${{ github.ref }}' "$WORKFLOW" &&
+ghcr_needs="$(workflow_job_needs ghcr)"
+ghcr_missing=()
+grep -qx 'publish' <<<"$ghcr_needs" || ghcr_missing+=('job ghcr nao declara needs do job publish')
+grep -qx 'artifacts' <<<"$ghcr_needs" || ghcr_missing+=('job ghcr nao declara needs do job artifacts')
+
+if (( ${#ghcr_missing[@]} == 0 )) &&
+   grep -Fqx '  group: release-artifacts-${{ github.repository }}-${{ github.ref }}' "$WORKFLOW" &&
    grep -Fqx '  cancel-in-progress: false' "$WORKFLOW" &&
-   grep -Fqx '      - artifacts' "$WORKFLOW" &&
    ! grep -Fq 'if: always()' "$WORKFLOW" &&
    ! grep -Fq 'draft: false' "$WORKFLOW" &&
    ! grep -Eq 'git (push|tag)|--force|force push|contabase-canal' "$WORKFLOW"; then
   pass 'S3: concurrency, GHCR dependency and no automatic publication'
 else
   fail 'S3: workflow safety boundaries'
+  if (( ${#ghcr_missing[@]} > 0 )); then
+    printf '      %s\n' "${ghcr_missing[@]}" >&2
+  fi
+  printf '      ghcr needs observado: %s\n' "$(printf '%s' "$ghcr_needs" | tr '\n' ',' | sed 's/,$//')" >&2
 fi
 
 if grep -Fqx '  contents: read' "$WORKFLOW" &&

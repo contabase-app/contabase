@@ -131,8 +131,8 @@ func TestMigration80AdditiveIdempotentAndRegistered(t *testing.T) {
 	defer p.Close()
 	// The runtime open migrates the version-80 database to the registry head:
 	// with migrations 81 and 82 registered, the reopened database carries 82.
-	if got := countQueryRows(t, p.DB, `SELECT MAX(version) FROM schema_migrations`); got != 82 {
-		t.Fatalf("runtime version=%d, want 82", got)
+	if got := countQueryRows(t, p.DB, `SELECT MAX(version) FROM schema_migrations`); got != currentSchemaVersion {
+		t.Fatalf("runtime version=%d, want %d", got, currentSchemaVersion)
 	}
 	older := openInvestmentsTestDB(t)
 	seedAppliedMigrationsBefore(t, older, 1)
@@ -260,8 +260,8 @@ func TestMigration82RestoresParentOperabilityAndRegistered(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer runtime.Close()
-	if got := countQueryRows(t, runtime.DB, `SELECT MAX(version) FROM schema_migrations`); got != 82 {
-		t.Fatalf("runtime version=%d, want 82", got)
+	if got := countQueryRows(t, runtime.DB, `SELECT MAX(version) FROM schema_migrations`); got != currentSchemaVersion {
+		t.Fatalf("runtime version=%d, want %d", got, currentSchemaVersion)
 	}
 
 	older := openInvestmentsTestDB(t)

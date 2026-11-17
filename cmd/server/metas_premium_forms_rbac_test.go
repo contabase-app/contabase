@@ -23,14 +23,8 @@ func TestMetasPremiumFormsKeepWritePermissionContract(t *testing.T) {
 		permission string
 	}{
 		{name: "new form", route: `mux.HandleFunc("/metas/novo", withAuth(`, method: "http.MethodGet", permission: "permGoalsWrite"},
-		{name: "save reserve", route: `mux.HandleFunc("/metas/caixinha", withAuth(`, method: "http.MethodPost", permission: "permGoalsWrite"},
 		{name: "save limit", route: `mux.HandleFunc("/metas/limite", withAuth(`, method: "http.MethodPost", permission: "permGoalsWrite"},
-		{name: "delete reserve", route: `mux.HandleFunc("/metas/caixinha/", withAuth(`, method: "http.MethodDelete", permission: "permGoalsWrite"},
 		{name: "delete limit", route: `mux.HandleFunc("/metas/limite/", withAuth(`, method: "http.MethodDelete", permission: "permGoalsWrite"},
-		{name: "contribute", route: `mux.HandleFunc("/metas/caixinha/aporte", withAuth(`, method: "http.MethodPost", permission: "permGoalsWrite"},
-		{name: "release", route: `mux.HandleFunc("/metas/caixinha/resgate", withAuth(`, method: "http.MethodPost", permission: "permGoalsWrite"},
-		{name: "contribute sheet", route: `mux.HandleFunc("/metas/caixinha/aporte/sheet", withAuth(`, method: "http.MethodGet", permission: "permGoalsWrite"},
-		{name: "release sheet", route: `mux.HandleFunc("/metas/caixinha/resgate/sheet", withAuth(`, method: "http.MethodGet", permission: "permGoalsWrite"},
 	}
 
 	for _, contract := range contracts {
@@ -72,9 +66,6 @@ func TestMetasReadRoutesWireActorRoleForHandlerRevalidation(t *testing.T) {
 		{name: "page", route: `mux.HandleFunc("/metas", withAuth(`, permission: "permDashboardRead"},
 		{name: "new form", route: `mux.HandleFunc("/metas/novo", withAuth(`, permission: "permGoalsWrite"},
 		{name: "limit history", route: `mux.HandleFunc("/metas/limite/historico", withAuth(`, permission: "permDashboardRead"},
-		{name: "box history", route: `mux.HandleFunc("/metas/caixinha/historico", withAuth(`, permission: "permGoalsWrite"},
-		{name: "contribute sheet", route: `mux.HandleFunc("/metas/caixinha/aporte/sheet", withAuth(`, permission: "permGoalsWrite"},
-		{name: "release sheet", route: `mux.HandleFunc("/metas/caixinha/resgate/sheet", withAuth(`, permission: "permGoalsWrite"},
 	}
 
 	for _, contract := range contracts {

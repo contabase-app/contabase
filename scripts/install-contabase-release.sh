@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# O instalador le secrets existentes; xtrace pode expor seus valores.
+set +x
 set -euo pipefail
 
 REPO="${CONTABASE_REPO:-https://github.com/contabase-app/contabase}"
@@ -20,7 +22,13 @@ APP_BASE_URL_VALUE="${APP_BASE_URL:-}"
 ALLOWED_HOSTS_VALUE="${ALLOWED_HOSTS:-}"
 TRUSTED_PROXIES_VALUE="${TRUSTED_PROXIES:-}"
 CONTABASE_ACCESS_MODE_VALUE="${CONTABASE_ACCESS_MODE:-}"
+CONTABASE_HOST_BIND_VALUE="${CONTABASE_HOST_BIND:-}"
+CONTABASE_NETWORK_PROFILE_VALUE="${CONTABASE_NETWORK_PROFILE:-}"
 CONTABASE_TIMEZONE_VALUE="${CONTABASE_TIMEZONE:-America/Sao_Paulo}"
+BOOTSTRAP_MODE=false
+if [ "${CONTABASE_BOOTSTRAP_CONTRACT_VERSION:-}" = "1" ]; then
+  BOOTSTRAP_MODE=true
+fi
 SETUP_TOKEN_GENERATED_NOW=false
 SETUP_TOKEN_SUPPLIED_BY_ENV=false
 APP_USER="${CONTABASE_USER:-contabase}"
@@ -41,7 +49,7 @@ EXTRACT_DIR=""
 STAGING_DIR=""
 PREVIOUS_DIR=""
 ENV_FILE="${CONFIG_DIR}/contabase.env"
-SERVICE_FILE="/etc/systemd/system/contabase.service"
+SERVICE_FILE="${CONTABASE_SERVICE_FILE:-/etc/systemd/system/contabase.service}"
 SERVICE_BACKUP=""
 NEW_BUNDLE_ACTIVE=false
 NEW_RUNTIME_STARTED=false
@@ -176,6 +184,12 @@ fail() {
   say "Erro: $*" >&2
   exit 1
 }
+
+if [ "${CONTABASE_BOOTSTRAP_CONTRACT_VERSION+x}" = x ]; then
+  [ "${CONTABASE_BOOTSTRAP_CONTRACT_VERSION}" = 1 ] \
+    || fail "versao do contrato Bootstrap invalida."
+  [ "$#" -eq 0 ] || fail "adaptador Bootstrap nao aceita argumentos avulsos."
+fi
 
 usage() {
   cat <<'EOF'
@@ -540,9 +554,16 @@ configure_new_installation_runtime() {
   validate_runtime_config_values
 }
 
+require_flock() {
+  if ! command -v flock >/dev/null 2>&1; then
+    fail "flock obrigatorio para atualizacao segura. Instale util-linux antes de continuar."
+  fi
+}
+
 require_commands() {
   local cmd
   local missing=()
+  [ "${VALIDATE_ONLY:-false}" = true ] || require_flock
   for cmd in curl tar install openssl awk grep find mktemp cp wc tr; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
@@ -696,10 +717,33 @@ download_and_validate_bundle() {
   checksums_file="${TMP_DIR}/checksums.txt"
   mkdir -p "$EXTRACT_DIR"
 
-  say "Baixando ${ARTIFACT_URL}"
-  download_file "$ARTIFACT_URL" "$artifact_file"
-  say "Baixando ${CHECKSUMS_URL}"
-  download_file "$CHECKSUMS_URL" "$checksums_file"
+  if [ "$BOOTSTRAP_MODE" = true ]; then
+    local prepared_root
+    prepared_root="$(cd "${CONTABASE_BOOTSTRAP_CHECKOUT:-}" 2>/dev/null && pwd -P)" \
+      || fail "checkout preparado ausente."
+    [ "$(cd "$(dirname "${CONTABASE_CHECKSUMS_PATH}")" 2>/dev/null && pwd -P)" = "$prepared_root" ] \
+      || fail "checksums fora do checkout preparado."
+    [ "$(cd "$(dirname "${CONTABASE_ARTIFACT_PATH}")" 2>/dev/null && pwd -P)" = "$prepared_root" ] \
+      || fail "artifact fora do checkout preparado."
+    [ "$(basename "$CONTABASE_CHECKSUMS_PATH")" = "checksums.txt" ] \
+      || fail "nome de checksums divergente."
+    [ "$(basename "$CONTABASE_ARTIFACT_PATH")" = "$ARTIFACT_NAME" ] \
+      || fail "nome do artifact diverge da arquitetura."
+    bootstrap_verify_file_digest "$CONTABASE_CHECKSUMS_PATH" "$CONTABASE_CHECKSUMS_SHA256" "checksums" \
+      || fail "checksums nao corresponde ao snapshot homologado."
+    bootstrap_verify_file_digest "$CONTABASE_ARTIFACT_PATH" "$CONTABASE_ARTIFACT_SHA256" "artifact" \
+      || fail "artifact nao corresponde ao snapshot homologado."
+    cp "$CONTABASE_CHECKSUMS_PATH" "$checksums_file" \
+      || fail "nao foi possivel preparar checksums."
+    cp "$CONTABASE_ARTIFACT_PATH" "$artifact_file" \
+      || fail "nao foi possivel preparar o artifact."
+    say "Payload do Bootstrap verificado por SHA-256."
+  else
+    say "Baixando ${ARTIFACT_URL}"
+    download_file "$ARTIFACT_URL" "$artifact_file"
+    say "Baixando ${CHECKSUMS_URL}"
+    download_file "$CHECKSUMS_URL" "$checksums_file"
+  fi
   validate_checksum "$checksums_file" "$artifact_file"
   validate_tar_entries "$artifact_file"
   tar --no-same-owner --no-same-permissions -xzf "$artifact_file" -C "$EXTRACT_DIR"
@@ -760,9 +804,18 @@ ensure_user_and_directories() {
     useradd --system --gid "$APP_USER" --home-dir "$DATA_DIR" --shell /usr/sbin/nologin "$APP_USER"
   fi
 
-  install -d -o root -g root -m 0755 "$(dirname "$INSTALL_DIR")"
-  install -d -o root -g root -m 0755 "$CONFIG_DIR"
-  install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$DATA_DIR"
+  if [ "$BOOTSTRAP_MODE" = true ]; then
+    bootstrap_create_dir_exclusive "$INSTALL_DIR" root root 0755 \
+      || fail "nao foi possivel criar o diretorio de instalacao sem sobrescrever."
+    bootstrap_create_dir_exclusive "$CONFIG_DIR" root root 0755 \
+      || fail "nao foi possivel criar o diretorio de configuracao sem sobrescrever."
+    bootstrap_create_dir_exclusive "$DATA_DIR" "$APP_USER" "$APP_USER" 0750 \
+      || fail "nao foi possivel criar o diretorio de dados sem sobrescrever."
+  else
+    install -d -o root -g root -m 0755 "$(dirname "$INSTALL_DIR")"
+    install -d -o root -g root -m 0755 "$CONFIG_DIR"
+    install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$DATA_DIR"
+  fi
   install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$DATA_DIR/uploads"
   install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$DATA_DIR/uploads/profile"
   install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$DATA_DIR/uploads/workspaces"
@@ -1051,33 +1104,17 @@ env_manage_existing() {
 }
 
 show_setup_token_if_needed() {
-  local xtrace_was_enabled=false
-  local setup_token
-
   [ "$VALIDATE_ONLY" != true ] || return 0
 
   if [ "$SETUP_TOKEN_SUPPLIED_BY_ENV" = true ]; then
     say "CONTABASE_SETUP_TOKEN fornecido por ambiente e gravado no arquivo de configuracao."
-    return 0
   fi
 
-  [ "$SETUP_TOKEN_GENERATED_NOW" = true ] || return 0
-
-  case "$-" in
-    *x*) xtrace_was_enabled=true; set +x ;;
-  esac
-  setup_token="$(env_load_value "CONTABASE_SETUP_TOKEN" "$ENV_FILE")"
   say ""
-  say "====================================================================="
-  say "TOKEN DE SETUP INICIAL"
-  say "====================================================================="
-  say "Use este token em /setup para criar o primeiro workspace e usuario admin."
-  say ""
-  say "CONTABASE_SETUP_TOKEN=${setup_token}"
-  say ""
-  say "Guarde este valor. Ele nao sera exibido novamente."
-  say "====================================================================="
-  [ "$xtrace_was_enabled" = false ] || set -x
+  say "O token de setup permanece no arquivo protegido: ${ENV_FILE} (root:root, 0600)."
+  say "Para recupera-lo, abra esse arquivo como root em um terminal local autorizado."
+  say "Use o valor de CONTABASE_SETUP_TOKEN em /setup para criar o primeiro workspace e usuario admin."
+  say "Nao copie o segredo para logs ou mensagens de suporte."
 }
 
 # Assert that persistent mandatory secrets exist in an existing env file (for update/headless).
@@ -1129,6 +1166,13 @@ manage_env_file() {
 
 render_service_file() {
   local service_staging="${TMP_DIR}/contabase.service.new"
+  local network_lines=""
+  if [ "$BOOTSTRAP_MODE" = true ]; then
+    [ ! -e "$SERVICE_FILE" ] && [ ! -L "$SERVICE_FILE" ] \
+      || { fail "unit systemd apareceu durante a instalacao; operacao bloqueada."; return 1; }
+    network_lines="$(bootstrap_unit_network_lines)" \
+      || { fail "perfil de rede sem restricao systemd suportada."; return 1; }
+  fi
   if [ -f "$SERVICE_FILE" ]; then
     SERVICE_BACKUP="${TMP_DIR}/contabase.service.previous"
     cp "$SERVICE_FILE" "$SERVICE_BACKUP" || return 1
@@ -1153,6 +1197,9 @@ render_service_file() {
     echo "ProtectHome=true"
     echo "ProtectSystem=strict"
     echo "ReadWritePaths=${DATA_DIR}"
+    if [ -n "$network_lines" ]; then
+      printf '%s\n' "$network_lines"
+    fi
     echo ""
     echo "[Install]"
     echo "WantedBy=multi-user.target"
@@ -1173,7 +1220,13 @@ stage_and_swap_bundle() {
   chmod 0755 "$STAGING_DIR/contabase" "$STAGING_DIR/admin"
 
   if [ -e "$INSTALL_DIR" ]; then
-    mv "$INSTALL_DIR" "$PREVIOUS_DIR" || fail "nao foi possivel preservar o bundle anterior."
+    if [ "$BOOTSTRAP_MODE" = true ]; then
+      # O adaptador criou o diretorio vazio de forma exclusiva; nao ha bundle anterior.
+      rmdir "$INSTALL_DIR" || fail "diretorio de instalacao inicial nao esta vazio."
+      PREVIOUS_DIR=""
+    else
+      mv "$INSTALL_DIR" "$PREVIOUS_DIR" || fail "nao foi possivel preservar o bundle anterior."
+    fi
   else
     PREVIOUS_DIR=""
   fi
@@ -1257,17 +1310,41 @@ write_install_state() {
     printf 'CONTABASE_CHANNEL=%s\n' "$channel"
     printf 'CONTABASE_INSTALLED_VERSION=%s\n' "$version"
     printf 'CONTABASE_REPO_PATH=%s\n' "$repo_path"
+    if [ "$BOOTSTRAP_MODE" = true ]; then
+      printf 'CONTABASE_COMMIT=%s\n' "$CONTABASE_COMMIT"
+      printf 'CONTABASE_BOOTSTRAP_CONTRACT_VERSION=1\n'
+      printf 'CONTABASE_BOOTSTRAP_ADAPTER=release\n'
+      printf 'CONTABASE_ARTIFACT_NAME=%s\n' "$ARTIFACT_NAME"
+      printf 'CONTABASE_ARTIFACT_PLATFORM=%s\n' "$CONTABASE_ARTIFACT_PLATFORM"
+      printf 'CONTABASE_ARTIFACT_SHA256=%s\n' "$CONTABASE_ARTIFACT_SHA256"
+      printf 'CONTABASE_CHECKSUMS_SHA256=%s\n' "$CONTABASE_CHECKSUMS_SHA256"
+      printf 'CONTABASE_HELPER_SHA256=%s\n' "$CONTABASE_HELPER_SHA256"
+      printf 'CONTABASE_NETWORK_PROFILE=%s\n' "$CONTABASE_NETWORK_PROFILE_VALUE"
+      printf 'CONTABASE_ACCESS_MODE=%s\n' "$CONTABASE_ACCESS_MODE_VALUE"
+      printf 'CONTABASE_HOST_BIND=%s\n' "$CONTABASE_HOST_BIND_VALUE"
+      printf 'CONTABASE_PORT=%s\n' "$PORT"
+      printf 'CONTABASE_INSTALL_DIR=%s\n' "$INSTALL_DIR"
+      printf 'CONTABASE_DATA_DIR=%s\n' "$DATA_DIR"
+      printf 'CONTABASE_CONFIG_DIR=%s\n' "$CONFIG_DIR"
+      printf 'CONTABASE_UPDATE_SUPPORT=legacy-release\n'
+    fi
   } > "$tmpfile"
   install -o root -g root -m 0644 "$tmpfile" "$STATE_FILE"
   rm -f "$tmpfile"
+}
+
+require_release_update_wrapper() {
+  local wrapper_source="${SCRIPT_DIR}/lib/contabase-update-wrapper.sh"
+  [ -f "$wrapper_source" ] && [ ! -L "$wrapper_source" ] \
+    || fail "bundle Release sem wrapper autenticado: ${wrapper_source}; nenhuma alteracao foi executada."
 }
 
 install_update_command() {
   local update_wrapper="/usr/local/bin/contabase-update"
   local mode_file="/etc/contabase/install-mode"
   local wrapper_source="${SCRIPT_DIR}/lib/contabase-update-wrapper.sh"
-  local wrapper_url="${PUBLIC_RAW_BASE}/${TAG}/scripts/lib/contabase-update-wrapper.sh"
-  local wrapper_tmp=""
+
+  require_release_update_wrapper
 
   write_install_state "release" "$INSTALL_CHANNEL" "$TAG" ""
 
@@ -1276,20 +1353,7 @@ install_update_command() {
   chown root:root "$mode_file" 2>/dev/null || true
   chmod 0644 "$mode_file"
 
-  if [ -f "$wrapper_source" ]; then
-    install -o root -g root -m 0755 "$wrapper_source" "$update_wrapper"
-  else
-    command -v curl >/dev/null 2>&1 || fail "curl e obrigatorio para instalar o wrapper de update."
-    wrapper_tmp="$(mktemp "${TMPDIR:-/tmp}/contabase-update-wrapper.XXXXXX")"
-    if ! curl --fail --location --silent --show-error \
-      --proto '=https' --tlsv1.2 \
-      "$wrapper_url" -o "$wrapper_tmp"; then
-      rm -f "$wrapper_tmp"
-      fail "nao foi possivel baixar o wrapper de update da tag ${TAG}."
-    fi
-    install -o root -g root -m 0755 "$wrapper_tmp" "$update_wrapper"
-    rm -f "$wrapper_tmp"
-  fi
+  install -o root -g root -m 0755 "$wrapper_source" "$update_wrapper"
 
   chown root:root "$update_wrapper" 2>/dev/null || true
   chmod 0755 "$update_wrapper"
@@ -1326,7 +1390,7 @@ install_bundle() {
   NEW_RUNTIME_STARTED=true
   if ! systemctl restart contabase; then
     rollback_bundle || true
-    fail "servico nao iniciou com o novo bundle."
+    fail "servico nao iniciou; retorno automatico bloqueado apos tentativa de startup. Preserve dados e backup; pode ser necessaria intervencao administrativa especializada com artefato compativel com o schema atual."
   fi
   if ! wait_for_healthcheck; then
     systemctl status contabase --no-pager || true
@@ -1334,7 +1398,7 @@ install_bundle() {
     if rollback_bundle; then
       fail "novo bundle falhou; bundle anterior recuperado com healthcheck saudavel."
     fi
-    fail "novo bundle falhou e o rollback nao recuperou o healthcheck."
+    fail "novo bundle falhou no healthcheck; retorno automatico bloqueado apos tentativa de startup. Preserve dados e backup; pode ser necessaria intervencao administrativa especializada com artefato compativel com o schema atual."
   fi
 
   NEW_BUNDLE_ACTIVE=false
@@ -1343,7 +1407,66 @@ install_bundle() {
     say "Bundle anterior preservado em: $PREVIOUS_DIR"
   fi
 
+  if [ "$BOOTSTRAP_MODE" = true ]; then
+    say "Bundle ativo; estado sera registrado somente apos a verificacao do runtime."
+  else
+    install_update_command
+  fi
+}
+
+verify_running_release() {
+  [ "$BOOTSTRAP_MODE" = true ] || return 0
+  bootstrap_verify_running_binary "$INSTALL_DIR" "$TAG" \
+    || fail "runtime nao corresponde ao binario e a versao instalados."
+  say "Runtime confirmado: processo principal executa ${INSTALL_DIR}/contabase (${TAG})."
+}
+
+bootstrap_release_main() {
+  local prepared_root lib_path
+  [ "$#" -eq 0 ] || fail "adaptador Bootstrap nao aceita argumentos avulsos."
+  prepared_root="$(cd "${CONTABASE_BOOTSTRAP_CHECKOUT:-}" 2>/dev/null && pwd -P)" \
+    || fail "checkout preparado ausente."
+  [ "$prepared_root" = "$(cd "$SCRIPT_DIR" && pwd -P)" ] \
+    || fail "diretorio do helper diverge do checkout preparado."
+  lib_path="${SCRIPT_DIR}/lib/contabase-bootstrap-adapter.sh"
+  bootstrap_verify_file_digest "$SCRIPT_SOURCE" "$CONTABASE_HELPER_SHA256" "helper Release" \
+    || fail "helper Release divergente do snapshot homologado."
+  bootstrap_verify_file_digest "$lib_path" "$CONTABASE_ADAPTER_LIB_SHA256" "biblioteca do adaptador" \
+    || fail "biblioteca do adaptador divergente do snapshot homologado."
+  bootstrap_verify_file_digest "${SCRIPT_DIR}/lib/contabase-update-wrapper.sh" "$CONTABASE_UPDATE_WRAPPER_SHA256" "wrapper de update" \
+    || fail "wrapper de update divergente do snapshot homologado."
+  bootstrap_validate_release_contract || exit 1
+  bootstrap_validate_network release || exit 1
+  bootstrap_validate_paths release || exit 1
+  bootstrap_validate_no_existing_state || exit 1
+
+  validate_version
+  validate_install_channel
+  validate_repo
+  detect_arch
+  validate_numeric_settings
+  require_commands
+  build_urls
+  [ "$CONTABASE_ARTIFACT_PLATFORM" = "linux/${ARCH}" ] \
+    || fail "plataforma do artifact diverge da arquitetura do host."
+  [ "$CONTABASE_ARTIFACT_NAME" = "$ARTIFACT_NAME" ] \
+    || fail "nome do artifact diverge da arquitetura do host."
+  check_install_platform
+  validate_runtime_config_values
+  ASSUME_YES=1
+  confirm_install
+  download_and_validate_bundle
+  require_release_update_wrapper
+  bootstrap_validate_no_existing_state || exit 1
+  install_bundle
+  verify_running_release
   install_update_command
+  say ""
+  say "ContaBase ${TAG} instalado por artifact Release e saudavel."
+  say "Servico: systemctl status contabase"
+  say "Healthcheck: http://127.0.0.1:${PORT}/health"
+  say "Configuracao preservada em: ${ENV_FILE}"
+  say "Dados preservados em: ${DATA_DIR}"
 }
 
 main() {
@@ -1371,6 +1494,7 @@ main() {
     return
   fi
 
+  require_release_update_wrapper
   install_bundle
   say ""
   say "ContaBase ${TAG} instalado e saudavel."
@@ -1379,5 +1503,15 @@ main() {
   say "Configuracao preservada em: ${ENV_FILE}"
   say "Dados preservados em: ${DATA_DIR}"
 }
+
+if [ "$BOOTSTRAP_MODE" = true ]; then
+  BOOTSTRAP_LIB="${SCRIPT_DIR}/lib/contabase-bootstrap-adapter.sh"
+  [ -f "$BOOTSTRAP_LIB" ] || fail "biblioteca do adaptador Bootstrap ausente."
+  # shellcheck source=lib/contabase-bootstrap-adapter.sh
+  . "$BOOTSTRAP_LIB" || fail "falha ao carregar o contrato do adaptador Bootstrap."
+  bootstrap_sanitized_reexec "$SCRIPT_SOURCE" "$@"
+  bootstrap_release_main "$@"
+  exit $?
+fi
 
 main

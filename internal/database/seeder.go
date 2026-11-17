@@ -66,7 +66,6 @@ type categoryReseedRow struct {
 	TransactionCount   int
 	RecurringRuleCount int
 	CostLimitCount     int
-	BoxCount           int
 }
 
 // ---------------------------------------------------------------------------
@@ -353,14 +352,14 @@ func planWorkspaceCategoryReseedTx(tx *sql.Tx, workspaceID string) (CategoryRese
 			item.Reason = reseedUsageReason(category)
 			report.PreservedByUsage = append(report.PreservedByUsage, item)
 		}
-		if category.CostLimitCount > 0 || category.BoxCount > 0 {
+		if category.CostLimitCount > 0 {
 			preserve[category.ID] = true
 			reportedDependency[category.ID] = true
 			item := category.CategoryReseedItem
 			item.Reason = reseedDependencyReason(category)
 			report.PreservedByDependency = append(report.PreservedByDependency, item)
 		}
-		if category.ParentMissing && (category.TransactionCount > 0 || category.RecurringRuleCount > 0 || category.CostLimitCount > 0 || category.BoxCount > 0) {
+		if category.ParentMissing && (category.TransactionCount > 0 || category.RecurringRuleCount > 0 || category.CostLimitCount > 0) {
 			item := category.CategoryReseedItem
 			item.Reason = "categoria_orfa_com_uso_ou_dependencia"
 			report.Conflicts = append(report.Conflicts, item)
@@ -424,8 +423,7 @@ func loadCategoryReseedRowsTx(tx *sql.Tx, workspaceID string) ([]categoryReseedR
 			CASE WHEN c.parent_id IS NOT NULL AND p.id IS NULL THEN 1 ELSE 0 END,
 			(SELECT COUNT(1) FROM transactions t WHERE t.workspace_id = c.workspace_id AND t.category_id = c.id),
 			(SELECT COUNT(1) FROM recurring_rules rr WHERE rr.workspace_id = c.workspace_id AND rr.category_id = c.id),
-			(SELECT COUNT(1) FROM cost_limits cl WHERE cl.workspace_id = c.workspace_id AND cl.category_id = c.id),
-			(SELECT COUNT(1) FROM boxes b WHERE b.workspace_id = c.workspace_id AND b.category_id = c.id)
+			(SELECT COUNT(1) FROM cost_limits cl WHERE cl.workspace_id = c.workspace_id AND cl.category_id = c.id)
 		FROM categories c
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
 		WHERE c.workspace_id = ?
@@ -451,7 +449,6 @@ func loadCategoryReseedRowsTx(tx *sql.Tx, workspaceID string) ([]categoryReseedR
 			&item.TransactionCount,
 			&item.RecurringRuleCount,
 			&item.CostLimitCount,
-			&item.BoxCount,
 		); err != nil {
 			return nil, fmt.Errorf("category reseed: falha ao ler categoria: %w", err)
 		}
@@ -815,9 +812,6 @@ func reseedDependencyReason(category categoryReseedRow) string {
 	var reasons []string
 	if category.CostLimitCount > 0 {
 		reasons = append(reasons, "limites")
-	}
-	if category.BoxCount > 0 {
-		reasons = append(reasons, "caixinhas")
 	}
 	return strings.Join(reasons, ",")
 }

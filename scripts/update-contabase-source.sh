@@ -15,11 +15,245 @@ else
   NC=""
 fi
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-. "$REPO_ROOT/scripts/lib/contabase-recovery.sh"
+SCRIPT_SOURCE_RAW="${BASH_SOURCE[0]:-$0}"
+
+bundle_fail() {
+  printf 'Erro: bundle externo do updater recusado: %s\n' "$*" >&2
+  exit 1
+}
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum < "$1" | awk '{print $1}'
+  else
+    shasum -a 256 < "$1" | awk '{print $1}'
+  fi
+}
+
+# Retorna 0 quando o caminho absoluto contem symlink ou componente ambiguo.
+bundle_path_unsafe() {
+  local remaining="$1" output="${2:-}" current="" part
+  [ -n "$remaining" ] || return 1
+  case "$remaining" in /*) ;; *) return 0 ;; esac
+  remaining="${remaining#/}"
+  while [ -n "$remaining" ]; do
+    part="${remaining%%/*}"
+    case "$remaining" in
+      */*) remaining="${remaining#*/}" ;;
+      *) remaining="" ;;
+    esac
+    case "$part" in
+      ""|.) continue ;;
+      ..) return 0 ;;
+    esac
+    current="$current/$part"
+    [ -L "$current" ] && return 0
+  done
+  [ -z "$output" ] || printf -v "$output" '%s' "${current:-/}"
+  return 1
+}
+
+# B1: a intencao de bundle autenticado nao depende de SCRIPT_ROOT == REPO_ROOT.
+# Qualquer variavel definida (inclusive vazia) ou manifesto presente (inclusive
+# symlink pendente) exige o contrato completo. Sem sinal, o modo legado segue.
+bundle_contract_requested=false
+[ -n "${CONTABASE_UPDATER_BUNDLE_COMMIT+x}" ] && bundle_contract_requested=true
+[ -n "${CONTABASE_UPDATER_BUNDLE_MANIFEST_SHA256+x}" ] && bundle_contract_requested=true
+[ -n "${CONTABASE_UPDATE_WRAPPER_PATH+x}" ] && bundle_contract_requested=true
+[ -n "${CONTABASE_UPDATE_WRAPPER_SHA256+x}" ] && bundle_contract_requested=true
+case "$SCRIPT_SOURCE_RAW" in
+  /*) ;;
+  *) SCRIPT_SOURCE_RAW="$PWD/$SCRIPT_SOURCE_RAW" ;;
+esac
+script_dir_raw="${SCRIPT_SOURCE_RAW%/*}"
+script_dir_raw="${script_dir_raw:-/}"
+manifest_raw="$script_dir_raw/../updater.sha256"
+if [ -e "$manifest_raw" ] || [ -L "$manifest_raw" ]; then
+  bundle_contract_requested=true
+fi
+script_path_unsafe=false
+script_path_literal=""
+bundle_path_unsafe "$SCRIPT_SOURCE_RAW" script_path_literal && script_path_unsafe=true
+if [ "$bundle_contract_requested" = true ]; then
+  [ "$script_path_unsafe" = false ] \
+    || bundle_fail "caminho do updater com symlink ou componente inseguro"
+  script_dir_literal="${script_path_literal%/*}"
+  SCRIPT_ROOT="${script_dir_literal%/*}"
+  SCRIPT_ROOT="${SCRIPT_ROOT:-/}"
+else
+  SCRIPT_ROOT="$(cd "$script_dir_raw/.." && pwd -P)"
+  if [ -e "$SCRIPT_ROOT/updater.sha256" ] || [ -L "$SCRIPT_ROOT/updater.sha256" ]; then
+    [ "$script_path_unsafe" = false ] \
+      || bundle_fail "caminho do updater com symlink ou componente inseguro"
+    bundle_contract_requested=true
+  fi
+fi
+if [ -n "${CONTABASE_REPO_ROOT:-}" ]; then
+  case "$CONTABASE_REPO_ROOT" in
+    /*) ;;
+    *) echo "Erro: CONTABASE_REPO_ROOT deve ser absoluto: $CONTABASE_REPO_ROOT" >&2; exit 1 ;;
+  esac
+  REPO_ROOT="$(cd "$CONTABASE_REPO_ROOT" 2>/dev/null && pwd -P)" || {
+    echo "Erro: CONTABASE_REPO_ROOT inacessivel: $CONTABASE_REPO_ROOT" >&2
+    exit 1
+  }
+else
+  REPO_ROOT="$SCRIPT_ROOT"
+fi
+
+UPDATER_BUNDLE_EXTERNAL=false
+LIB_ROOT="$REPO_ROOT"
+VERIFIED_WRAPPER_PATH=""
+VERIFIED_WRAPPER_SHA256=""
+if [ "$bundle_contract_requested" = true ]; then
+  UPDATER_BUNDLE_EXTERNAL=true
+  LIB_ROOT="$SCRIPT_ROOT"
+  [ -n "${CONTABASE_VERSION:-}" ] \
+    || bundle_fail "CONTABASE_VERSION obrigatoria no modo autenticado"
+fi
+
+# Contrato de recebimento do bundle externo. Esta validacao roda ANTES de
+# carregar qualquer biblioteca do bundle e antes de --help/source/exec.
+# A autenticidade da propria referencia (manifesto/commit) e responsabilidade
+# do dispatcher F3-C.
+validate_external_bundle() {
+  [ "$UPDATER_BUNDLE_EXTERNAL" = true ] || return 0
+
+  local version="${CONTABASE_VERSION:-}"
+  local commit="${CONTABASE_UPDATER_BUNDLE_COMMIT:-}"
+  local expected="${CONTABASE_UPDATER_BUNDLE_MANIFEST_SHA256:-}"
+  local manifest="$SCRIPT_ROOT/updater.sha256"
+  local allowed="VERSION scripts/update-contabase-source.sh scripts/update-contabase-docker.sh scripts/update-contabase-release.sh scripts/lib/contabase-install-state.sh scripts/lib/contabase-recovery.sh scripts/lib/contabase-update-wrapper.sh scripts/lib/contabase-docker-image-update.py"
+  local required_paths=()
+  local header actual entries hash path entry_path file actual_hash verified_file found
+  local verified_files=()
+
+  required_paths=(VERSION scripts/update-contabase-source.sh \
+    scripts/lib/contabase-install-state.sh scripts/lib/contabase-recovery.sh \
+    scripts/lib/contabase-update-wrapper.sh)
+
+  [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta\.(0|[1-9][0-9]*))?$ ]] \
+    || bundle_fail "versao ausente ou invalida"
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] \
+    || bundle_fail "commit autorizado ausente ou invalido"
+  [[ "$expected" =~ ^[0-9a-f]{64}$ ]] \
+    || bundle_fail "digest autorizado do manifesto ausente ou invalido"
+  [ -n "${CONTABASE_REPO_ROOT:-}" ] \
+    || bundle_fail "CONTABASE_REPO_ROOT obrigatorio no modo autenticado"
+  for cmd in awk sed grep find tr; do
+    command -v "$cmd" >/dev/null 2>&1 \
+      || bundle_fail "comando obrigatorio ausente: $cmd"
+  done
+
+  [ -d "$SCRIPT_ROOT/scripts" ] && [ ! -L "$SCRIPT_ROOT/scripts" ] \
+    || bundle_fail "diretorio scripts ausente ou inseguro"
+  [ -f "$manifest" ] && [ ! -L "$manifest" ] \
+    || bundle_fail "updater.sha256 ausente ou inseguro"
+  LC_ALL=C grep -q $'\r' "$manifest" 2>/dev/null \
+    && bundle_fail "CRLF nao permitido no updater.sha256"
+  actual="$(sha256_file "$manifest")" \
+    || bundle_fail "falha ao calcular o SHA-256 do manifesto"
+  [ "$actual" = "$expected" ] \
+    || bundle_fail "manifesto diverge da identidade autorizada"
+  header="$(sed -n '1p' "$manifest")" \
+    || bundle_fail "falha ao ler o cabecalho do manifesto"
+  [ "$header" = "commit=$commit" ] \
+    || bundle_fail "commit do manifesto diverge do autorizado"
+
+  entries="$(LC_ALL=C awk -v allowed="$allowed" '
+    BEGIN { n = split(allowed, a, " "); for (i = 1; i <= n; i++) ok[a[i]] = 1 }
+    NR == 1 { next }
+    {
+      if (length($0) < 67) exit 1
+      hash = substr($0, 1, 64)
+      sep = substr($0, 65, 2)
+      path = substr($0, 67)
+      if (length(hash) != 64 || hash ~ /[^0-9a-f]/ || sep != "  " || path == "") exit 1
+      if (path ~ /(^\/|(^|\/)\.\.?(\/|$)|\\|  )/) exit 1
+      if (!(path in ok) || (path in seen)) exit 1
+      if (count && path < prev) exit 1
+      seen[path] = 1
+      prev = path
+      count++
+      print hash "\t" path
+    }
+    END { if (count == 0) exit 1 }
+  ' "$manifest")" || bundle_fail "formato, ordem, duplicata ou caminho invalido no manifesto"
+  [ -n "$entries" ] || bundle_fail "manifesto vazio"
+
+  # Comparacoes literais em Bash: nenhum nome de arquivo passa por awk -v,
+  # glob ou interpretacao de escape.
+  for path in "${required_paths[@]}"; do
+    found=false
+    while IFS=$'\t' read -r hash entry_path; do
+      [ -n "$hash" ] || continue
+      if [ "$entry_path" = "$path" ]; then
+        found=true
+        break
+      fi
+    done <<< "$entries"
+    [ "$found" = true ] || bundle_fail "manifesto incompleto: $path"
+  done
+
+  VERIFIED_WRAPPER_PATH="$SCRIPT_ROOT/scripts/lib/contabase-update-wrapper.sh"
+  VERIFIED_WRAPPER_SHA256=""
+  while IFS=$'\t' read -r hash entry_path; do
+    [ -n "$hash" ] || continue
+    if [ "$entry_path" = "scripts/lib/contabase-update-wrapper.sh" ]; then
+      VERIFIED_WRAPPER_SHA256="$hash"
+      break
+    fi
+  done <<< "$entries"
+  [ -n "$VERIFIED_WRAPPER_SHA256" ] \
+    || bundle_fail "wrapper verificado ausente do manifesto"
+
+  while IFS=$'\t' read -r hash path; do
+    [ -n "$hash" ] || continue
+    file="$SCRIPT_ROOT/$path"
+    bundle_path_unsafe "$file" \
+      && bundle_fail "caminho com symlink ou componente inseguro: $path"
+    [ -f "$file" ] && [ ! -L "$file" ] \
+      || bundle_fail "arquivo ausente ou inseguro: $path"
+    actual_hash="$(sha256_file "$file")" \
+      || bundle_fail "falha ao calcular o SHA-256: $path"
+    [ "$actual_hash" = "$hash" ] \
+      || bundle_fail "conteudo divergente no bundle: $path"
+    verified_files+=("$file")
+  done <<< "$entries"
+
+  [ "$(tr -d '[:space:]' < "$SCRIPT_ROOT/VERSION")" = "$version" ] \
+    || bundle_fail "VERSION do bundle diverge da versao solicitada"
+
+  (
+    inventory="$(mktemp "${TMPDIR:-/tmp}/contabase-updater-inventory.XXXXXX")" \
+      || bundle_fail "falha ao criar inventario do bundle"
+    trap 'rm -f -- "$inventory"' EXIT
+    find "$SCRIPT_ROOT" \
+      \( -type l -o \( -type f \( -perm -0100 -o -perm -0010 -o -perm -0001 \) \) \) \
+      -print0 > "$inventory" 2>/dev/null \
+      || bundle_fail "falha ao enumerar executaveis do bundle"
+    while IFS= read -r -d '' file; do
+      [ ! -L "$file" ] || bundle_fail "symlink no bundle"
+      for verified_file in "${verified_files[@]}"; do
+        [ "$file" != "$verified_file" ] || continue 2
+      done
+      bundle_fail "arquivo executavel nao declarado: ${file#"$SCRIPT_ROOT"/}"
+    done < "$inventory"
+  ) || exit 1
+}
+
+validate_external_bundle
+
+. "$LIB_ROOT/scripts/lib/contabase-recovery.sh"
+STATE_LIB="${LIB_ROOT}/scripts/lib/contabase-install-state.sh"
+[ -f "$STATE_LIB" ] || { echo "Erro: biblioteca de estado ausente: $STATE_LIB" >&2; exit 1; }
+# shellcheck source=lib/contabase-install-state.sh
+. "$STATE_LIB" || { echo "Erro: falha ao carregar o contrato de estado." >&2; exit 1; }
 APP_DIR="${CONTABASE_INSTALL_DIR:-/opt/contabase}"
 DATA_DIR="${DATA_DIR:-/var/lib/contabase}"
 STATE_FILE="${CONTABASE_STATE_FILE:-/etc/contabase/install-state.env}"
+FINALIZE_MARKER="$(dirname "$STATE_FILE")/finalize.pending"
+TRANSITION_JOURNAL="$(dirname "$STATE_FILE")/transition.pending"
 SERVICE_FILE=/etc/systemd/system/contabase.service
 UPLOADS_DIR="${UPLOADS_DIR:-${DATA_DIR}/uploads}"
 PROFILE_UPLOADS_DIR="${UPLOADS_DIR}/profile"
@@ -63,6 +297,22 @@ PERSISTED_VERSION=""
 CONFIRMED_RUNTIME_VERSION=""
 RECOVERY_FINALIZE_ONLY=false
 RUNTIME_CONFIRMED=false
+CHECKOUT_KIND=""
+INSTALL_REF=""
+INSTALL_COMMIT=""
+INSTALL_ORIGIN=""
+STATE_PROVENANCE_COMPLETE=false
+TARGET_REF=""
+TARGET_TAG=""
+TARGET_OBJECT_TYPE=""
+TEMP_TARGET_REF="refs/contabase-update/target"
+UNSHALLOW_REF_PREFIX="refs/contabase-update/unshallow"
+HEAD_BEFORE_FETCH=""
+STATUS_BEFORE_FETCH=""
+EFFECTIVE_ORIGIN=""
+VALIDATED_ORIGIN=""
+TAGS_BEFORE_FILE=""
+TRANSITION_AUTHORIZED=false
 
 error_handler() {
   local exit_code="${1:-$?}"
@@ -108,6 +358,14 @@ handle_signal() {
 trap handle_signal INT TERM
 
 cleanup_update_tmp() {
+  if [ -n "${REPO_ROOT:-}" ] && [ -d "$REPO_ROOT/.git" ]; then
+    git -C "$REPO_ROOT" update-ref -d "$TEMP_TARGET_REF" 2>/dev/null || true
+    git -C "$REPO_ROOT" for-each-ref --format='delete %(refname)' "$UNSHALLOW_REF_PREFIX" \
+      | git -C "$REPO_ROOT" update-ref --stdin 2>/dev/null || true
+  fi
+  if [ -n "$TAGS_BEFORE_FILE" ] && [ -f "$TAGS_BEFORE_FILE" ]; then
+    rm -f "$TAGS_BEFORE_FILE"
+  fi
   if [ -n "$CANONICAL_BACKUP_HELPER_TMP" ] && [ -f "$CANONICAL_BACKUP_HELPER_TMP" ]; then
     rm -f "$CANONICAL_BACKUP_HELPER_TMP"
   fi
@@ -172,6 +430,24 @@ require_repo_root() {
     log_error "Erro: execute este script na raiz do repositório ContaBase."
     exit 1
   fi
+}
+
+ensure_local_tag() {
+  local local_oid
+  [ "$CHECKOUT_KIND" = "tag" ] || return 0
+  [ -n "$TARGET_TAG" ] && [ -n "$TARGET_OID" ] || return 1
+  local_oid="$(git rev-parse --verify "refs/tags/${TARGET_TAG}^{commit}" 2>/dev/null || true)"
+  if [ -n "$local_oid" ]; then
+    [ "$local_oid" = "$TARGET_OID" ] || {
+      log_error "Erro: tag local ${TARGET_TAG} diverge do alvo confirmado."
+      return 1
+    }
+    return 0
+  fi
+  git tag "$TARGET_TAG" "$TARGET_OID" || {
+    log_error "Erro: nao foi possivel registrar a tag local ${TARGET_TAG}."
+    return 1
+  }
 }
 
 resolve_checkout_version() {
@@ -373,7 +649,7 @@ resolve_current_version() {
     PREVIOUS_VERSION="$CONFIRMED_RUNTIME_VERSION"
     PREVIOUS_VERSION_RESOLVED=true
     if [ "$CURRENT_VERSION" = "$TARGET_VERSION" ] \
-      && { [ "$persisted" != "$CURRENT_VERSION" ] || [ "$CHECKOUT_VERSION_BEFORE" != "$CURRENT_VERSION" ]; }; then
+      && { [ "$persisted" != "$CURRENT_VERSION" ] || [ "$CHECKOUT_VERSION_BEFORE" != "$CURRENT_VERSION" ] || [ -f "$FINALIZE_MARKER" ]; }; then
       RECOVERY_FINALIZE_ONLY=true
     fi
     return 0
@@ -455,29 +731,1084 @@ write_install_state() {
   local channel="$2"
   local version="$3"
   local repo_path="$4"
-  local tmpfile state_dir
+  local kind="${5:-}"
+  local ref="${6:-}"
+  local commit="${7:-}"
+  local origin="${8:-}"
 
-  state_dir="$(dirname "$STATE_FILE")"
-  install -d -o root -g root -m 0755 "$state_dir"
-  tmpfile="$(mktemp "${TMPDIR:-/tmp}/contabase-install-state.XXXXXX")"
-  {
-    printf 'CONTABASE_STATE_VERSION=1\n'
-    printf 'CONTABASE_INSTALL_METHOD=%s\n' "$method"
-    printf 'CONTABASE_CHANNEL=%s\n' "$channel"
-    printf 'CONTABASE_INSTALLED_VERSION=%s\n' "$version"
-    printf 'CONTABASE_REPO_PATH=%s\n' "$repo_path"
-  } > "$tmpfile"
-  install -o root -g root -m 0644 "$tmpfile" "$STATE_FILE"
-  rm -f "$tmpfile"
+  if [ -z "$kind" ]; then
+    kind="$(state_value "$STATE_FILE" CONTABASE_INSTALL_REF_KIND)"
+    ref="$(state_value "$STATE_FILE" CONTABASE_INSTALL_REF)"
+    origin="$(state_value "$STATE_FILE" CONTABASE_INSTALL_ORIGIN)"
+    if [ -n "$kind" ]; then
+      commit="$(git -C "$REPO_ROOT" rev-parse --verify 'HEAD^{commit}' 2>/dev/null || true)"
+    else
+      commit=""
+    fi
+  elif [ -z "$commit" ]; then
+    commit="$(git -C "$REPO_ROOT" rev-parse --verify 'HEAD^{commit}' 2>/dev/null || true)"
+  fi
+
+  state_write_atomic "$STATE_FILE" "$method" "$channel" "$version" "$repo_path" \
+    "$kind" "$ref" "$commit" "$origin"
 }
 
-detect_branch_and_commit() {
-  CURRENT_BRANCH="$(git branch --show-current)"
-  CURRENT_COMMIT="$(git log --oneline -1)"
-  if [ -z "$CURRENT_BRANCH" ]; then
-    log_error "Erro: HEAD destacado nao e suportado neste fluxo. Use uma branch local do repositório público."
-    exit 1
+reject_unsafe_git_environment() {
+  local name
+  while IFS= read -r name; do
+    case "$name" in
+      GIT_CONFIG_KEY_*|GIT_CONFIG_VALUE_*|\
+      GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE|GIT_OBJECT_DIRECTORY|\
+      GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_COMMON_DIR|GIT_NAMESPACE|\
+      GIT_CEILING_DIRECTORIES|GIT_DISCOVERY_ACROSS_FILESYSTEM|\
+      GIT_CONFIG|GIT_CONFIG_GLOBAL|GIT_CONFIG_SYSTEM|GIT_CONFIG_COUNT|\
+      GIT_CONFIG_PARAMETERS|GIT_PROXY_COMMAND|GIT_SSH|GIT_SSH_COMMAND|\
+      GIT_SSH_VARIANT|GIT_ASKPASS|SSH_ASKPASS|GIT_ALLOW_PROTOCOL|\
+      GIT_PROTOCOL_FROM_USER|GIT_SSL_NO_VERIFY|GIT_SSL_CAINFO|\
+      GIT_SSL_CAPATH|GIT_SSL_CERT|GIT_SSL_KEY|GIT_SHALLOW_FILE|\
+      GIT_REPLACE_REF_BASE|GIT_NO_REPLACE_OBJECTS|GIT_QUARANTINE_PATH|\
+      GIT_INTERNAL_SUPER_PREFIX|GIT_PREFIX|GIT_EXEC_PATH)
+        log_error "Erro: variavel de ambiente Git nao permitida: ${name}"
+        return 1
+        ;;
+    esac
+  done < <(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p')
+  return 0
+}
+
+validate_remote_origin() {
+  local repo="$1" remote="$2" expected="${3:-$CONTABASE_OFFICIAL_ORIGIN}"
+  local raw_values raw_count raw normalized effective_values effective_count effective rewrite value
+
+  case "$remote" in
+    ""|*[!A-Za-z0-9._-]*)
+      log_error "Erro: remote Git invalido: ${remote:-<vazio>}"
+      return 1
+      ;;
+  esac
+
+  raw_values="$(git -C "$repo" config --get-all "remote.${remote}.url" 2>/dev/null || true)"
+  raw_count="$(state_count_lines "$raw_values")"
+  [ "$raw_count" = "1" ] || {
+    log_error "Erro: remote ${remote} ausente ou com URL ambigua."
+    return 1
+  }
+  raw="$(printf '%s\n' "$raw_values" | sed -n '1p')"
+  normalized="$(state_normalize_origin "$raw")" || {
+    log_error "Erro: URL configurada nao pertence a origem oficial."
+    return 1
+  }
+  [ "$normalized" = "$expected" ] || {
+    log_error "Erro: URL configurada diverge da origem oficial."
+    return 1
+  }
+
+  effective_values="$(git -C "$repo" remote get-url --all "$remote" 2>/dev/null || true)"
+  effective_count="$(state_count_lines "$effective_values")"
+  [ "$effective_count" = "1" ] || {
+    log_error "Erro: URL efetiva do remote ${remote} ausente ou ambigua."
+    return 1
+  }
+  effective="$(printf '%s\n' "$effective_values" | sed -n '1p')"
+  normalized_effective="$(state_normalize_origin "$effective")" || {
+    log_error "Erro: URL efetiva nao pertence a origem oficial."
+    return 1
+  }
+  [ "$normalized_effective" = "$expected" ] || {
+    log_error "Erro: URL efetiva diverge da origem oficial."
+    return 1
+  }
+
+  while IFS= read -r rewrite; do
+    [ -n "$rewrite" ] || continue
+    value="${rewrite#* }"
+    [ -n "$value" ] || continue
+    case "$expected" in
+      "$value"*)
+        log_error "Erro: configuracao Git de reescrita de URL afeta a origem oficial."
+        return 1
+        ;;
+    esac
+  done <<< "$(git -C "$repo" config --get-regexp '^url\..*\.(insteadOf|pushInsteadOf)$' 2>/dev/null || true)"
+
+  VALIDATED_ORIGIN="$normalized_effective"
+  return 0
+}
+
+record_local_tags() {
+  TAGS_BEFORE_FILE="$(mktemp "${TMPDIR:-/tmp}/contabase-tags-before.XXXXXX")" || return 1
+  if ! git -C "$REPO_ROOT" for-each-ref --format='%(refname) %(objectname)' refs/tags \
+    | LC_ALL=C sort > "$TAGS_BEFORE_FILE"; then
+    log_error "Erro: nao foi possivel registrar as tags locais antes do fetch."
+    return 1
   fi
+}
+
+assert_local_tags_unchanged() {
+  local current
+  [ -n "$TAGS_BEFORE_FILE" ] && [ -f "$TAGS_BEFORE_FILE" ] || {
+    log_error "Erro: registro previo das tags locais ausente."
+    return 1
+  }
+  current="$(mktemp "${TMPDIR:-/tmp}/contabase-tags-after.XXXXXX")" || return 1
+  if ! git -C "$REPO_ROOT" for-each-ref --format='%(refname) %(objectname)' refs/tags \
+    | LC_ALL=C sort > "$current"; then
+    rm -f "$current"
+    log_error "Erro: nao foi possivel reler as tags locais."
+    return 1
+  fi
+  if ! cmp -s "$TAGS_BEFORE_FILE" "$current"; then
+    rm -f "$current"
+    log_error "Erro: refs/tags locais foram alteradas durante a obtencao de objetos Git."
+    return 1
+  fi
+  rm -f "$current"
+  return 0
+}
+
+finalize_marker_value() {
+  local file="$1" key="$2"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1); exit }' "$file"
+}
+
+write_finalize_marker() {
+  local dir tmp
+  [ -n "$TARGET_VERSION" ] && [ -n "$TARGET_OID" ] && [ -n "$CHECKOUT_KIND" ] && [ -n "$TARGET_REF" ] || {
+    log_error "Erro: dados insuficientes para o marcador de finalizacao."
+    return 1
+  }
+  [[ "$TARGET_OID" =~ ^[0-9a-f]{40}$ ]] || return 1
+  dir="$(dirname "$FINALIZE_MARKER")"
+  mkdir -p "$dir" || return 1
+  tmp="$(mktemp "${dir}/.finalize.pending.XXXXXX")" || return 1
+  (
+    umask 077
+    {
+      printf 'schema=1\n'
+      printf 'method=source\n'
+      printf 'target_version=%s\n' "$TARGET_VERSION"
+      printf 'target_kind=%s\n' "$CHECKOUT_KIND"
+      printf 'target_ref=%s\n' "$TARGET_REF"
+      printf 'target_commit=%s\n' "$TARGET_OID"
+      printf 'previous_version=%s\n' "${PREVIOUS_VERSION:-desconhecida}"
+      printf 'previous_commit=%s\n' "${CURRENT_HEAD_OID:-$TARGET_OID}"
+      printf 'runtime_version=%s\n' "$TARGET_VERSION"
+    } > "$tmp"
+  ) || { rm -f "$tmp"; return 1; }
+  chmod 0600 "$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$FINALIZE_MARKER" || { rm -f "$tmp"; return 1; }
+}
+
+validate_finalize_marker_structure() {
+  local file="$FINALIZE_MARKER" size key value
+  local keys="schema method target_version target_kind target_ref target_commit previous_version previous_commit runtime_version"
+
+  [ -f "$file" ] && [ ! -L "$file" ] || {
+    log_error "Erro: marcador de finalizacao ausente ou inseguro."
+    return 1
+  }
+  size="$(wc -c < "$file" | tr -d '[:space:]')" || return 1
+  [ "$size" -le 4096 ] || {
+    log_error "Erro: marcador de finalizacao excessivamente grande."
+    return 1
+  }
+  awk -F= -v allowed="$keys" '
+    BEGIN { split(allowed, a, " "); for (i in a) allowed_keys[a[i]] = 1 }
+    /^[[:space:]]*$/ { next }
+    {
+      if (index($0, "=") == 0 || !($1 in allowed_keys) || ($1 in seen)) exit 1
+      seen[$1] = 1
+      value = substr($0, index($0, "=") + 1)
+      if (value ~ /[\r\n\t]/ || value == "") exit 1
+    }
+    END {
+      for (i in allowed_keys) if (!(i in seen)) exit 1
+    }
+  ' "$file" || {
+    log_error "Erro: marcador de finalizacao invalido ou ambiguo."
+    return 1
+  }
+
+  [ "$(finalize_marker_value "$file" schema)" = "1" ] || return 1
+  [ "$(finalize_marker_value "$file" method)" = "source" ] || return 1
+  [[ "$(finalize_marker_value "$file" target_commit)" =~ ^[0-9a-f]{40}$ ]] || return 1
+  [[ "$(finalize_marker_value "$file" previous_commit)" =~ ^[0-9a-f]{40}$ ]] || return 1
+  case "$(finalize_marker_value "$file" target_kind)" in
+    tag|branch) ;;
+    *) return 1 ;;
+  esac
+
+  for key in target_version target_ref previous_version; do
+    value="$(finalize_marker_value "$file" "$key")"
+    case "$value" in
+      ""|*[!A-Za-z0-9._/-]*) log_error "Erro: campo inseguro no marcador: $key"; return 1 ;;
+    esac
+  done
+  return 0
+}
+
+finalize_marker_matches_target() {
+  local file="$FINALIZE_MARKER"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  [ "$(finalize_marker_value "$file" target_version)" = "$TARGET_VERSION" ] || return 1
+  [ "$(finalize_marker_value "$file" target_kind)" = "$CHECKOUT_KIND" ] || return 1
+  [ "$(finalize_marker_value "$file" target_ref)" = "$TARGET_REF" ] || return 1
+  [ "$(finalize_marker_value "$file" target_commit)" = "$TARGET_OID" ] || return 1
+  [ "$(finalize_marker_value "$file" runtime_version)" = "${CONFIRMED_RUNTIME_VERSION:-}" ] || return 1
+  return 0
+}
+
+validate_finalize_marker_for_target() {
+  validate_finalize_marker_structure || return 1
+  finalize_marker_matches_target || {
+    log_error "Erro: marcador de finalizacao diverge do alvo confirmado."
+    return 1
+  }
+  return 0
+}
+
+validate_pending_marker_for_target() {
+  local marker_version marker_kind decision_rc=0 runtime="${CONFIRMED_RUNTIME_VERSION:-}"
+  local journal_present=false marker_present=false marker_matches=false
+  local journal_previous_checkout="" journal_previous_marker=""
+
+  if [ -e "$TRANSITION_JOURNAL" ] || [ -L "$TRANSITION_JOURNAL" ]; then
+    [ -f "$TRANSITION_JOURNAL" ] && [ ! -L "$TRANSITION_JOURNAL" ] || {
+      log_error "Erro: registro de transicao inseguro."
+      return 1
+    }
+    journal_present=true
+    validate_transition_journal_structure || return 1
+    if ! transition_journal_matches_target; then
+      validate_transition_journal_supersession || return 1
+      log_warn "Intencao anterior sera substituida somente apos o healthcheck do novo alvo."
+      return 0
+    fi
+  fi
+
+  if [ -e "$FINALIZE_MARKER" ] || [ -L "$FINALIZE_MARKER" ]; then
+    [ -f "$FINALIZE_MARKER" ] && [ ! -L "$FINALIZE_MARKER" ] || {
+      log_error "Erro: marcador de finalizacao inseguro."
+      return 1
+    }
+    marker_present=true
+    validate_finalize_marker_structure || return 1
+    if finalize_marker_matches_target; then
+      marker_matches=true
+    fi
+  fi
+
+  if [ "$marker_matches" = true ]; then
+    return 0
+  fi
+
+  if [ "$runtime" = "$TARGET_VERSION" ] \
+    && [ "$RECOVERY_FINALIZE_ONLY" != true ] \
+    && [ "${PERSISTED_VERSION:-}" = "$TARGET_VERSION" ] \
+    && [ "${CHECKOUT_VERSION_BEFORE:-}" = "$TARGET_VERSION" ] \
+    && [ "$journal_present" = false ]; then
+    return 0
+  fi
+
+  if [ "$runtime" = "$TARGET_VERSION" ]; then
+    if [ "$journal_present" = true ]; then
+      validate_transition_journal_previous || return 1
+      TRANSITION_AUTHORIZED=true
+      log_warn "Runtime ${TARGET_VERSION} confirmado com intencao de transicao valida."
+      return 0
+    fi
+    log_error "Erro: runtime ${TARGET_VERSION} saudavel sem intencao de transicao persistida."
+    log_error "Nao promova o checkout apenas pela versao do runtime."
+    log_error "Preserve marcador, registro, estado e dados; use recuperacao administrativa."
+    return 1
+  fi
+
+  if [ "$journal_present" = true ]; then
+    validate_transition_journal_previous || return 1
+    journal_previous_checkout="$(transition_journal_value "$TRANSITION_JOURNAL" previous_checkout_version)"
+    journal_previous_marker="$(transition_journal_value "$TRANSITION_JOURNAL" previous_marker_version)"
+    case "$runtime" in
+      "")
+        return 0
+        ;;
+      "$journal_previous_checkout")
+        return 0
+        ;;
+    esac
+    if [ "$journal_previous_marker" != "none" ] && [ "$runtime" = "$journal_previous_marker" ]; then
+      return 0
+    fi
+    log_error "Erro: runtime ${runtime:-<ausente>} nao corresponde a transicao registrada."
+    return 1
+  fi
+
+  if [ "$marker_present" = true ]; then
+    marker_version="$(finalize_marker_value "$FINALIZE_MARKER" target_version)"
+    marker_kind="$(finalize_marker_value "$FINALIZE_MARKER" target_kind)"
+    [ "$marker_kind" = "$CHECKOUT_KIND" ] || {
+      log_error "Erro: marcador pendente pertence a outro tipo de checkout."
+      return 1
+    }
+    if [ "$marker_version" = "$TARGET_VERSION" ]; then
+      log_error "Erro: runtime nao confirma o alvo pendente ${marker_version}."
+      return 1
+    fi
+    version_decision "$marker_version" "$TARGET_VERSION" || decision_rc=$?
+    [ "$decision_rc" = "0" ] || {
+      log_error "Erro: alvo ${TARGET_VERSION} nao supera a finalizacao pendente ${marker_version}."
+      return 1
+    }
+    [ "$runtime" = "$marker_version" ] || {
+      log_error "Erro: runtime nao confirma a versao pendente ${marker_version}; estado ambiguo."
+      return 1
+    }
+    log_warn "Finalizacao pendente de ${marker_version} preservada; alvo ${TARGET_VERSION} a supera."
+    return 0
+  fi
+
+  return 0
+}
+
+remove_finalize_marker() {
+  [ -e "$FINALIZE_MARKER" ] && [ ! -L "$FINALIZE_MARKER" ] || return 0
+  rm -f "$FINALIZE_MARKER"
+}
+
+transition_journal_value() {
+  local file="$1" key="$2"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1); exit }' "$file"
+}
+
+current_install_channel() {
+  local persisted
+  persisted="$(state_value "$STATE_FILE" CONTABASE_CHANNEL)"
+  if [ -n "$persisted" ]; then
+    printf '%s' "$persisted"
+    return 0
+  fi
+  infer_install_channel
+}
+
+write_transition_journal() {
+  local dir tmp channel marker_hash marker_version marker_commit state_version state_commit
+
+  [ -n "$TARGET_VERSION" ] && [ -n "$TARGET_OID" ] && [ -n "$CHECKOUT_KIND" ] && [ -n "$TARGET_REF" ] \
+    && [ -n "$INSTALL_ORIGIN" ] && [ -n "$CURRENT_HEAD_OID" ] || {
+    log_error "Erro: dados insuficientes para registrar a intencao da transicao."
+    return 1
+  }
+  [[ "$TARGET_OID" =~ ^[0-9a-f]{40}$ ]] || return 1
+  [[ "$CURRENT_HEAD_OID" =~ ^[0-9a-f]{40}$ ]] || return 1
+
+  channel="$(current_install_channel)" || return 1
+  case "$channel" in
+    beta|stable|pinned) ;;
+    *) log_error "Erro: canal invalido para a intencao da transicao: ${channel:-<vazio>}"; return 1 ;;
+  esac
+
+  if [ -f "$FINALIZE_MARKER" ]; then
+    validate_finalize_marker_structure || return 1
+    marker_hash="$(git -C "$REPO_ROOT" hash-object --no-filters "$FINALIZE_MARKER")" || {
+      log_error "Erro: nao foi possivel identificar o marcador pendente."
+      return 1
+    }
+    [[ "$marker_hash" =~ ^[0-9a-f]{40}$ ]] || {
+      log_error "Erro: identidade do marcador pendente invalida."
+      return 1
+    }
+    marker_version="$(finalize_marker_value "$FINALIZE_MARKER" target_version)"
+    marker_commit="$(finalize_marker_value "$FINALIZE_MARKER" target_commit)"
+  else
+    marker_hash="none"
+    marker_version="none"
+    marker_commit="none"
+  fi
+
+  if [ -f "$STATE_FILE" ]; then
+    state_version="$(state_value "$STATE_FILE" CONTABASE_INSTALLED_VERSION)"
+    state_commit="$(state_value "$STATE_FILE" CONTABASE_INSTALL_COMMIT)"
+  else
+    state_version=""
+    state_commit=""
+  fi
+  [ -n "$state_version" ] || state_version="none"
+  [ -n "$state_commit" ] || state_commit="none"
+
+  dir="$(dirname "$TRANSITION_JOURNAL")"
+  mkdir -p "$dir" || return 1
+  tmp="$(mktemp "${dir}/.transition.pending.XXXXXX")" || return 1
+  (
+    umask 077
+    {
+      printf 'schema=1\n'
+      printf 'method=source\n'
+      printf 'target_version=%s\n' "$TARGET_VERSION"
+      printf 'target_kind=%s\n' "$CHECKOUT_KIND"
+      printf 'target_ref=%s\n' "$TARGET_REF"
+      printf 'target_commit=%s\n' "$TARGET_OID"
+      printf 'target_origin=%s\n' "$INSTALL_ORIGIN"
+      printf 'channel=%s\n' "$channel"
+      printf 'previous_checkout_version=%s\n' "${CHECKOUT_VERSION_BEFORE:-none}"
+      printf 'previous_commit=%s\n' "$CURRENT_HEAD_OID"
+      printf 'previous_state_version=%s\n' "$state_version"
+      printf 'previous_state_commit=%s\n' "$state_commit"
+      printf 'previous_marker_hash=%s\n' "$marker_hash"
+      printf 'previous_marker_version=%s\n' "$marker_version"
+      printf 'previous_marker_commit=%s\n' "$marker_commit"
+    } > "$tmp"
+  ) || { rm -f "$tmp"; return 1; }
+  chmod 0600 "$tmp" || { rm -f "$tmp"; return 1; }
+  mv "$tmp" "$TRANSITION_JOURNAL" || { rm -f "$tmp"; return 1; }
+}
+
+validate_transition_journal_structure() {
+  local file="$TRANSITION_JOURNAL" size key value
+  local keys="schema method target_version target_kind target_ref target_commit target_origin channel previous_checkout_version previous_commit previous_state_version previous_state_commit previous_marker_hash previous_marker_version previous_marker_commit"
+
+  [ -f "$file" ] && [ ! -L "$file" ] || {
+    log_error "Erro: registro de transicao ausente ou inseguro."
+    return 1
+  }
+  size="$(wc -c < "$file" | tr -d '[:space:]')" || return 1
+  [ "$size" -le 4096 ] || {
+    log_error "Erro: registro de transicao excessivamente grande."
+    return 1
+  }
+  awk -F= -v allowed="$keys" '
+    BEGIN { split(allowed, a, " "); for (i in a) allowed_keys[a[i]] = 1 }
+    /^[[:space:]]*$/ { next }
+    {
+      if (index($0, "=") == 0 || !($1 in allowed_keys) || ($1 in seen)) exit 1
+      seen[$1] = 1
+      value = substr($0, index($0, "=") + 1)
+      if (value ~ /[\r\n\t]/ || value == "") exit 1
+    }
+    END {
+      for (i in allowed_keys) if (!(i in seen)) exit 1
+    }
+  ' "$file" || {
+    log_error "Erro: registro de transicao invalido ou ambiguo."
+    return 1
+  }
+
+  [ "$(transition_journal_value "$file" schema)" = "1" ] || return 1
+  [ "$(transition_journal_value "$file" method)" = "source" ] || return 1
+  canonicalize_version "$(transition_journal_value "$file" target_version)" >/dev/null 2>&1 || return 1
+  case "$(transition_journal_value "$file" target_kind)" in
+    tag|branch) ;;
+    *) return 1 ;;
+  esac
+  [[ "$(transition_journal_value "$file" target_commit)" =~ ^[0-9a-f]{40}$ ]] || return 1
+  [[ "$(transition_journal_value "$file" previous_commit)" =~ ^[0-9a-f]{40}$ ]] || return 1
+  local normalized_origin
+  normalized_origin="$(state_normalize_origin "$(transition_journal_value "$file" target_origin)")" || return 1
+  [ "$normalized_origin" = "$CONTABASE_OFFICIAL_ORIGIN" ] || return 1
+  case "$(transition_journal_value "$file" channel)" in
+    beta|stable|pinned) ;;
+    *) return 1 ;;
+  esac
+
+  for key in target_version target_ref previous_checkout_version previous_state_version previous_marker_version; do
+    value="$(transition_journal_value "$file" "$key")"
+    case "$value" in
+      ""|*[!A-Za-z0-9._/-]*) log_error "Erro: campo inseguro no registro de transicao: $key"; return 1 ;;
+    esac
+  done
+  if [ "$(transition_journal_value "$file" target_kind)" = "tag" ]; then
+    [ "$(transition_journal_value "$file" target_ref)" = "$(transition_journal_value "$file" target_version)" ] || return 1
+  fi
+
+  for key in previous_state_commit previous_marker_hash previous_marker_commit; do
+    value="$(transition_journal_value "$file" "$key")"
+    if [ "$value" != "none" ] && [[ ! "$value" =~ ^[0-9a-f]{40}$ ]]; then
+      log_error "Erro: identidade invalida no registro de transicao: $key"
+      return 1
+    fi
+  done
+  if [ "$(transition_journal_value "$file" previous_marker_hash)" = "none" ]; then
+    [ "$(transition_journal_value "$file" previous_marker_version)" = "none" ] \
+      && [ "$(transition_journal_value "$file" previous_marker_commit)" = "none" ] || return 1
+  else
+    [ "$(transition_journal_value "$file" previous_marker_version)" != "none" ] \
+      && [ "$(transition_journal_value "$file" previous_marker_commit)" != "none" ] || return 1
+  fi
+  if [ "$(transition_journal_value "$file" previous_state_version)" = "none" ]; then
+    [ "$(transition_journal_value "$file" previous_state_commit)" = "none" ] || return 1
+  fi
+  return 0
+}
+
+transition_journal_matches_target() {
+  [ -f "$TRANSITION_JOURNAL" ] && [ ! -L "$TRANSITION_JOURNAL" ] || return 1
+  [ "$(transition_journal_value "$TRANSITION_JOURNAL" target_version)" = "$TARGET_VERSION" ] || return 1
+  [ "$(transition_journal_value "$TRANSITION_JOURNAL" target_kind)" = "$CHECKOUT_KIND" ] || return 1
+  [ "$(transition_journal_value "$TRANSITION_JOURNAL" target_ref)" = "$TARGET_REF" ] || return 1
+  [ "$(transition_journal_value "$TRANSITION_JOURNAL" target_commit)" = "$TARGET_OID" ] || return 1
+  [ "$(transition_journal_value "$TRANSITION_JOURNAL" target_origin)" = "$EFFECTIVE_ORIGIN" ] || return 1
+  [ "$(transition_journal_value "$TRANSITION_JOURNAL" channel)" = "$(current_install_channel)" ] || return 1
+  return 0
+}
+
+validate_transition_journal_supersession() {
+  local journal_version journal_kind journal_ref journal_commit decision_rc=0
+  local marker_version marker_commit marker_hash previous_hash
+
+  [ -f "$TRANSITION_JOURNAL" ] && [ ! -L "$TRANSITION_JOURNAL" ] || return 1
+  [ "$(transition_journal_value "$TRANSITION_JOURNAL" target_origin)" = "$EFFECTIVE_ORIGIN" ] || {
+    log_error "Erro: intencao anterior diverge da origem oficial."
+    return 1
+  }
+  [ "$(transition_journal_value "$TRANSITION_JOURNAL" channel)" = "$(current_install_channel)" ] || {
+    log_error "Erro: intencao anterior diverge do canal persistido."
+    return 1
+  }
+  journal_kind="$(transition_journal_value "$TRANSITION_JOURNAL" target_kind)"
+  [ "$journal_kind" = "$CHECKOUT_KIND" ] || {
+    log_error "Erro: intencao anterior pertence a outro tipo de checkout."
+    return 1
+  }
+  journal_version="$(transition_journal_value "$TRANSITION_JOURNAL" target_version)"
+  journal_ref="$(transition_journal_value "$TRANSITION_JOURNAL" target_ref)"
+  journal_commit="$(transition_journal_value "$TRANSITION_JOURNAL" target_commit)"
+  version_decision "$journal_version" "$TARGET_VERSION" || decision_rc=$?
+  [ "$decision_rc" = "0" ] || {
+    log_error "Erro: alvo ${TARGET_VERSION} nao supera a intencao anterior ${journal_version}."
+    return 1
+  }
+  [ "${CONFIRMED_RUNTIME_VERSION:-}" = "$journal_version" ] || {
+    log_error "Erro: runtime nao confirma a intencao anterior ${journal_version}; supersessao recusada."
+    return 1
+  }
+
+  if [ -f "$FINALIZE_MARKER" ] && [ ! -L "$FINALIZE_MARKER" ]; then
+    validate_finalize_marker_structure || return 1
+    marker_version="$(finalize_marker_value "$FINALIZE_MARKER" target_version)"
+    marker_commit="$(finalize_marker_value "$FINALIZE_MARKER" target_commit)"
+    if [ "$marker_version" = "$journal_version" ] \
+      && [ "$marker_commit" = "$journal_commit" ] \
+      && [ "$(finalize_marker_value "$FINALIZE_MARKER" target_kind)" = "$journal_kind" ] \
+      && [ "$(finalize_marker_value "$FINALIZE_MARKER" target_ref)" = "$journal_ref" ]; then
+      return 0
+    fi
+    previous_hash="$(transition_journal_value "$TRANSITION_JOURNAL" previous_marker_hash)"
+    if [ "$previous_hash" != "none" ]; then
+      marker_hash="$(git -C "$REPO_ROOT" hash-object --no-filters "$FINALIZE_MARKER")" || return 1
+      [ "$marker_hash" = "$previous_hash" ] \
+        && [ "$marker_version" = "$(transition_journal_value "$TRANSITION_JOURNAL" previous_marker_version)" ] \
+        && [ "$marker_commit" = "$(transition_journal_value "$TRANSITION_JOURNAL" previous_marker_commit)" ] \
+        && return 0
+    fi
+    log_error "Erro: marcador pendente nao corresponde a intencao anterior."
+    return 1
+  elif [ -e "$FINALIZE_MARKER" ] || [ -L "$FINALIZE_MARKER" ]; then
+    log_error "Erro: marcador de finalizacao inseguro."
+    return 1
+  fi
+
+  [ "$(transition_journal_value "$TRANSITION_JOURNAL" previous_marker_hash)" = "none" ] || {
+    log_error "Erro: marcador esperado pela intencao anterior esta ausente."
+    return 1
+  }
+  return 0
+}
+
+validate_transition_journal_previous() {
+  local previous_checkout previous_commit previous_state_version previous_state_commit
+  local previous_marker_hash previous_marker_version previous_marker_commit
+  local current_state_version current_state_commit current_marker_hash
+
+  [ -f "$TRANSITION_JOURNAL" ] && [ ! -L "$TRANSITION_JOURNAL" ] || return 1
+  previous_checkout="$(transition_journal_value "$TRANSITION_JOURNAL" previous_checkout_version)"
+  previous_commit="$(transition_journal_value "$TRANSITION_JOURNAL" previous_commit)"
+  previous_state_version="$(transition_journal_value "$TRANSITION_JOURNAL" previous_state_version)"
+  previous_state_commit="$(transition_journal_value "$TRANSITION_JOURNAL" previous_state_commit)"
+  previous_marker_hash="$(transition_journal_value "$TRANSITION_JOURNAL" previous_marker_hash)"
+  previous_marker_version="$(transition_journal_value "$TRANSITION_JOURNAL" previous_marker_version)"
+  previous_marker_commit="$(transition_journal_value "$TRANSITION_JOURNAL" previous_marker_commit)"
+
+  [ "${CHECKOUT_VERSION_BEFORE:-none}" = "$previous_checkout" ] || {
+    log_error "Erro: versao anterior do checkout diverge da intencao registrada."
+    return 1
+  }
+  [ "${CURRENT_HEAD_OID:-}" = "$previous_commit" ] || {
+    log_error "Erro: commit anterior do checkout diverge da intencao registrada."
+    return 1
+  }
+
+  if [ "$previous_state_version" = "none" ]; then
+    [ ! -e "$STATE_FILE" ] || {
+      log_error "Erro: estado de instalacao surgiu apos a intencao registrada."
+      return 1
+    }
+  else
+    [ -f "$STATE_FILE" ] || {
+      log_error "Erro: estado de instalacao ausente para a intencao registrada."
+      return 1
+    }
+    current_state_version="$(state_value "$STATE_FILE" CONTABASE_INSTALLED_VERSION)"
+    current_state_commit="$(state_value "$STATE_FILE" CONTABASE_INSTALL_COMMIT)"
+    [ -n "$current_state_commit" ] || current_state_commit="none"
+    [ "$current_state_version" = "$previous_state_version" ] \
+      && [ "$current_state_commit" = "$previous_state_commit" ] || {
+      log_error "Erro: estado de instalacao diverge da intencao registrada."
+      return 1
+    }
+  fi
+
+  if [ "$previous_marker_hash" = "none" ]; then
+    [ ! -e "$FINALIZE_MARKER" ] || {
+      log_error "Erro: marcador pendente surgiu apos a intencao registrada."
+      return 1
+    }
+  else
+    [ -f "$FINALIZE_MARKER" ] && [ ! -L "$FINALIZE_MARKER" ] || {
+      log_error "Erro: marcador pendente ausente para a intencao registrada."
+      return 1
+    }
+    validate_finalize_marker_structure || return 1
+    current_marker_hash="$(git -C "$REPO_ROOT" hash-object --no-filters "$FINALIZE_MARKER")" || return 1
+    [ "$current_marker_hash" = "$previous_marker_hash" ] || {
+      log_error "Erro: marcador pendente foi alterado apos a intencao registrada."
+      return 1
+    }
+    [ "$(finalize_marker_value "$FINALIZE_MARKER" target_version)" = "$previous_marker_version" ] \
+      && [ "$(finalize_marker_value "$FINALIZE_MARKER" target_commit)" = "$previous_marker_commit" ] || {
+      log_error "Erro: identidade do marcador pendente diverge da intencao registrada."
+      return 1
+    }
+  fi
+  return 0
+}
+
+remove_transition_journal() {
+  [ -e "$TRANSITION_JOURNAL" ] && [ ! -L "$TRANSITION_JOURNAL" ] || return 0
+  rm -f "$TRANSITION_JOURNAL"
+}
+
+validate_target_channel() {
+  local persisted_channel effective_channel
+  persisted_channel="$(state_value "$STATE_FILE" CONTABASE_CHANNEL)"
+  effective_channel="${persisted_channel:-$INSTALL_CHANNEL}"
+  case "$effective_channel" in
+    "")
+      return 0
+      ;;
+    pinned)
+      return 0
+      ;;
+    beta)
+      case "$TARGET_VERSION" in
+        *-beta.*) return 0 ;;
+        *) log_error "Erro: alvo ${TARGET_VERSION} nao pertence ao canal beta persistido."; return 1 ;;
+      esac
+      ;;
+    stable)
+      case "$TARGET_VERSION" in
+        *-*) log_error "Erro: alvo ${TARGET_VERSION} nao pertence ao canal stable persistido."; return 1 ;;
+        *) return 0 ;;
+      esac
+      ;;
+    *)
+      log_error "Erro: canal persistido invalido: $effective_channel"
+      return 1
+      ;;
+  esac
+}
+
+is_shallow_repo() {
+  local shallow
+  if shallow="$(git rev-parse --is-shallow-repository 2>/dev/null)"; then
+    [ "$shallow" = "true" ]
+    return
+  fi
+  shallow="$(git rev-parse --git-path shallow 2>/dev/null || true)"
+  [ -n "$shallow" ] && [ -s "$shallow" ]
+}
+
+assert_checkout_unchanged() {
+  local head_after="${1:-}"
+  [ -z "$head_after" ] || [ "$head_after" = "$HEAD_BEFORE_FETCH" ] || {
+    log_error "Erro: HEAD mudou durante a obtencao de objetos Git."
+    return 1
+  }
+  [ "$(git rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" = "$HEAD_BEFORE_FETCH" ] || {
+    log_error "Erro: HEAD diverge do valor observado antes do preflight Git."
+    return 1
+  }
+  [ -z "$(git status --porcelain 2>/dev/null)" ] || {
+    log_error "Erro: worktree mudou durante a obtencao de objetos Git."
+    return 1
+  }
+  [ -z "$STATUS_BEFORE_FETCH" ] || {
+    log_error "Erro: worktree nao estava limpo antes da obtencao de objetos Git."
+    return 1
+  }
+}
+
+# validate_complete_state_provenance_local <state_file> <repo_root>
+#   Valida proveniencia persistida completa de forma autoritativa para o
+#   checkout instalado. Retorna 0 quando REF_KIND/REF/COMMIT/origem, HEAD,
+#   VERSION e branch/tag persistida sao coerentes; 2 quando nao ha proveniencia;
+#   1 quando ha proveniencia parcial ou divergente.
+#   Nao relaxa HEAD, commit, origem, versao ou ref. As unicas diferencas em
+#   relacao ao detector legado sao: branch sem upstream (fallback determinístico
+#   para a branch de mesmo nome na origem oficial) e tag com aliases no HEAD.
+validate_complete_state_provenance_local() {
+  local file="$1" repo="$2"
+  local kind ref commit origin version repo_state repo_canonical
+  local head branch checkout_version normalized_origin tag_oid
+
+  state_validate_file "$file" || return 1
+  kind="$(state_value "$file" CONTABASE_INSTALL_REF_KIND)"
+  ref="$(state_value "$file" CONTABASE_INSTALL_REF)"
+  commit="$(state_value "$file" CONTABASE_INSTALL_COMMIT)"
+  origin="$(state_value "$file" CONTABASE_INSTALL_ORIGIN)"
+
+  if [ -z "$kind" ] && [ -z "$ref" ] && [ -z "$commit" ] && [ -z "$origin" ]; then
+    return 2
+  fi
+  [ -n "$kind" ] && [ -n "$ref" ] && [ -n "$commit" ] && [ -n "$origin" ] || return 1
+  case "$kind" in
+    tag|branch) ;;
+    *) return 1 ;;
+  esac
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || return 1
+  normalized_origin="$(state_normalize_origin "$origin")" || return 1
+  [ "$normalized_origin" = "$EFFECTIVE_ORIGIN" ] || return 1
+
+  repo_state="$(state_value "$file" CONTABASE_REPO_PATH)"
+  [ -n "$repo_state" ] && [ -d "$repo_state" ] || return 1
+  repo_canonical="$(cd "$repo_state" 2>/dev/null && pwd -P)" || return 1
+  [ "$repo_canonical" = "$repo" ] || return 1
+
+  version="$(state_value "$file" CONTABASE_INSTALLED_VERSION)"
+  [ -n "$version" ] || return 1
+  checkout_version="$(tr -d '[:space:]' < "$repo/VERSION" 2>/dev/null || true)"
+  [ -n "$checkout_version" ] && [ "$checkout_version" = "$version" ] || return 1
+
+  head="$(git -C "$repo" rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" || return 1
+  [ "$head" = "$commit" ] || return 1
+  branch="$(git -C "$repo" branch --show-current 2>/dev/null || true)"
+
+  case "$kind" in
+    tag)
+      [ -z "$branch" ] || return 1
+      [ "$ref" = "$version" ] || return 1
+      tag_oid="$(git -C "$repo" rev-parse --verify "refs/tags/${ref}^{commit}" 2>/dev/null || true)"
+      [ "$tag_oid" = "$commit" ] || return 1
+      ;;
+    branch)
+      [ "$branch" = "$ref" ] || return 1
+      ;;
+  esac
+  return 0
+}
+
+detect_checkout_provenance() {
+  local checkout_version state_rc=2 state_kind="" state_ref="" state_commit="" state_origin="" state_repo=""
+  local state_canonical marker_pending=false marker_kind="" marker_ref="" marker_commit="" marker_previous_commit=""
+  local local_rc=0 state_err=""
+
+  CURRENT_BRANCH="$(git branch --show-current 2>/dev/null || true)"
+  CURRENT_COMMIT="$(git log --oneline -1 2>/dev/null || true)"
+  CURRENT_HEAD_OID="$(git rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" || {
+    log_error "Erro: nao foi possivel resolver HEAD."
+    return 1
+  }
+  [ -f VERSION ] && [ ! -L VERSION ] && [ -r VERSION ] || {
+    log_error "Erro: VERSION ausente ou inseguro no checkout."
+    return 1
+  }
+  checkout_version="$(tr -d '[:space:]' < VERSION)"
+  [ -n "$checkout_version" ] || {
+    log_error "Erro: VERSION vazio no checkout."
+    return 1
+  }
+
+  reject_unsafe_git_environment || return 1
+  validate_remote_origin "$REPO_ROOT" origin || return 1
+  EFFECTIVE_ORIGIN="$VALIDATED_ORIGIN"
+
+  if [ -f "$FINALIZE_MARKER" ] && [ ! -L "$FINALIZE_MARKER" ]; then
+    marker_pending=true
+    validate_finalize_marker_structure || return 1
+    marker_kind="$(finalize_marker_value "$FINALIZE_MARKER" target_kind)"
+    marker_ref="$(finalize_marker_value "$FINALIZE_MARKER" target_ref)"
+    marker_commit="$(finalize_marker_value "$FINALIZE_MARKER" target_commit)"
+    marker_previous_commit="$(finalize_marker_value "$FINALIZE_MARKER" previous_commit)"
+    log_warn "Finalizacao pendente detectada; validando estado/checkout de forma recuperavel."
+  elif [ -e "$FINALIZE_MARKER" ] || [ -L "$FINALIZE_MARKER" ]; then
+    log_error "Erro: marcador de finalizacao inseguro."
+    return 1
+  fi
+
+  if [ -f "$STATE_FILE" ]; then
+    state_validate_file "$STATE_FILE" || return 1
+    state_repo="$(state_value "$STATE_FILE" CONTABASE_REPO_PATH)"
+    [ -n "$state_repo" ] && [ -d "$state_repo" ] || {
+      log_error "Erro: CONTABASE_REPO_PATH ausente ou inacessivel."
+      return 1
+    }
+    state_canonical="$(cd "$state_repo" 2>/dev/null && pwd -P)" || {
+      log_error "Erro: checkout do estado inacessivel: $state_repo"
+      return 1
+    }
+    [ "$state_canonical" = "$REPO_ROOT" ] || {
+      log_error "Erro: CONTABASE_REPO_PATH diverge do checkout em uso."
+      return 1
+    }
+    state_kind="$(state_value "$STATE_FILE" CONTABASE_INSTALL_REF_KIND)"
+    state_ref="$(state_value "$STATE_FILE" CONTABASE_INSTALL_REF)"
+    state_commit="$(state_value "$STATE_FILE" CONTABASE_INSTALL_COMMIT)"
+    state_origin="$(state_value "$STATE_FILE" CONTABASE_INSTALL_ORIGIN)"
+    if [ "$marker_pending" = true ]; then
+      if [ -n "$state_kind" ] || [ -n "$state_ref" ] || [ -n "$state_commit" ] || [ -n "$state_origin" ]; then
+        [ -n "$state_kind" ] && [ -n "$state_ref" ] && [ -n "$state_commit" ] && [ -n "$state_origin" ] \
+          && { [ "$state_kind" = "tag" ] || [ "$state_kind" = "branch" ]; } \
+          && [[ "$state_commit" =~ ^[0-9a-f]{40}$ ]] || {
+          log_error "Erro: proveniencia persistida parcial durante finalizacao pendente."
+          return 1
+        }
+        state_origin="$(state_normalize_origin "$state_origin")" || {
+          log_error "Erro: origem persistida invalida durante finalizacao pendente."
+          return 1
+        }
+        [ "$state_origin" = "$EFFECTIVE_ORIGIN" ] || {
+          log_error "Erro: origem persistida diverge da origem efetiva durante finalizacao pendente."
+          return 1
+        }
+        state_rc=0
+      else
+        state_rc=2
+      fi
+    else
+      state_rc=0
+      state_err="$(trap - ERR; set +e; provenance_validate_state "$STATE_FILE" "$REPO_ROOT" 2>&1)" || state_rc=$?
+      if [ "$state_rc" -ne 0 ]; then
+        # A proveniencia completa e autoritativa. O detector legado exige
+        # upstream em branches e tag unica no HEAD; essas duas heuristicas nao
+        # provam divergencia de identidade e podem ser relaxadas localmente,
+        # sem aceitar HEAD, commit, origem, versao ou ref diferentes.
+        local_rc=0
+        validate_complete_state_provenance_local "$STATE_FILE" "$REPO_ROOT" || local_rc=$?
+        if [ "$local_rc" = "0" ]; then
+          state_rc=0
+          log_warn "Proveniencia persistida completa validada localmente; heuristicas legadas de upstream/tag alias relaxadas."
+        elif [ -n "$state_err" ]; then
+          printf '%s\n' "$state_err" >&2
+        fi
+        if [ "$local_rc" != "0" ] && [ "$state_kind" = "tag" ] && [ -n "$CURRENT_BRANCH" ]; then
+          log_error "Erro: proveniencia persistida diverge do checkout atual."
+        fi
+      fi
+      case "$state_rc" in
+        0|2) ;;
+        *) log_error "Erro: estado de instalacao invalido ou divergente."; return 1 ;;
+      esac
+    fi
+  fi
+
+  if [ "$marker_pending" = true ]; then
+    if [ "$marker_kind" = "tag" ] && [ ! -f "$STATE_FILE" ]; then
+      log_error "Erro: finalizacao pendente de tag sem estado de instalacao."
+      return 1
+    fi
+    CHECKOUT_KIND="$marker_kind"
+    INSTALL_REF="$marker_ref"
+    INSTALL_COMMIT="$marker_commit"
+    if [ "$state_rc" = "0" ]; then
+      STATE_PROVENANCE_COMPLETE=true
+      [ "$state_kind" = "$marker_kind" ] || {
+        log_error "Erro: tipo persistido diverge do marcador de finalizacao."
+        return 1
+      }
+      [ "$state_origin" = "$EFFECTIVE_ORIGIN" ] || {
+        log_error "Erro: origem persistida diverge da origem efetiva."
+        return 1
+      }
+      INSTALL_ORIGIN="$EFFECTIVE_ORIGIN"
+      if [ "$state_kind" = "branch" ]; then
+        [ "$state_ref" = "$marker_ref" ] && [ "$CURRENT_BRANCH" = "$marker_ref" ] || {
+          log_error "Erro: branch persistida diverge do marcador de finalizacao."
+          return 1
+        }
+      fi
+    else
+      INSTALL_ORIGIN="$EFFECTIVE_ORIGIN"
+    fi
+    if [ "$CHECKOUT_KIND" = "tag" ]; then
+      [ -z "$CURRENT_BRANCH" ] || {
+        log_error "Erro: marcador de tag em checkout de branch."
+        return 1
+      }
+      [ "$CURRENT_HEAD_OID" = "$INSTALL_COMMIT" ] || [ "$CURRENT_HEAD_OID" = "$state_commit" ] \
+        || [ "$CURRENT_HEAD_OID" = "$marker_previous_commit" ] || {
+        log_error "Erro: HEAD nao corresponde ao estado nem ao alvo do marcador."
+        return 1
+      }
+    else
+      [ "$CURRENT_BRANCH" = "$INSTALL_REF" ] || {
+        log_error "Erro: branch atual diverge do marcador de finalizacao."
+        return 1
+      }
+      [ "$CURRENT_HEAD_OID" = "$INSTALL_COMMIT" ] || [ "$CURRENT_HEAD_OID" = "$state_commit" ] \
+        || [ "$CURRENT_HEAD_OID" = "$marker_previous_commit" ] || {
+        log_error "Erro: HEAD nao corresponde ao estado nem ao alvo do marcador."
+        return 1
+      }
+    fi
+    TARGET_REF="$INSTALL_REF"
+    log_warn "Finalizacao pendente aceita para kind=${CHECKOUT_KIND} ref=${INSTALL_REF}."
+    return 0
+  fi
+
+  if [ "$state_rc" = "0" ]; then
+    STATE_PROVENANCE_COMPLETE=true
+    # Proveniencia persistida completa: REF_KIND/REF/COMMIT/origem/HEAD/
+    # VERSION ja foram validados. Nao repete as heuristicas legadas de
+    # upstream unico ou tag unica no HEAD.
+    CHECKOUT_KIND="$state_kind"
+    INSTALL_REF="$state_ref"
+    INSTALL_COMMIT="$state_commit"
+    INSTALL_ORIGIN="$state_origin"
+    [ "$CURRENT_HEAD_OID" = "$INSTALL_COMMIT" ] || {
+      log_error "Erro: HEAD diverge do commit persistido."
+      return 1
+    }
+    [ "$INSTALL_ORIGIN" = "$EFFECTIVE_ORIGIN" ] || {
+      log_error "Erro: origem persistida diverge da origem efetiva."
+      return 1
+    }
+    if [ "$CHECKOUT_KIND" = "tag" ]; then
+      [ -z "$CURRENT_BRANCH" ] || {
+        log_error "Erro: proveniencia persistida diverge do checkout atual (estado de tag em branch)."
+        return 1
+      }
+    else
+      [ "$CURRENT_BRANCH" = "$INSTALL_REF" ] || {
+        log_error "Erro: proveniencia persistida diverge do checkout atual (branch divergente)."
+        return 1
+      }
+    fi
+    TARGET_REF="$INSTALL_REF"
+    log_ok "Proveniencia persistida completa aceita: kind=${CHECKOUT_KIND} ref=${INSTALL_REF} commit=${INSTALL_COMMIT} origin=${INSTALL_ORIGIN}."
+    return 0
+  fi
+
+  provenance_detect "$REPO_ROOT" "$checkout_version" || return 1
+  [ "$PROVENANCE_ORIGIN" = "$EFFECTIVE_ORIGIN" ] || {
+    log_error "Erro: origem detectada diverge da origem efetiva do checkout."
+    return 1
+  }
+  CHECKOUT_KIND="$PROVENANCE_KIND"
+  INSTALL_REF="$PROVENANCE_REF"
+  INSTALL_COMMIT="$PROVENANCE_COMMIT"
+  INSTALL_ORIGIN="$EFFECTIVE_ORIGIN"
+  log_warn "Estado legado sem proveniencia; usando deteccao local nao ambigua."
+
+  if [ "$CHECKOUT_KIND" = "tag" ] && [ -n "$CURRENT_BRANCH" ]; then
+    log_error "Erro: tag exige checkout destacado."
+    return 1
+  fi
+  if [ "$CHECKOUT_KIND" = "tag" ] && [ ! -f "$STATE_FILE" ]; then
+    log_error "Erro: update por tag exige install-state.env legivel."
+    return 1
+  fi
+  TARGET_REF="$INSTALL_REF"
+  log_ok "Proveniencia detectada: kind=${CHECKOUT_KIND} ref=${INSTALL_REF} commit=${INSTALL_COMMIT} origin=${INSTALL_ORIGIN}."
+}
+
+resolve_target_tag() {
+  TARGET_TAG="${CONTABASE_VERSION:-}"
+  [ -n "$TARGET_TAG" ] || {
+    log_error "Erro: tag mode exige CONTABASE_VERSION explicito."
+    return 1
+  }
+  canonicalize_version "$TARGET_TAG" >/dev/null 2>&1 || {
+    log_error "Erro: versao alvo invalida ou ambigua: ${TARGET_TAG}"
+    return 1
+  }
+  TARGET_REF="$TARGET_TAG"
+}
+
+fetch_target_tag() {
+  local local_tag_oid
+  HEAD_BEFORE_FETCH="$(git rev-parse --verify 'HEAD^{commit}')" || return 1
+  STATUS_BEFORE_FETCH="$(git status --porcelain 2>/dev/null || true)"
+  [ -z "$STATUS_BEFORE_FETCH" ] || {
+    log_error "Erro: worktree nao esta limpo antes do fetch da tag."
+    return 1
+  }
+
+  if is_shallow_repo; then
+    log_warn "Shallow clone detectado; expandindo historia antes da validacao de ancestralidade."
+    if ! git fetch --unshallow --no-tags "$CONTABASE_OFFICIAL_ORIGIN" \
+      "+refs/heads/*:${UNSHALLOW_REF_PREFIX}/heads/*" \
+      "+refs/tags/*:${UNSHALLOW_REF_PREFIX}/tags/*"; then
+      log_error "Erro: falha ao expandir clone shallow."
+      return 1
+    fi
+    if is_shallow_repo; then
+      log_error "Erro: clone permaneceu shallow apos a expansao."
+      return 1
+    fi
+    assert_local_tags_unchanged || return 1
+    assert_checkout_unchanged "$(git rev-parse --verify 'HEAD^{commit}')" || return 1
+  fi
+
+  if ! git fetch --no-tags "$CONTABASE_OFFICIAL_ORIGIN" "+refs/tags/${TARGET_TAG}:${TEMP_TARGET_REF}"; then
+    log_error "Erro: tag alvo ausente ou inacessivel na origem oficial: ${TARGET_TAG}"
+    return 1
+  fi
+  assert_local_tags_unchanged || return 1
+  assert_checkout_unchanged "$(git rev-parse --verify 'HEAD^{commit}')" || return 1
+
+  [ "$(git cat-file -t "$TEMP_TARGET_REF" 2>/dev/null)" = "tag" ] \
+    || [ "$(git cat-file -t "$TEMP_TARGET_REF" 2>/dev/null)" = "commit" ] || {
+    log_error "Erro: ref alvo nao e tag nem commit."
+    return 1
+  }
+  TARGET_OBJECT_TYPE="$(git cat-file -t "$TEMP_TARGET_REF")"
+  TARGET_OID="$(git rev-parse --verify "${TEMP_TARGET_REF}^{commit}")" || {
+    log_error "Erro: nao foi possivel resolver a tag alvo para commit."
+    return 1
+  }
+  [[ "$TARGET_OID" =~ ^[0-9a-f]{40}$ ]] || {
+    log_error "Erro: OID alvo invalido."
+    return 1
+  }
+
+  local_tag_oid="$(git rev-parse --verify "refs/tags/${TARGET_TAG}^{commit}" 2>/dev/null || true)"
+  if [ -n "$local_tag_oid" ] && [ "$local_tag_oid" != "$TARGET_OID" ]; then
+    log_error "Erro: tag local ${TARGET_TAG} diverge da tag remota; possivel tag movida."
+    return 1
+  fi
+
+  TARGET_VERSION="$(git show "${TARGET_OID}:VERSION" 2>/dev/null | tr -d '[:space:]')"
+  [ -n "$TARGET_VERSION" ] || {
+    log_error "Erro: VERSION ausente no commit alvo."
+    return 1
+  }
+  canonicalize_version "$TARGET_VERSION" >/dev/null 2>&1 || {
+    log_error "Erro: VERSION alvo invalida: ${TARGET_VERSION}"
+    return 1
+  }
+  [ "$TARGET_VERSION" = "$TARGET_TAG" ] || {
+    log_error "Erro: VERSION do commit alvo (${TARGET_VERSION}) diverge da tag (${TARGET_TAG})."
+    return 1
+  }
+  log_ok "Tag alvo resolvida: ${TARGET_TAG} (${TARGET_OBJECT_TYPE}) -> ${TARGET_OID}."
+}
+
+validate_external_bundle_target() {
+  [ "$UPDATER_BUNDLE_EXTERNAL" = true ] || return 0
+  [ "${CONTABASE_UPDATER_BUNDLE_COMMIT:-}" = "$TARGET_OID" ] || {
+    log_error "Erro: identidade do bundle externo diverge do alvo congelado."
+    return 1
+  }
+  log_ok "Bundle externo do updater validado: versao ${TARGET_VERSION}, commit ${TARGET_OID}."
 }
 
 check_linux_systemd() {
@@ -504,11 +1835,15 @@ check_linux_systemd() {
 require_commands() {
   local cmd
   local missing=()
-  for cmd in git go node npm curl systemctl sqlite3 openssl tar install; do
+  for cmd in git go node npm curl systemctl sqlite3 openssl tar install awk sed tr wc mktemp find; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       missing+=("$cmd")
     fi
   done
+
+  if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
+    missing+=("sha256sum ou shasum")
+  fi
 
   if [ "${#missing[@]}" -gt 0 ]; then
     log_error "Erro: comandos obrigatorios ausentes: ${missing[*]}"
@@ -594,7 +1929,8 @@ enforce_clean_worktree() {
 }
 
 fetch_remote_state() {
-  git fetch --no-tags "$UPSTREAM_REMOTE" "$UPSTREAM_MERGE_REF"
+  git fetch --no-tags "$CONTABASE_OFFICIAL_ORIGIN" "$UPSTREAM_MERGE_REF" || return 1
+  assert_local_tags_unchanged || return 1
 }
 
 freeze_target_oid() {
@@ -614,18 +1950,48 @@ freeze_target_oid() {
 }
 
 resolve_upstream() {
-  local remote merge_ref remote_branch
+  local remote="" merge_ref="" remote_branch upstream_origin remote_set=false merge_set=false
 
-  remote="$(git config --get "branch.${CURRENT_BRANCH}.remote" 2>/dev/null || true)"
-  merge_ref="$(git config --get "branch.${CURRENT_BRANCH}.merge" 2>/dev/null || true)"
-
-  if [ -n "$remote" ] && [ -n "$merge_ref" ]; then
-    UPSTREAM_REMOTE="$remote"
-    UPSTREAM_MERGE_REF="$merge_ref"
-  else
-    UPSTREAM_REMOTE="origin"
-    UPSTREAM_MERGE_REF="refs/heads/${CURRENT_BRANCH}"
+  if remote="$(git config --get-all "branch.${CURRENT_BRANCH}.remote" && printf '.')"; then
+    remote_set=true
+    remote="${remote%$'\n.'}"
+  elif [ "$?" -ne 1 ]; then
+    log_error "Erro: falha ao ler o remote da branch ${CURRENT_BRANCH}."
+    return 1
   fi
+  if merge_ref="$(git config --get-all "branch.${CURRENT_BRANCH}.merge" && printf '.')"; then
+    merge_set=true
+    merge_ref="${merge_ref%$'\n.'}"
+  elif [ "$?" -ne 1 ]; then
+    log_error "Erro: falha ao ler o merge da branch ${CURRENT_BRANCH}."
+    return 1
+  fi
+
+  if [ "$remote_set" = false ] && [ "$merge_set" = false ] && [ "$STATE_PROVENANCE_COMPLETE" = true ]; then
+    remote="origin"
+    merge_ref="refs/heads/${CURRENT_BRANCH}"
+  elif [ "$remote_set" != true ] || [ "$merge_set" != true ]; then
+    log_error "Erro: upstream incompleto ou ausente sem proveniencia persistida completa."
+    return 1
+  fi
+
+  case "$merge_ref" in
+    refs/heads/*) git check-ref-format "$merge_ref" || return 1 ;;
+    *)
+      log_error "Erro: upstream da branch ${CURRENT_BRANCH} nao aponta para refs/heads: ${merge_ref}."
+      return 1
+      ;;
+  esac
+
+  UPSTREAM_REMOTE="$remote"
+  UPSTREAM_MERGE_REF="$merge_ref"
+
+  validate_remote_origin "$REPO_ROOT" "$UPSTREAM_REMOTE" || return 1
+  upstream_origin="$VALIDATED_ORIGIN"
+  [ "$upstream_origin" = "$EFFECTIVE_ORIGIN" ] || {
+    log_error "Erro: remote de upstream diverge da origem efetiva validada."
+    return 1
+  }
 
   remote_branch="${UPSTREAM_MERGE_REF#refs/heads/}"
   UPSTREAM_REF="${UPSTREAM_REMOTE}/${remote_branch}"
@@ -978,22 +2344,62 @@ backfill_update_command() {
   local update_wrapper="${CONTABASE_UPDATE_WRAPPER:-/usr/local/bin/contabase-update}"
   local update_alias="${CONTABASE_UPDATE_ALIAS:-/usr/local/bin/cb-update}"
   local mode_file="${CONTABASE_MODE_FILE:-/etc/contabase/install-mode}"
-  local repo_path installed_channel wrapper_source
+  local repo_path installed_channel persisted_channel wrapper_source
+  local provenance_kind provenance_ref provenance_commit provenance_origin
   repo_path="$REPO_ROOT"
-  installed_channel="$(infer_install_channel)"
+  persisted_channel="$(state_value "$STATE_FILE" CONTABASE_CHANNEL)"
+  installed_channel="${persisted_channel:-$(infer_install_channel)}"
+  provenance_kind="$CHECKOUT_KIND"
+  provenance_ref="$TARGET_REF"
+  provenance_commit="$TARGET_OID"
+  provenance_origin="$INSTALL_ORIGIN"
   wrapper_source="${repo_path}/scripts/lib/contabase-update-wrapper.sh"
+
+  if [ "$UPDATER_BUNDLE_EXTERNAL" != true ] \
+    && { [ ! -f "$wrapper_source" ] || [ -L "$wrapper_source" ]; }; then
+    log_error "Erro: dispatcher autenticado ausente ou inseguro: $wrapper_source"
+    log_error "Nenhum contabase-update foi instalado ou substituido."
+    return 1
+  fi
+
+  if [ "$UPDATER_BUNDLE_EXTERNAL" = true ]; then
+    [ -n "$VERIFIED_WRAPPER_PATH" ] && [ -n "$VERIFIED_WRAPPER_SHA256" ] || {
+      log_error "Erro: wrapper verificado ausente no bundle autenticado."
+      return 1
+    }
+    bundle_path_unsafe "$VERIFIED_WRAPPER_PATH" && {
+      log_error "Erro: caminho do wrapper verificado contem symlink ou componente inseguro."
+      return 1
+    }
+    [ -f "$VERIFIED_WRAPPER_PATH" ] && [ ! -L "$VERIFIED_WRAPPER_PATH" ] || {
+      log_error "Erro: wrapper verificado ausente ou inseguro."
+      return 1
+    }
+    [ "$(sha256_file "$VERIFIED_WRAPPER_PATH")" = "$VERIFIED_WRAPPER_SHA256" ] || {
+      log_error "Erro: wrapper verificado diverge do hash autorizado."
+      return 1
+    }
+  fi
 
   printf '%s\n' "source" > "$mode_file"
   printf '%s\n' "$repo_path" >> "$mode_file"
   chown root:root "$mode_file" 2>/dev/null || true
   chmod 0644 "$mode_file"
 
-  if [ -f "$wrapper_source" ]; then
-    install -o root -g root -m 0755 "$wrapper_source" "$update_wrapper"
+  if [ "$UPDATER_BUNDLE_EXTERNAL" = true ]; then
+    [ "$(sha256_file "$VERIFIED_WRAPPER_PATH")" = "$VERIFIED_WRAPPER_SHA256" ] || {
+      log_error "Erro: wrapper verificado foi alterado antes da instalacao."
+      return 1
+    }
+    install -o root -g root -m 0755 "$VERIFIED_WRAPPER_PATH" "$update_wrapper" || {
+      log_error "Erro: nao foi possivel instalar o wrapper verificado."
+      return 1
+    }
     if [ ! -e "$update_alias" ]; then
       ln -s "$(basename "$update_wrapper")" "$update_alias" 2>/dev/null || true
     fi
-    write_install_state "source" "$installed_channel" "$APP_VERSION" "$repo_path"
+    write_install_state "source" "$installed_channel" "$APP_VERSION" "$repo_path" \
+      "$provenance_kind" "$provenance_ref" "$provenance_commit" "$provenance_origin" || return 1
     echo ""
     echo -e "${GREEN}Comando global de atualizacao instalado:${NC}"
     echo "  sudo contabase-update"
@@ -1001,162 +2407,94 @@ backfill_update_command() {
     return 0
   fi
 
-  cat > "$update_wrapper" <<'WRAPPER_EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-MODE_FILE="/etc/contabase/install-mode"
-PUBLIC_RAW_BASE="${CONTABASE_RAW_BASE:-https://raw.githubusercontent.com/contabase-app/contabase}"
-
-say() { printf '%s\n' "$*"; }
-
-usage() {
-  cat <<EOF
-Uso:
-  sudo contabase-update [VERSAO]
-  sudo contabase-update vMAJOR.MINOR.PATCH[-beta.N]
-
-Atualiza o ContaBase detectando automaticamente o modo de instalacao
-(binary, docker ou source) e chamando o script de update correto.
-
-Opcional: sudo cb-update (atalho curto).
-
-Variaveis de ambiente:
-  CONTABASE_ASSUME_YES=1   Modo nao interativo (quando suportado).
-EOF
-}
-
-if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  usage
-  exit 0
-fi
-
-if [ ! -f "$MODE_FILE" ]; then
-  say "Nao foi possivel detectar o modo de instalacao do ContaBase."
-  say "Arquivo ausente: $MODE_FILE"
-  say ""
-  say "Se voce instalou manualmente, execute o script de update correspondente:"
-  say "  Release/LXC:  sudo env CONTABASE_VERSION=vX.Y.Z bash scripts/update-contabase-release.sh"
-  say "  Docker:       ./scripts/update-contabase-docker.sh"
-  say "  Source:       sudo ./scripts/update-contabase-source.sh"
-  exit 1
-fi
-
-MODE="$(head -n1 "$MODE_FILE" | awk '{print $1}' | tr -d '[:space:]')"
-
-case "$MODE" in
-  binary)
-    if [ "$(id -u)" -ne 0 ]; then
-      say "Este modo exige root. Execute com sudo:"
-      say "  sudo contabase-update [VERSAO]"
-      exit 1
-    fi
-
-    VERSION="${1:-}"
-    if [ -z "$VERSION" ]; then
-      if [ -t 0 ]; then
-        read -r -p "Versao para atualizar (ex.: vMAJOR.MINOR.PATCH[-beta.N]): " VERSION
-      else
-        say "Erro: informe a versao. Exemplo: sudo contabase-update vMAJOR.MINOR.PATCH[-beta.N]"
-        exit 1
-      fi
-    fi
-
-    case "$VERSION" in
-      *-internal*) say "Erro: versoes com -internal sao privadas."; exit 1 ;;
-    esac
-    if [[ ! "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
-      say "Erro: versao invalida: $VERSION"
-      exit 1
-    fi
-
-    TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/contabase-update.XXXXXX")"
-    # shellcheck disable=SC2064
-    trap 'rm -rf "$TMP_DIR"' EXIT
-
-    INSTALL_SCRIPT="${TMP_DIR}/install.sh"
-    INSTALL_URL="${PUBLIC_RAW_BASE}/${VERSION}/scripts/install.sh"
-
-    say "Baixando instalador da versao ${VERSION}..."
-    if ! curl --fail --location --silent --show-error \
-      --proto '=https' --tlsv1.2 \
-      "$INSTALL_URL" -o "$INSTALL_SCRIPT"; then
-      say "Erro: nao foi possivel baixar o instalador da versao ${VERSION}."
-      exit 1
-    fi
-
-    say "Executando atualizacao para ${VERSION}..."
-    exec env \
-      CONTABASE_INSTALL_METHOD=update-release \
-      CONTABASE_VERSION="$VERSION" \
-      CONTABASE_ASSUME_YES="${CONTABASE_ASSUME_YES:-0}" \
-      bash "$INSTALL_SCRIPT"
-    ;;
-
-  docker)
-    REPO_PATH="$(sed -n '2p' "$MODE_FILE" 2>/dev/null | tr -d '[:space:]')"
-    if [ -z "$REPO_PATH" ] || [ ! -d "$REPO_PATH" ]; then
-      say "Erro: repositorio Docker nao encontrado."
-      say "Va ate o diretorio do ContaBase e execute:"
-      say "  ./scripts/update-contabase-docker.sh"
-      exit 1
-    fi
-    cd "$REPO_PATH"
-    exec ./scripts/update-contabase-docker.sh "$@"
-    ;;
-
-  source)
-    if [ "$(id -u)" -ne 0 ]; then
-      say "Este modo exige root. Execute com sudo:"
-      say "  sudo contabase-update"
-      exit 1
-    fi
-
-    REPO_PATH="$(sed -n '2p' "$MODE_FILE" 2>/dev/null | tr -d '[:space:]')"
-    if [ -z "$REPO_PATH" ] || [ ! -d "$REPO_PATH" ]; then
-      say "Erro: repositorio source nao encontrado."
-      say "Va ate o diretorio do ContaBase e execute:"
-      say "  sudo ./scripts/update-contabase-source.sh"
-      exit 1
-    fi
-    cd "$REPO_PATH"
-    exec ./scripts/update-contabase-source.sh "$@"
-    ;;
-
-  *)
-    say "Modo de instalacao desconhecido: $MODE"
-    say "Valores aceitos: binary, docker, source"
-    exit 1
-    ;;
-esac
-WRAPPER_EOF
-
-  chown root:root "$update_wrapper" 2>/dev/null || true
-  chmod 0755 "$update_wrapper"
-
+  install -o root -g root -m 0755 "$wrapper_source" "$update_wrapper" || {
+    log_error "Erro: nao foi possivel instalar o wrapper local."
+    return 1
+  }
   if [ ! -e "$update_alias" ]; then
     ln -s "$(basename "$update_wrapper")" "$update_alias" 2>/dev/null || true
   fi
-
-  write_install_state "source" "$installed_channel" "$APP_VERSION" "$repo_path"
-
+  write_install_state "source" "$installed_channel" "$APP_VERSION" "$repo_path" \
+    "$provenance_kind" "$provenance_ref" "$provenance_commit" "$provenance_origin" || return 1
   echo ""
   echo -e "${GREEN}Comando global de atualizacao instalado:${NC}"
   echo "  sudo contabase-update"
   echo "  sudo cb-update"
+  return 0
 }
 
 finalize_confirmed_update() {
-  local head_oid
+  local head_oid journal_present=false
 
   enforce_clean_worktree || return 1
-  head_oid="$(git rev-parse --verify 'HEAD^{commit}')" || return 1
-  if [ "$head_oid" != "$TARGET_OID" ]; then
-    git merge-base --is-ancestor "$head_oid" "$TARGET_OID" || {
-      log_error "Checkout atual nao pode avancar em fast-forward para o runtime confirmado ${TARGET_OID}."
+  if [ -e "$TRANSITION_JOURNAL" ] || [ -L "$TRANSITION_JOURNAL" ]; then
+    [ -f "$TRANSITION_JOURNAL" ] && [ ! -L "$TRANSITION_JOURNAL" ] || {
+      log_error "Erro: registro de transicao inseguro."
       return 1
     }
-    merge_target_oid || return 1
+    journal_present=true
+    validate_transition_journal_structure || return 1
+    transition_journal_matches_target || {
+      log_error "Erro: registro de transicao diverge do alvo confirmado."
+      return 1
+    }
+  fi
+
+  if [ -f "$FINALIZE_MARKER" ] && [ ! -L "$FINALIZE_MARKER" ]; then
+    if finalize_marker_matches_target; then
+      validate_finalize_marker_for_target || return 1
+    else
+      validate_finalize_marker_structure || return 1
+      [ "$journal_present" = true ] || {
+        log_error "Erro: marcador anterior sem intencao de transicao persistida."
+        log_error "Preserve as evidencias e use recuperacao administrativa."
+        return 1
+      }
+      validate_transition_journal_previous || return 1
+      [ "${CONFIRMED_RUNTIME_VERSION:-}" = "$TARGET_VERSION" ] || {
+        log_error "Erro: runtime nao confirma o alvo ${TARGET_VERSION} para substituir o marcador."
+        return 1
+      }
+      log_warn "Substituindo marcador de finalizacao anterior pelo alvo confirmado ${TARGET_VERSION}."
+      write_finalize_marker || {
+        log_error "Erro: nao foi possivel substituir o marcador de finalizacao."
+        return 1
+      }
+    fi
+  elif [ -e "$FINALIZE_MARKER" ] || [ -L "$FINALIZE_MARKER" ]; then
+    log_error "Erro: marcador de finalizacao inseguro."
+    return 1
+  else
+    [ "$journal_present" = true ] || {
+      log_error "Erro: finalizacao sem marcador ou intencao de transicao persistida."
+      log_error "Preserve as evidencias e use recuperacao administrativa."
+      return 1
+    }
+    validate_transition_journal_previous || return 1
+    [ "${CONFIRMED_RUNTIME_VERSION:-}" = "$TARGET_VERSION" ] || {
+      log_error "Erro: runtime nao confirma o alvo ${TARGET_VERSION} para finalizar."
+      return 1
+    }
+    write_finalize_marker || {
+      log_error "Erro: nao foi possivel persistir o marcador de finalizacao."
+      return 1
+    }
+  fi
+
+  head_oid="$(git rev-parse --verify 'HEAD^{commit}')" || return 1
+  if [ "$head_oid" != "$TARGET_OID" ]; then
+    if [ "$CHECKOUT_KIND" = "tag" ]; then
+      git checkout --detach "$TARGET_OID" || {
+        log_error "Checkout destacado do alvo falhou; nenhum reset/checkout -f sera executado."
+        return 1
+      }
+    else
+      git merge-base --is-ancestor "$head_oid" "$TARGET_OID" || {
+        log_error "Checkout atual nao pode avancar em fast-forward para o runtime confirmado ${TARGET_OID}."
+        return 1
+      }
+      merge_target_oid || return 1
+    fi
   fi
 
   ACTUAL_HEAD_OID="$(git rev-parse --verify 'HEAD^{commit}')" || return 1
@@ -1164,9 +2502,18 @@ finalize_confirmed_update() {
     log_error "HEAD apos finalizacao (${ACTUAL_HEAD_OID}) diverge do runtime confirmado (${TARGET_OID})."
     return 1
   }
+  ensure_local_tag || return 1
   resolve_checkout_version || return 1
   APP_VERSION="$TARGET_VERSION"
   backfill_update_command || return 1
+  remove_transition_journal || {
+    log_error "Erro: nao foi possivel remover o registro de transicao."
+    return 1
+  }
+  remove_finalize_marker || {
+    log_error "Erro: nao foi possivel remover o marcador de finalizacao."
+    return 1
+  }
   log_ok "Commit logico concluido: runtime, checkout e estado em ${TARGET_VERSION}."
 }
 
@@ -1182,21 +2529,37 @@ main() {
 
   require_root
   require_repo_root
-  detect_branch_and_commit
+  reject_unsafe_git_environment || exit 1
+  detect_checkout_provenance || exit 1
   resolve_previous_version
   detect_confirmed_runtime_version
   APP_VERSION="${PREVIOUS_VERSION:-desconhecida}"
 
   log_step "[1/9] Resolvendo alvo e congelando OID"
   enforce_clean_worktree || exit 1
-  resolve_upstream
-  fetch_remote_state
-  freeze_target_oid || exit 1
-  resolve_target_version || exit 1
+  record_local_tags || exit 1
+  if [ "$CHECKOUT_KIND" = "tag" ]; then
+    resolve_target_tag || exit 1
+    fetch_target_tag || exit 1
+  else
+    resolve_upstream || exit 1
+    TARGET_REF="$CURRENT_BRANCH"
+    fetch_remote_state || exit 1
+    freeze_target_oid || exit 1
+    resolve_target_version || exit 1
+  fi
+  validate_external_bundle_target || exit 1
   resolve_current_version || exit 1
-  enforce_version_policy
-  ensure_fast_forward_possible || exit 1
+  if [ "$CHECKOUT_KIND" = "tag" ] && [ "$TARGET_VERSION" = "$CURRENT_VERSION" ] \
+    && [ "$RECOVERY_FINALIZE_ONLY" != true ] && [ "$TARGET_OID" != "$CURRENT_HEAD_OID" ]; then
+    log_error "Erro: mesma versao com OID divergente; tag possivelmente movida."
+    exit 1
+  fi
   APP_VERSION="$TARGET_VERSION"
+  validate_target_channel || exit 1
+  ensure_fast_forward_possible || exit 1
+  validate_pending_marker_for_target || exit 1
+  enforce_version_policy
   echo "Versao alvo: $TARGET_VERSION"
   echo "Target OID: $TARGET_OID"
   log_ok "Alvo congelado e versao instalada resolvidos antes de qualquer mutacao."
@@ -1249,6 +2612,11 @@ main() {
     log_error "Build do binario falhou no snapshot canonico."
     return 1
   fi
+  write_transition_journal || {
+    log_error "Erro: nao foi possivel registrar a intencao da transicao."
+    return 1
+  }
+  log_ok "Intencao de transicao persistida para ${TARGET_VERSION}."
   preserve_previous_bundle
   log_ok "Build concluido no snapshot; bundle anterior preservado."
 
@@ -1257,6 +2625,7 @@ main() {
   start_new_runtime
   if run_healthcheck; then
     RUNTIME_CONFIRMED=true
+    CONFIRMED_RUNTIME_VERSION="$TARGET_VERSION"
     record_source_recovery
     log_ok "Healthcheck retornou healthy."
     log_step "[9/9] Finalizando checkout e estado instalado"

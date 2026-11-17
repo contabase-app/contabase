@@ -1,10 +1,12 @@
 {
   "name": "ContaBase",
   "short_name": "ContaBase",
+  "id": "/",
+  "scope": "/",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0b0f",
-  "theme_color": "#0a0b0f",
+  "background_color": "#0e1013",
+  "theme_color": "#0e1013",
   "description": "Sua base financeira privada.",
   "icons": [
     {

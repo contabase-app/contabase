@@ -31,9 +31,12 @@ const (
 // identity only after that handler returns. The carrier is installed internally
 // before authentication and cannot be populated from request headers.
 type securityAuditRequestContext struct {
-	mu            sync.RWMutex
-	auth          authContext
-	authenticated bool
+	mu                 sync.RWMutex
+	auth               authContext
+	authenticated      bool
+	exportAuditHandled bool
+	exportAuditOps     *backupExportAuditOps
+	exportAuditService *securityAuditService
 }
 
 func (c *securityAuditRequestContext) setAuthenticated(ctx authContext) {
@@ -64,9 +67,10 @@ const (
 )
 
 type securityAuditService struct {
-	dbProvider func() *sql.DB
-	notifier   *smtpNotifier
-	testHooks  *securityAuditTestHooks
+	dbProvider     func() *sql.DB
+	notifier       *smtpNotifier
+	testHooks      *securityAuditTestHooks
+	exportAuditOps *backupExportAuditOps
 }
 
 type securityAuditTestHooks struct {
@@ -144,10 +148,13 @@ func logSecurityEvent(db *sql.DB, r *http.Request, workspaceID, userID, eventTyp
 
 func (s *securityAuditService) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auditContext := &securityAuditRequestContext{}
+		auditContext := &securityAuditRequestContext{exportAuditOps: s.exportAuditOps, exportAuditService: s}
 		r = r.WithContext(context.WithValue(r.Context(), securityAuditContextKey, auditContext))
 		recorder := &statusRecorder{ResponseWriter: w}
 		next.ServeHTTP(recorder, r)
+		if auditContext.exportAuditHandled {
+			return
+		}
 
 		status := recorder.status()
 		event, ok := classifySecurityEvent(r, status, recorder.secOpsHeaders())

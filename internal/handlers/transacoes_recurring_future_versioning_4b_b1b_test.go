@@ -57,8 +57,7 @@ func versionedSeedProducedRule(t *testing.T, db *sql.DB, wsType, desc, startDate
 	firstID, err = h.insertTransaction(
 		"EXPENSE", 10000, desc, "", "", MustCivilWriteDate(startDate),
 		"checking-test", "", "cat-expense-rec", 1, "pending", true, "MONTHLY",
-		contactID, due, &total, "", false,
-	)
+		contactID, due, &total, "")
 	if err != nil {
 		t.Fatalf("insert produced recurrence: %v", err)
 	}
@@ -97,16 +96,14 @@ func versionedCreateRuleWithRealProducer(t *testing.T, db *sql.DB, producer, wsT
 		if _, err := h.insertTransaction(
 			"EXPENSE", 10000, desc, "", "", MustCivilWriteDate("2026-06-05"),
 			"checking-test", "", "cat-expense-rec", 1, "pending", true, "MONTHLY",
-			normalizedContactID, MustOptionalCivilWriteDate("2026-06-15"), &total, "", false,
-		); err != nil {
+			normalizedContactID, MustOptionalCivilWriteDate("2026-06-15"), &total, ""); err != nil {
 			t.Fatalf("insertTransaction producer: %v", err)
 		}
 	case "insertRecurringRuleTx":
 		if _, err := h.insertTransaction(
 			"EXPENSE", 10000, desc, "", "", MustCivilWriteDate("2026-06-05"),
 			"checking-test", "", "cat-expense-rec", 1, "pending", false, "",
-			"", OptionalCivilWriteDate{}, nil, "", false,
-		); err != nil {
+			"", OptionalCivilWriteDate{}, nil, ""); err != nil {
 			t.Fatalf("seed transaction for conversion: %v", err)
 		}
 		var txID string
@@ -1285,8 +1282,7 @@ func TestRecurringFutureVersioning_ForeignContactRejectedWithoutPartialRule(t *t
 				if _, err := h.insertTransaction(
 					"EXPENSE", 10000, desc, "", "", MustCivilWriteDate("2026-06-05"),
 					"checking-test", "", "cat-expense-rec", 1, "pending", false, "",
-					"", OptionalCivilWriteDate{}, nil, "", false,
-				); err != nil {
+					"", OptionalCivilWriteDate{}, nil, ""); err != nil {
 					t.Fatalf("seed conversion transaction: %v", err)
 				}
 				if err := db.QueryRow(`SELECT id FROM transactions WHERE workspace_id='ws-test' AND description=?`, desc).Scan(&txID); err != nil {
@@ -1310,8 +1306,7 @@ func TestRecurringFutureVersioning_ForeignContactRejectedWithoutPartialRule(t *t
 				if _, err := h.insertTransaction(
 					"EXPENSE", 10000, desc, "", "", MustCivilWriteDate("2026-06-05"),
 					"checking-test", "", "cat-expense-rec", 1, "pending", true, "MONTHLY",
-					"contact-foreign-rule", MustOptionalCivilWriteDate("2026-06-15"), &total, "", false,
-				); err == nil {
+					"contact-foreign-rule", MustOptionalCivilWriteDate("2026-06-15"), &total, ""); err == nil {
 					t.Fatal("foreign contact accepted by insertTransaction")
 				}
 			} else {

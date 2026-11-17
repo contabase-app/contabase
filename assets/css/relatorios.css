@@ -1,14 +1,8 @@
 /* ContaBase Relatorios Styles — P.44.a redesigned with Design System */
 
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-
-.btn-tactile { transition: all 0.15s ease; }
-.btn-tactile:active { transform: scale(0.97); }
-
 /* Cores dos dois grupos fixos da composição (Personal), via tokens. */
 .reports-legend-essential { color: var(--ui-success); }
-.reports-legend-lifestyle { color: var(--ui-accent); }
+.reports-legend-lifestyle { color: var(--ui-accent-text); }
 .reports-legend-dot { background-color: currentColor; }
 
 /* Paleta fechada entregue pelo servidor para os gráficos de composição. */
@@ -37,9 +31,9 @@
 .reports-chart-title {
     margin: 0 0 2px;
     color: var(--ui-text);
-    font-size: 14px;
-    font-weight: 650;
-    letter-spacing: -0.01em;
+    font-size: var(--ui-fs-card-title);
+    font-weight: 630;
+    letter-spacing: -0.015em;
     line-height: 1.3;
 }
 
@@ -48,6 +42,71 @@
     color: var(--ui-text-muted);
     font-size: var(--ui-fs-sm);
     line-height: 1.45;
+}
+
+/* Internal section chrome. Panels consume .ui-panel; these classes only set
+   the page rhythm and the heading hierarchy inside Relatórios. */
+.reports-panel { padding: var(--ui-panel-pad); }
+.reports-panel .ui-eyebrow { margin-bottom: 4px; }
+.reports-panel-title {
+    margin: 0;
+    color: var(--ui-text);
+    font-size: var(--ui-fs-card-title);
+    font-weight: 630;
+    letter-spacing: -.015em;
+    line-height: 1.3;
+    text-wrap: balance;
+}
+.reports-section-title {
+    margin: 0;
+    color: var(--ui-text);
+    font-size: var(--ui-fs-lg);
+    font-weight: 630;
+    letter-spacing: -.015em;
+    line-height: 1.3;
+}
+.reports-note {
+    margin: 6px 0 0;
+    color: var(--ui-text-muted);
+    font-size: var(--ui-fs-sm);
+    line-height: 1.45;
+}
+.reports-section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.reports-section-heading { min-width: 0; }
+.reports-empty {
+    padding: 30px 16px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+.reports-empty .ui-empty__icon { width: 40px; height: 40px; border-radius: var(--ui-radius-card); }
+.reports-empty .ui-empty__icon svg { width: 18px; height: 18px; }
+
+.reports-total-value {
+    color: var(--ui-text);
+    font-size: var(--ui-fs-lg);
+    font-weight: 680;
+    letter-spacing: -.02em;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.reports-grand-total {
+    margin-top: 4px;
+    color: var(--ui-text);
+    font-size: clamp(24px, 3vw, 30px);
+    font-weight: 680;
+    letter-spacing: -.03em;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .reports-chart-body {
@@ -135,11 +194,11 @@
 }
 
 /* Estado sem dados dos gráficos, sem tocar nos empty states de tabela. */
-.cb-card-dense:has(.reports-chart-title) .cb-empty-state {
+.reports-panel:has(.reports-chart-title) .reports-empty {
     padding: 30px 12px;
 }
 
-.cb-card-dense:has(.reports-chart-title) .cb-empty-state p {
+.reports-panel:has(.reports-chart-title) .reports-empty .ui-empty__text {
     color: var(--ui-text-subtle);
     font-size: var(--ui-fs-sm);
     line-height: 1.45;
@@ -170,10 +229,10 @@
     border-bottom: 1px solid var(--ui-border);
     background: color-mix(in srgb, var(--ui-surface-raised) 72%, transparent);
     color: var(--ui-text-muted);
-    font-size: 11px;
+    font-size: var(--ui-fs-label);
     font-weight: 650;
     line-height: 1.3;
-    letter-spacing: 0.01em;
+    letter-spacing: .04em;
     text-align: left;
     white-space: nowrap;
 }
@@ -421,36 +480,96 @@
 
 /* Categories list */
 .reports-cat-group {
-    border-radius: 0.75rem;
-    border: 1px solid var(--cb-border-subtle);
-    background: var(--cb-surface-2);
-    padding: 0.75rem;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-card);
+    background: var(--ui-surface-raised);
+    padding: 12px 14px;
 }
 
 .reports-cat-child {
-    padding-left: 1.25rem;
-    border-left: 2px solid var(--cb-border-subtle);
-    margin-left: 0.5rem;
+    padding-left: 20px;
+    border-left: 2px solid var(--ui-border);
+    margin-left: 8px;
 }
 
 .reports-cat-icon {
-    width: 1.75rem;
-    height: 1.75rem;
-    border-radius: 0.5rem;
     display: flex;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
+    border-radius: 8px;
     background: color-mix(in srgb, currentColor 10%, transparent);
+    color: var(--ui-text-muted);
+}
+
+.reports-cat-icon.is-emerald { color: var(--ui-success); }
+.reports-cat-icon.is-indigo { color: var(--ui-chart-1); }
+.reports-cat-icon.is-violet { color: var(--ui-chart-0); }
+.reports-cat-icon.is-amber { color: var(--ui-chart-3); }
+.reports-cat-icon.is-sky { color: var(--ui-chart-1); }
+.reports-cat-icon.is-rose { color: var(--ui-chart-2); }
+
+.reports-cat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.reports-cat-main {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+}
+
+.reports-cat-name {
+    min-width: 0;
+    color: var(--ui-text);
+    font-size: var(--ui-fs-md);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.reports-cat-name.is-group { font-weight: 640; }
+.reports-cat-name.is-root { font-weight: 600; }
+.reports-cat-name.is-child { color: var(--ui-text-muted); font-weight: 500; }
+.reports-cat-branch { margin-right: 4px; color: var(--ui-text-subtle); }
+
+.reports-cat-values {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 12px;
+}
+
+.reports-cat-amount {
+    color: var(--ui-text);
+    font-size: var(--ui-fs-sm);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.reports-cat-percent {
+    width: 56px;
+    color: var(--ui-text-subtle);
+    font-size: var(--ui-fs-sm);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
 }
 
 /* Relatórios na casca V2: a paleta e a ponte --cb-* vêm de ui-tokens.css
    (fonte canônica). Esta página não redefine tokens. */
 
 .cb-v2-relatorios-content {
-    width: min(100%, 1180px);
-    margin: 0 auto;
-    padding: 30px 0 28px;
+    /* Data surface: width, centering and top padding come from .cb-v2-content
+       (--ui-content-max). Only the page bottom clearance is local. */
+    padding-bottom: 28px;
 }
 
 /* Composição e tipografia do cabeçalho vêm de .ui-page-header/.ui-eyebrow/
@@ -617,6 +736,15 @@
 /* 320px: aperto mínimo e justificado para os quatro controles caberem
    na mesma linha, preservando ícones, chevrons e alvos de toque. */
 @media (max-width: 359px) {
+    .reports-main-tabs {
+        gap: 2px;
+    }
+
+    .reports-main-tab {
+        padding-inline: 10px;
+        font-size: 12px;
+    }
+
     .reports-extrato-toolbar {
         gap: 4px;
     }
@@ -742,13 +870,6 @@
 
 .cb-v2-relatorios-kpis .ui-kpi--info .ui-kpi__value {
     color: var(--ui-info);
-}
-
-.cb-v2-relatorios-panels .cb-card-dense,
-.cb-v2-relatorios-panels .reports-extrato-panel,
-.cb-v2-relatorios-panels .reports-cat-group {
-    border-color: var(--v2-border);
-    background: var(--v2-surface);
 }
 
 @media (max-width: 1023px) {

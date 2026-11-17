@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -107,33 +106,6 @@ func TestServerRuntimeActivationFailureStartsNoExternalResources(t *testing.T) {
 	if after != before {
 		t.Fatalf("activation failure persisted background effects: before=%+v after=%+v", before, after)
 	}
-}
-
-func TestServerRuntimeActivatesInternalJobsAtFinalBoundary(t *testing.T) {
-	t.Setenv("CONTABASE_TIMEZONE", "UTC")
-	dbPath := filepath.Join(t.TempDir(), "runtime-activation.db")
-	dbs := openDormantRuntimeWithEligibleBox(t, dbPath, "box-activated")
-	observedDormantAtLastFallibleStage := false
-	runtime, err := startServerRuntime(dbs, serverRuntimeOptions{
-		scheduledInterval: time.Hour,
-		recurringInterval: time.Hour,
-		sessionInterval:   time.Hour,
-		hooks: &serverRuntimeStartHooks{beforeActivationCheckpoint: func(stage string) error {
-			if stage == serverRuntimeStageSessions {
-				assertRuntimeAutomaticRechargeCount(t, dbs.DB, "box-activated", 0)
-				observedDormantAtLastFallibleStage = true
-			}
-			return nil
-		}},
-	})
-	if err != nil {
-		t.Fatalf("start runtime at activation boundary: %v", err)
-	}
-	defer runtime.Close()
-	if !observedDormantAtLastFallibleStage {
-		t.Fatal("last fallible stage was not observed before RuntimeDBs activation")
-	}
-	waitForRuntimeAutomaticRecharge(t, dbs.DB, "box-activated", 1)
 }
 
 func TestServerRuntimeFinalBoundaryStartsAllJobsInOrderAndPersistsPositiveEffects(t *testing.T) {
@@ -258,7 +230,6 @@ func TestRestoreGenerationAbandonedBeforeFinalActivationHasNoBackgroundJobEffect
 				after.notificationCount != before.notificationCount ||
 				after.recurringTransactionCount != before.recurringTransactionCount ||
 				after.recurringStateCount != before.recurringStateCount ||
-				after.automaticRechargeCount != before.automaticRechargeCount ||
 				after.sessionCount != before.sessionCount {
 				t.Fatalf("abandoned restore persisted background effects: before=%+v after=%+v", before, after)
 			}
@@ -485,32 +456,26 @@ func TestHealthBehindWaitingWriterCompletesWithoutNestedReadLock(t *testing.T) {
 			return g2, nil
 		})
 	}()
-	for {
-		if !coordinator.mu.TryRLock() {
-			break
-		}
-		coordinator.mu.RUnlock()
-		runtime.Gosched()
-	}
+	time.Sleep(20 * time.Millisecond)
 	healthDone := make(chan int, 1)
 	go func() {
 		rr := httptest.NewRecorder()
 		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/health", nil))
 		healthDone <- rr.Code
 	}()
+	select {
+	case code := <-healthDone:
+		if code != http.StatusOK {
+			t.Fatalf("health behind waiting writer returned %d", code)
+		}
+	case <-time.After(time.Second):
+		t.Fatalf("health deadlocked behind waiting writer")
+	}
 	close(releaseReader)
 	if err := <-writerDone; err != nil {
 		t.Fatalf("replace: %v", err)
 	}
 	<-writerEntered
-	select {
-	case code := <-healthDone:
-		if code != http.StatusOK {
-			t.Fatalf("health after writer returned %d", code)
-		}
-	case <-time.After(time.Second):
-		t.Fatalf("health deadlocked behind waiting writer")
-	}
 }
 
 func TestCoordinatorDoesNotPublishRuntimeBeforeSwapCompletes(t *testing.T) {
@@ -1078,19 +1043,16 @@ func openFullBindingRuntime(t *testing.T, path, marker string) *serverRuntime {
 
 func openDormantRuntimeWithEligibleBox(t *testing.T, path, boxID string) *database.RuntimeDBs {
 	t.Helper()
+	_ = boxID
 	dbs, err := database.OpenRuntimeDBs("file:" + path)
 	if err != nil {
 		t.Fatalf("open dormant runtime DBs: %v", err)
 	}
-	createdAt := time.Now().AddDate(0, -1, 0).Unix()
 	if _, err := serverFixtureExec(t, dbs.DB, `
 		INSERT INTO workspaces (id, name, type) VALUES ('ws-runtime-jobs', 'Runtime Jobs', 'personal');
-		INSERT INTO boxes (
-			id, workspace_id, name, target_amount, monthly_recharge, created_at, updated_at
-		) VALUES (?, 'ws-runtime-jobs', ?, 0, 1000, ?, ?)
-	`, boxID, boxID, createdAt, createdAt); err != nil {
+	`); err != nil {
 		_ = dbs.Close()
-		t.Fatalf("seed eligible runtime box: %v", err)
+		t.Fatalf("seed runtime workspace: %v", err)
 	}
 	return dbs
 }
@@ -1104,7 +1066,6 @@ type runtimePersistentEffects struct {
 	recurringTransactionCount int
 	recurringStateCount       int
 	sessionCount              int
-	automaticRechargeCount    int
 }
 
 func openDormantRuntimeWithAllEligibleJobs(t *testing.T, path, boxID string) *database.RuntimeDBs {
@@ -1195,15 +1156,11 @@ func readRuntimePersistentEffects(t *testing.T, db *sql.DB, boxID string) runtim
 		{"recurring transactions", `SELECT COUNT(1) FROM transactions WHERE recurring_rule_id = 'rule-runtime-jobs'`, &effects.recurringTransactionCount},
 		{"recurring state", `SELECT COUNT(1) FROM recurring_materialization_state WHERE workspace_id = 'ws-runtime-jobs'`, &effects.recurringStateCount},
 		{"expired session", `SELECT COUNT(1) FROM sessions WHERE id = 'session-runtime-expired'`, &effects.sessionCount},
-		{"automatic recharge", `SELECT COUNT(1) FROM box_virtual_ledger WHERE box_id = ? AND automatic_recharge_month IS NOT NULL`, &effects.automaticRechargeCount},
 	}
 	for _, query := range queries {
 		var err error
-		if strings.Contains(query.query, "box_id = ?") {
-			err = db.QueryRow(query.query, boxID).Scan(query.dest)
-		} else {
-			err = db.QueryRow(query.query).Scan(query.dest)
-		}
+		_ = boxID
+		err = db.QueryRow(query.query).Scan(query.dest)
 		if err != nil {
 			t.Fatalf("read %s runtime effect: %v", query.name, err)
 		}
@@ -1222,54 +1179,12 @@ func waitForRuntimePersistentEffects(t *testing.T, db *sql.DB, boxID string) {
 		if effects.scheduledStatus == "paid" && effects.scheduledExecuted &&
 			effects.accountBalance == 499000 && effects.historyCount == 1 &&
 			effects.notificationCount == 1 && effects.recurringTransactionCount > 1 &&
-			effects.recurringStateCount == 1 && effects.sessionCount == 0 &&
-			effects.automaticRechargeCount == 1 {
+			effects.recurringStateCount == 1 && effects.sessionCount == 0 {
 			return
 		}
 		select {
 		case <-deadline.C:
 			t.Fatalf("runtime positive effects did not converge: %+v", effects)
-		case <-ticker.C:
-		}
-	}
-}
-
-func assertRuntimeAutomaticRechargeCount(t *testing.T, db *sql.DB, boxID string, want int) {
-	t.Helper()
-	var got int
-	if err := db.QueryRow(`
-		SELECT COUNT(1)
-		FROM box_virtual_ledger
-		WHERE box_id = ? AND automatic_recharge_month IS NOT NULL
-	`, boxID).Scan(&got); err != nil {
-		t.Fatalf("count runtime automatic recharges: %v", err)
-	}
-	if got != want {
-		t.Fatalf("runtime automatic recharge count = %d, want %d", got, want)
-	}
-}
-
-func waitForRuntimeAutomaticRecharge(t *testing.T, db *sql.DB, boxID string, want int) {
-	t.Helper()
-	deadline := time.NewTimer(10 * time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		var got int
-		if err := db.QueryRow(`
-			SELECT COUNT(1)
-			FROM box_virtual_ledger
-			WHERE box_id = ? AND automatic_recharge_month IS NOT NULL
-		`, boxID).Scan(&got); err != nil {
-			t.Fatalf("count activated runtime automatic recharges: %v", err)
-		}
-		if got == want {
-			return
-		}
-		select {
-		case <-deadline.C:
-			t.Fatalf("runtime automatic recharge count = %d, want %d", got, want)
 		case <-ticker.C:
 		}
 	}

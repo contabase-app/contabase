@@ -28,7 +28,7 @@
         <input type="hidden" name="expected_investment_version" value="{{.ExpectedInvestmentVersion}}">
         <p role="alert" tabindex="-1" class="investment-feedback" data-investment-operation-feedback hidden></p>
         <label class="investment-confirm-field" for="investment-reversal-confirm"><input type="checkbox" id="investment-reversal-confirm" required> Confirmo o estorno desta compra{{if eq .Movement "TRANSFER"}} e a compensação entre as contas indicadas{{end}}.</label>
-        <button type="submit" class="cb-button cb-button-primary h-11 px-6 text-sm">Confirmar estorno</button>
+        <button type="submit" class="ui-btn ui-btn--primary">Confirmar estorno</button>
     </form>
     {{else}}
     <div class="investment-feedback" role="alert" tabindex="-1">

@@ -2215,8 +2215,8 @@ func TestDailySummaryTemplateRendersWithInt64Values(t *testing.T) {
 	if ds.NetNegative {
 		t.Fatal("NetNegative should be false when income > expense")
 	}
-	if ds.NetClass != "text-[var(--cb-success)]" {
-		t.Fatalf("NetClass = %q, want text-[var(--cb-success)]", ds.NetClass)
+	if ds.NetClass != "text-[var(--ui-success)]" {
+		t.Fatalf("NetClass = %q, want text-[var(--ui-success)]", ds.NetClass)
 	}
 	if ds.AccumulatedClass != "" {
 		t.Fatalf("AccumulatedClass = %q, want empty for positive accumulated", ds.AccumulatedClass)

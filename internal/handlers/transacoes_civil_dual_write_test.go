@@ -650,7 +650,7 @@ func TestCivilDualWriteCreateInstallmentsUseIndependentCivilMonthArithmetic(t *t
 			seedRecurringExpenseCategory(t, db)
 			seedBusinessWorkspace(t, db)
 			description := "Civil installments " + tc.name
-			if _, err := h.insertTransaction("EXPENSE", int64(len(tc.want))*10000, description, "", "", MustCivilWriteDate(tc.start), "checking-test", "", "cat-expense-rec", int64(len(tc.want)), "pending", false, "", "", MustOptionalCivilWriteDate(tc.start), nil, "", false); err != nil {
+			if _, err := h.insertTransaction("EXPENSE", int64(len(tc.want))*10000, description, "", "", MustCivilWriteDate(tc.start), "checking-test", "", "cat-expense-rec", int64(len(tc.want)), "pending", false, "", "", MustOptionalCivilWriteDate(tc.start), nil, ""); err != nil {
 				t.Fatalf("insert installments: %v", err)
 			}
 
@@ -692,7 +692,7 @@ func TestCivilDualWriteCreateInstallmentFailureRollsBackAllPairs(t *testing.T) {
 	if err := db.QueryRow(`SELECT current_balance FROM accounts WHERE id = 'checking-test'`).Scan(&balanceBefore); err != nil {
 		t.Fatalf("balance before: %v", err)
 	}
-	if _, err := h.insertTransaction("EXPENSE", 30000, "Civil create rollback", "", "", MustCivilWriteDate("2026-01-31"), "checking-test", "", "cat-expense-rec", 3, "paid", false, "", "", MustOptionalCivilWriteDate("2026-01-31"), nil, "", false); err == nil {
+	if _, err := h.insertTransaction("EXPENSE", 30000, "Civil create rollback", "", "", MustCivilWriteDate("2026-01-31"), "checking-test", "", "cat-expense-rec", 3, "paid", false, "", "", MustOptionalCivilWriteDate("2026-01-31"), nil, ""); err == nil {
 		t.Fatal("insert succeeded despite injected third-installment failure")
 	}
 	var count, balanceAfter int64
@@ -861,7 +861,7 @@ func TestCivilDualWriteFutureAndAllInstallmentProducer(t *testing.T) {
 			seedRecurringExpenseCategory(t, db)
 			seedBusinessWorkspace(t, db)
 			description := "Civil producer seven " + scope
-			if _, err := h.insertTransaction("EXPENSE", 30003, description, "", "", MustCivilWriteDate("2026-01-31"), "checking-test", "", "cat-expense-rec", 3, "pending", false, "", "", MustOptionalCivilWriteDate("2026-01-31"), nil, "", false); err != nil {
+			if _, err := h.insertTransaction("EXPENSE", 30003, description, "", "", MustCivilWriteDate("2026-01-31"), "checking-test", "", "cat-expense-rec", 3, "pending", false, "", "", MustOptionalCivilWriteDate("2026-01-31"), nil, ""); err != nil {
 				t.Fatalf("insert: %v", err)
 			}
 			var rootID string
@@ -936,7 +936,7 @@ func setupCivilEditTransaction(t *testing.T, recurring bool) (*sql.DB, Transacti
 		occurrences = &count
 		description = "Civil edit recurring"
 	}
-	if _, err := h.insertTransaction("EXPENSE", 10000, description, "", "", MustCivilWriteDate("2026-07-12"), "checking-test", "", "cat-expense-rec", 1, "pending", recurring, "MONTHLY", "", MustOptionalCivilWriteDate("2026-07-20"), occurrences, "", false); err != nil {
+	if _, err := h.insertTransaction("EXPENSE", 10000, description, "", "", MustCivilWriteDate("2026-07-12"), "checking-test", "", "cat-expense-rec", 1, "pending", recurring, "MONTHLY", "", MustOptionalCivilWriteDate("2026-07-20"), occurrences, ""); err != nil {
 		t.Fatalf("insert edit transaction: %v", err)
 	}
 	var id string

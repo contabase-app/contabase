@@ -262,6 +262,14 @@ func TestRequiredPasswordChangeClearsTemporaryFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
+	otherToken, _, err := authService.CreateSession(userID, workspaceID, time.Hour, false)
+	if err != nil {
+		t.Fatalf("create other session: %v", err)
+	}
+	preAuthToken, _, err := authService.CreatePreAuthSession(userID, "TOTP", time.Minute, false)
+	if err != nil {
+		t.Fatalf("create pre-auth session: %v", err)
+	}
 	form := url.Values{}
 	form.Add("new_password", "new-password-123")
 	form.Add("confirm_password", "new-password-123")
@@ -280,8 +288,20 @@ func TestRequiredPasswordChangeClearsTemporaryFlags(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusSeeOther)
 	}
-	if got := rr.Header().Get("Location"); got != "/" {
-		t.Fatalf("redirect = %q, want /", got)
+	if got := rr.Header().Get("Location"); got != "/login" {
+		t.Fatalf("redirect = %q, want /login", got)
+	}
+	if _, _, _, _, err := authService.ResolveAndRefreshSession(sessionToken); err == nil {
+		t.Fatal("current session survived required password change")
+	}
+	if _, _, _, _, err := authService.ResolveAndRefreshSession(otherToken); err == nil {
+		t.Fatal("other session survived required password change")
+	}
+	if _, _, _, err := authService.ResolvePreAuthSession(preAuthToken); err == nil {
+		t.Fatal("pre-auth session survived required password change")
+	}
+	if cookie := findCookie(rr.Result().Cookies(), sessionCookieName); cookie == nil || cookie.MaxAge >= 0 || cookie.Value != "" {
+		t.Fatalf("session cookie was not cleared: %+v", cookie)
 	}
 	var mustChange int
 	var expiresAt sql.NullInt64

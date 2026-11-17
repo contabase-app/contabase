@@ -49,7 +49,7 @@ func f10Fixture(t *testing.T, only12 bool) *sql.DB {
 	if only12 {
 		for _, m := range migrations {
 			if m.version > 12 {
-				f10Exec(t, db, `INSERT INTO schema_migrations(version,name) VALUES(?,?)`, m.version, m.name)
+				f10Exec(t, db, `INSERT INTO schema_migrations(version,name) VALUES(?,?)`, m.version, "test-only excluded: "+m.name)
 			}
 		}
 	}
@@ -82,8 +82,6 @@ func f10Seed(t *testing.T, db *sql.DB) {
 			f10Exec(t, db, `INSERT INTO cost_limits(id,workspace_id,category_id,max_amount_monthly) VALUES(?,?,?,87654)`, "limit-"+cat, ws, cat)
 		}
 		f10Exec(t, db, `INSERT INTO recurring_rules(id,workspace_id,user_id,account_id,category_id,type,amount,start_date,frequency,active) VALUES(?,?,?,?,?,'EXPENSE',1234,1700000000,'MONTHLY',0)`, ws, ws, ws, ws, ws+"3")
-		f10Exec(t, db, `INSERT INTO boxes(id,workspace_id,name,category_id,target_amount,monthly_recharge) VALUES(?,?,?, ?,50000,1000)`, ws, ws, ws, ws+"3")
-		f10Exec(t, db, `INSERT INTO box_virtual_ledger(id,box_id,amount,type,reference_date) VALUES(?,?,5678,'RECHARGE',1700000000)`, ws, ws)
 	}
 }
 
@@ -230,13 +228,11 @@ func TestF10FullHistoricalUpgradeAndAlreadyApplied(t *testing.T) {
 	queries := map[string]string{
 		// Migration 49 adds canonical Business categories; preserve every original
 		// ID/content while allowing that pre-existing, unrelated migration to run.
-		"categories":         `SELECT id,workspace_id,name,icon,color,type,macro_group,parent_id,is_fixed,created_at FROM categories WHERE id LIKE 'personal%' OR id LIKE 'business%' ORDER BY id`,
-		"transactions":       `SELECT id,workspace_id,user_id,account_id,category_id,type,amount,date,description,status,payment_status,due_date,created_at,updated_at FROM transactions ORDER BY id`,
-		"cost_limits":        `SELECT id,workspace_id,category_id,max_amount_monthly FROM cost_limits ORDER BY id`,
-		"accounts":           `SELECT id,workspace_id,initial_balance,current_balance FROM accounts ORDER BY id`,
-		"boxes":              `SELECT id,workspace_id,category_id,target_amount,monthly_recharge FROM boxes ORDER BY id`,
-		"recurring_rules":    `SELECT id,workspace_id,category_id,amount,start_date,frequency,active FROM recurring_rules ORDER BY id`,
-		"box_virtual_ledger": `SELECT id,box_id,amount,type,reference_date FROM box_virtual_ledger ORDER BY id`,
+		"categories":      `SELECT id,workspace_id,name,icon,color,type,macro_group,parent_id,is_fixed,created_at FROM categories WHERE id LIKE 'personal%' OR id LIKE 'business%' ORDER BY id`,
+		"transactions":    `SELECT id,workspace_id,user_id,account_id,category_id,type,amount,date,description,status,payment_status,due_date,created_at,updated_at FROM transactions ORDER BY id`,
+		"cost_limits":     `SELECT id,workspace_id,category_id,max_amount_monthly FROM cost_limits ORDER BY id`,
+		"accounts":        `SELECT id,workspace_id,initial_balance,current_balance FROM accounts ORDER BY id`,
+		"recurring_rules": `SELECT id,workspace_id,category_id,amount,start_date,frequency,active FROM recurring_rules ORDER BY id`,
 	}
 	want := map[string][][]any{}
 	for k, q := range queries {
@@ -286,7 +282,7 @@ func TestF10FullHistoricalUpgradeAndAlreadyApplied(t *testing.T) {
 	// Compare all schema objects, and semantic column/FK/index inventories.
 	// Older baseline constraints that later migrations never changed are
 	// reported explicitly instead of being silently normalized by F10.
-	for _, table := range []string{"categories", "cost_limits", "boxes", "accounts"} {
+	for _, table := range []string{"categories", "cost_limits", "accounts"} {
 		for _, q := range []string{`SELECT name,type,"notnull",dflt_value,pk FROM pragma_table_info('%s') ORDER BY name`, `SELECT "table","from","to",on_update,on_delete,match FROM pragma_foreign_key_list('%s') ORDER BY "from"`, `SELECT name,"unique",origin,partial FROM pragma_index_list('%s') ORDER BY name`} {
 			q = fmt.Sprintf(q, table)
 			if !reflect.DeepEqual(f10Rows(t, db, q), f10Rows(t, fresh, q)) {
@@ -482,7 +478,7 @@ func f10Rows(t *testing.T, db *sql.DB, query string) [][]any {
 	return out
 }
 
-var f10Tables = []string{"categories", "transactions", "cost_limits", "recurring_rules", "boxes", "box_virtual_ledger", "accounts", "workspaces"}
+var f10Tables = []string{"categories", "transactions", "cost_limits", "recurring_rules", "accounts", "workspaces"}
 
 func TestF10Migration12PreservesHistoricalRelations(t *testing.T) {
 	db := f10Fixture(t, true)

@@ -1,4 +1,7 @@
 .cb-v2-faturas-index-content {
+    /* Faturas index is a data surface: use the shell measure.
+       The detail/empty composition keeps --ui-content-standard. */
+    width: min(100%, var(--ui-content-max));
     padding-bottom: 44px;
 }
 
@@ -10,9 +13,8 @@
 .cb-faturas-index-card-section .cb-v2-section-heading { margin-bottom: 12px; }
 .cb-faturas-index-card-section .cb-v2-section-heading > div:first-child { min-width: 0; }
 .cb-faturas-index-card-section .cb-v2-section-heading h2 { margin: 2px 0 0; }
-.cb-faturas-index-card-section .cb-v2-eyebrow { margin-bottom: 0; }
 
-/* --- Hub card composition (moved out of dashboard.css) --------------------
+/* --- Hub card composition ------------------------------------------------
    Shared card foundations (institutional surface, adaptive scheme, status
    badge, progress and logo) live in credit-cards.css. This block keeps the
    Faturas hub shell: section chrome, carousel and the navigation tile. */
@@ -21,9 +23,25 @@
     display: flex;
     flex-direction: column;
     min-height: 100%;
+    padding: var(--ui-panel-pad);
 }
 
-.cb-v2-section-heading { margin-bottom: 9px; }
+.cb-v2-section-heading {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.cb-v2-section-heading h2 {
+    margin: 0;
+    color: var(--ui-text);
+    font-size: var(--ui-fs-card-title);
+    font-weight: 630;
+    letter-spacing: -.015em;
+}
 
 .cb-v2-carousel-controls {
     display: flex;
@@ -79,177 +97,10 @@
 
 .cb-v2-card-rail::-webkit-scrollbar { display: none; }
 
-/* --- Faturas tile (B2.2): compact tonal card -------------------------------
-   Foundations (surface, scheme, status, progress, logo) come from
-   credit-cards.css. This block owns the Faturas-specific composition only:
-   the tile is a selection control inside the carousel rail. */
-
-.cb-v2-faturas-index-main .cb-v2-credit-card {
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-    flex: 0 0 342px;
-    width: 342px;
-    min-width: min(100%, 342px);
-    min-height: 190px;
-    padding: 14px 16px 13px;
-    scroll-snap-align: start;
-    border: 1px solid var(--card-line);
-    border-radius: 16px;
-    color: var(--card-fg);
-    text-align: left;
-    text-decoration: none;
-    cursor: pointer;
-    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
-}
-
-.cb-v2-credit-card-top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-    width: 100%;
-    min-width: 0;
-}
-
-.cb-v2-credit-card-identity {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-}
-
-.cb-v2-credit-card-logo {
-    width: 30px;
-    height: 30px;
-    padding: 3px;
-    border: 1px solid var(--card-badge-border);
-    border-radius: 9px;
-    background: var(--card-badge-bg);
-}
-
-.cb-v2-credit-card-logo .cb-card-logo-monogram {
-    font-size: 10.5px;
-    color: var(--card-fg);
-}
-
-.cb-v2-credit-card-name {
-    display: -webkit-box;
-    overflow: hidden;
-    color: var(--card-fg);
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 1.25;
-    letter-spacing: -.01em;
-    overflow-wrap: anywhere;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-}
-
-.cb-v2-credit-card-amount {
-    display: grid;
-    gap: 1px;
-    margin-top: auto;
-    padding-top: 6px;
-    min-width: 0;
-}
-
-.cb-v2-credit-card-amount small {
-    color: var(--card-fg-muted);
-    font-size: 10.5px;
-    font-weight: 550;
-    letter-spacing: .02em;
-}
-
-.cb-v2-credit-card-amount strong {
-    overflow: hidden;
-    color: var(--card-fg);
-    font-size: 20px;
-    font-variant-numeric: tabular-nums;
-    font-weight: 640;
-    letter-spacing: -.02em;
-    line-height: 1.2;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.cb-v2-credit-card-meta {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-    min-width: 0;
-    color: var(--card-fg-muted);
-    font-size: 10.5px;
-}
-
-.cb-v2-credit-card-meta small {
-    color: var(--card-fg-muted);
-    font-size: 10.5px;
-    font-weight: 500;
-}
-
-.cb-v2-credit-card-meta strong {
-    color: var(--card-fg-soft);
-    font-size: 11px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
-
-.cb-v2-credit-card-closing {
-    overflow: hidden;
-    color: var(--card-fg-muted);
-    font-size: 10px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.cb-v2-credit-card-limit {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-    min-width: 0;
-    margin-top: 1px;
-    padding-top: 7px;
-    border-top: 1px solid var(--card-line);
-}
-
-.cb-v2-credit-card-limit small {
-    color: var(--card-fg-muted);
-    font-size: 10px;
-    font-weight: 550;
-}
-
-.cb-v2-credit-card-limit strong {
-    overflow: hidden;
-    color: var(--card-fg-soft);
-    font-size: 11.5px;
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.cb-v2-credit-card-progress-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 0;
-}
-
-.cb-v2-credit-card-progress-row .cb-card-progress { flex: 1 1 auto; }
-
-.cb-v2-card-usage {
-    flex: 0 0 auto;
-    margin: 0;
-    color: var(--card-fg-muted);
-    font-size: 10px;
-    font-weight: 550;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-}
+/* --- Faturas tile (B2.2): selection and rail ------------------------------
+   Surface, scheme, status, progress, logo and the shared tile composition come
+   from credit-cards.css. This block keeps only the hub selection state and the
+   page-specific carousel rail behavior. */
 
 /* Selection and focus are independent states:
    - selected: tonal border, soft elevation and an explicit check;
@@ -262,7 +113,7 @@
 }
 
 .cb-v2-credit-card-selected {
-    display: inline-grid;
+    display: none;
     width: 16px;
     height: 16px;
     flex: 0 0 auto;
@@ -271,6 +122,10 @@
     border-radius: 50%;
     background: var(--card-badge-bg);
     color: var(--card-fg);
+}
+
+.cb-v2-faturas-index-main .cb-v2-credit-card.is-selected .cb-v2-credit-card-selected {
+    display: inline-grid;
 }
 
 .cb-v2-faturas-index-main .cb-v2-credit-card-selected {
@@ -321,14 +176,14 @@
     width: 5px;
     height: 5px;
     border-radius: 50%;
-    background: var(--v2-border-strong);
+    background: var(--ui-border-strong);
     transition: width 160ms ease, background-color 160ms ease;
 }
 
 .cb-v2-carousel-dots span.is-active {
     width: 13px;
     border-radius: 4px;
-    background: var(--v2-accent);
+    background: var(--ui-accent);
 }
 
 .cb-v2-faturas-index-main .cb-v2-card-rail {
@@ -351,12 +206,74 @@
 .cb-faturas-index-detail[aria-busy="true"] { opacity: .58; pointer-events: none; transition: opacity .16s ease; }
 .cb-faturas-index-empty { margin-top: 16px; }
 
+/* Settlement recedes into a neutral surface; text and navigation stay opaque. */
+.cb-v2-faturas-index-main .cb-v2-credit-card.is-settled {
+    --card-fg: #f5f5f5;
+    --card-fg-soft: #e5e5e5;
+    --card-fg-muted: #d4d4d4;
+    --card-line: #737373;
+    --card-track: #737373;
+    --card-fill: #e5e5e5;
+    --card-badge-bg: #404040;
+    --card-badge-border: #a3a3a3;
+    --card-hover-ring: #a3a3a3;
+    --card-shadow: none;
+    background: #262626;
+}
+
+[data-theme="light"] .cb-v2-faturas-index-main .cb-v2-credit-card.is-settled {
+    --card-fg: #262626;
+    --card-fg-soft: #404040;
+    --card-fg-muted: #525252;
+    --card-line: #737373;
+    --card-track: #737373;
+    --card-fill: #404040;
+    --card-badge-bg: #fafafa;
+    --card-badge-border: #737373;
+    --card-hover-ring: #525252;
+    background: #e5e5e5;
+}
+
+.cb-v2-faturas-index-main .is-settled .institution-logo { filter: grayscale(1); }
+
+/* Paid is the only state that confirms a settlement. The success token keeps
+   the confirmation legible on the neutral settled surface in both themes. */
+.cb-v2-faturas-index-main .cb-v2-credit-card.is-settled .cb-v2-credit-card-status.is-paid {
+    border-color: color-mix(in srgb, var(--ui-success) 55%, var(--card-badge-border));
+    color: var(--ui-success);
+}
+
+.cb-v2-faturas-index-main .cb-v2-credit-card.is-settled .cb-v2-credit-card-status.is-paid > strong {
+    color: var(--ui-success);
+}
+
+/* An empty invoice is not a settlement: it keeps the neutral surface and a
+   muted label, without the paid check or the success tone. */
+.cb-v2-faturas-index-main .cb-v2-credit-card .cb-v2-credit-card-status.is-empty {
+    border-color: color-mix(in srgb, var(--card-badge-border) 45%, transparent);
+    background: transparent;
+    color: var(--card-fg-muted);
+}
+
+.cb-v2-faturas-index-main .cb-v2-credit-card .cb-v2-credit-card-status.is-empty > strong {
+    color: var(--card-fg-muted);
+}
+
+.cb-v2-faturas-index-main .cb-v2-credit-card .cb-v2-credit-card-status.is-empty .cb-v2-credit-card-dot {
+    background: var(--card-fg-muted);
+}
+
+.cb-faturas-paid-check { width: 13px; height: 13px; flex: 0 0 auto; }
+.cb-faturas-overdue-notice { margin: 0 0 16px; color: var(--ui-text); font-size: .875rem; }
+.cb-faturas-overdue-notice a { color: var(--ui-text); text-decoration: underline; text-underline-offset: 3px; }
+.cb-faturas-overdue-notice a:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 3px; }
+
 @media (max-width: 767px) {
     .cb-v2-faturas-index-content { padding-bottom: 100px; }
     /* The canonical rail keeps its own scroll viewport. */
     .cb-v2-faturas-index-main [data-month-rail-viewport] { min-width: 0; overflow-x: auto; scrollbar-width: none; }
     .cb-v2-faturas-index-main [data-month-rail-viewport]::-webkit-scrollbar { display: none; }
-    /* Moved hub shell rules (previously in dashboard.css). */
+    /* Hub shell rules. */
     .cb-v2-card-rail { display: flex; gap: 9px; overflow-x: auto; overscroll-behavior-x: contain; padding: 1px 1px 6px; scroll-padding-inline: 1px; scroll-snap-type: x mandatory; scrollbar-width: none; }
     .cb-v2-card-rail > [data-v2-card-item] { flex: 0 0 min(86%, 340px); scroll-snap-align: start; }
     .cb-v2-carousel-control { width: 44px; height: 44px; }

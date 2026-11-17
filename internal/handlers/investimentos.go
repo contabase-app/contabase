@@ -735,10 +735,10 @@ func (h *InvestimentosHandler) renderInvestmentDetail(w http.ResponseWriter, r *
 	data.ReturnTone = ""
 	if detail.YieldCents > 0 {
 		data.GrossYield = "+ " + data.GrossYield
-		data.ReturnTone = "text-emerald-700 dark:text-emerald-400"
+		data.ReturnTone = "is-positive"
 	} else if detail.YieldCents < 0 {
 		data.GrossYield = "- " + strings.TrimPrefix(data.GrossYield, "-")
-		data.ReturnTone = "text-red-700 dark:text-red-400"
+		data.ReturnTone = "is-negative"
 	}
 	if detail.CurrentIsPrincipal {
 		data.CurrentValue = "Sem posição registrada"
@@ -1024,10 +1024,10 @@ func applyInvestmentAccountIndicators(summary *investmentSummary, account invest
 	switch {
 	case yield > 0:
 		summary.NominalYield = "+ " + formatCurrencyLabel(yield)
-		summary.NominalYieldTone = "text-emerald-700 dark:text-emerald-400"
+		summary.NominalYieldTone = "is-positive"
 	case yield < 0:
 		summary.NominalYield = "- " + strings.TrimPrefix(formatCurrencyLabel(yield), "-")
-		summary.NominalYieldTone = "text-red-700 dark:text-red-400"
+		summary.NominalYieldTone = "is-negative"
 	default:
 		summary.NominalYield = formatCurrencyLabel(0)
 	}

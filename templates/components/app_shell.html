@@ -12,7 +12,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="csrf-token" content="">
-    <meta name="theme-color" content="#161a20">
+    <meta name="theme-color" content="#0e1013">
     <meta name="mobile-web-app-capable" content="yes">
     <title>{{if .Title}}{{.Title}} | ContaBase{{else}}ContaBase{{end}}</title>
     <meta name="description" content="Sua base financeira privada, self-hosted e sem telemetria.">
@@ -28,6 +28,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png">
     <link rel="manifest" href="{{assetPath "/assets/manifest.json"}}">
     <script src="{{assetPath "/assets/js/theme-init.js"}}"></script>
+    <script src="{{assetPath "/assets/js/pwa-install.js"}}" defer></script>
     <link rel="stylesheet" href="{{assetPath "/assets/css/style.css"}}">
     <link rel="stylesheet" href="{{assetPath "/assets/css/geist-sans.css"}}">
     <link rel="stylesheet" href="{{assetPath "/assets/css/design-system.css"}}">
@@ -49,7 +50,15 @@
     </div>
     <div id="global-feedback" class="cb-v2-feedback hidden" aria-live="polite"></div>
     <div class="cb-v2" data-app-shell>
+        {{template "app-v2-notification-sink" .}}
         {{template "app-v2-desktop-sidebar" .}}
+{{end}}
+
+{{define "app-v2-notification-sink"}}
+{{/* Single OOB sink for the notification badge. Every visible badge is a
+     [data-notification-badge] copy; app-shell.js keeps them in sync after
+     HTMX swaps, so the component no longer needs duplicate DOM ids. */}}
+<div hidden aria-hidden="true"><span id="notification-badge"{{if gt .NotificationCount 0}} aria-label="{{.NotificationCount}} {{if gt .NotificationCount 1}}notificações não lidas{{else}}notificação não lida{{end}}"{{else}} class="hidden"{{end}}></span></div>
 {{end}}
 
 {{define "app-v2-brand-logo"}}
@@ -69,6 +78,13 @@
 <a class="cb-v2-nav-link {{if or (eq .Title "Faturas") (eq .Title "Fatura")}}is-active{{end}}" data-v2-nav-section="invoices" href="/faturas"{{if or (eq .Title "Faturas") (eq .Title "Fatura")}} aria-current="page"{{end}}><i data-lucide="credit-card"></i><span>Faturas</span></a>
 <a class="cb-v2-nav-link {{if eq .Title "Relatórios"}}is-active{{end}}" data-v2-nav-section="reports" href="/relatorios"{{if eq .Title "Relatórios"}} aria-current="page"{{end}}><i data-lucide="chart-no-axes-combined"></i><span>Relatórios</span></a>
 {{if .IsBusiness}}<a class="cb-v2-nav-link {{if eq .Title "Contatos"}}is-active{{end}}" data-v2-nav-section="contacts" href="/contatos"{{if eq .Title "Contatos"}} aria-current="page"{{end}}><i data-lucide="contact-round"></i><span>Contatos</span></a>{{end}}
+{{end}}
+
+{{define "app-v2-primary-nav"}}
+<p class="cb-v2-nav-label">Visão geral</p>
+<nav class="cb-v2-nav-list" aria-label="Áreas do ContaBase">
+    {{template "app-v2-nav-links" .}}
+</nav>
 {{end}}
 
 {{define "app-v2-settings-nav"}}
@@ -99,6 +115,7 @@
         <a class="cb-v2-nav-sub-link {{if eq .Section "admin-workspaces"}}is-active{{end}}" href="/admin/workspaces"><i data-lucide="layers-3"></i><span>Workspaces</span></a>
         <a class="cb-v2-nav-sub-link {{if eq .Section "admin-backups"}}is-active{{end}}" href="/admin/backups"><i data-lucide="database-backup"></i><span>Backups</span></a>
         <a class="cb-v2-nav-sub-link {{if eq .Section "admin-auditoria"}}is-active{{end}}" href="/admin/auditoria"><i data-lucide="scan-eye"></i><span>Auditoria</span></a>
+        <a class="cb-v2-nav-sub-link {{if eq .Section "admin-updates"}}is-active{{end}}" href="/admin/atualizacoes"><i data-lucide="refresh-cw" aria-hidden="true"></i><span>Atualizações</span></a>
     </div>
 </div>
 {{end}}
@@ -115,12 +132,18 @@
 {{end}}
 
 {{define "app-v2-sidebar-controls"}}
-<div class="cb-v2-sidebar-controls" aria-label="Controles do aplicativo">
+<div class="cb-v2-sidebar-controls" role="group" aria-label="Controles do aplicativo">
     <button type="button" class="cb-v2-icon-button" data-theme-toggle data-v2-theme-toggle aria-label="Alternar tema claro ou escuro" title="Alternar tema claro ou escuro"><i class="cb-v2-theme-icon-dark" data-lucide="sun" aria-hidden="true"></i><i class="cb-v2-theme-icon-light" data-lucide="moon" aria-hidden="true"></i></button>
     <a class="cb-v2-icon-button cb-v2-notification-button" href="/notificacoes" aria-label="Notificações" title="Notificações">
-        <i data-lucide="bell"></i><span id="notification-badge"{{if gt .NotificationCount 0}} aria-label="{{.NotificationCount}} notificações não lidas"{{else}} class="hidden"{{end}}></span>
+        <i data-lucide="bell"></i><span class="cb-v2-notification-badge{{if gt .NotificationCount 0}}{{else}} hidden{{end}}" data-notification-badge{{if gt .NotificationCount 0}} aria-label="{{.NotificationCount}} {{if gt .NotificationCount 1}}notificações não lidas{{else}}notificação não lida{{end}}"{{end}}></span>
     </a>
 </div>
+{{end}}
+
+{{define "app-v2-logout-action"}}
+<button type="button" class="cb-v2-nav-link cb-v2-logout-action" hx-post="/logout" hx-swap="none" aria-label="Sair da conta">
+    <i data-lucide="log-out" aria-hidden="true"></i><span>Sair</span>
+</button>
 {{end}}
 
 {{define "app-v2-desktop-sidebar"}}
@@ -130,17 +153,16 @@
         <button type="button" class="cb-v2-icon-button cb-v2-sidebar-toggle" data-v2-sidebar-toggle aria-expanded="true" aria-label="Recolher menu lateral" title="Recolher menu lateral"><i class="cb-v2-sidebar-toggle-close" data-lucide="panel-left-close"></i><i class="cb-v2-sidebar-toggle-open" data-lucide="panel-left-open"></i></button>
     </div>
     <div class="cb-v2-sidebar-body">
-        <nav class="cb-v2-nav-list">
-            {{template "app-v2-nav-links" .}}
-        </nav>
+        {{template "app-v2-primary-nav" .}}
         {{template "app-v2-quick-actions" .}}
         {{template "app-v2-settings-nav" .}}
     </div>
     <div class="cb-v2-sidebar-footer">
         <div class="cb-v2-sidebar-footer-context">
-            <button type="button" class="cb-v2-workspace" data-v2-workspace-trigger aria-haspopup="dialog" aria-controls="workspaceDrawer"><i data-lucide="{{if .IsBusiness}}building-2{{else}}house{{end}}"></i><span>{{.ActiveWorkspaceName}}</span><i data-lucide="chevron-up" aria-hidden="true"></i></button>
+            <button type="button" class="cb-v2-workspace" data-v2-workspace-trigger aria-haspopup="dialog" aria-expanded="false" aria-controls="workspaceDrawer"><i data-lucide="{{if .IsBusiness}}building-2{{else}}house{{end}}"></i><span>{{.ActiveWorkspaceName}}</span><i data-lucide="chevron-up" aria-hidden="true"></i></button>
             {{template "app-v2-sidebar-controls" .}}
         </div>
+        {{template "app-v2-logout-action" .}}
     </div>
 </aside>
 {{end}}
@@ -154,7 +176,7 @@
     <div class="cb-v2-appbar-actions">
         <button type="button" class="cb-v2-icon-button" data-theme-toggle data-v2-theme-toggle aria-label="Alternar tema claro ou escuro" title="Alternar tema claro ou escuro"><i class="cb-v2-theme-icon-dark" data-lucide="sun" aria-hidden="true"></i><i class="cb-v2-theme-icon-light" data-lucide="moon" aria-hidden="true"></i></button>
         <a class="cb-v2-icon-button cb-v2-notification-button" href="/notificacoes" aria-label="Notificações" title="Notificações">
-            <i data-lucide="bell"></i><span data-notification-badge{{if gt .NotificationCount 0}} aria-label="{{.NotificationCount}} notificações não lidas"{{else}} class="hidden"{{end}}></span>
+            <i data-lucide="bell"></i><span class="cb-v2-notification-badge{{if gt .NotificationCount 0}}{{else}} hidden{{end}}" data-notification-badge{{if gt .NotificationCount 0}} aria-label="{{.NotificationCount}} {{if gt .NotificationCount 1}}notificações não lidas{{else}}notificação não lida{{end}}"{{end}}></span>
         </a>
     </div>
 </header>
@@ -171,10 +193,15 @@
 {{end}}
 
 {{define "app-v2-footer"}}
+{{$apoio := supportLink}}
 <footer class="cb-v2-footer">
-    <p>&copy; <span id="current-year">2026</span> ContaBase &mdash; AGPL-3.0 &mdash; <a href="https://github.com/contabase-app/contabase" target="_blank" rel="noopener noreferrer">GitHub</a></p>
-    {{with appCurrentTime}}<p title="Data e hora reconhecidas pelo ContaBase na timezone configurada.">Sistema: {{.DateTime}} · {{.Timezone}}</p>{{end}}
-    <p>Versão {{appVersion}}</p>
+    <p class="cb-v2-footer-copyright">&copy; <span id="current-year">2026</span> ContaBase</p>
+    <p class="cb-v2-footer-license">AGPL-3.0</p>
+    <p class="cb-v2-footer-github"><a href="https://github.com/contabase-app/contabase" target="_blank" rel="noopener noreferrer">GitHub</a></p>
+    {{if $apoio.Enabled}}<p class="cb-v2-footer-apoio"><a href="{{$apoio.URL}}" target="_blank" rel="noopener noreferrer">Apoiar o Projeto<span class="sr-only"> (abre em nova aba)</span></a></p>{{end}}
+    <span class="cb-v2-footer-break" aria-hidden="true"></span>
+    {{with appCurrentTime}}<p class="cb-v2-footer-system" title="Data e hora reconhecidas pelo ContaBase na timezone configurada.">Sistema: {{.DateTime}} · {{.Timezone}}</p>{{end}}
+    <p class="cb-v2-footer-version">Versão {{appVersion}}</p>
 </footer>
 {{end}}
 
@@ -182,16 +209,15 @@
 <dialog class="cb-v2-drawer" data-v2-menu-dialog aria-label="Navegação">
     <div class="cb-v2-drawer-content">
         <div class="cb-v2-drawer-header"><a class="cb-v2-brand" href="/" aria-label="ContaBase">{{template "app-v2-brand-logo" .}}</a><button type="button" class="cb-v2-icon-button" data-v2-menu-close aria-label="Fechar navegação"><i data-lucide="x"></i></button></div>
-        <nav class="cb-v2-nav-list">
-            {{template "app-v2-nav-links" .}}
-        </nav>
+        {{template "app-v2-primary-nav" .}}
         {{template "app-v2-quick-actions" .}}
         {{template "app-v2-settings-nav" .}}
         <div class="cb-v2-drawer-footer">
             <div class="cb-v2-drawer-context">
-                <button type="button" class="cb-v2-workspace cb-v2-drawer-workspace" data-v2-workspace-trigger aria-haspopup="dialog" aria-controls="workspaceDrawer"><i data-lucide="{{if .IsBusiness}}building-2{{else}}house{{end}}"></i><span>{{.ActiveWorkspaceName}}</span><i data-lucide="chevron-up" aria-hidden="true"></i></button>
+                <button type="button" class="cb-v2-workspace cb-v2-drawer-workspace" data-v2-workspace-trigger aria-haspopup="dialog" aria-expanded="false" aria-controls="workspaceDrawer"><i data-lucide="{{if .IsBusiness}}building-2{{else}}house{{end}}"></i><span>{{.ActiveWorkspaceName}}</span><i data-lucide="chevron-up" aria-hidden="true"></i></button>
                 {{template "app-v2-sidebar-controls" .}}
             </div>
+            {{template "app-v2-logout-action" .}}
         </div>
     </div>
 </dialog>
@@ -206,9 +232,9 @@
 
 {{define "app-v2-workspace-drawer"}}
 <div id="drawerBackdrop" class="cb-v2-workspace-backdrop fixed inset-0 z-50 opacity-0 pointer-events-none transition-opacity duration-200" data-v2-workspace-backdrop></div>
-<aside id="workspaceDrawer" data-contabase-overlay data-overlay-priority="5" data-overlay-close="closeWorkspaceDrawer" data-overlay-close-method="translate" class="cb-v2-workspace-drawer fixed top-0 right-0 z-50 h-full w-[82vw] max-w-xs translate-x-full transition-transform duration-300 ease-out" aria-label="Selecionar workspace">
+<aside id="workspaceDrawer" data-contabase-overlay data-overlay-priority="5" data-overlay-close="closeWorkspaceDrawer" data-overlay-close-method="translate" class="cb-v2-workspace-drawer fixed top-0 right-0 z-50 h-full w-[82vw] max-w-xs translate-x-full transition-transform duration-300 ease-out" role="dialog" aria-labelledby="workspaceDrawerTitle" aria-hidden="true" inert>
     <div class="cb-v2-workspace-drawer-header">
-        <div><p>Workspaces</p><strong>Trocar contexto</strong></div>
+        <div><p>Workspaces</p><strong id="workspaceDrawerTitle">Trocar contexto</strong></div>
         <button type="button" class="cb-v2-icon-button" data-v2-workspace-close aria-label="Fechar seletor de workspace"><i data-lucide="x"></i></button>
     </div>
     <div class="cb-v2-workspace-drawer-body">
@@ -246,14 +272,15 @@
         </div>
         <form id="payment-confirm-form" hx-post="" hx-target="" hx-swap="" class="space-y-3.5">
             <input type="hidden" name="context" id="payment-confirm-context" value="">
-            <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Modo de confirmação">
+            <div class="grid grid-cols-2 gap-2" id="payment-mode-group" role="radiogroup" aria-label="Modo de confirmação">
                 <label class="payment-mode-option flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 py-2 text-xs font-semibold text-[var(--cb-text-main)]"><input type="radio" name="payment_action" value="paid" checked class="h-4 w-4 accent-emerald-600" data-payment-mode><span>Pagar agora</span></label>
                 <label class="payment-mode-option flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 py-2 text-xs font-semibold text-[var(--cb-text-main)]"><input type="radio" name="payment_action" value="scheduled" class="h-4 w-4 accent-violet-600" data-payment-mode><span>Agendar</span></label>
             </div>
             <label class="hidden payment-mode-option cursor-pointer items-center gap-2 rounded-xl border border-violet-500/20 bg-violet-500/10 px-3 py-2 text-xs font-semibold text-violet-700 dark:text-violet-200" id="payment-clear-schedule-option"><input type="radio" name="payment_action" value="clear_schedule" class="h-4 w-4 accent-violet-600" data-payment-mode><span>Remover agendamento ativo</span></label>
-            <label class="block" id="payment-paid-date-row"><span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Data de pagamento</span><input type="date" name="payment_date" id="payment-confirm-date" required data-payment-confirm-date class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]"></label>
+            <label class="block" id="payment-paid-date-row"><span id="payment-paid-date-label" class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Data de pagamento</span><input type="date" name="payment_date" id="payment-confirm-date" required data-payment-confirm-date class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]"></label>
             <label class="hidden" id="payment-scheduled-date-row"><span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Data agendada</span><input type="date" name="scheduled_payment_date" id="payment-scheduled-date" class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]"></label>
             <div id="payment-account-readonly-row"><span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]" data-payment-account-label>Conta de pagamento</span><p id="payment-account-readonly" class="mt-1 text-xs font-semibold text-[var(--cb-text-main)]">—</p><p id="payment-account-readonly-effect" class="mt-1 text-[11px] leading-snug text-[var(--cb-text-muted)]">Será debitado desta conta.</p><p id="payment-account-hint" class="mt-1 text-[11px] leading-snug text-[var(--cb-text-muted)]">Para trocar a conta, edite o lançamento antes de pagar.</p></div>
+            <div id="payment-transfer-destination-row" class="hidden"><span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]">Conta de destino</span><p id="payment-transfer-destination" class="mt-1 text-xs font-semibold text-[var(--cb-text-main)]">—</p><p class="mt-1 text-[11px] leading-snug text-[var(--cb-text-muted)]">Será creditado nesta conta.</p></div>
             <label class="hidden" id="payment-account-select-row"><span class="cb-text-micro font-bold uppercase tracking-wider text-[var(--cb-text-muted)]" data-payment-account-label>Conta de pagamento</span><select name="payment_account_id" id="payment-account-select" class="mt-1 h-10 w-full rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] px-3 text-xs font-semibold text-[var(--cb-text-main)] focus:outline-none focus:border-[var(--cb-border-focus)]"></select><p id="payment-account-select-effect" class="mt-1 text-[11px] leading-snug text-[var(--cb-text-muted)]">Será debitado desta conta.</p></label>
             <div class="rounded-xl px-3 py-2 text-xs font-semibold cb-tone-accent cb-tone-notice"><span id="payment-confirm-summary">Será marcado como pago em --/--/----</span></div>
             <button type="submit" class="cb-button cb-button-primary btn-tactile flex h-10 w-full items-center justify-center gap-2 rounded-xl text-xs font-bold" id="payment-confirm-submit"><i data-lucide="check" class="h-4 w-4"></i>Pagar agora</button>
@@ -266,7 +293,7 @@
 </div>
 
 <div id="global-delete-scope-modal" data-contabase-overlay data-overlay-priority="219" data-overlay-close-method="hidden" class="fixed inset-0 z-[220] hidden flex-col items-center justify-center bg-black/50 backdrop-blur-sm p-4 dark:bg-black/70" role="dialog" aria-modal="true" aria-labelledby="global-delete-scope-title" data-onclick-self="cancelGlobalDelete">
-    <div class="cb-modal w-full max-w-sm rounded-2xl p-5 shadow-xl"><p class="text-xs font-semibold uppercase tracking-wide text-[var(--cb-danger)]">Recorrência detectada</p><h3 id="global-delete-scope-title" class="mt-2 text-sm font-bold text-[var(--cb-text-main)]">Este lançamento faz parte de uma série.</h3><p class="mt-1 text-xs text-[var(--cb-text-muted)]">Como deseja excluir?</p><div class="mt-4 space-y-2"><label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3"><input type="radio" name="gdel_choice" value="single" checked class="mt-0.5 h-4 w-4"><span class="text-xs text-[var(--cb-text-main)]">Apenas este lançamento</span></label><label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3"><input type="radio" name="gdel_choice" value="future" class="mt-0.5 h-4 w-4"><span class="text-xs text-[var(--cb-text-main)]">Este e os próximos</span></label><label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3"><input type="radio" name="gdel_choice" value="all" class="mt-0.5 h-4 w-4"><span class="text-xs text-[var(--cb-text-main)]">Toda a série</span></label></div><div class="mt-4 flex items-center justify-end gap-2"><button type="button" class="cb-button cb-button-secondary btn-tactile h-9 rounded-xl px-3 text-xs font-semibold" data-onclick="cancelGlobalDelete">Cancelar</button><button type="button" data-onclick="submitGlobalDelete" class="cb-button btn-tactile h-9 rounded-xl bg-[var(--cb-danger)] px-4 text-xs font-bold text-white">Confirmar exclusão</button></div></div>
+    <div class="cb-modal w-full max-w-sm rounded-2xl p-5 shadow-xl"><p class="text-xs font-semibold uppercase tracking-wide text-[var(--cb-danger)]">Recorrência detectada</p><h3 id="global-delete-scope-title" class="mt-2 text-sm font-bold text-[var(--cb-text-main)]">Este lançamento faz parte de uma série.</h3><p class="mt-1 text-xs text-[var(--cb-text-muted)]">Como deseja excluir?</p><div class="mt-4 space-y-2"><label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3"><input type="radio" name="gdel_choice" value="single" checked class="mt-0.5 h-4 w-4"><span class="text-xs text-[var(--cb-text-main)]">Apenas este lançamento</span></label><label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3"><input type="radio" name="gdel_choice" value="future" class="mt-0.5 h-4 w-4"><span class="text-xs text-[var(--cb-text-main)]">Este e os próximos</span></label><label class="flex cursor-pointer items-start gap-2 rounded-xl border border-[var(--cb-border-subtle)] bg-[var(--cb-surface-2)] p-3"><input type="radio" name="gdel_choice" value="all" class="mt-0.5 h-4 w-4"><span class="text-xs text-[var(--cb-text-main)]">Toda a série</span></label></div><div class="mt-4 flex items-center justify-end gap-2"><button type="button" class="cb-button cb-button-secondary btn-tactile h-9 rounded-xl px-3 text-xs font-semibold" data-onclick="cancelGlobalDelete">Cancelar</button><button type="button" data-onclick="submitGlobalDelete" class="cb-button cb-button-danger btn-tactile h-9 rounded-xl px-4 text-xs font-bold">Confirmar exclusão</button></div></div>
 </div>
 
 <div id="invoice-move-scope-modal" data-contabase-overlay data-overlay-priority="218" data-overlay-close="cancelInvoiceMoveScope" data-overlay-close-method="hidden" class="fixed inset-0 z-[220] hidden flex-col items-center justify-center bg-black/50 p-4 backdrop-blur-sm dark:bg-black/70" role="dialog" aria-modal="true" aria-labelledby="invoice-move-scope-title" aria-describedby="invoice-move-scope-description" data-onclick-self="cancelInvoiceMoveScope">
@@ -295,6 +322,24 @@
 {{define "app-v2-document-end"}}
     {{template "app-v2-footer" .}}
     </div>
+    <aside id="pwa-install-banner" class="cb-pwa-banner" aria-labelledby="pwa-install-title" aria-describedby="pwa-install-text" aria-hidden="true" data-pwa-install-banner hidden>
+        <div class="cb-pwa-banner__head">
+            <span class="cb-pwa-banner__mark" aria-hidden="true">
+                <img src="{{assetPath "/assets/branding/logo-mark.png"}}" alt="" width="34" height="34">
+            </span>
+            <div class="cb-pwa-banner__copy">
+                <h2 id="pwa-install-title" class="cb-pwa-banner__title">Instale o ContaBase</h2>
+                <p id="pwa-install-text" class="cb-pwa-banner__text">Acesse suas finanças diretamente pelo aplicativo.</p>
+            </div>
+            <button id="pwa-close-btn" type="button" class="cb-pwa-banner__close" aria-label="Dispensar convite de instalação">
+                <i data-lucide="x" aria-hidden="true"></i>
+            </button>
+        </div>
+        <button id="pwa-install-btn" type="button" class="cb-pwa-banner__install">
+            <i data-lucide="download" aria-hidden="true"></i>
+            <span>Instalar aplicativo</span>
+        </button>
+    </aside>
     <div id="bottom-sheet-container" data-contabase-overlay data-overlay-priority="10" data-overlay-close="closeBottomSheet" data-overlay-close-method="innerHTML"></div>
     <div id="picker-modal-container"></div>
     {{template "app-v2-shared-overlays" .}}
@@ -308,7 +353,6 @@
     <script src="{{assetPath "/assets/js/core-utils.js"}}"></script>
     <script src="{{assetPath "/assets/js/input-modality.js"}}"></script>
     <script src="{{assetPath "/assets/js/runtime-colors.js"}}"></script>
-    <script src="{{assetPath "/assets/js/dashboard-tabs.js"}}"></script>
     <script src="{{assetPath "/assets/js/money-mask.js"}}"></script>
     <script src="{{assetPath "/assets/js/installment-preview.js"}}"></script>
     <script src="{{assetPath "/assets/js/overlay-stack.js"}}"></script>
@@ -316,6 +360,7 @@
     <script src="{{assetPath "/assets/js/picker-modal.js"}}"></script>
     <script src="{{assetPath "/assets/js/modal-interceptor.js"}}"></script>
     <script src="{{assetPath "/assets/js/event-handlers.js"}}"></script>
+    <script src="{{assetPath "/assets/js/contact-masks.js"}}"></script>
     <script src="{{assetPath "/assets/js/privacy.js"}}"></script>
     <script src="{{assetPath "/assets/js/show-more.js"}}"></script>
     <script src="{{assetPath "/assets/js/form-lancamento.js"}}"></script>
@@ -323,6 +368,7 @@
     <script src="{{assetPath "/assets/js/tooltip.js"}}"></script>
     <script src="{{assetPath "/assets/js/htmx-lifecycle.js"}}"></script>
     <script src="{{assetPath "/assets/js/backup-dropzone.js"}}"></script>
+    <script src="{{assetPath "/assets/js/backup-import-feedback.js"}}"></script>
     <script src="{{assetPath "/assets/js/config-selects.js"}}"></script>
     <script src="{{assetPath "/assets/js/icon-picker.js"}}"></script>
     <script src="{{assetPath "/assets/js/month-selector.js"}}"></script>

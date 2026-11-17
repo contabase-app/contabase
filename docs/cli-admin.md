@@ -266,7 +266,7 @@ Executa a rotina segura de limpeza e reseed canônico de categorias por workspac
 
 * Executa `dry-run` ou `apply` da rotina explicitamente.
 * Remove apenas categorias sem uso ou dependência.
-* Preserva categorias com lançamentos, recorrências, limites, reservas e pais com filhos preservados.
+* Preserva categorias com lançamentos, recorrências, limites e pais com filhos preservados.
 * Recria ou reaplica o seed canônico do workspace alvo.
 * Trabalha sempre em um workspace específico.
 
@@ -345,7 +345,7 @@ O comando imprime:
 3. Rode `dry-run`.
 4. Revise o relatório.
 5. Rode `apply` apenas se o resultado estiver coerente.
-6. Valide as telas de Categorias, Lançamentos, Metas/Reservas e Relatórios.
+6. Valide as telas de Categorias, Lançamentos, Metas e Relatórios.
 
 ### Bloqueios
 

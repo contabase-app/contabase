@@ -1,0 +1,9 @@
+/*
+ * Fallback sem JavaScript para o Dashboard Preview (R1.3-B10.1).
+ * Carregado apenas dentro de <noscript>. Sem o script de layout, o grid
+ * permanece na coluna única canônica; nada fica oculto.
+ */
+#dashboard-content.is-layout-pending {
+    visibility: visible;
+    animation: none;
+}

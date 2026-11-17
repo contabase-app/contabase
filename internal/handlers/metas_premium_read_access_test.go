@@ -50,10 +50,7 @@ func TestMetasReadHandlersDenyBeforeDataAccess(t *testing.T) {
 		{name: "list", role: "VIEWER", path: "/metas", call: func(h *MetasHandler, w http.ResponseWriter, r *http.Request) { h.HandleListarMetas(w, r) }},
 		{name: "page", role: "VIEWER", path: "/metas", call: func(h *MetasHandler, w http.ResponseWriter, r *http.Request) { h.HandleMetasConceito(w, r) }},
 		{name: "new form", role: models.RoleUser, path: "/metas/novo", call: func(h *MetasHandler, w http.ResponseWriter, r *http.Request) { h.HandleNovaMeta(w, r) }},
-		{name: "box history", role: models.RoleUser, path: "/metas/caixinha/historico?box_id=box-1", call: func(h *MetasHandler, w http.ResponseWriter, r *http.Request) { h.HandleHistoricoCaixinha(w, r) }},
 		{name: "limit history", role: "VIEWER", path: "/metas/limite/historico?limit_id=limit-1", call: func(h *MetasHandler, w http.ResponseWriter, r *http.Request) { h.HandleHistoricoLimite(w, r) }},
-		{name: "contribute sheet", role: models.RoleUser, path: "/metas/caixinha/aporte/sheet?box_id=box-1", call: func(h *MetasHandler, w http.ResponseWriter, r *http.Request) { h.HandleAporteCaixinhaSheet(w, r) }},
-		{name: "release sheet", role: models.RoleUser, path: "/metas/caixinha/resgate/sheet?box_id=box-1", call: func(h *MetasHandler, w http.ResponseWriter, r *http.Request) { h.HandleResgateCaixinhaSheet(w, r) }},
 	}
 
 	for _, tc := range cases {

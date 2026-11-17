@@ -258,10 +258,10 @@ func TestRelatoriosGastosPorCategoriaTemplatePreservaDataSensitiveERole(t *testi
 	if !strings.Contains(html, `data-category-role="{{if .IsGroup}}group{{else if .IsDirectParentEntry}}direct-parent{{else if .IsChild}}child{{else}}root{{end}}"`) {
 		t.Fatalf("template should expose category row role for group/direct/child/root inspection")
 	}
-	if !strings.Contains(html, `<span class="text-xs font-bold text-[var(--cb-text-main)]" data-sensitive>R$ {{.Valor.Reais}}{{.Valor.Cents}}</span>`) {
+	if !strings.Contains(html, `<span class="reports-cat-amount" data-sensitive>R$ {{.Valor.Reais}}{{.Valor.Cents}}</span>`) {
 		t.Fatalf("template should keep category amount data-sensitive")
 	}
-	if !strings.Contains(html, `data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}}</span>`) {
+	if !strings.Contains(html, `<span class="reports-cat-percent" data-sensitive>{{if .PercentLabel}}{{.PercentLabel}}{{else}}{{.Percent}}%{{end}}</span>`) {
 		t.Fatalf("template should keep category percent data-sensitive")
 	}
 }

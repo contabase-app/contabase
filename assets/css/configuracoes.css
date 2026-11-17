@@ -1,34 +1,10 @@
 /* ContaBase Configuracoes Styles */
 
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-
-.btn-tactile { transition: all 0.15s ease; }
-.btn-tactile:active { transform: scale(0.97); }
-
-.cb-v2-configuracoes-main {
-    --cb-surface-1: var(--v2-surface);
-    --cb-surface-2: var(--v2-surface-raised);
-    --cb-surface-3: var(--v2-surface-hover);
-    --cb-surface-overlay: var(--v2-surface);
-    --cb-border-subtle: var(--v2-border);
-    --cb-border-strong: var(--v2-border-strong);
-    --cb-text-main: var(--v2-text);
-    --cb-text-muted: var(--v2-muted);
-    --cb-text-subtle: var(--v2-subtle);
-    --cb-accent: var(--v2-accent);
-    --cb-accent-solid: var(--v2-accent);
-    --cb-accent-soft: color-mix(in srgb, var(--v2-accent) 14%, transparent);
-    --cb-success: var(--v2-positive);
-    --cb-warning: var(--v2-warning);
-    --cb-danger: var(--v2-danger);
-    --cb-info: var(--v2-info);
-}
-
 .cb-v2-configuracoes-content {
-    width: min(100%, 1180px);
+    /* Settings and forms keep the ergonomic measure. The top padding is
+       shell-owned (.cb-v2-content). */
+    width: min(100%, var(--ui-content-standard));
     margin-inline: auto;
-    padding-top: 28px;
     padding-bottom: 24px;
 }
 
@@ -40,7 +16,9 @@
     min-width: 0;
 }
 
-.cb-v2-configuracoes-head { margin-bottom: 24px; }
+/* O ritmo vertical do cabeçalho vem de .ui-page-header (24px desktop, 18px
+   mobile); esta página não repete a margem. */
+
 /* Hub compacto: links diretos para as seções reais, sem duplicar a sidebar. */
 .cb-v2-hub-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .cb-v2-hub-card {

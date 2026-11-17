@@ -11,6 +11,72 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
 
+## [v1.0.0-beta.8] — Dashboard V2, remoção de Reservas e atualização autenticada
+
+### Adicionado
+- **Backup pré-migration verificável:** o snapshot anterior à migration passa a ser publicado com `.manifest.json` contendo SHA-256, tamanho, schema e data. O restore administrativo valida manifesto, integridade SQLite e foreign keys.
+- **Atualização autenticada:** dispatcher beta.8 com `updater.sha256`, commit autorizado, verificação de bundle, `flock` e proveniência de instalação.
+- **Transição beta.7 → beta.8:** bootstrap isolado do updater Release reutiliza o dispatcher autenticado; Docker por tag e Source por tag permanecem suportados.
+- **Transferências pendentes:** aba dedicada e edição/confirmação de transferências.
+- **Dashboard V2 como página principal:** a rota inicial passa a servir exclusivamente o Dashboard V2, com um snapshot financeiro único e consistente para os oito cartões do resumo. O refresh HTMX reutiliza o mesmo snapshot sem escritas adicionais e responde 503 quando a fatura de referência está ausente, preservando o comportamento HTMX.
+- **Notificações interativas:** notificações de vencimento e pagamento passam a oferecer navegação contextual até a fatura ou o lançamento correspondente e ação de pagamento direto, com os gestos de swipe preservados.
+- **Orientação de atualização no admin:** diagnóstico de versão/canal e instruções específicas por método.
+- **Saldo total e obrigações (F1):** o Dashboard passa a separar o saldo total das contas não arquivadas que não são cartão de crédito das obrigações de 30 e 60 dias. A composição não subtrai Reservas nem infere dinheiro disponível; quando a composição não é comprovável, o indicador aparece como indisponível.
+- **Apoiar o Projeto:** o rodapé do aplicativo passa a exibir o link "Apoiar o Projeto" por padrão, apontando para a página pública de apoio do site oficial (`https://contabase.pages.dev/apoiar/`, que acompanha a publicação da versão). `CONTABASE_SUPPORT_URL` substitui opcionalmente o destino: aceita apenas HTTPS com caminho `/apoiar/` (HTTP somente em loopback, para validação local); valor vazio ou inválido é ignorado com segurança e o destino padrão volta a ser usado.
+- **Restore administrativo com manifesto:** modo legado explícito apenas para backups antigos sem manifesto.
+
+### Alterado
+- **Schema 83:** a migration `reserve_physical_removal` remove as tabelas e o histórico de Reservas, além de notificações e dismissals exclusivos.
+- **Independência de Investimentos:** operações de investimento deixam de depender de referências de Reservas; a política de ativação por flag não muda e a Beta 8 não habilita o módulo publicamente por si.
+- **Updaters Docker/Source:** atualização por tag, identidade de runtime, `flock` obrigatório e recuperação compatíveis com o schema atual.
+- **Documentação:** atualização, backup/restore, permissões, regras financeiras e notas da versão refletem o domínio sem Reservas e os contratos da Beta 8.
+- **Shell Premium Fintech global:** navegação, cabeçalhos e larguras de conteúdo passam a usar o mesmo shell do Dashboard em todas as páginas, com tokens visuais globais unificados e componentes compartilhados; aliases de cor legados foram removidos sem mudança de identidade visual.
+- **Harmonização visual:** Investimentos, Faturas, Relatórios, Administração e demais páginas foram harmonizados com o design system; CSS legado sem uso foi removido, os logos dos cartões foram refinados e o espaçamento do bloco financeiro ajustado.
+- **PWA:** a instalação do PWA foi restaurada e os fluxos financeiros receberam refinamentos de usabilidade em máscaras, recibos e formulários.
+- **Acessibilidade e responsividade:** foco, contraste e áreas de toque revisados nas superfícies harmonizadas; teclado, estados e comportamento responsivo preservados.
+
+### Removido
+- **Domínio de Reservas:** tabelas `boxes`, `box_virtual_ledger` e `box_contribution_lifecycle_events`, notificações/dismissals exclusivos, rotas, handlers, serviços, templates e assets.
+- **Integrações de Reservas em Metas, Dashboard, Investimentos e lançamentos.**
+- **Dashboard V1:** a implementação legada do dashboard (templates, handlers e assets) foi removida; a rota inicial serve apenas o Dashboard V2.
+
+### Corrigido
+- **Pagamento — cancelamento durante a transação:** o toggle distingue cancelamento anterior ao commit do driver (HTTP 408, sem efeito) de falha genérica de commit (HTTP 409/429, resultado indeterminado). A idempotência, o histórico e o saldo continuam protegidos.
+- **Exclusão recorrente — contenção SQLite:** falha `SQLITE_BUSY`/`SQLITE_BUSY_SNAPSHOT` no insert do skip ou na remoção das transações, antes do commit, retorna HTTP 503 com `Retry-After: 1` e mensagem clara. O rollback preserva transação, série e skip sem exclusão parcial; contenção no commit permanece indeterminada (409) e não é tratada como sucesso.
+- **Faturas — prioridade e atualização atômica:** a Central reordena os cartões pela prioridade canônica de pagamento e atualiza carrossel e detalhe em uma única região OOB após o commit. Se a renderização falhar depois do commit, a resposta recupera por GET e não convida a repetir a mutação.
+- **Dashboard — integridade do snapshot:** erros de leitura do banco durante a composição do dashboard passam a invalidar o snapshot inteiro e responder 503, em vez de exibir uma composição parcial. O tipo de workspace deixa de ser inferido como pessoal quando a leitura falha.
+- **Transferências — cartões de crédito:** transferências envolvendo cartão de crédito em qualquer ponta passam a ser rejeitadas com HTTP 422 na criação, na edição (todos os escopos, inclusive séries legadas) e na confirmação/estorno de pendentes: o efeito de saldo de uma transferência nessas contas seria artificial, e o pagamento de fatura permanece o único fluxo legítimo que movimenta valor com cartões. Registros legados permanecem legíveis, sem regularização automática.
+- **Exclusão de categorias:** excluir categoria com dependentes financeiros (lançamentos, regras de recorrência, limites de custo, subcategorias e classificações de resultado de investimento) passa a ser bloqueado com HTTP 409 e mensagem genérica "Categoria em uso e não pode ser removida.", em vez de destruir vínculos históricos por `SET NULL`/`CASCADE`. A operação é transacional, valida a posse da categoria no workspace, responde 404 para categoria inexistente ou de outro workspace e falha fechado em concorrência de FK.
+- **Restore — journal de recuperação:** a validação do journal de restore passa a aceitar o layout de staging real produzido pelos writers (`.contabase-import-*` e `.contabase-bootstrap-restore-*` no primeiro nível do diretório do banco), permitindo que o servidor se recupere sozinho após interrupção entre a preparação e a conclusão do restore. Candidatos fora do diretório do banco, aninhamento mais profundo e extensões que não sejam `.db` continuam rejeitados.
+- **Restore — autenticação após backup legado:** após a restauração de um backup legado, as rotas do Dashboard e de transações podiam manter a conexão SQLite anterior à substituição do runtime. A rota inicial consultava o banco já fechado, interpretava a falha como ausência de usuários e criava um ciclo entre `/`, `/setup` e `/login`. As rotas passam a obter a conexão atual do runtime por provider atualizado na troca, com o ciclo de vida protegido pelo coordinator; `HasAnyUser` agora diferencia banco vazio de erro de consulta, e falhas na verificação de usuários da rota inicial respondem HTTP 503 sem redirecionar para `/setup`. O primeiro setup legítimo permanece inalterado. Reiniciar o serviço de forma controlada é uma recuperação operacional temporária para instalações afetadas, não a solução definitiva.
+- **Restore — regressão coberta:** dashboard autenticado, ownership de transações, isolamento por `workspace_id`, falha de banco e concorrência entre requisições e substituição do runtime passam a ter testes de regressão dedicados, incluindo execução com race detector.
+- **Exclusão em lote:** o diálogo de confirmação de exclusão em lote foi endurecido contra acionamento acidental e o contraste da ajuda foi corrigido.
+- **Backup/restore:** interrupções e imports administrativos passam a preservar o estado e a exigir manifesto ou modo legado explícito.
+- **Migração destrutiva:** o preflight bloqueia vínculos financeiros protegidos antes de qualquer DROP; o rollback exige restore do snapshot pré-migration.
+- **Atualização concorrente:** `flock` e estado de transição impedem execuções simultâneas nos caminhos beta.8.
+- **Faturas e recorrências versionadas:** excluir uma ocorrência recorrente de uma fatura passa a registrar bloqueio terminal, e a ocorrência não retorna como "Previsto". Materialização e projeção usam a identidade da série (`workspace_id`, `series_id`, `recurrence_sequence`) e respeitam `effective_start_sequence`, `effective_end_sequence`, total da regra e da série, término e início da próxima versão. Exceções preservadas não são duplicadas, inclusive quando a data foi deslocada, e os totais virtuais consideram apenas ocorrências elegíveis. O escopo de exclusão simples continua não encerrando a série.
+- **Erros financeiros em faturas:** falha interna de projeção ou materialização em fatura existente deixa de ser convertida em "fatura não encontrada". A resposta diferencia 404 (fatura inexistente ou de outro workspace), 503 (indisponibilidade financeira, com HTML controlado e HTMX sem troca de conteúdo) e 500 (erro interno não classificado), sem expor SQL. Em Lançamentos, falha na projeção de fatura virtual não retorna mais lista parcial com sucesso.
+- **Fluxo de caixa 6M/12M:** a alternância entre 6 e 12 meses foi validada. Totais iguais quando os seis meses adicionais não têm movimentação são o resultado esperado, e o cálculo não foi alterado.
+- **Regressão de faturas e recorrências:** cobertura Go para materialização versionada, limites, exceções preservadas, skips, blocos congelados, isolamento por workspace, rollback e erros HTTP, além dos testes JavaScript de swipe.
+
+### Segurança
+- **Sessão e credenciais:** o logout explícito usa `POST` com CSRF, revoga a sessão atual e limpa cookies/cache local. Trocar a senha revoga todas as sessões e pré-autenticações, inclusive a atual, e exige novo login. O reset administrativo da própria conta exibe a senha temporária uma única vez e encerra a sessão do administrador.
+- **Limite de corpo em mutações de Investimentos:** requisições `POST`/`PUT`/`PATCH` em `/investimentos` e subrotas passam a ter o corpo limitado a 64 KiB e lido integralmente antes da autenticação/CSRF, respondendo 413 quando excedido; elimina a leitura sem limite antes da validação de CSRF.
+- **Workflow de release endurecido:** permissões mínimas por job, com `contents: write` isolado em um publicador dedicado; `persist-credentials: false` em todos os checkouts; manifesto de integridade SHA-256 dos artifacts re-verificado pelo publicador antes do anexo à release; action de release pinada por SHA de commit.
+- Bundle autenticado por commit e manifesto; falha fechada sem identidade verificada; sem fallback para wrapper por URL.
+- Secrets existentes são preservados; o update não recria `CONTABASE_SETUP_TOKEN`.
+
+### Limitações conhecidas
+- A migration 83 é irreversível por down migration; o retorno exige restaurar o snapshot pré-migration, descartando gravações posteriores.
+- O smoke autenticado das páginas principais e o smoke real de instalação/atualização permanecem pendentes. A distribuição exige validação dos artefatos e do canal; este histórico não comprova publicação.
+- Testes manuais com leitor de tela e Safari/WebKit ainda não foram executados no Dashboard V2 e no shell global.
+- A pendência herdada da Beta 7 sobre recorrências legadas (a movimentação podendo ignorar ocorrências em faturas já pagas) permanece em aberto nesta versão.
+- Backups antigos sem `.manifest.json` exigem o modo legado explícito no painel.
+- Investimentos continua sujeito à flag da instância: instalações novas nascem com `CONTABASE_FEATURE_INVESTMENTS=false` e atualizações preservam o valor existente. A Beta 8 não promove o módulo automaticamente no canal público.
+- O updater da Beta 8 exige `flock` (util-linux) e falha fechado sem ele. Beta 7 e Beta 8 não são destinos de rollback automático; a recuperação automática histórica continua restrita à Beta 6.
+- **Pendência independente:** o cálculo legado de saldo acumulado projetado (`calcProjectedRecurringNetCashFlowBetween`) ainda não considera exclusões de ocorrências recorrentes. Não foi encontrado consumidor visível atual desse valor; a correção fica para uma fase própria.
+- **Pendência independente:** transações antigas persistidas com `recurrence_sequence` incompatível com a versão atual exigem diagnóstico read-only e reparo auditado separado. Não há reparo automático de dados nesta versão.
+
 ## [v1.0.0-beta.7] — publicada — investimentos, cancelamentos e schema 82
 
 ### Adicionado

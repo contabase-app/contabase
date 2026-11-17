@@ -25,7 +25,7 @@ func investmentPurchasesFinancialState(t *testing.T, db *sql.DB) string {
 	t.Helper()
 	var state string
 	if err := db.QueryRow(`SELECT (SELECT COUNT(*) || ':' || COALESCE(SUM(amount),0) FROM transactions) || ':' ||
-		(SELECT COUNT(*) FROM box_virtual_ledger) || ':' || group_concat(id || ':' || initial_balance || ':' || current_balance)
+		group_concat(id || ':' || initial_balance || ':' || current_balance)
 		FROM (SELECT id,initial_balance,current_balance FROM accounts ORDER BY id)`).Scan(&state); err != nil {
 		t.Fatal(err)
 	}

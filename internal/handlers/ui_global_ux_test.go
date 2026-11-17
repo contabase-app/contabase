@@ -190,7 +190,7 @@ func TestGlobalShellOmitsRedundantProfileCard(t *testing.T) {
 func TestAuthenticatedPagesUseSingleAppShell(t *testing.T) {
 	pages := []string{
 		"ajuda.html", "configuracoes.html", "contas.html", "contatos.html",
-		"dashboard.html", "faturas.html", "lancamentos.html", "metas.html",
+		"dashboard_preview.html", "faturas.html", "lancamentos.html", "metas.html",
 		"notificacoes.html", "relatorios.html",
 	}
 	for _, page := range pages {
@@ -226,7 +226,7 @@ func TestNotificationsContentUsesCenteredColumn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read notificacoes.css: %v", err)
 	}
-	if !strings.Contains(string(raw), ".cb-v2-notificacoes-content {\n    width: min(100%, 1180px);\n    margin-inline: auto;\n") {
+	if !strings.Contains(string(raw), ".cb-v2-notificacoes-content {\n    width: min(100%, var(--ui-content-standard));\n    margin-inline: auto;\n") {
 		t.Fatal("notifications content must be centered within the main column")
 	}
 }
@@ -239,11 +239,11 @@ func TestSidebarNavigationUsesThreeCompactBlocks(t *testing.T) {
 	body := string(raw)
 	for _, want := range []string{
 		".cb-v2-sidebar-body {\n    display: flex;",
-		".cb-v2-nav-list { display: grid; gap: 3px; margin-top: 30px; }",
-		".cb-v2-quick-actions { display: grid; gap: 3px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--ui-border); }",
+		".cb-v2-nav-list { display: grid; gap: 4px; margin-top: 8px; }",
+		".cb-v2-quick-actions { display: grid; gap: 4px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--ui-border); }",
 		".cb-v2-settings-nav { display: grid; gap: 6px; margin-top: 16px; }",
-		".cb-v2-sidebar-footer { display: grid; flex: 0 0 auto; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--v2-border); }",
-		".cb-v2-drawer-footer { display: grid; gap: 8px; margin-top: auto; padding-top: 14px; border-top: 1px solid var(--v2-border); }",
+		".cb-v2-sidebar-footer { display: grid; flex: 0 0 auto; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--ui-border); }",
+		".cb-v2-drawer-footer { display: grid; gap: 8px; margin-top: auto; padding-top: 14px; border-top: 1px solid var(--ui-border); }",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sidebar compact block styling missing %q", want)
@@ -305,22 +305,9 @@ func assertOrderedNavigationMarkers(t *testing.T, navigation string, body string
 	}
 }
 
-func TestDashboardMobileSectionSpacing(t *testing.T) {
-	raw, err := os.ReadFile(resolveTemplatePath(t, "assets/css/dashboard.css"))
-	if err != nil {
-		t.Fatalf("read dashboard.css: %v", err)
-	}
-	body := string(raw)
-
-	idx := strings.Index(body, "@media (max-width: 767px)")
-	if idx < 0 {
-		t.Fatal("dashboard.css missing mobile media query")
-	}
-	mobile := body[idx:]
-	if !strings.Contains(mobile, ".cb-v2-left-column { display: contents; }") {
-		t.Fatal("mobile dashboard should flatten the layout columns")
-	}
-	// The shared rail now belongs to the Faturas hub stylesheet.
+func TestFaturasHubCardRailKeepsHorizontalScroll(t *testing.T) {
+	// The shared rail belongs to the Faturas hub stylesheet; the legacy
+	// dashboard.css stylesheet was removed with D4-C5.
 	indexRaw, err := os.ReadFile(resolveTemplatePath(t, "assets/css/faturas-index.css"))
 	if err != nil {
 		t.Fatalf("read faturas-index.css: %v", err)
@@ -329,9 +316,6 @@ func TestDashboardMobileSectionSpacing(t *testing.T) {
 	if !strings.Contains(indexCSS, ".cb-v2-card-rail { display: flex;") || !strings.Contains(indexCSS, "scroll-snap-type: x mandatory") {
 		t.Fatal("hub should show credit cards in a horizontal snap rail")
 	}
-	// The legacy six-card cap belonged to the previous dashboard rail. The
-	// Premium dashboard uses .wallet-card-rail, so the shared .cb-v2-card-rail
-	// (now consumed by the Faturas hub) must never hide existing cards.
 	if strings.Contains(indexCSS, ".cb-v2-card-rail > [data-v2-card-item]:nth-child(n+7)") {
 		t.Fatal("shared card rail must not hide cards after the sixth")
 	}

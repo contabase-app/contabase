@@ -95,6 +95,7 @@ setup() {
   PRESERVED="$(preserved_identity)"
   NEW_BUNDLE_ACTIVE=true; NEW_RUNTIME_STARTED=false; RECOVERY_COMPLETED=false
   STOP_FAIL=false; START_FAIL=false; HEALTH_FAIL=false; NONADMIN=false
+  BOOTSTRAP_MODE=false
   ROLLED_BACK=false
   bundle "$INSTALL_DIR" v1.0.0-beta.6
 }
@@ -127,7 +128,7 @@ for kind in install update; do
   lib_block="$(sed -n '/^# === SAFE_RECOVERY_BLOCK_BEGIN ===$/,/^# === SAFE_RECOVERY_BLOCK_END ===$/p' "$REPO_DIR/scripts/lib/contabase-recovery.sh")"
   [ "$lib_block" = "$(sed -n '/^# === SAFE_RECOVERY_BLOCK_BEGIN ===$/,/^# === SAFE_RECOVERY_BLOCK_END ===$/p' "$script")" ] || fail 'politica embutida divergiu'
   load_function "$script" rollback_bundle
-  for version in v1.0.0-beta.5 '' nonsense v1.0.0-beta.7 v9.0.0; do
+  for version in v1.0.0-beta.5 '' nonsense v1.0.0-beta.7 v1.0.0-beta.8 v9.0.0; do
     setup "$kind-version-${version:-absent}"
     bundle "$PREVIOUS_DIR" "$version"
     blocked_bundle "$(cat "$INSTALL_DIR/contabase")"
@@ -141,7 +142,7 @@ for kind in install update; do
   [ "$(starts)" = 1 ] || fail 'restart repetido'
   preserved; ok "$kind: seguro verificado antes do startup e idempotente"
 
-  for scenario in missing-proof relabel tamper unit-tamper symlink post-start migration stop-fail; do
+  for scenario in missing-proof invalid-proof relabel tamper unit-tamper symlink post-start migration stop-fail; do
     setup "$kind-$scenario"
     bundle "$PREVIOUS_DIR" v1.0.0-beta.6
     case "$scenario" in
@@ -149,6 +150,7 @@ for kind in install update; do
       *) attest_bundle "$PREVIOUS_DIR" ;;
     esac
     case "$scenario" in
+      invalid-proof) printf 'invalid-proof\n' > "$CONFIG_DIR/recovery/bundle-$(recovery_bundle_identity "$PREVIOUS_DIR" "" "$SERVICE_BACKUP").proof" ;;
       relabel) printf 'synthetic-vulnerable-beta5\n' > "$PREVIOUS_DIR/contabase" ;;
       tamper) printf 'tampered\n' >> "$PREVIOUS_DIR/assets/main.css" ;;
       unit-tamper) printf 'tampered-unit\n' >> "$SERVICE_BACKUP" ;;
@@ -327,12 +329,24 @@ if recovery_verify "$CONFIG_DIR/recovery" bundle v1.0.0-beta.6 "$identity"; then
 ok 'provas: ownership, permissoes e symlinks falham fechados'
 
 setup source-provenance
-recovery_source_known "$REPO_DIR" || fail 'fontes homologadas nao reconhecidas'
+SOURCE_FIXTURE="$REPO_DIR/scripts/tests/testdata/safe-recovery-beta6"
+recovery_source_known "$SOURCE_FIXTURE" || fail 'fixture historica Beta 6 nao reconhecida'
+ok 'source: fixture autentica Beta 6 reconhecida sem depender do checkout atual'
 mkdir -p "$CASE_ROOT/source/cmd/server" "$CASE_ROOT/source/internal/security"
-cp "$REPO_DIR/VERSION" "$CASE_ROOT/source/VERSION"
+cp "$SOURCE_FIXTURE/VERSION" "$CASE_ROOT/source/VERSION"
 for path in cmd/server/main.go cmd/server/server_runtime.go cmd/server/legacy_seed_credentials.go internal/security/crypto.go; do
-  cp "$REPO_DIR/$path" "$CASE_ROOT/source/$path"
+  cp "$SOURCE_FIXTURE/$path" "$CASE_ROOT/source/$path"
 done
+for version in v1.0.0-beta.7 v1.0.0-beta.8 v9.0.0; do
+  printf '%s\n' "$version" > "$CASE_ROOT/source/VERSION"
+  if recovery_source_known "$CASE_ROOT/source"; then fail "source nao homologado aceito: $version"; fi
+  ok "source: $version recusada mesmo com fontes Beta 6 intactas"
+done
+cp "$SOURCE_FIXTURE/VERSION" "$CASE_ROOT/source/VERSION"
+rm "$CASE_ROOT/source/internal/security/crypto.go"
+if recovery_source_known "$CASE_ROOT/source"; then fail 'source incompleto aceito'; fi
+ok 'source: arquivo homologado ausente recusado'
+cp "$SOURCE_FIXTURE/internal/security/crypto.go" "$CASE_ROOT/source/internal/security/crypto.go"
 printf '\nchanged\n' >> "$CASE_ROOT/source/internal/security/crypto.go"
 if recovery_source_known "$CASE_ROOT/source"; then fail 'source relabelado aceito'; fi
 ok 'source: VERSION correto nao substitui prova das correcoes'

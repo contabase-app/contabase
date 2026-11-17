@@ -27,6 +27,7 @@ import (
 	"github.com/contabase-app/contabase/internal/icons"
 	"github.com/contabase-app/contabase/internal/models"
 	"github.com/contabase-app/contabase/internal/paths"
+	"github.com/contabase-app/contabase/internal/runtimelease"
 	"github.com/contabase-app/contabase/internal/services"
 
 	"github.com/google/uuid"
@@ -41,9 +42,8 @@ var errRecurringFutureCivilConflict = errors.New("contrato civil da recorrencia 
 var errRecurringAllConflict = errors.New("edicao de toda a recorrencia bloqueada")
 var errRecurringAllIndividualOnly = errors.New("campo permitido apenas em edicao individual")
 var errRecurringDeleteConflict = errors.New("exclusao recorrente bloqueada")
-var errBoxReserveInsufficient = errors.New("saldo reservado insuficiente para consumo da caixinha")
-var errBoxCategoryAmbiguous = errors.New("categoria vinculada a múltiplas caixinhas")
 var errTransferSameAccount = errors.New("conta de origem e conta de destino da transferência são iguais")
+var errTransferCreditCardAccount = errors.New("transferência envolvendo cartão de crédito")
 
 func validateTransferAccounts(tipo, origemContaID, destinoContaID string) error {
 	if tipo != models.TransactionTypeTransfer {
@@ -56,6 +56,74 @@ func validateTransferAccounts(tipo, origemContaID, destinoContaID string) error 
 		return errTransferSameAccount
 	}
 	return nil
+}
+
+// validateTransferCardFreeTx é a guarda financeira centralizada de TRANSFER:
+// cartão de crédito não é caixa (despesas em cartão viram fatura e o pagamento
+// de fatura é o único fluxo legítimo que movimenta valor real com o cartão),
+// então nenhuma ponta de uma transferência pode ser CREDIT_CARD — o efeito de
+// saldo de uma TRANSFER nessas contas seria artificial. Consulta os tipos das
+// contas dentro do workspace informado, na transação do chamador, e devolve
+// errTransferCreditCardAccount quando qualquer ponta é cartão. Registros
+// legados permanecem legíveis; a guarda apenas bloqueia novos efeitos.
+func validateTransferCardFreeTx(tx *sql.Tx, tipo, workspaceID, origemContaID, destinoContaID string) error {
+	if tipo != models.TransactionTypeTransfer {
+		return nil
+	}
+	var cards int
+	if err := tx.QueryRow(`
+		SELECT COUNT(*) FROM accounts
+		WHERE workspace_id = ? AND type = ? AND id IN (?, ?)
+	`, workspaceID, models.AccountTypeCreditCard, origemContaID, destinoContaID).Scan(&cards); err != nil {
+		return fmt.Errorf("validar contas da transferência: %w", err)
+	}
+	if cards > 0 {
+		return errTransferCreditCardAccount
+	}
+	return nil
+}
+
+func transactionOriginIsCard(originType string) bool {
+	switch strings.ToUpper(strings.TrimSpace(originType)) {
+	case "CARTAO", "CARTÃO", "CREDIT_CARD":
+		return true
+	default:
+		return false
+	}
+}
+
+// transactionPrimaryDateLabel names the editable Personal date according to
+// what date/date_civil actually represents. It never claims that the field is
+// paid_at. Business always keeps the competence label because it has a
+// separate due-date field.
+func transactionPrimaryDateLabel(isBusiness bool, transactionType, status, originType string, explicitDueDiffers bool) string {
+	if isBusiness {
+		return "Data de competência"
+	}
+	transactionType = strings.ToUpper(strings.TrimSpace(transactionType))
+	if transactionType == models.TransactionTypeTransfer {
+		return "Data da transferência"
+	}
+	if explicitDueDiffers {
+		return "Data do lançamento"
+	}
+	switch transactionType {
+	case models.TransactionTypeIncome:
+		if strings.EqualFold(strings.TrimSpace(status), models.PaymentStatusPending) {
+			return "Data de recebimento prevista"
+		}
+		return "Data do lançamento"
+	case models.TransactionTypeExpense:
+		if transactionOriginIsCard(originType) {
+			return "Data da compra"
+		}
+		if strings.EqualFold(strings.TrimSpace(status), models.PaymentStatusPending) {
+			return "Data de vencimento"
+		}
+		return "Data do lançamento"
+	default:
+		return "Data do lançamento"
+	}
 }
 
 func invoiceStatusMutationBlocked(err error) bool {
@@ -95,18 +163,15 @@ type PaymentAccountOption struct {
 }
 
 type FormCategory struct {
-	ID                 string
-	Name               string
-	Icon               string
-	Color              string
-	Type               string
-	BoxID              string
-	BoxReservedBalance int64
-	BoxName            string
-	LimitMax           int64
-	LimitSpent         int64
-	ParentID           string
-	ParentName         string
+	ID         string
+	Name       string
+	Icon       string
+	Color      string
+	Type       string
+	LimitMax   int64
+	LimitSpent int64
+	ParentID   string
+	ParentName string
 }
 
 type InvoiceOption struct {
@@ -170,6 +235,7 @@ type FormTransacaoData struct {
 	DueDatePreenchida       string
 	ContatoIDPreenchido     string
 	ReturnInvoiceID         string
+	ReturnContext           string
 	ManualInvoiceID         string
 	InvoiceAssignmentMode   string
 	TransactionUpdatedAt    int64
@@ -183,6 +249,43 @@ type FormTransacaoData struct {
 	VencimentoDisplay       string
 	TodayCivil              string
 	StatusHistory           []TransactionStatusEvent
+}
+
+func formTransactionTypeForDateLabel(formType string) string {
+	switch strings.ToLower(strings.TrimSpace(formType)) {
+	case "receita":
+		return models.TransactionTypeIncome
+	case "transferencia":
+		return models.TransactionTypeTransfer
+	default:
+		return models.TransactionTypeExpense
+	}
+}
+
+// ExplicitDueDiffers reports whether the edit form has an explicit due_date
+// that differs from the editable date. In that case the primary field must
+// use a neutral label so it is not confused with the due date.
+func (d FormTransacaoData) ExplicitDueDiffers() bool {
+	due := strings.TrimSpace(d.DueDatePreenchida)
+	date := strings.TrimSpace(d.DataPreenchida)
+	return due != "" && date != "" && due != date
+}
+
+func (d FormTransacaoData) PrimaryDateLabel() string {
+	return transactionPrimaryDateLabel(
+		d.IsBusiness,
+		formTransactionTypeForDateLabel(d.TipoInicial),
+		d.StatusInicial,
+		d.OrigemTipo,
+		d.ExplicitDueDiffers(),
+	)
+}
+
+func (d FormTransacaoData) PaidAtLabel() string {
+	if !d.IsBusiness && strings.EqualFold(strings.TrimSpace(d.TipoInicial), "receita") {
+		return "Data de recebimento"
+	}
+	return "Data de pagamento"
 }
 
 type TransactionStatusEvent struct {
@@ -380,7 +483,6 @@ func (h *TransactionHandler) HandleSalvarTransacao(w http.ResponseWriter, r *htt
 	destinoContaID := r.FormValue("destino_conta_id")
 	categoriaID := r.FormValue("categoria_id")
 	parceladaStr := r.FormValue("parcelada")
-	allowBoxOverdraft := formAllowsBoxOverdraft(r)
 	fixo := r.FormValue("lancamento_fixo") == "on"
 	recorrencia := normalizeRecurrenceFrequency(r.FormValue("recorrencia"))
 	totalOccurrencesStr := strings.TrimSpace(r.FormValue("total_occurrences"))
@@ -442,8 +544,15 @@ func (h *TransactionHandler) HandleSalvarTransacao(w http.ResponseWriter, r *htt
 
 	civilDate, err := NewCivilWriteDate(dataStr)
 	if err != nil {
+		originType := ""
+		if !isBusiness && tipo == models.TransactionTypeExpense && origemContaID != "" {
+			var accType string
+			if queryErr := h.DB.QueryRow(`SELECT type FROM accounts WHERE id = ? AND workspace_id = ? AND archived_at IS NULL`, origemContaID, h.WorkspaceID).Scan(&accType); queryErr == nil {
+				originType = accType
+			}
+		}
 		log.Printf("invalid date: %s", dataStr)
-		respondTransactionValidationError(w, "A Data de Competência é obrigatória e deve ser válida.", http.StatusUnprocessableEntity)
+		respondTransactionValidationError(w, "A "+transactionPrimaryDateLabel(isBusiness, tipo, paymentStatus, originType, false)+" é obrigatória e deve ser válida.", http.StatusUnprocessableEntity)
 		return
 	}
 	totalInstallments := int64(1)
@@ -495,7 +604,7 @@ func (h *TransactionHandler) HandleSalvarTransacao(w http.ResponseWriter, r *htt
 	perfStep(reqID, "SalvarTransacao", "parse+validate", time.Since(t0))
 	tInsert := time.Now()
 	dbB := dbSnap(h.DB)
-	assignedInvoiceID, err := h.insertTransactionFromForm(tipo, amountCents, descricao, anotacoes, attachmentPath, civilDate, origemContaID, destinoContaID, categoriaID, totalInstallments, paymentStatus, fixo, recorrencia, contactID, dueDate, totalOccurrences, invoiceIDOverride, allowBoxOverdraft)
+	assignedInvoiceID, err := h.insertTransactionFromForm(tipo, amountCents, descricao, anotacoes, attachmentPath, civilDate, origemContaID, destinoContaID, categoriaID, totalInstallments, paymentStatus, fixo, recorrencia, contactID, dueDate, totalOccurrences, invoiceIDOverride)
 	dbA := dbSnap(h.DB)
 	perfStep(reqID, "SalvarTransacao", "insertTransaction", time.Since(tInsert))
 	perfDBDelta(reqID, "SalvarTransacao", "insertTransaction", dbB, dbA)
@@ -508,12 +617,8 @@ func (h *TransactionHandler) HandleSalvarTransacao(w http.ResponseWriter, r *htt
 			respondTransactionValidationError(w, "A conta de origem e a conta de destino devem ser diferentes para concluir a transferência.", http.StatusUnprocessableEntity)
 			return
 		}
-		if errors.Is(err, errBoxReserveInsufficient) {
-			respondTransactionValidationError(w, "Saldo reservado insuficiente na reserva vinculada para esta despesa. Marque a confirmação de excedente para continuar.", http.StatusUnprocessableEntity)
-			return
-		}
-		if errors.Is(err, errBoxCategoryAmbiguous) {
-			respondTransactionValidationError(w, "Há mais de uma reserva vinculada para esta categoria. Ajuste a configuração antes de salvar o lançamento.", http.StatusUnprocessableEntity)
+		if errors.Is(err, errTransferCreditCardAccount) {
+			respondTransactionValidationError(w, "Transferências não podem envolver cartões de crédito. Use contas de caixa ou de investimento.", http.StatusUnprocessableEntity)
 			return
 		}
 		if strings.Contains(err.Error(), "conta não autorizada") || strings.Contains(err.Error(), "conta de origem arquivada") || strings.Contains(err.Error(), "conta de destino arquivada") {
@@ -537,6 +642,15 @@ func (h *TransactionHandler) HandleSalvarTransacao(w http.ResponseWriter, r *htt
 		return
 	}
 	keepNewUpload = true
+	if faturasIndexCurrentRequest(r) != nil {
+		renderer := FaturasHandler{DB: h.DB, Templates: h.Templates, WorkspaceID: h.WorkspaceID, UserID: h.UserID}
+		if handled, err := renderer.renderFaturasIndexMutation(w, r, assignedInvoiceID, true); handled {
+			if err != nil {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+			return
+		}
+	}
 
 	t1 := time.Now()
 	var buf bytes.Buffer
@@ -576,19 +690,19 @@ func (h *TransactionHandler) HandleSalvarTransacao(w http.ResponseWriter, r *htt
 	buf.WriteTo(w)
 }
 
-func (h *TransactionHandler) insertTransaction(tipo string, amountCents int64, descricao string, anotacoes string, attachmentPath string, date CivilWriteDate, origemContaID string, destinoContaID string, categoriaID string, totalInstallments int64, paymentStatus string, fixed bool, recurrenceFrequency string, contactID string, dueDate OptionalCivilWriteDate, totalOccurrences *int64, invoiceIDOverride string, allowBoxOverdraft bool) (string, error) {
-	return h.insertTransactionWithOptions(tipo, amountCents, descricao, anotacoes, attachmentPath, date, origemContaID, destinoContaID, categoriaID, totalInstallments, paymentStatus, fixed, recurrenceFrequency, contactID, dueDate, totalOccurrences, invoiceIDOverride, allowBoxOverdraft, insertTransactionOptions{})
+func (h *TransactionHandler) insertTransaction(tipo string, amountCents int64, descricao string, anotacoes string, attachmentPath string, date CivilWriteDate, origemContaID string, destinoContaID string, categoriaID string, totalInstallments int64, paymentStatus string, fixed bool, recurrenceFrequency string, contactID string, dueDate OptionalCivilWriteDate, totalOccurrences *int64, invoiceIDOverride string) (string, error) {
+	return h.insertTransactionWithOptions(tipo, amountCents, descricao, anotacoes, attachmentPath, date, origemContaID, destinoContaID, categoriaID, totalInstallments, paymentStatus, fixed, recurrenceFrequency, contactID, dueDate, totalOccurrences, invoiceIDOverride, insertTransactionOptions{})
 }
 
 type insertTransactionOptions struct {
 	scheduleFuturePaid bool
 }
 
-func (h *TransactionHandler) insertTransactionFromForm(tipo string, amountCents int64, descricao string, anotacoes string, attachmentPath string, date CivilWriteDate, origemContaID string, destinoContaID string, categoriaID string, totalInstallments int64, paymentStatus string, fixed bool, recurrenceFrequency string, contactID string, dueDate OptionalCivilWriteDate, totalOccurrences *int64, invoiceIDOverride string, allowBoxOverdraft bool) (string, error) {
-	return h.insertTransactionWithOptions(tipo, amountCents, descricao, anotacoes, attachmentPath, date, origemContaID, destinoContaID, categoriaID, totalInstallments, paymentStatus, fixed, recurrenceFrequency, contactID, dueDate, totalOccurrences, invoiceIDOverride, allowBoxOverdraft, insertTransactionOptions{scheduleFuturePaid: true})
+func (h *TransactionHandler) insertTransactionFromForm(tipo string, amountCents int64, descricao string, anotacoes string, attachmentPath string, date CivilWriteDate, origemContaID string, destinoContaID string, categoriaID string, totalInstallments int64, paymentStatus string, fixed bool, recurrenceFrequency string, contactID string, dueDate OptionalCivilWriteDate, totalOccurrences *int64, invoiceIDOverride string) (string, error) {
+	return h.insertTransactionWithOptions(tipo, amountCents, descricao, anotacoes, attachmentPath, date, origemContaID, destinoContaID, categoriaID, totalInstallments, paymentStatus, fixed, recurrenceFrequency, contactID, dueDate, totalOccurrences, invoiceIDOverride, insertTransactionOptions{scheduleFuturePaid: true})
 }
 
-func (h *TransactionHandler) insertTransactionWithOptions(tipo string, amountCents int64, descricao string, anotacoes string, attachmentPath string, date CivilWriteDate, origemContaID string, destinoContaID string, categoriaID string, totalInstallments int64, paymentStatus string, fixed bool, recurrenceFrequency string, contactID string, dueDate OptionalCivilWriteDate, totalOccurrences *int64, invoiceIDOverride string, allowBoxOverdraft bool, options insertTransactionOptions) (string, error) {
+func (h *TransactionHandler) insertTransactionWithOptions(tipo string, amountCents int64, descricao string, anotacoes string, attachmentPath string, date CivilWriteDate, origemContaID string, destinoContaID string, categoriaID string, totalInstallments int64, paymentStatus string, fixed bool, recurrenceFrequency string, contactID string, dueDate OptionalCivilWriteDate, totalOccurrences *int64, invoiceIDOverride string, options insertTransactionOptions) (string, error) {
 	if err := date.validate(); err != nil {
 		return "", fmt.Errorf("invalid civil competence date: %w", err)
 	}
@@ -622,6 +736,9 @@ func (h *TransactionHandler) insertTransactionWithOptions(tipo string, amountCen
 		return "", err
 	}
 	if err := ensureAccountActiveTx(tx, destinoContaID, h.WorkspaceID); err != nil {
+		return "", err
+	}
+	if err := validateTransferCardFreeTx(tx, tipo, h.WorkspaceID, origemContaID, destinoContaID); err != nil {
 		return "", err
 	}
 	if err := ensureCategoryInWorkspaceTx(tx, categoriaID, h.WorkspaceID); err != nil {
@@ -835,9 +952,6 @@ func (h *TransactionHandler) insertTransactionWithOptions(tipo string, amountCen
 		if err != nil {
 			return "", fmt.Errorf("insert transaction: %w", err)
 		}
-		if err := h.consumeBoxReserveOnExpenseCreationTx(tx, tipo, categoriaID, amount, id, installmentDate.LegacyUnix(), now, allowBoxOverdraft); err != nil {
-			return "", err
-		}
 	}
 
 	applyAmount := amountCents
@@ -893,211 +1007,6 @@ func (h *TransactionHandler) scheduleFormPaymentTx(tx *sql.Tx, id string, date C
 		    updated_at = CASE WHEN updated_at >= ? THEN updated_at + 1 ELSE ? END
 		WHERE id = ? AND workspace_id = ? AND status = 'pending'
 	`, date.LegacyUnix(), date.Civil(), h.UserID, now, now, id, h.WorkspaceID)
-}
-
-func (h *TransactionHandler) consumeBoxReserveOnExpenseCreationTx(tx *sql.Tx, transactionType, categoryID string, amount int64, transactionID string, referenceDate int64, now int64, allowBoxOverdraft bool) error {
-	if transactionType != models.TransactionTypeExpense {
-		return nil
-	}
-	if categoryID == "" || amount <= 0 || transactionID == "" {
-		return nil
-	}
-
-	boxID, reserved, found, err := findBoxForCategoryConsumptionTx(tx, h.WorkspaceID, categoryID)
-	if err != nil {
-		return err
-	}
-	if !found {
-		return nil
-	}
-	if reserved < amount && !allowBoxOverdraft {
-		return fmt.Errorf("%w: reservado=%d despesa=%d", errBoxReserveInsufficient, reserved, amount)
-	}
-
-	return insertConsumeLedgerEventTx(tx, h.WorkspaceID, boxID, transactionID, amount, referenceDate, now)
-}
-
-func findBoxForCategoryConsumptionTx(tx *sql.Tx, workspaceID, categoryID string) (string, int64, bool, error) {
-	rows, err := tx.Query(`
-		SELECT
-			b.id,
-			COALESCE(SUM(l.amount), 0) AS reserved
-		FROM boxes b
-		JOIN categories c ON c.workspace_id = b.workspace_id
-		LEFT JOIN box_virtual_ledger l ON l.box_id = b.id
-		WHERE c.id = ?
-		  AND c.workspace_id = ?
-		  AND (
-			b.category_id = c.id OR
-			(COALESCE(c.parent_id, '') != '' AND b.category_id = c.parent_id)
-		  )
-		GROUP BY b.id
-		ORDER BY b.id
-	`, categoryID, workspaceID)
-	if err != nil {
-		return "", 0, false, err
-	}
-	defer rows.Close()
-
-	type candidate struct {
-		id       string
-		reserved int64
-	}
-	var matches []candidate
-	for rows.Next() {
-		var c candidate
-		if err := rows.Scan(&c.id, &c.reserved); err != nil {
-			return "", 0, false, err
-		}
-		matches = append(matches, c)
-	}
-	if err := rows.Err(); err != nil {
-		return "", 0, false, err
-	}
-
-	if len(matches) == 0 {
-		return "", 0, false, nil
-	}
-	if len(matches) > 1 {
-		return "", 0, false, errBoxCategoryAmbiguous
-	}
-	return matches[0].id, matches[0].reserved, true, nil
-}
-
-func insertConsumeLedgerEventTx(tx *sql.Tx, workspaceID, boxID, sourceTransactionID string, amount int64, referenceDate int64, now int64) error {
-	if boxID == "" || sourceTransactionID == "" || amount <= 0 {
-		return nil
-	}
-
-	var exists int
-	if err := tx.QueryRow(`
-		SELECT COUNT(1)
-		FROM box_virtual_ledger l
-		JOIN boxes owner ON owner.id = l.box_id
-		WHERE l.box_id = ?
-		  AND owner.workspace_id = ?
-		  AND l.source_transaction_id = ?
-		  AND l.type = 'CONSUME'
-		  AND NOT EXISTS (
-			SELECT 1
-			FROM box_virtual_ledger r
-			JOIN boxes reversal_owner ON reversal_owner.id = r.box_id
-			WHERE r.reversal_of_ledger_id = l.id
-			  AND reversal_owner.workspace_id = ?
-			  AND r.type = 'REVERSAL'
-		  )
-	`, boxID, workspaceID, sourceTransactionID, workspaceID).Scan(&exists); err != nil {
-		return err
-	}
-	if exists > 0 {
-		return nil
-	}
-
-	return execOneTx(tx, `
-		INSERT INTO box_virtual_ledger (
-			id,
-			box_id,
-			amount,
-			type,
-			description,
-			source_transaction_id,
-			reversal_of_ledger_id,
-			reference_date,
-			created_at
-		)
-		SELECT ?, owner.id, ?, 'CONSUME', ?, ?, NULL, ?, ?
-		FROM boxes owner
-		WHERE owner.id = ? AND owner.workspace_id = ?
-	`, uuid.NewString(), -amount, "Consumo automático por lançamento", sourceTransactionID, referenceDate, now, boxID, workspaceID)
-}
-
-type activeConsumeEvent struct {
-	LedgerID string
-	BoxID    string
-	Amount   int64
-}
-
-func activeConsumeEventsBySourceTransactionTx(tx *sql.Tx, workspaceID, sourceTransactionID string) ([]activeConsumeEvent, error) {
-	rows, err := tx.Query(`
-		SELECT
-			l.id,
-			l.box_id,
-			ABS(l.amount)
-		FROM box_virtual_ledger l
-		JOIN boxes b ON b.id = l.box_id
-		WHERE b.workspace_id = ?
-		  AND l.source_transaction_id = ?
-		  AND l.type = 'CONSUME'
-		  AND NOT EXISTS (
-			SELECT 1
-			FROM box_virtual_ledger r
-			JOIN boxes reversal_owner ON reversal_owner.id = r.box_id
-			WHERE r.reversal_of_ledger_id = l.id
-			  AND reversal_owner.workspace_id = ?
-			  AND r.type = 'REVERSAL'
-		  )
-		ORDER BY l.created_at ASC
-	`, workspaceID, sourceTransactionID, workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var events []activeConsumeEvent
-	for rows.Next() {
-		var event activeConsumeEvent
-		if err := rows.Scan(&event.LedgerID, &event.BoxID, &event.Amount); err != nil {
-			return nil, err
-		}
-		events = append(events, event)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return events, nil
-}
-
-func insertReversalLedgerEventTx(tx *sql.Tx, workspaceID string, consumeEvent activeConsumeEvent, sourceTransactionID string, referenceDate int64, now int64) error {
-	if consumeEvent.LedgerID == "" || consumeEvent.BoxID == "" || consumeEvent.Amount <= 0 || sourceTransactionID == "" {
-		return nil
-	}
-
-	var exists int
-	if err := tx.QueryRow(`
-		SELECT COUNT(1)
-		FROM box_virtual_ledger r
-		JOIN boxes owner ON owner.id = r.box_id
-		JOIN box_virtual_ledger original ON original.id = r.reversal_of_ledger_id
-		JOIN boxes original_owner ON original_owner.id = original.box_id
-		WHERE r.reversal_of_ledger_id = ?
-		  AND owner.workspace_id = ?
-		  AND original_owner.workspace_id = ?
-		  AND original.box_id = ?
-		  AND r.type = 'REVERSAL'
-	`, consumeEvent.LedgerID, workspaceID, workspaceID, consumeEvent.BoxID).Scan(&exists); err != nil {
-		return err
-	}
-	if exists > 0 {
-		return nil
-	}
-
-	return execOneTx(tx, `
-		INSERT INTO box_virtual_ledger (
-			id,
-			box_id,
-			amount,
-			type,
-			description,
-			source_transaction_id,
-			reversal_of_ledger_id,
-			reference_date,
-			created_at
-		)
-		SELECT ?, owner.id, ?, 'REVERSAL', ?, ?, original.id, ?, ?
-		FROM boxes owner
-		JOIN box_virtual_ledger original ON original.id = ? AND original.box_id = owner.id
-		WHERE owner.id = ? AND owner.workspace_id = ?
-	`, uuid.NewString(), consumeEvent.Amount, "Reversão de consumo", sourceTransactionID, referenceDate, now, consumeEvent.LedgerID, consumeEvent.BoxID, workspaceID)
 }
 
 type recurrenceProjectionRule struct {
@@ -2538,32 +2447,7 @@ func (h *TransactionHandler) queryFormCategories() ([]FormCategory, error) {
 	monthEnd := nextMonth.Add(-1 * time.Second).Unix()
 
 	rows, err := h.DB.Query(`
-		WITH box_balances AS (
-			SELECT
-				b.id,
-				b.workspace_id,
-				b.category_id,
-				COALESCE(SUM(l.amount), 0) AS reserved
-			FROM boxes b
-			LEFT JOIN box_virtual_ledger l ON l.box_id = b.id
-			WHERE b.workspace_id = ?
-			GROUP BY b.id, b.workspace_id, b.category_id
-		),
-		category_box_candidates AS (
-			SELECT
-				c.id AS category_id,
-				bb.id AS box_id,
-				bb.reserved,
-				COUNT(*) OVER (PARTITION BY c.id) AS box_count
-			FROM categories c
-			JOIN box_balances bb ON bb.workspace_id = c.workspace_id
-				AND (
-					bb.category_id = c.id OR
-					(COALESCE(c.parent_id, '') != '' AND bb.category_id = c.parent_id)
-				)
-			WHERE c.workspace_id = ?
-		),
-		monthly_limit_spend AS (
+		WITH monthly_limit_spend AS (
 			SELECT
 				cl.category_id,
 				COALESCE(SUM(`+transactionNetAmountTSQL+`), 0) AS spent
@@ -2585,22 +2469,17 @@ func (h *TransactionHandler) queryFormCategories() ([]FormCategory, error) {
 			c.icon,
 			c.color,
 			c.type,
-			COALESCE(cbc.box_id, '') AS box_id,
-			COALESCE(cbc.reserved, 0) AS box_reserved_balance,
-			COALESCE(b.name, '') AS box_name,
 			COALESCE(cl.max_amount_monthly, 0) AS limit_max,
 			COALESCE(mls.spent, 0) AS limit_spent,
 			COALESCE(c.parent_id, '') AS parent_id,
 			COALESCE(p.name, '') AS parent_name
 		FROM categories c
-		LEFT JOIN category_box_candidates cbc ON cbc.category_id = c.id AND cbc.box_count = 1
-		LEFT JOIN boxes b ON b.id = cbc.box_id AND b.workspace_id = c.workspace_id
 		LEFT JOIN cost_limits cl ON cl.category_id = c.id AND cl.workspace_id = c.workspace_id
 		LEFT JOIN monthly_limit_spend mls ON mls.category_id = c.id
 		LEFT JOIN categories p ON p.id = c.parent_id AND p.workspace_id = c.workspace_id
 		WHERE c.workspace_id = ?
 		ORDER BY c.type DESC, COALESCE(p.name, c.name) COLLATE NOCASE, CASE WHEN COALESCE(c.parent_id, '') = '' THEN 0 ELSE 1 END, c.name COLLATE NOCASE
-	`, h.WorkspaceID, h.WorkspaceID, monthStart, monthEnd, h.WorkspaceID, h.WorkspaceID)
+	`, monthStart, monthEnd, h.WorkspaceID, h.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -2609,7 +2488,7 @@ func (h *TransactionHandler) queryFormCategories() ([]FormCategory, error) {
 	var categories []FormCategory
 	for rows.Next() {
 		var c FormCategory
-		if err := rows.Scan(&c.ID, &c.Name, &c.Icon, &c.Color, &c.Type, &c.BoxID, &c.BoxReservedBalance, &c.BoxName, &c.LimitMax, &c.LimitSpent, &c.ParentID, &c.ParentName); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Icon, &c.Color, &c.Type, &c.LimitMax, &c.LimitSpent, &c.ParentID, &c.ParentName); err != nil {
 			return nil, err
 		}
 		c.Color = normalizeUIThemeColor(c.Color)
@@ -3042,16 +2921,6 @@ func transactionRequestTooLarge(err error) bool {
 	return errors.As(err, &maxErr)
 }
 
-func formAllowsBoxOverdraft(r *http.Request) bool {
-	value := strings.ToLower(strings.TrimSpace(r.FormValue("permitir_excedente_caixinha")))
-	switch value {
-	case "1", "true", "on", "yes":
-		return true
-	default:
-		return false
-	}
-}
-
 func respondTransactionValidationError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -3174,6 +3043,7 @@ func (h *TransactionHandler) HandleDownloadAnexo(w http.ResponseWriter, r *http.
 	w.Header().Set("Content-Disposition", disposition)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	runtimelease.Release(r.Context())
 	http.ServeContent(w, r, name, info.ModTime(), file)
 }
 
@@ -3407,8 +3277,8 @@ func buildLancamentosStatusSummary(transactions []TransactionRow, invoices []Inv
 	}
 
 	return []LancamentosStatusSummary{
-		lancamentosStatusSummaryItem(lancamentosResumoEntradasConfirmadas, "Entradas confirmadas", "arrow-up", ToneOK, true, "Entradas", buckets[lancamentosResumoEntradasConfirmadas]),
-		lancamentosStatusSummaryItem(lancamentosResumoSaidasConfirmadas, "Saídas confirmadas", "arrow-down", ToneDanger, true, "Saídas", buckets[lancamentosResumoSaidasConfirmadas]),
+		lancamentosStatusSummaryItem(lancamentosResumoEntradasConfirmadas, "Entradas confirmadas", "arrow-down", ToneOK, true, "Entradas", buckets[lancamentosResumoEntradasConfirmadas]),
+		lancamentosStatusSummaryItem(lancamentosResumoSaidasConfirmadas, "Saídas confirmadas", "arrow-up", ToneDanger, true, "Saídas", buckets[lancamentosResumoSaidasConfirmadas]),
 		lancamentosStatusSummaryItem(lancamentosResumoPendente, "Pendente", "clock", ToneAttention, false, "", buckets[lancamentosResumoPendente]),
 		lancamentosStatusSummaryItem(lancamentosResumoVencido, "Vencido", "triangle-alert", ToneDanger, false, "", buckets[lancamentosResumoVencido]),
 		lancamentosStatusSummaryItem(lancamentosResumoAgendado, "Agendado", "timer", ToneProgress, false, "", buckets[lancamentosResumoAgendado]),
@@ -3582,7 +3452,6 @@ type DashboardData struct {
 	Cards                   []CreditCardCard
 	Limits                  []DashboardLimitCard
 	Categories              DashboardCategoriesData
-	Boxes                   []CaixinhaCard
 	PendingPayables         []DashboardPayableItem
 	PendingReceivables      []DashboardPayableItem
 	Payable7dTotal          MoneyDisplay
@@ -3611,44 +3480,17 @@ type UserWorkspace struct {
 }
 
 type BalanceData struct {
-	Money                   MoneyDisplay
-	Reserved                MoneyDisplay
-	Free                    MoneyDisplay
-	ReserveBalanceAvailable bool
-	TrendPercent            string
-	TrendDirection          string
-	IsNegative              bool
-	FreeIsNegative          bool
-	// Percentuais da barra Disponível x Reservado. Somam 100 quando há saldo
-	// analisável; valem 0/0 quando não há composição a exibir.
-	ReservedPercent int
-	FreePercent     int
-	// HasSplit indica se existe composição (disponível + reservado) a exibir.
-	HasSplit bool
-}
-
-// applyBalanceSplit deriva a proporção visual entre reservado e disponível.
-// Valores negativos são tratados como zero para a barra, e o sinal real
-// continua visível nos valores textuais.
-func (b *BalanceData) applyBalanceSplit(reserved, free int64) {
-	reservedPart := reserved
-	if reservedPart < 0 {
-		reservedPart = 0
-	}
-	freePart := free
-	if freePart < 0 {
-		freePart = 0
-	}
-	total := reservedPart + freePart
-	if total <= 0 {
-		b.ReservedPercent = 0
-		b.FreePercent = 0
-		b.HasSplit = false
-		return
-	}
-	b.ReservedPercent = int((reservedPart*100 + total/2) / total)
-	b.FreePercent = 100 - b.ReservedPercent
-	b.HasSplit = true
+	FinancialIndicatorAvailability
+	Money                        MoneyDisplay
+	Obligations                  MoneyDisplay
+	Obligations30                MoneyDisplay
+	Obligations60                MoneyDisplay
+	ObligationsWithoutDateCount  int64
+	ObligationsScheduleAvailable bool
+	UnavailableReason            string
+	TrendPercent                 string
+	TrendDirection               string
+	IsNegative                   bool
 }
 
 type DashboardHealthData struct {
@@ -3677,9 +3519,11 @@ type AccountCard struct {
 	ProviderMark        string
 	ProviderLogoPath    string
 	TypeLabel           string
+	AccountType         string
 }
 
 type CreditCardCard struct {
+	PaymentState          InvoiceComputedState
 	ID                    string
 	InvoiceID             string
 	Name                  string
@@ -3710,12 +3554,18 @@ type CreditCardCard struct {
 	ContentURL     string
 	IsFaturasIndex bool
 	IsSelected     bool
+	// Presentation-only fields shared by the Dashboard carousel and the
+	// invoice hub. They never participate in invoice or balance calculations.
+	StatusToneClass string
+	WalletIndex     string
+	Historical      bool
+	ReferenceLabel  string
+	DueLabel        string
+	Pending         MoneyDisplay
+	HasPending      bool
 }
 
-// SortDashboardCardsByPaymentPriority keeps the card rail focused on what
-// needs attention first. It changes only presentation order: overdue payable
-// invoices, upcoming payable invoices, payable invoices without a due date,
-// then paid or zero-value invoices.
+// Priority is shared with the hub; equal due dates retain configured card order.
 func SortDashboardCardsByPaymentPriority(cards []CreditCardCard, now time.Time) {
 	today := AppCivilDateUTC(now)
 	sort.SliceStable(cards, func(i, j int) bool {
@@ -3725,29 +3575,53 @@ func SortDashboardCardsByPaymentPriority(cards []CreditCardCard, now time.Time) 
 		if leftPriority != rightPriority {
 			return leftPriority < rightPriority
 		}
-		if leftPriority <= 1 && left.DueDateUnix != right.DueDateUnix {
-			return left.DueDateUnix < right.DueDateUnix
-		}
-		if left.Amount != right.Amount {
-			return left.Amount > right.Amount
+		if left.DueDateUnix != right.DueDateUnix {
+			return left.DueDateUnix > 0 && (right.DueDateUnix <= 0 || left.DueDateUnix < right.DueDateUnix)
 		}
 		return false
 	})
 }
 
 func dashboardCardPaymentPriority(card CreditCardCard, today time.Time) int {
-	if card.Status == models.InvoiceStatusPaid || card.Amount <= 0 {
-		return 3
+	if card.PaymentState.Financial == InvoiceFinancialPaid {
+		return 4
 	}
-	if card.DueDateUnix <= 0 {
-		return 2
+	if card.PaymentState.Pending <= 0 {
+		return 5
 	}
 	due := time.Unix(card.DueDateUnix, 0).UTC()
 	dueDate := time.Date(due.Year(), due.Month(), due.Day(), 0, 0, 0, 0, time.UTC)
-	if dueDate.Before(today) {
+	if card.DueDateUnix > 0 && dueDate.Before(today) {
 		return 0
 	}
-	return 1
+	if card.PaymentState.Financial == InvoiceFinancialPartial {
+		return 2
+	}
+	if card.Status == models.InvoiceStatusClosed || card.PaymentState.Cycle == InvoiceCycleClosed {
+		return 1
+	}
+	return 3
+}
+
+func applyCardInvoiceState(card *CreditCardCard, snapshot invoiceFinancialSnapshot, now time.Time) {
+	card.PaymentState = computeInvoiceState(snapshot.Total, snapshot.EffectivePaid, snapshot.ClosingDate, now)
+	card.Amount = snapshot.Total
+	card.Money = MoneyMinor(snapshot.Total)
+	switch {
+	case card.PaymentState.Financial == InvoiceFinancialPaid:
+		card.StatusLabel = "Pago"
+		card.ClosingDaysLabel = ""
+	case card.PaymentState.Pending > 0 && card.DueDateUnix > 0 && card.DueDateUnix < AppCivilDateUTC(now).Unix():
+		card.StatusLabel = "Vencido"
+	case card.PaymentState.Financial == InvoiceFinancialPartial:
+		card.StatusLabel = "Parcial"
+	case card.PaymentState.Financial == InvoiceFinancialEmpty:
+		card.StatusLabel = "Sem valor pendente"
+	case snapshot.Status == models.InvoiceStatusClosed || card.PaymentState.Cycle == InvoiceCycleClosed:
+		card.StatusLabel = "Fechado"
+	default:
+		card.StatusLabel = "Aberto"
+	}
 }
 
 type DashboardLimitCard struct {
@@ -3799,6 +3673,11 @@ func buildDashboardDataAt(db *sql.DB, userID, workspaceID string, now time.Time)
 		log.Printf("auto close workspace invoices error: %v", err)
 	}
 
+	return buildDashboardDataReadAt(db, userID, workspaceID, now)
+}
+
+func buildDashboardDataReadAt(db reportQueryer, userID, workspaceID string, now time.Time) DashboardData {
+	now = appTime(now)
 	data := DashboardData{
 		Title:        "Dashboard",
 		UserName:     "Vitor",
@@ -3817,6 +3696,9 @@ func buildDashboardDataAt(db *sql.DB, userID, workspaceID string, now time.Time)
 	data.CurrentWorkspaceName = queryWorkspaceName(db, workspaceID)
 	data.ActiveWorkspaceName = data.CurrentWorkspaceName
 	data.IsBusiness = workspaceType(db, workspaceID) == "business"
+	if reader, ok := db.(*dashboardSnapshotReader); ok && reader.err != nil {
+		return data
+	}
 	data.AppShellAccess = QueryAppShellAccess(db, workspaceID, userID, data.IsBusiness)
 	var investmentAccounts map[string]*investmentPatrimonyView
 	data.InvestmentPatrimony, investmentAccounts = queryInvestmentPatrimonyViews(db, workspaceID, userID)
@@ -3837,23 +3719,42 @@ func buildDashboardDataAt(db *sql.DB, userID, workspaceID string, now time.Time)
 		data.UserRole = "Usuário"
 	}
 
-	reserveBalance, reserveErr := services.CalculateWorkspaceReserveBalance(db, workspaceID)
-	if reserveErr != nil {
-		log.Printf("calculate workspace reserve balance error: %v", reserveErr)
+	position, positionErr := dashboardFinancialPosition(db, workspaceID)
+	recordDashboardReadError(db, positionErr)
+	data.Balance.FinancialIndicatorAvailability = financialIndicatorAvailability(position, positionErr)
+	healthRealBalance := int64(0)
+	if positionErr != nil {
+		log.Printf("calculate workspace financial position F1 error: %v", positionErr)
+		data.Balance.UnavailableReason = "não foi possível ler a composição financeira"
 		data.Balance.TrendPercent = "Indisponível"
 	} else {
-		data.Balance.ReserveBalanceAvailable = true
-		data.Balance.Money = MoneyMajor(reserveBalance.RealBalance)
-		data.Balance.Reserved = MoneyMinor(reserveBalance.ReservedBalance)
-		data.Balance.Free = MoneyMinor(reserveBalance.FreeBalance)
-		data.Balance.IsNegative = reserveBalance.RealBalance < 0
-		data.Balance.FreeIsNegative = reserveBalance.FreeBalance < 0
-		data.Balance.applyBalanceSplit(reserveBalance.ReservedBalance, reserveBalance.FreeBalance)
-		data.Balance.TrendPercent, data.Balance.TrendDirection = queryBalanceTrend(db, workspaceID, reserveBalance.RealBalance, now)
+		healthRealBalance = position.RealBalance
+		if data.Balance.RealBalanceAvailable {
+			data.Balance.Money = MoneyMajor(position.RealBalance)
+			data.Balance.IsNegative = position.RealBalance < 0
+			data.Balance.TrendPercent, data.Balance.TrendDirection = queryBalanceTrend(db, workspaceID, position.RealBalance, now)
+		} else {
+			data.Balance.TrendPercent = "Indisponível"
+		}
+		if data.Balance.ObligationsAvailable {
+			data.Balance.Obligations = MoneyMinor(position.Obligations)
+			data.Balance.Obligations30 = MoneyMinor(position.ObligationsDue30)
+			data.Balance.Obligations60 = MoneyMinor(position.ObligationsDue60)
+			data.Balance.ObligationsWithoutDateCount = position.ObligationsWithoutDateCount
+			data.Balance.ObligationsScheduleAvailable = position.ObligationsScheduleAvailable
+		}
+		if !data.Balance.RealBalanceAvailable || !data.Balance.ObligationsAvailable {
+			data.Balance.UnavailableReason = position.ReasonText()
+			if data.Balance.UnavailableReason == "" {
+				data.Balance.UnavailableReason = "composição financeira não comprovada"
+			}
+		}
 	}
-	data.Health = queryDashboardHealth(db, workspaceID, reserveBalance.RealBalance, data.IsBusiness, now)
-	if !data.Balance.ReserveBalanceAvailable && !data.IsBusiness {
-		data.Health.RunwayLabel = "Indisponível"
+	data.Health = queryDashboardHealth(db, workspaceID, healthRealBalance, data.IsBusiness, now)
+	if !data.IsBusiness {
+		// Cobertura/Sobrevivência seguem a metodologia legada e ficam ocultas
+		// durante a F1, que ainda não unifica as duas leituras.
+		data.Health.RunwayLabel = "Indicador em revisão"
 	}
 	data.Limits = queryDashboardLimits(db, workspaceID, now)
 	data.Categories = BuildDashboardCategories(db, workspaceID, now)
@@ -3885,8 +3786,6 @@ func buildDashboardDataAt(db *sql.DB, userID, workspaceID string, now time.Time)
 	data.PrevisaoSaldo = MoneyMinor(forecastBalance)
 	data.PrevisaoNegativo = forecastBalance < 0
 
-	data.Boxes = queryDashboardBoxes(db, workspaceID)
-
 	rows, err := db.Query(`
 		SELECT
 			a.id,
@@ -3909,6 +3808,7 @@ func buildDashboardDataAt(db *sql.DB, userID, workspaceID string, now time.Time)
 		for rows.Next() {
 			var r accRaw
 			if err := rows.Scan(&r.id, &r.name, &r.balance, &r.accType, &r.providerSlug, &r.color, &r.icon); err != nil {
+				recordDashboardReadError(db, err)
 				continue
 			}
 			rawAccounts = append(rawAccounts, r)
@@ -3947,6 +3847,7 @@ func buildDashboardDataAt(db *sql.DB, userID, workspaceID string, now time.Time)
 				ProviderMark:        accountProviderMark(r.providerSlug, r.name),
 				ProviderLogoPath:    accountProviderLogoPathForAccount(r.providerSlug, r.name),
 				TypeLabel:           typeLabel,
+				AccountType:         strings.ToUpper(r.accType),
 			})
 			if r.accType == models.AccountTypeChecking || r.accType == models.AccountTypeSavings {
 				data.PaymentAccounts = append(data.PaymentAccounts, AccountCard{
@@ -3961,6 +3862,7 @@ func buildDashboardDataAt(db *sql.DB, userID, workspaceID string, now time.Time)
 					ProviderMark:     accountProviderMark(r.providerSlug, r.name),
 					ProviderLogoPath: accountProviderLogoPathForAccount(r.providerSlug, r.name),
 					TypeLabel:        typeLabel,
+					AccountType:      strings.ToUpper(r.accType),
 				})
 			}
 		}
@@ -3991,6 +3893,7 @@ func buildDashboardDataAt(db *sql.DB, userID, workspaceID string, now time.Time)
 		for cardRows.Next() {
 			var c cardSeed
 			if err := cardRows.Scan(&c.id, &c.name, &c.dueDay, &c.creditLimit, &c.providerSlug, &c.color, &c.icon); err != nil {
+				recordDashboardReadError(db, err)
 				continue
 			}
 			cards = append(cards, c)
@@ -3998,8 +3901,11 @@ func buildDashboardDataAt(db *sql.DB, userID, workspaceID string, now time.Time)
 		cardRows.Close()
 
 		for _, c := range cards {
-			invoiceID, reference, status, closingUnix, dueUnix, err := resolveDashboardInvoice(db, workspaceID, c.id, now.Unix())
+			invoiceID, reference, status, closingUnix, dueUnix, err := resolveDashboardInvoiceReader(db, workspaceID, c.id, now.Unix())
 			if err != nil {
+				if err != sql.ErrNoRows {
+					recordDashboardReadError(db, err)
+				}
 				continue
 			}
 			invoiceHubURL, err := faturasIndexURLForReference(c.id, reference, "desc")
@@ -4007,12 +3913,15 @@ func buildDashboardDataAt(db *sql.DB, userID, workspaceID string, now time.Time)
 				log.Printf("build dashboard invoice hub URL error: %v", err)
 				continue
 			}
-			invoiceTotal, err := sumInvoiceTotal(db, workspaceID, invoiceID)
+			snapshot, err := loadInvoiceFinancialSnapshotDB(db, workspaceID, invoiceID)
 			if err != nil {
+				recordDashboardReadError(db, err)
 				continue
 			}
+			invoiceTotal := snapshot.Total
 			outstandingLimit, err := sumCardOutstandingLimit(db, workspaceID, c.id)
 			if err != nil {
+				recordDashboardReadError(db, err)
 				continue
 			}
 			statusLabel := invoiceDisplayStatusLabel(status, dueUnix)
@@ -4059,7 +3968,7 @@ func buildDashboardDataAt(db *sql.DB, userID, workspaceID string, now time.Time)
 				}
 			}
 
-			data.Cards = append(data.Cards, CreditCardCard{
+			card := CreditCardCard{
 				ID:               c.id,
 				InvoiceID:        invoiceID,
 				Name:             c.name,
@@ -4082,14 +3991,16 @@ func buildDashboardDataAt(db *sql.DB, userID, workspaceID string, now time.Time)
 				ProviderMark:     accountProviderMark(normalizedProvider, c.name),
 				ProviderLogoPath: accountProviderLogoPathForAccount(c.providerSlug, c.name),
 				Href:             invoiceHubURL,
-			})
+			}
+			applyCardInvoiceState(&card, snapshot, now)
+			data.Cards = append(data.Cards, card)
 		}
 	}
 
 	return data
 }
 
-func queryDashboardLimits(db *sql.DB, workspaceID string, now time.Time) []DashboardLimitCard {
+func queryDashboardLimits(db reportQueryer, workspaceID string, now time.Time) []DashboardLimitCard {
 	monthStartDate := appMonthStartUTC(now)
 	monthStart := monthStartDate.Unix()
 	nextMonth := monthStartDate.AddDate(0, 1, 0)
@@ -4128,6 +4039,7 @@ func queryDashboardLimits(db *sql.DB, workspaceID string, now time.Time) []Dashb
 		var card DashboardLimitCard
 		var maxAmount, spent int64
 		if err := rows.Scan(&card.CategoryName, &card.CategoryIcon, &card.IconKey, &maxAmount, &spent); err != nil {
+			recordDashboardReadError(db, err)
 			continue
 		}
 		card.Spent = MoneyMinor(spent)
@@ -4166,13 +4078,13 @@ func queryDashboardLimits(db *sql.DB, workspaceID string, now time.Time) []Dashb
 	return limits
 }
 
-func queryDashboardMonthlySummary(db *sql.DB, workspaceID string, now time.Time) (int64, int64) {
+func queryDashboardMonthlySummary(db reportQueryer, workspaceID string, now time.Time) (int64, int64) {
 	monthStartDate := appMonthStartUTC(now)
 	monthStart := monthStartDate.Unix()
 	monthEnd := monthStartDate.AddDate(0, 1, 0).Unix()
 
 	var monthlyIncome, monthlyExpense int64
-	_ = db.QueryRow(`
+	err := db.QueryRow(`
 		SELECT
 			COALESCE(SUM(CASE WHEN type = 'INCOME' THEN amount ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN type = 'EXPENSE' THEN amount ELSE 0 END), 0)
@@ -4183,16 +4095,17 @@ func queryDashboardMonthlySummary(db *sql.DB, workspaceID string, now time.Time)
 		  AND date >= ? AND date < ?
 		  AND (type != 'EXPENSE' OR invoice_id IS NULL)
 	`, workspaceID, monthStart, monthEnd).Scan(&monthlyIncome, &monthlyExpense)
+	recordDashboardReadError(db, err)
 	return monthlyIncome, monthlyExpense
 }
 
-func queryDashboardMonthlyForecast(db *sql.DB, workspaceID string, now time.Time) (int64, int64) {
+func queryDashboardMonthlyForecast(db reportQueryer, workspaceID string, now time.Time) (int64, int64) {
 	monthStartDate := appMonthStartUTC(now)
 	monthStart := monthStartDate.Unix()
 	monthEnd := monthStartDate.AddDate(0, 1, 0).Unix()
 
 	var forecastIncome, forecastExpense int64
-	_ = db.QueryRow(`
+	err := db.QueryRow(`
 		WITH invoice_current AS (
 			SELECT
 				i.id,
@@ -4230,6 +4143,7 @@ func queryDashboardMonthlyForecast(db *sql.DB, workspaceID string, now time.Time
 			WHERE total_amount - effective_paid > 0
 		)
 		`, workspaceID, models.AccountTypeCreditCard, models.InvoiceStatusOpen, models.InvoiceStatusClosed, monthStart, monthEnd, workspaceID, monthStart, monthEnd).Scan(&forecastIncome, &forecastExpense)
+	recordDashboardReadError(db, err)
 	return forecastIncome, forecastExpense
 }
 
@@ -4240,69 +4154,6 @@ func dashboardCashSummaryMonthLabel(now time.Time) string {
 	}
 	t := appTime(now)
 	return fmt.Sprintf("%s/%d", months[int(t.Month())-1], t.Year())
-}
-
-func queryDashboardBoxes(db *sql.DB, workspaceID string) []CaixinhaCard {
-	rows, err := db.Query(`
-		SELECT b.id, b.category_id, b.name, b.target_amount, b.monthly_recharge,
-			COALESCE(c.icon, ?),
-			COALESCE(c.color, '#6b7280'),
-			COALESCE((SELECT SUM(l.amount) FROM box_virtual_ledger l
-				JOIN boxes owner ON owner.id = l.box_id
-				WHERE l.box_id = b.id AND owner.workspace_id = ?), 0) AS total_balance,
-			COALESCE(b.icon_key, '')
-		FROM boxes b
-		LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
-		WHERE b.workspace_id = ?
-		ORDER BY b.name
-	`, icons.FallbackGoal, workspaceID, workspaceID)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-
-	var boxes []CaixinhaCard
-	for rows.Next() {
-		var card CaixinhaCard
-		var categoryID sql.NullString
-		var target, monthly, balance int64
-		if err := rows.Scan(&card.ID, &categoryID, &card.Name, &target, &monthly, &card.Icon, &card.Color, &balance, &card.IconKey); err != nil {
-			continue
-		}
-		if categoryID.Valid {
-			card.CategoryID = categoryID.String
-		}
-		if balance < 0 {
-			balance = 0
-		}
-		if target > 0 {
-			card.Percent = int(float64(balance) / float64(target) * 100)
-		}
-		card.PercentColor = "violet"
-		if card.Percent >= 75 {
-			card.PercentColor = "emerald"
-		} else if card.Percent >= 50 {
-			card.PercentColor = "sky"
-		}
-		card.Target = MoneyMinor(target)
-		card.Balance = MoneyMinor(balance)
-		card.MonthlyRecharge = MoneyMinor(monthly)
-		boxes = append(boxes, card)
-	}
-
-	if len(boxes) > 0 {
-		sort.Slice(boxes, func(i, j int) bool {
-			if boxes[i].Percent == boxes[j].Percent {
-				return boxes[i].Name < boxes[j].Name
-			}
-			return boxes[i].Percent > boxes[j].Percent
-		})
-	}
-	if len(boxes) > 6 {
-		boxes = boxes[:6]
-	}
-
-	return boxes
 }
 
 // pendingItemStatus devolve o rótulo e o tom da coluna de status das próximas
@@ -4317,9 +4168,9 @@ func pendingItemStatus(transactionType string, overdue bool) (string, string) {
 	return "Pendente", "neutral"
 }
 
-func queryDashboardPendingItems7d(db *sql.DB, workspaceID, transactionType string, now time.Time) []DashboardPayableItem {
+func queryDashboardPendingItems7d(db reportQueryer, workspaceID, transactionType string, now time.Time) []DashboardPayableItem {
 	windowEnd := dashboardPendingWindowEnd(now)
-	args := []interface{}{workspaceID, models.AccountTypeCreditCard, models.InvoiceStatusOpen, models.InvoiceStatusClosed, windowEnd, workspaceID, transactionType, windowEnd}
+	args := []interface{}{workspaceID, models.AccountTypeCreditCard, models.InvoiceStatusOpen, models.InvoiceStatusClosed, windowEnd, workspaceID, transactionType, windowEnd, windowEnd}
 	query := `
 		WITH invoice_current AS (
 			SELECT
@@ -4342,18 +4193,22 @@ func queryDashboardPendingItems7d(db *sql.DB, workspaceID, transactionType strin
 		SELECT description, amount, due_ref
 		FROM (
 			SELECT
-				COALESCE(NULLIF(description, ''), 'Sem descrição') AS description,
-				amount,
-				COALESCE(due_date, date) AS due_ref
-			FROM transactions
-			WHERE workspace_id = ?
-				  AND type = ?
-				  AND status = 'pending'
-				  AND invoice_id IS NULL
-				  AND COALESCE(due_date, date) < ?`
+				COALESCE(NULLIF(t.description, ''), 'Sem descrição') AS description,
+				t.amount,
+				CASE WHEN w.type = 'business' THEN t.due_date ELSE COALESCE(t.due_date, t.date) END AS due_ref
+			FROM transactions t
+			JOIN workspaces w ON w.id = t.workspace_id
+			WHERE t.workspace_id = ?
+				  AND t.type = ?
+				  AND t.status = 'pending'
+				  AND t.invoice_id IS NULL
+				  AND (
+					(w.type = 'business' AND t.due_date > 0 AND t.due_date < ?)
+					OR (w.type != 'business' AND COALESCE(t.due_date, t.date) < ?)
+				  )`
 	if transactionType == models.TransactionTypeExpense {
 		query += `
-				  AND ` + excludeInvoicePaymentCompetenceClause("")
+				  AND ` + excludeInvoicePaymentCompetenceClause("t")
 	}
 	query += `
 			UNION ALL
@@ -4380,6 +4235,7 @@ func queryDashboardPendingItems7d(db *sql.DB, workspaceID, transactionType strin
 		var item DashboardPayableItem
 		var amount, dueUnix int64
 		if err := rows.Scan(&item.Description, &amount, &dueUnix); err != nil {
+			recordDashboardReadError(db, err)
 			continue
 		}
 		item.Amount = MoneyMinor(amount)
@@ -4406,15 +4262,15 @@ func queryDashboardPendingItems7d(db *sql.DB, workspaceID, transactionType strin
 	return items
 }
 
-func queryDashboardPayable7dTotal(db *sql.DB, workspaceID string, now time.Time) (MoneyDisplay, int) {
+func queryDashboardPayable7dTotal(db reportQueryer, workspaceID string, now time.Time) (MoneyDisplay, int) {
 	return queryDashboardPendingWindowTotal(db, workspaceID, models.TransactionTypeExpense, now)
 }
 
-func queryDashboardReceivable7dTotal(db *sql.DB, workspaceID string, now time.Time) (MoneyDisplay, int) {
+func queryDashboardReceivable7dTotal(db reportQueryer, workspaceID string, now time.Time) (MoneyDisplay, int) {
 	return queryDashboardPendingWindowTotal(db, workspaceID, models.TransactionTypeIncome, now)
 }
 
-func queryDashboardPendingWindowTotal(db *sql.DB, workspaceID, transactionType string, now time.Time) (MoneyDisplay, int) {
+func queryDashboardPendingWindowTotal(db reportQueryer, workspaceID, transactionType string, now time.Time) (MoneyDisplay, int) {
 	var totalAmount int64
 	var itemCount int
 	windowEnd := dashboardPendingWindowEnd(now)
@@ -4437,14 +4293,18 @@ func queryDashboardPendingWindowTotal(db *sql.DB, workspaceID, transactionType s
 		)
 		SELECT COALESCE(SUM(amount), 0), COUNT(*)
 		FROM (
-			SELECT amount
-			FROM transactions
-			WHERE workspace_id = ?
-				  AND type = ?
-				  AND status = 'pending'
-				  AND invoice_id IS NULL
-				  AND (? != 'EXPENSE' OR `+excludeInvoicePaymentCompetenceClause("")+`)
-				  AND COALESCE(due_date, date) < ?
+			SELECT t.amount
+			FROM transactions t
+			JOIN workspaces w ON w.id = t.workspace_id
+			WHERE t.workspace_id = ?
+				  AND t.type = ?
+				  AND t.status = 'pending'
+				  AND t.invoice_id IS NULL
+				  AND (? != 'EXPENSE' OR `+excludeInvoicePaymentCompetenceClause("t")+`)
+				  AND (
+					(w.type = 'business' AND t.due_date > 0 AND t.due_date < ?)
+					OR (w.type != 'business' AND COALESCE(t.due_date, t.date) < ?)
+				  )
 			UNION ALL
 			SELECT
 				total_amount - effective_paid AS amount
@@ -4452,17 +4312,18 @@ func queryDashboardPendingWindowTotal(db *sql.DB, workspaceID, transactionType s
 			WHERE ? = 'EXPENSE'
 			  AND total_amount - effective_paid > 0
 		)
-		`, workspaceID, models.AccountTypeCreditCard, models.InvoiceStatusOpen, models.InvoiceStatusClosed, windowEnd, workspaceID, transactionType, transactionType, windowEnd, transactionType).Scan(&totalAmount, &itemCount)
+		`, workspaceID, models.AccountTypeCreditCard, models.InvoiceStatusOpen, models.InvoiceStatusClosed, windowEnd, workspaceID, transactionType, transactionType, windowEnd, windowEnd, transactionType).Scan(&totalAmount, &itemCount)
+	recordDashboardReadError(db, err)
 	if err != nil {
 		return MoneyDisplay{}, 0
 	}
 	return MoneyMinor(totalAmount), itemCount
 }
 
-func queryDashboardPendingWindowRawTotal(db *sql.DB, workspaceID, transactionType string, now time.Time) int64 {
+func queryDashboardPendingWindowRawTotal(db reportQueryer, workspaceID, transactionType string, now time.Time) int64 {
 	var totalAmount int64
 	windowEnd := dashboardPendingWindowEnd(now)
-	_ = db.QueryRow(`
+	err := db.QueryRow(`
 		WITH invoice_current AS (
 			SELECT
 				i.id,
@@ -4481,14 +4342,18 @@ func queryDashboardPendingWindowRawTotal(db *sql.DB, workspaceID, transactionTyp
 		)
 		SELECT COALESCE(SUM(amount), 0)
 		FROM (
-			SELECT amount
-			FROM transactions
-			WHERE workspace_id = ?
-				  AND type = ?
-				  AND status = 'pending'
-				  AND invoice_id IS NULL
-				  AND (? != 'EXPENSE' OR `+excludeInvoicePaymentCompetenceClause("")+`)
-				  AND COALESCE(due_date, date) < ?
+			SELECT t.amount
+			FROM transactions t
+			JOIN workspaces w ON w.id = t.workspace_id
+			WHERE t.workspace_id = ?
+				  AND t.type = ?
+				  AND t.status = 'pending'
+				  AND t.invoice_id IS NULL
+				  AND (? != 'EXPENSE' OR `+excludeInvoicePaymentCompetenceClause("t")+`)
+				  AND (
+					(w.type = 'business' AND t.due_date > 0 AND t.due_date < ?)
+					OR (w.type != 'business' AND COALESCE(t.due_date, t.date) < ?)
+				  )
 			UNION ALL
 			SELECT
 				total_amount - effective_paid AS amount
@@ -4496,15 +4361,16 @@ func queryDashboardPendingWindowRawTotal(db *sql.DB, workspaceID, transactionTyp
 			WHERE ? = 'EXPENSE'
 			  AND total_amount - effective_paid > 0
 		)
-		`, workspaceID, models.AccountTypeCreditCard, models.InvoiceStatusOpen, models.InvoiceStatusClosed, windowEnd, workspaceID, transactionType, transactionType, windowEnd, transactionType).Scan(&totalAmount)
+		`, workspaceID, models.AccountTypeCreditCard, models.InvoiceStatusOpen, models.InvoiceStatusClosed, windowEnd, workspaceID, transactionType, transactionType, windowEnd, windowEnd, transactionType).Scan(&totalAmount)
+	recordDashboardReadError(db, err)
 	return totalAmount
 }
 
-func QueryDashboardPendingPayables7d(db *sql.DB, workspaceID string, now time.Time) []DashboardPayableItem {
+func QueryDashboardPendingPayables7d(db reportQueryer, workspaceID string, now time.Time) []DashboardPayableItem {
 	return queryDashboardPendingItems7d(db, workspaceID, models.TransactionTypeExpense, now)
 }
 
-func QueryDashboardPendingReceivables7d(db *sql.DB, workspaceID string, now time.Time) []DashboardPayableItem {
+func QueryDashboardPendingReceivables7d(db reportQueryer, workspaceID string, now time.Time) []DashboardPayableItem {
 	return queryDashboardPendingItems7d(db, workspaceID, models.TransactionTypeIncome, now)
 }
 
@@ -4514,7 +4380,7 @@ func dashboardPendingWindowEnd(now time.Time) int64 {
 	return todayStart.AddDate(0, 0, 8).Unix()
 }
 
-func queryDashboardUser(db *sql.DB, userID string) (string, string) {
+func queryDashboardUser(db reportQueryer, userID string) (string, string) {
 	var name string
 	err := db.QueryRow(`SELECT name FROM users WHERE id = ?`, userID).Scan(&name)
 	if err != nil || strings.TrimSpace(name) == "" {
@@ -4523,7 +4389,7 @@ func queryDashboardUser(db *sql.DB, userID string) (string, string) {
 	return name, initials(name)
 }
 
-func queryUserProfilePhotoURL(db *sql.DB, userID string) string {
+func queryUserProfilePhotoURL(db reportQueryer, userID string) string {
 	if strings.TrimSpace(userID) == "" {
 		return ""
 	}
@@ -4553,20 +4419,19 @@ func queryUserInitialsByID(db *sql.DB, userID string) string {
 	return initials
 }
 
-func queryDashboardNotificationCount(db *sql.DB, userID, workspaceID string) int {
+func queryDashboardNotificationCount(db reportQueryer, userID, workspaceID string) int {
 	if strings.TrimSpace(userID) == "" {
 		return 0
 	}
-	if err := autoCloseWorkspaceInvoices(db, workspaceID); err != nil {
-		log.Printf("auto close notification count invoices error: %v", err)
+	if pool, ok := db.(*sql.DB); ok {
+		if err := autoCloseWorkspaceInvoices(pool, workspaceID); err != nil {
+			log.Printf("auto close notification count invoices error: %v", err)
+		}
 	}
-	h := NotificacoesHandler{DB: db, WorkspaceID: workspaceID, UserID: userID}
+	h := NotificacoesHandler{reader: db, WorkspaceID: workspaceID, UserID: userID}
 	isBusiness := workspaceType(db, workspaceID) == "business"
 	items := append(h.pendingOverdueExpenses(), h.closedInvoices()...)
 	items = append(items, h.exceededCostLimits(isBusiness)...)
-	items = append(items, h.boxesInOverdraft(isBusiness)...)
-	items = append(items, h.completedBoxGoals(isBusiness)...)
-	items = append(items, h.caixinhaPersistedNotifications()...)
 	items = append(items, h.scheduledPaymentNotifications()...)
 	return len(h.visibleItemsForUser(items))
 }
@@ -4603,7 +4468,7 @@ func extractFirstName(name string) string {
 	return parts[0]
 }
 
-func queryUserWorkspaces(db *sql.DB, userID string) []UserWorkspace {
+func queryUserWorkspaces(db reportQueryer, userID string) []UserWorkspace {
 	workspaces := make([]UserWorkspace, 0)
 	rows, err := db.Query(`
 		SELECT w.id, w.name
@@ -4625,7 +4490,7 @@ func queryUserWorkspaces(db *sql.DB, userID string) []UserWorkspace {
 	return workspaces
 }
 
-func queryWorkspaceName(db *sql.DB, workspaceID string) string {
+func queryWorkspaceName(db reportQueryer, workspaceID string) string {
 	var name string
 	err := db.QueryRow(`SELECT name FROM workspaces WHERE id = ?`, workspaceID).Scan(&name)
 	if err != nil || strings.TrimSpace(name) == "" {
@@ -4653,7 +4518,7 @@ func parseRequiredPaymentDate(value string) (int64, error) {
 	return parsePaymentDate(value)
 }
 
-func queryBalanceTrend(db *sql.DB, workspaceID string, currentBalance int64, now time.Time) (string, string) {
+func queryBalanceTrend(db reportQueryer, workspaceID string, currentBalance int64, now time.Time) (string, string) {
 	currentStart := now.AddDate(0, 0, -30).Unix()
 	currentNet := queryRealAccountNetCashFlow(db, workspaceID, currentStart, now.Unix())
 	if percent, direction, ok := investmentAdjustmentTrend(db, workspaceID, "", currentBalance, currentNet, currentStart, now.Unix()); ok {
@@ -4663,10 +4528,10 @@ func queryBalanceTrend(db *sql.DB, workspaceID string, currentBalance int64, now
 	return formatTrendPercent(currentBalance, previousClosingBalance), trendDirectionFromDelta(currentBalance - previousClosingBalance)
 }
 
-func queryAccountTrend(db *sql.DB, workspaceID, accountID string, currentBalance int64, now time.Time) (string, string) {
+func queryAccountTrend(db reportQueryer, workspaceID, accountID string, currentBalance int64, now time.Time) (string, string) {
 	currentStart := now.AddDate(0, 0, -30).Unix()
 	var netFlow int64
-	_ = db.QueryRow(`
+	err := db.QueryRow(`
 		SELECT COALESCE(SUM(CASE
 			WHEN t.type = 'INCOME' THEN t.amount
 			WHEN t.type = 'EXPENSE' THEN -t.amount
@@ -4680,6 +4545,7 @@ func queryAccountTrend(db *sql.DB, workspaceID, accountID string, currentBalance
 		  AND t.date >= ? AND t.date < ?
 		  AND (t.account_id = ? OR t.destination_account_id = ?)
 	`, accountID, accountID, workspaceID, currentStart, now.Unix(), accountID, accountID).Scan(&netFlow)
+	recordDashboardReadError(db, err)
 
 	if percent, direction, ok := investmentAdjustmentTrend(db, workspaceID, accountID, currentBalance, netFlow, currentStart, now.Unix()); ok {
 		return percent, direction
@@ -4726,7 +4592,7 @@ func formatTrendPercent(current, previous int64) string {
 	return fmt.Sprintf("%s%d,%d%%", sign, percentTenths/10, percentTenths%10)
 }
 
-func queryRealAccountNetCashFlow(db *sql.DB, workspaceID string, startUnix, endUnix int64) int64 {
+func queryRealAccountNetCashFlow(db reportQueryer, workspaceID string, startUnix, endUnix int64) int64 {
 	query := `
 	SELECT COALESCE(SUM(net), 0) FROM (
 		SELECT t.amount AS net
@@ -4786,22 +4652,23 @@ func queryRealAccountNetCashFlow(db *sql.DB, workspaceID string, startUnix, endU
 		  )
 	)`
 	var net int64
-	_ = db.QueryRow(query,
+	err := db.QueryRow(query,
 		workspaceID, startUnix, endUnix,
 		workspaceID, startUnix, endUnix,
 		workspaceID, startUnix, endUnix,
 		workspaceID, startUnix, endUnix,
 	).Scan(&net)
+	recordDashboardReadError(db, err)
 	return net
 }
 
-func queryDashboardHealth(db *sql.DB, workspaceID string, totalBalance int64, isBusiness bool, now time.Time) DashboardHealthData {
+func queryDashboardHealth(db reportQueryer, workspaceID string, totalBalance int64, isBusiness bool, now time.Time) DashboardHealthData {
 	now = appTime(now)
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Unix()
 	nextMonth := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC).Unix()
 
 	var income, expense int64
-	db.QueryRow(`
+	err := db.QueryRow(`
 		SELECT COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
 		       COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN `+transactionNetAmountTSQL+` ELSE 0 END), 0)
 		FROM transactions t
@@ -4810,10 +4677,11 @@ func queryDashboardHealth(db *sql.DB, workspaceID string, totalBalance int64, is
 			  AND t.date >= ? AND t.date < ?
 			  AND `+excludeInvoicePaymentCompetenceClause("t")+`
 		`, workspaceID, monthStart, nextMonth).Scan(&income, &expense)
+	recordDashboardReadError(db, err)
 
 	if isBusiness {
 		var grossRevenue, directCosts int64
-		db.QueryRow(`
+		err := db.QueryRow(`
 			SELECT
 				COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount ELSE 0 END), 0),
 				COALESCE(SUM(CASE
@@ -4830,6 +4698,7 @@ func queryDashboardHealth(db *sql.DB, workspaceID string, totalBalance int64, is
 				  AND t.date >= ? AND t.date < ?
 				  AND `+excludeInvoicePaymentCompetenceClause("t")+`
 			`, workspaceID, monthStart, nextMonth).Scan(&grossRevenue, &directCosts)
+		recordDashboardReadError(db, err)
 
 		grossProfit := grossRevenue - directCosts
 		grossProfitClass := "text-[#009866]"
@@ -4932,7 +4801,7 @@ func formatPercentTenths(value int64) string {
 	return fmt.Sprintf("%s%d,%d%%", sign, value/10, value%10)
 }
 
-func queryHybridRunwayDays(db *sql.DB, workspaceID string, totalBalance int64) int64 {
+func queryHybridRunwayDays(db reportQueryer, workspaceID string, totalBalance int64) int64 {
 	if totalBalance <= 0 {
 		return 0
 	}
@@ -4959,7 +4828,7 @@ func queryHybridRunwayDays(db *sql.DB, workspaceID string, totalBalance int64) i
 	return -1
 }
 
-func queryVariableDailyExpense90d(db *sql.DB, workspaceID string) int64 {
+func queryVariableDailyExpense90d(db reportQueryer, workspaceID string) int64 {
 	today := AppCivilDateUTC(time.Now())
 	start := today.AddDate(0, 0, -90)
 	var totalExpense int64
@@ -4976,6 +4845,7 @@ func queryVariableDailyExpense90d(db *sql.DB, workspaceID string) int64 {
 			  AND COALESCE(c.is_fixed, 0) = 0
 			  AND `+excludeInvoicePaymentCompetenceClause("t")+`
 		`, workspaceID, start.Unix(), today.AddDate(0, 0, 1).Unix()).Scan(&totalExpense)
+	recordDashboardReadError(db, err)
 	if err != nil || totalExpense <= 0 {
 		return 0
 	}
@@ -4987,7 +4857,7 @@ type runwayExpenseEvent struct {
 	amount int64
 }
 
-func queryRunwayScheduledExpenses(db *sql.DB, workspaceID string) []runwayExpenseEvent {
+func queryRunwayScheduledExpenses(db reportQueryer, workspaceID string) []runwayExpenseEvent {
 	today := AppCivilDateUTC(time.Now())
 	horizon := today.AddDate(10, 0, 0)
 	var events []runwayExpenseEvent
@@ -4996,7 +4866,7 @@ func queryRunwayScheduledExpenses(db *sql.DB, workspaceID string) []runwayExpens
 	return events
 }
 
-func queryRunwayRecurringExpenses(db *sql.DB, workspaceID string, start, end time.Time) []runwayExpenseEvent {
+func queryRunwayRecurringExpenses(db reportQueryer, workspaceID string, start, end time.Time) []runwayExpenseEvent {
 	rows, err := db.Query(`
 		SELECT amount, start_date, frequency
 		FROM recurring_rules
@@ -5015,6 +4885,7 @@ func queryRunwayRecurringExpenses(db *sql.DB, workspaceID string, start, end tim
 		var amount, startUnix int64
 		var frequency string
 		if err := rows.Scan(&amount, &startUnix, &frequency); err != nil {
+			recordDashboardReadError(db, err)
 			continue
 		}
 		occurrence := time.Unix(startUnix, 0).UTC()
@@ -5033,7 +4904,7 @@ func queryRunwayRecurringExpenses(db *sql.DB, workspaceID string, start, end tim
 	return events
 }
 
-func queryRunwayInvoiceExpenses(db *sql.DB, workspaceID string, start, end time.Time) []runwayExpenseEvent {
+func queryRunwayInvoiceExpenses(db reportQueryer, workspaceID string, start, end time.Time) []runwayExpenseEvent {
 	rows, err := db.Query(`
 		SELECT i.due_date, COALESCE(SUM(t.amount), 0) AS total
 		FROM invoices i
@@ -5057,6 +4928,7 @@ func queryRunwayInvoiceExpenses(db *sql.DB, workspaceID string, start, end time.
 	for rows.Next() {
 		var dueUnix, total int64
 		if err := rows.Scan(&dueUnix, &total); err != nil || total <= 0 {
+			recordDashboardReadError(db, err)
 			continue
 		}
 		due := time.Unix(dueUnix, 0).UTC()
@@ -5066,7 +4938,7 @@ func queryRunwayInvoiceExpenses(db *sql.DB, workspaceID string, start, end time.
 	return events
 }
 
-func queryAverageDailyExpense(db *sql.DB, workspaceID string) int64 {
+func queryAverageDailyExpense(db reportQueryer, workspaceID string) int64 {
 	var totalExpense, firstDate int64
 	err := db.QueryRow(`
 		SELECT COALESCE(SUM(amount), 0), COALESCE(MIN(date), 0)
@@ -5410,6 +5282,19 @@ func transactionVisualStatus(trType, paymentStatus string, displayDateUnix int64
 	return TransactionVisualStatus{Icon: "clock", Tone: "warning", Title: "Pendente — toque para marcar como pago"}
 }
 
+// respondLancamentosFinancialUnavailable keeps a failed financial projection
+// from being rendered as a list without its virtual invoices.
+func respondLancamentosFinancialUnavailable(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Header.Get("HX-Request") != "" {
+		w.Header().Set("HX-Reswap", "none")
+		w.Header().Set("HX-Trigger", `{"mostrarAlerta": {"value": "Não foi possível carregar os compromissos financeiros agora. Tente novamente."}}`)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	http.Error(w, "lançamentos temporariamente indisponíveis", http.StatusServiceUnavailable)
+}
+
 func (h *TransactionHandler) HandleListarTransacoes(w http.ResponseWriter, r *http.Request) {
 	t0 := time.Now()
 	reqID := perfReqID()
@@ -5443,6 +5328,10 @@ func (h *TransactionHandler) HandleListarTransacoes(w http.ResponseWriter, r *ht
 	perfStep(reqID, "Lancamentos", "buildLancamentosData", time.Since(tData))
 	if err != nil {
 		log.Printf("build lancamentos error: %v", err)
+		if errors.Is(err, errLancamentosFinancialProjectionUnavailable) {
+			respondLancamentosFinancialUnavailable(w, r)
+			return
+		}
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -5627,8 +5516,7 @@ func (h *TransactionHandler) HandleDeletarTransacao(w http.ResponseWriter, r *ht
 		}
 		if err := tx.Commit(); err != nil {
 			log.Printf("commit error: %v", err)
-			w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Erro interno ao consolidar remoção"}}`)
-			w.WriteHeader(http.StatusInternalServerError)
+			respondDeleteCommitError(w, err)
 			return
 		}
 		if returnInvoiceID != "" {
@@ -5645,11 +5533,6 @@ func (h *TransactionHandler) HandleDeletarTransacao(w http.ResponseWriter, r *ht
 		}
 		w.Header().Set("HX-Trigger", "refreshFinancials")
 		if !isLancamentosContext(r) {
-			if err := h.renderDashboardOOB(w); err != nil {
-				log.Printf("delete dashboard render error: %v", err)
-				http.Error(w, "internal server error", http.StatusInternalServerError)
-				return
-			}
 			_ = h.renderLancamentosResumoOOB(w, r)
 		}
 		perfDBDelta(reqID, "DeletarTransacao", "total", dbB, dbSnap(h.DB))
@@ -5680,6 +5563,10 @@ func (h *TransactionHandler) HandleDeletarTransacao(w http.ResponseWriter, r *ht
 		}
 		if err := insertRecurringOccurrenceSkipTx(tx, h.WorkspaceID, resolvedSeriesID, recurrenceSequence.Int64, id, h.UserID, now); err != nil {
 			log.Printf("insert recurring occurrence skip error: %v", err)
+			if sqliteContention(err) {
+				respondDeleteSQLitePreCommitContention(w)
+				return
+			}
 			w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Erro ao registrar a exclusão permanente"}}`)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -5767,16 +5654,6 @@ func (h *TransactionHandler) HandleDeletarTransacao(w http.ResponseWriter, r *ht
 		return
 	}
 
-	tReverse := time.Now()
-	for _, txID := range idsToDelete {
-		if err := h.reverseActiveConsumesForTransactionTx(tx, txID, now); err != nil {
-			log.Printf("reverse consume on delete error: %v", err)
-			w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Erro ao ajustar reserva"}}`)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-	}
-	perfStep(reqID, "DeletarTransacao", "reverseConsumes", time.Since(tReverse))
 	tDelete := time.Now()
 	if err := h.deleteTransactionsByIDsTx(tx, idsToDelete, now); err != nil {
 		if errors.Is(err, errInvoicePaymentTransactionProtected) {
@@ -5793,6 +5670,10 @@ func (h *TransactionHandler) HandleDeletarTransacao(w http.ResponseWriter, r *ht
 			return
 		}
 		log.Printf("delete transaction error: %v", err)
+		if sqliteContention(err) {
+			respondDeleteSQLitePreCommitContention(w)
+			return
+		}
 		w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Erro ao remover transação"}}`)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -5812,11 +5693,16 @@ func (h *TransactionHandler) HandleDeletarTransacao(w http.ResponseWriter, r *ht
 	tCommit := time.Now()
 	if err := tx.Commit(); err != nil {
 		log.Printf("commit error: %v", err)
-		w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Erro interno ao consolidar remoção"}}`)
-		w.WriteHeader(http.StatusInternalServerError)
+		respondDeleteCommitError(w, err)
 		return
 	}
 	perfStep(reqID, "DeletarTransacao", "commit", time.Since(tCommit))
+
+	if isNotificacoesReturnContext(r) {
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 
 	if returnInvoiceID != "" {
 		tInvoiceRender := time.Now()
@@ -5837,20 +5723,35 @@ func (h *TransactionHandler) HandleDeletarTransacao(w http.ResponseWriter, r *ht
 	w.Header().Set("HX-Trigger", "refreshFinancials")
 
 	if !isLancamentosContext(r) {
-		tDashboard := time.Now()
-		if err := h.renderDashboardOOB(w); err != nil {
-			log.Printf("delete dashboard render error: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		perfStep(reqID, "DeletarTransacao", "renderDashboardOOB", time.Since(tDashboard))
-
 		tResumo := time.Now()
 		_ = h.renderLancamentosResumoOOB(w, r)
 		perfStep(reqID, "DeletarTransacao", "renderLancamentosResumoOOB", time.Since(tResumo))
 	}
 	perfDBDelta(reqID, "DeletarTransacao", "total", dbB, dbSnap(h.DB))
 	perfStep(reqID, "DeletarTransacao", "responseTotal", time.Since(t0))
+}
+
+const deleteSQLiteContentionMessage = "Sistema ocupado. Tente novamente em instantes."
+
+const deleteIndeterminateCommitMessage = "Não foi possível confirmar a exclusão. Atualize os dados antes de tentar novamente."
+
+func respondDeleteSQLitePreCommitContention(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "1")
+	w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "`+deleteSQLiteContentionMessage+`"}}`)
+	w.WriteHeader(http.StatusServiceUnavailable)
+}
+
+// respondDeleteCommitError keeps SQLite contention at commit indeterminate:
+// the handler cannot prove whether the driver commit was attempted or whether
+// the transaction was already rolled back.
+func respondDeleteCommitError(w http.ResponseWriter, err error) {
+	if sqliteContention(err) {
+		w.Header().Set("HX-Trigger", `{"refreshFinancials":null,"app:toast-error":{"value":"`+deleteIndeterminateCommitMessage+`"}}`)
+		w.WriteHeader(http.StatusConflict)
+		return
+	}
+	w.Header().Set("HX-Trigger", `{"app:toast-error": {"value": "Erro interno ao consolidar remoção"}}`)
+	w.WriteHeader(http.StatusInternalServerError)
 }
 
 func normalizeDeleteScope(raw string) string {
@@ -6376,6 +6277,7 @@ func (h *TransactionHandler) HandleMoverFatura(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	w.Header().Set("HX-Trigger", "refreshFinancials")
 	if err := h.renderInvoiceMoveOOB(w, r, current.invoiceID); err != nil {
 		log.Printf("move invoice render error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -6690,14 +6592,16 @@ func (h *TransactionHandler) renderInvoiceMoveOOB(w http.ResponseWriter, r *http
 }
 
 func (h *TransactionHandler) renderInvoiceContextOOB(w http.ResponseWriter, r *http.Request, invoiceID string, closeSheet bool) error {
+	renderer := FaturasHandler{DB: h.DB, Templates: h.Templates, WorkspaceID: h.WorkspaceID, UserID: h.UserID}
+	if handled, err := renderer.renderFaturasIndexMutation(w, r, invoiceID, closeSheet); handled {
+		return err
+	}
 	invoiceData, err := buildFaturaDataForInvoice(h.DB, h.WorkspaceID, invoiceID, faturaSortOrderFromCurrentRequest(r))
 	if err != nil {
 		return err
 	}
 	invoiceData.OOB = true
 	configureFaturaForIndexRequest(&invoiceData, r)
-	dashboardData := BuildDashboardData(h.DB, h.UserID, h.WorkspaceID)
-	dashboardData.OOB = true
 
 	var buf bytes.Buffer
 	if invoiceData.IsFaturasIndex {
@@ -6714,15 +6618,6 @@ func (h *TransactionHandler) renderInvoiceContextOOB(w http.ResponseWriter, r *h
 			}
 		}
 	}
-	SortDashboardCardsByPaymentPriority(dashboardData.Cards, time.Now())
-	for _, templateName := range dashboardOOBTemplateNames(h.Templates) {
-		if h.Templates.Lookup(templateName) == nil {
-			continue
-		}
-		if err := h.Templates.ExecuteTemplate(&buf, templateName, dashboardData); err != nil {
-			return err
-		}
-	}
 	if closeSheet {
 		buf.WriteString(`<div id="bottom-sheet-container" hx-swap-oob="innerHTML"></div>`)
 	}
@@ -6730,31 +6625,6 @@ func (h *TransactionHandler) renderInvoiceContextOOB(w http.ResponseWriter, r *h
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, err = buf.WriteTo(w)
 	return err
-}
-
-func (h *TransactionHandler) renderDashboardOOB(w http.ResponseWriter) error {
-	data := BuildDashboardData(h.DB, h.UserID, h.WorkspaceID)
-	data.OOB = true
-	SortDashboardCardsByPaymentPriority(data.Cards, time.Now())
-	var buf bytes.Buffer
-	for _, templateName := range dashboardOOBTemplateNames(h.Templates) {
-		if h.Templates.Lookup(templateName) == nil {
-			continue
-		}
-		if err := h.Templates.ExecuteTemplate(&buf, templateName, data); err != nil {
-			return err
-		}
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-func dashboardOOBTemplateNames(templates TemplateEngine) []string {
-	if templates.Lookup("dashboard-canonical-content") != nil {
-		return []string{"dashboard-canonical-content"}
-	}
-	return []string{"dashboard-summary", "dashboard-financial", "dashboard-balance", "dashboard-accounts", "dashboard-cards", "dashboard-health-cards"}
 }
 
 func (h *TransactionHandler) HandleDetalheTransacao(w http.ResponseWriter, r *http.Request, id string) {
@@ -6776,6 +6646,9 @@ func (h *TransactionHandler) HandleDetalheTransacao(w http.ResponseWriter, r *ht
 
 	data := newFormTransacaoData(accounts, categories)
 	data.IsBusiness = workspaceType(h.DB, h.WorkspaceID) == "business"
+	if isNotificacoesReturnContext(r) {
+		data.ReturnContext = notificacoesReturnContext
+	}
 	if data.IsBusiness {
 		data.Contacts, _ = h.queryFormContacts()
 		data.CanCreateContact = h.CanCreateContact
@@ -7089,7 +6962,6 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 	categoriaID := r.FormValue("categoria_id")
 	fixo := r.FormValue("lancamento_fixo") == "on"
 	recorrencia := normalizeRecurrenceFrequency(r.FormValue("recorrencia"))
-	allowBoxOverdraft := formAllowsBoxOverdraft(r)
 	newStatus := r.FormValue("status_pagamento")
 	if newStatus != "pending" {
 		newStatus = "paid"
@@ -7174,6 +7046,18 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 		return
 	}
 	defer tx.Rollback()
+
+	// Guarda financeira central de TRANSFER: vale para todos os escopos de
+	// edição (single, future, all/4B-B2 e fluxos legados de série) antes de
+	// qualquer escrita ou efeito de saldo.
+	if err := validateTransferCardFreeTx(tx, tipo, h.WorkspaceID, origemContaID, destinoContaID); err != nil {
+		if errors.Is(err, errTransferCreditCardAccount) {
+			http.Error(w, "Transferências não podem envolver cartões de crédito. Use contas de caixa ou de investimento.", http.StatusUnprocessableEntity)
+			return
+		}
+		http.Error(w, "erro ao validar contas da transferência", http.StatusInternalServerError)
+		return
+	}
 
 	// 4B-B1a: scope=future preflight runs inside the SAME tx as writes.
 	if scope == "future" {
@@ -7397,27 +7281,26 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 			return
 		}
 		touchedIDs, oldInvoiceIDs, allErr := h.updateAllRecurringSeries4BB2Tx(tx, recurringAll4BB2Params{
-			CurrentID:         id,
-			Type:              tipo,
-			Amount:            newAmount,
-			Date:              civilDate,
-			Description:       descricao,
-			RawNotes:          rawNotes,
-			NotesProvided:     notesProvided,
-			SelectedNotes:     oldNotes,
-			HasUpload:         recurringAllRequestHasUpload(r),
-			AccountID:         origemContaID,
-			DestinationID:     destinoContaID,
-			CategoryID:        categoriaID,
-			Status:            newStatus,
-			Frequency:         recorrencia,
-			DueRaw:            dueRaw,
-			DueProvided:       dueDateProvided,
-			ContactID:         contactID,
-			ContactProvided:   contactProvided,
-			IsBusiness:        isBusiness,
-			Now:               now,
-			AllowBoxOverdraft: allowBoxOverdraft,
+			CurrentID:       id,
+			Type:            tipo,
+			Amount:          newAmount,
+			Date:            civilDate,
+			Description:     descricao,
+			RawNotes:        rawNotes,
+			NotesProvided:   notesProvided,
+			SelectedNotes:   oldNotes,
+			HasUpload:       recurringAllRequestHasUpload(r),
+			AccountID:       origemContaID,
+			DestinationID:   destinoContaID,
+			CategoryID:      categoriaID,
+			Status:          newStatus,
+			Frequency:       recorrencia,
+			DueRaw:          dueRaw,
+			DueProvided:     dueDateProvided,
+			ContactID:       contactID,
+			ContactProvided: contactProvided,
+			IsBusiness:      isBusiness,
+			Now:             now,
 		})
 		if allErr != nil {
 			switch {
@@ -7429,10 +7312,6 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 				http.Error(w, "notas e anexos devem ser alterados usando apenas este lançamento", http.StatusConflict)
 			case errors.Is(allErr, errRecurringAllConflict), recurringAllSQLiteConflict(allErr):
 				http.Error(w, "não é possível alterar toda a recorrência com os dados atuais", http.StatusConflict)
-			case errors.Is(allErr, errBoxReserveInsufficient):
-				http.Error(w, "saldo reservado insuficiente na reserva vinculada; confirme excedente para continuar", http.StatusUnprocessableEntity)
-			case errors.Is(allErr, errBoxCategoryAmbiguous):
-				http.Error(w, "há mais de uma reserva vinculada para a categoria informada", http.StatusUnprocessableEntity)
 			default:
 				log.Printf("update recurring all 4B-B2 error: %v", allErr)
 				http.Error(w, "erro ao atualizar série", http.StatusInternalServerError)
@@ -7514,27 +7393,26 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 			return
 		}
 		_, touchedIDs, oldInvoiceIDs, err := h.splitFutureRecurringRuleTx(tx, recurringFutureSplitParams{
-			CurrentID:         id,
-			RuleID:            recurringRuleID.String,
-			SeriesID:          oldSeriesID.String,
-			CurrentSequence:   oldRecurrenceSequence.Int64,
-			Type:              tipo,
-			Amount:            newAmount,
-			Anchor:            civilDate,
-			Description:       descricao,
-			Notes:             anotacoes,
-			AttachmentPath:    attachmentPath,
-			AccountID:         origemContaID,
-			DestinationID:     destinoContaID,
-			CategoryID:        categoriaID,
-			Status:            newStatus,
-			Frequency:         recorrencia,
-			DueDateIntent:     futureDueIntent,
-			ContactID:         contactID,
-			ContactProvided:   contactProvided,
-			IsBusiness:        isBusiness,
-			Now:               now,
-			AllowBoxOverdraft: allowBoxOverdraft,
+			CurrentID:       id,
+			RuleID:          recurringRuleID.String,
+			SeriesID:        oldSeriesID.String,
+			CurrentSequence: oldRecurrenceSequence.Int64,
+			Type:            tipo,
+			Amount:          newAmount,
+			Anchor:          civilDate,
+			Description:     descricao,
+			Notes:           anotacoes,
+			AttachmentPath:  attachmentPath,
+			AccountID:       origemContaID,
+			DestinationID:   destinoContaID,
+			CategoryID:      categoriaID,
+			Status:          newStatus,
+			Frequency:       recorrencia,
+			DueDateIntent:   futureDueIntent,
+			ContactID:       contactID,
+			ContactProvided: contactProvided,
+			IsBusiness:      isBusiness,
+			Now:             now,
 		})
 		if err != nil {
 			if errors.Is(err, errInvoicePaymentTransactionProtected) {
@@ -7543,14 +7421,6 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 			}
 			if errors.Is(err, errRecurringFutureSplitBlocked) || invoiceStatusMutationBlocked(err) {
 				http.Error(w, "não é possível alterar recorrencias futuras protegidas", http.StatusConflict)
-				return
-			}
-			if errors.Is(err, errBoxReserveInsufficient) {
-				http.Error(w, "saldo reservado insuficiente na reserva vinculada; confirme excedente para continuar", http.StatusUnprocessableEntity)
-				return
-			}
-			if errors.Is(err, errBoxCategoryAmbiguous) {
-				http.Error(w, "há mais de uma reserva vinculada para a categoria informada", http.StatusUnprocessableEntity)
 				return
 			}
 			log.Printf("split future recurring rule error: %v", err)
@@ -7604,21 +7474,13 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 		switch scope {
 		case "future":
 			if totalInstallments > 1 {
-				if err := h.updateFutureTransactionSeries(tx, id, parentID, installmentNumber, tipo, newAmount, civilDate, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, dueDateWrite, dueDateCleared, dueDateProvided, contactID, now, allowBoxOverdraft); err != nil {
+				if err := h.updateFutureTransactionSeries(tx, id, parentID, installmentNumber, tipo, newAmount, civilDate, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, dueDateWrite, dueDateCleared, dueDateProvided, contactID, now); err != nil {
 					if errors.Is(err, errInvoicePaymentTransactionProtected) {
 						respondInvoicePaymentTransactionProtected(w)
 						return
 					}
 					if invoiceStatusMutationBlocked(err) {
 						http.Error(w, "não é possível alterar lançamentos de fatura paga", http.StatusConflict)
-						return
-					}
-					if errors.Is(err, errBoxReserveInsufficient) {
-						http.Error(w, "saldo reservado insuficiente na reserva vinculada; confirme excedente para continuar", http.StatusUnprocessableEntity)
-						return
-					}
-					if errors.Is(err, errBoxCategoryAmbiguous) {
-						http.Error(w, "há mais de uma reserva vinculada para a categoria informada", http.StatusUnprocessableEntity)
 						return
 					}
 					log.Printf("update transaction series error: %v", err)
@@ -7627,7 +7489,7 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 				}
 			}
 			if recurringRuleID.Valid {
-				if err := h.updateFutureRecurringTransactions(tx, recurringRuleID.String, id, oldDateUnix, newDate, oldDateUnix, tipo, newAmount, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, dueDateUnix, hasDueDate, contactID, now, allowBoxOverdraft); err != nil {
+				if err := h.updateFutureRecurringTransactions(tx, recurringRuleID.String, id, oldDateUnix, newDate, oldDateUnix, tipo, newAmount, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, dueDateUnix, hasDueDate, contactID, now); err != nil {
 					if errors.Is(err, errInvoicePaymentTransactionProtected) {
 						respondInvoicePaymentTransactionProtected(w)
 						return
@@ -7636,21 +7498,13 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 						http.Error(w, "não é possível alterar lançamentos de fatura paga", http.StatusConflict)
 						return
 					}
-					if errors.Is(err, errBoxReserveInsufficient) {
-						http.Error(w, "saldo reservado insuficiente na reserva vinculada; confirme excedente para continuar", http.StatusUnprocessableEntity)
-						return
-					}
-					if errors.Is(err, errBoxCategoryAmbiguous) {
-						http.Error(w, "há mais de uma reserva vinculada para a categoria informada", http.StatusUnprocessableEntity)
-						return
-					}
 					log.Printf("update recurring transactions error: %v", err)
 					http.Error(w, "erro ao atualizar recorrencias futuras", http.StatusInternalServerError)
 					return
 				}
 			}
 			if totalInstallments <= 1 && recurringRuleID.Valid {
-				if err := h.updateSingleTransactionInTx(tx, id, tipo, newAmount, newDate, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, now, allowBoxOverdraft); err != nil {
+				if err := h.updateSingleTransactionInTx(tx, id, tipo, newAmount, newDate, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, now); err != nil {
 					if errors.Is(err, errInvoicePaymentTransactionProtected) {
 						respondInvoicePaymentTransactionProtected(w)
 						return
@@ -7668,21 +7522,13 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 			// Parcelamentos não recorrentes continuam usando o fluxo próprio. Toda
 			// recorrência com scope=all já retornou pelo preflight dedicado acima.
 			if totalInstallments > 1 {
-				if err := h.updateAllTransactionSeries(tx, id, parentID, tipo, newAmount, civilDate, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, dueDateWrite, dueDateCleared, dueDateProvided, contactID, now, allowBoxOverdraft); err != nil {
+				if err := h.updateAllTransactionSeries(tx, id, parentID, tipo, newAmount, civilDate, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, dueDateWrite, dueDateCleared, dueDateProvided, contactID, now); err != nil {
 					if errors.Is(err, errInvoicePaymentTransactionProtected) {
 						respondInvoicePaymentTransactionProtected(w)
 						return
 					}
 					if invoiceStatusMutationBlocked(err) {
 						http.Error(w, "não é possível alterar lançamentos de fatura paga", http.StatusConflict)
-						return
-					}
-					if errors.Is(err, errBoxReserveInsufficient) {
-						http.Error(w, "saldo reservado insuficiente na reserva vinculada; confirme excedente para continuar", http.StatusUnprocessableEntity)
-						return
-					}
-					if errors.Is(err, errBoxCategoryAmbiguous) {
-						http.Error(w, "há mais de uma reserva vinculada para a categoria informada", http.StatusUnprocessableEntity)
 						return
 					}
 					log.Printf("update all transaction series error: %v", err)
@@ -7844,18 +7690,6 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 		http.Error(w, "categoria não encontrada", http.StatusBadRequest)
 		return
 	}
-	if err := h.adjustReserveForSingleTransactionUpdateTx(tx, id, oldTrType, oldCategoryID, oldAmount, tipo, categoriaID, newAmount, newDate, now, allowBoxOverdraft); err != nil {
-		switch {
-		case errors.Is(err, errBoxReserveInsufficient):
-			http.Error(w, "saldo reservado insuficiente na reserva vinculada; confirme excedente para continuar", http.StatusUnprocessableEntity)
-		case errors.Is(err, errBoxCategoryAmbiguous):
-			http.Error(w, "há mais de uma reserva vinculada para a categoria informada", http.StatusUnprocessableEntity)
-		default:
-			http.Error(w, "erro ao ajustar reserva", http.StatusInternalServerError)
-		}
-		return
-	}
-
 	oldInvoiceID := invoiceID
 	invoiceID = sql.NullString{}
 	if invoiceOverrideID.Valid && invoiceOverrideID.String != "" && (tipo != models.TransactionTypeExpense || newAccType != models.AccountTypeCreditCard) {
@@ -7950,6 +7784,12 @@ func (h *TransactionHandler) HandleAtualizarTransacao(w http.ResponseWriter, r *
 	}
 	keepNewUpload = true
 
+	if isNotificacoesReturnContext(r) {
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	if returnInvoiceID != "" {
 		if err := h.renderInvoiceContextOOB(w, r, returnInvoiceID, true); err != nil {
 			log.Printf("render invoice after update error: %v", err)
@@ -8014,7 +7854,7 @@ func (h *TransactionHandler) recurringRuleTotalOccurrencesTx(tx *sql.Tx, ruleID 
 	return &value, nil
 }
 
-func (h *TransactionHandler) updateFutureTransactionSeries(tx *sql.Tx, currentID string, parentID sql.NullString, fromInstallment int64, tipo string, newAmount int64, date CivilWriteDate, descricao string, anotacoes string, attachmentPath string, origemContaID string, destinoContaID string, categoriaID string, newStatus string, dueDate OptionalCivilWriteDate, dueDateCleared bool, dueDateProvided bool, contactID string, now int64, allowBoxOverdraft bool) error {
+func (h *TransactionHandler) updateFutureTransactionSeries(tx *sql.Tx, currentID string, parentID sql.NullString, fromInstallment int64, tipo string, newAmount int64, date CivilWriteDate, descricao string, anotacoes string, attachmentPath string, origemContaID string, destinoContaID string, categoriaID string, newStatus string, dueDate OptionalCivilWriteDate, dueDateCleared bool, dueDateProvided bool, contactID string, now int64) error {
 	if err := date.validate(); err != nil {
 		return fmt.Errorf("invalid civil competence date: %w", err)
 	}
@@ -8128,9 +7968,6 @@ func (h *TransactionHandler) updateFutureTransactionSeries(tx *sql.Tx, currentID
 		if err != nil {
 			return fmt.Errorf("updateFutureTransactionSeries: add %d months to due date: %w", offset, err)
 		}
-		if err := h.adjustReserveForSingleTransactionUpdateTx(tx, old.id, old.trType, old.categoryID, old.amount, tipo, categoriaID, newAmount, installmentDate.LegacyUnix(), now, allowBoxOverdraft); err != nil {
-			return err
-		}
 		var invoiceID interface{}
 		if tipo == "EXPENSE" && newAccType == "CREDIT_CARD" {
 			evidence, err := resolveAutomaticInvoiceForOccurrenceTx(tx, h.WorkspaceID, origemContaID, installmentDate)
@@ -8168,12 +8005,12 @@ func (h *TransactionHandler) updateFutureTransactionSeries(tx *sql.Tx, currentID
 	return nil
 }
 
-func (h *TransactionHandler) updateAllTransactionSeries(tx *sql.Tx, currentID string, parentID sql.NullString, tipo string, newAmount int64, date CivilWriteDate, descricao string, anotacoes string, attachmentPath string, origemContaID string, destinoContaID string, categoriaID string, newStatus string, dueDate OptionalCivilWriteDate, dueDateCleared bool, dueDateProvided bool, contactID string, now int64, allowBoxOverdraft bool) error {
+func (h *TransactionHandler) updateAllTransactionSeries(tx *sql.Tx, currentID string, parentID sql.NullString, tipo string, newAmount int64, date CivilWriteDate, descricao string, anotacoes string, attachmentPath string, origemContaID string, destinoContaID string, categoriaID string, newStatus string, dueDate OptionalCivilWriteDate, dueDateCleared bool, dueDateProvided bool, contactID string, now int64) error {
 	rootID := currentID
 	if parentID.Valid {
 		rootID = parentID.String
 	}
-	return h.updateFutureTransactionSeries(tx, rootID, sql.NullString{String: rootID, Valid: true}, 1, tipo, newAmount, date, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, dueDate, dueDateCleared, dueDateProvided, contactID, now, allowBoxOverdraft)
+	return h.updateFutureTransactionSeries(tx, rootID, sql.NullString{String: rootID, Valid: true}, 1, tipo, newAmount, date, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, dueDate, dueDateCleared, dueDateProvided, contactID, now)
 }
 
 func (h *TransactionHandler) updateRecurringRule(tx *sql.Tx, ruleID string, tipo string, newAmount int64, newDate int64, descricao string, origemContaID string, destinoContaID string, categoriaID string, newStatus string, recurrenceFrequency string, now int64) error {
@@ -8763,27 +8600,26 @@ func (h *TransactionHandler) validateRecurringFutureCivilIntentTx(
 }
 
 type recurringFutureSplitParams struct {
-	CurrentID         string
-	RuleID            string
-	SeriesID          string
-	CurrentSequence   int64
-	Type              string
-	Amount            int64
-	Anchor            CivilWriteDate
-	Description       string
-	Notes             string
-	AttachmentPath    string
-	AccountID         string
-	DestinationID     string
-	CategoryID        string
-	Status            string
-	Frequency         string
-	DueDateIntent     futureOptionalCivilIntent
-	ContactID         string
-	ContactProvided   bool
-	IsBusiness        bool
-	Now               int64
-	AllowBoxOverdraft bool
+	CurrentID       string
+	RuleID          string
+	SeriesID        string
+	CurrentSequence int64
+	Type            string
+	Amount          int64
+	Anchor          CivilWriteDate
+	Description     string
+	Notes           string
+	AttachmentPath  string
+	AccountID       string
+	DestinationID   string
+	CategoryID      string
+	Status          string
+	Frequency       string
+	DueDateIntent   futureOptionalCivilIntent
+	ContactID       string
+	ContactProvided bool
+	IsBusiness      bool
+	Now             int64
 }
 
 type recurringFutureSplitItem struct {
@@ -8885,27 +8721,26 @@ type recurringAllDueIntent struct {
 }
 
 type recurringAll4BB2Params struct {
-	CurrentID         string
-	Type              string
-	Amount            int64
-	Date              CivilWriteDate
-	Description       string
-	RawNotes          string
-	NotesProvided     bool
-	SelectedNotes     string
-	HasUpload         bool
-	AccountID         string
-	DestinationID     string
-	CategoryID        string
-	Status            string
-	Frequency         string
-	DueRaw            string
-	DueProvided       bool
-	ContactID         string
-	ContactProvided   bool
-	IsBusiness        bool
-	Now               int64
-	AllowBoxOverdraft bool
+	CurrentID       string
+	Type            string
+	Amount          int64
+	Date            CivilWriteDate
+	Description     string
+	RawNotes        string
+	NotesProvided   bool
+	SelectedNotes   string
+	HasUpload       bool
+	AccountID       string
+	DestinationID   string
+	CategoryID      string
+	Status          string
+	Frequency       string
+	DueRaw          string
+	DueProvided     bool
+	ContactID       string
+	ContactProvided bool
+	IsBusiness      bool
+	Now             int64
 }
 
 type recurringAllRuleSnapshot struct {
@@ -9815,10 +9650,6 @@ func (h *TransactionHandler) updateAllRecurringSeries4BB2Tx(tx *sql.Tx, params r
 			itemStatus = models.PaymentStatusPaid
 		}
 
-		if err := h.adjustReserveForSingleTransactionUpdateTx(tx, item.id, item.trType, item.categoryID, item.amount, post.trType, post.categoryID, post.amount, plan.date.LegacyUnix(), params.Now, params.AllowBoxOverdraft); err != nil {
-			return nil, nil, err
-		}
-
 		var invoiceRef interface{}
 		if post.trType == models.TransactionTypeExpense && newAccountType == models.AccountTypeCreditCard {
 			evidence, err := resolveAutomaticInvoiceForOccurrenceTx(tx, h.WorkspaceID, post.accountID, plan.date)
@@ -9876,25 +9707,24 @@ func (h *TransactionHandler) updateAllRecurringSeries4BB2Tx(tx *sql.Tx, params r
 }
 
 type recurringAllVersionedParams struct {
-	RuleID            string
-	SeriesID          string
-	Type              string
-	Amount            int64
-	Description       string
-	Notes             string
-	AttachmentPath    string
-	AccountID         string
-	DestinationID     string
-	CategoryID        string
-	Status            string
-	DueDateUnix       int64
-	HasDueDate        bool
-	DueDateProvided   bool
-	ContactID         string
-	ContactProvided   bool
-	IsBusiness        bool
-	Now               int64
-	AllowBoxOverdraft bool
+	RuleID          string
+	SeriesID        string
+	Type            string
+	Amount          int64
+	Description     string
+	Notes           string
+	AttachmentPath  string
+	AccountID       string
+	DestinationID   string
+	CategoryID      string
+	Status          string
+	DueDateUnix     int64
+	HasDueDate      bool
+	DueDateProvided bool
+	ContactID       string
+	ContactProvided bool
+	IsBusiness      bool
+	Now             int64
 }
 
 type recurringAllVersionedItem struct {
@@ -10076,11 +9906,6 @@ func (h *TransactionHandler) deleteAllRecurringSeriesVersionedTx(tx *sql.Tx, sel
 		return nil, nil, recurringDeleteConflictf("active recurring leaf changed during delete")
 	}
 
-	for _, transactionID := range idsToDelete {
-		if err := h.reverseActiveConsumesForTransactionTx(tx, transactionID, now); err != nil {
-			return nil, nil, err
-		}
-	}
 	if err := h.deleteTransactionsByIDsTx(tx, idsToDelete, now); err != nil {
 		return nil, nil, err
 	}
@@ -10215,9 +10040,6 @@ func (h *TransactionHandler) updateAllRecurringSeriesVersionedTx(tx *sql.Tx, par
 			if err := services.ReverseBalanceEffect(tx, h.WorkspaceID, item.trType, item.accountType, item.amount, item.accountID, oldDest, params.Now); err != nil {
 				return nil, nil, err
 			}
-		}
-		if err := h.adjustReserveForSingleTransactionUpdateTx(tx, item.id, item.trType, item.categoryID, item.amount, params.Type, params.CategoryID, params.Amount, item.dateUnix, params.Now, params.AllowBoxOverdraft); err != nil {
-			return nil, nil, err
 		}
 
 		dueDateRef := interface{}(nil)
@@ -10791,9 +10613,6 @@ func (h *TransactionHandler) splitFutureRecurringRuleTx(tx *sql.Tx, params recur
 			return "", nil, nil, fmt.Errorf("split occurrence seq %d: civil date: %w", item.recurrenceSequence, err)
 		}
 		newItemDate := newItemCivilDate.LegacyUnix()
-		if err := h.adjustReserveForSingleTransactionUpdateTx(tx, item.id, item.trType, item.categoryID, item.amount, params.Type, params.CategoryID, params.Amount, newItemDate, params.Now, params.AllowBoxOverdraft); err != nil {
-			return "", nil, nil, err
-		}
 
 		var invoiceID interface{}
 		if params.Type == "EXPENSE" && newAccType == "CREDIT_CARD" {
@@ -10878,7 +10697,7 @@ func (h *TransactionHandler) splitFutureRecurringRuleTx(tx *sql.Tx, params recur
 	return targetRuleID, touchedIDs, oldInvoiceIDs, nil
 }
 
-func (h *TransactionHandler) updateFutureRecurringTransactions(tx *sql.Tx, ruleID string, currentID string, fromDate int64, newDate int64, oldCurrentDate int64, tipo string, newAmount int64, descricao string, anotacoes string, attachmentPath string, origemContaID string, destinoContaID string, categoriaID string, newStatus string, dueDateUnix int64, hasDueDate bool, contactID string, now int64, allowBoxOverdraft bool) error {
+func (h *TransactionHandler) updateFutureRecurringTransactions(tx *sql.Tx, ruleID string, currentID string, fromDate int64, newDate int64, oldCurrentDate int64, tipo string, newAmount int64, descricao string, anotacoes string, attachmentPath string, origemContaID string, destinoContaID string, categoriaID string, newStatus string, dueDateUnix int64, hasDueDate bool, contactID string, now int64) error {
 	delta := newDate - oldCurrentDate
 	rows, err := tx.Query(`
 		SELECT t.id, t.type, t.amount, t.account_id, t.destination_account_id, t.category_id, t.status, a.type, t.date
@@ -10964,9 +10783,6 @@ func (h *TransactionHandler) updateFutureRecurringTransactions(tx *sql.Tx, ruleI
 				return err
 			}
 		}
-		if err := h.adjustReserveForSingleTransactionUpdateTx(tx, item.id, item.trType, item.categoryID, item.amount, tipo, categoriaID, newAmount, newItemDate, now, allowBoxOverdraft); err != nil {
-			return err
-		}
 
 		var invoiceID interface{}
 		if tipo == "EXPENSE" && newAccType == "CREDIT_CARD" {
@@ -10995,11 +10811,11 @@ func (h *TransactionHandler) updateFutureRecurringTransactions(tx *sql.Tx, ruleI
 	return nil
 }
 
-func (h *TransactionHandler) updateAllRecurringTransactions(tx *sql.Tx, ruleID string, newDate int64, oldCurrentDate int64, tipo string, newAmount int64, descricao string, anotacoes string, attachmentPath string, origemContaID string, destinoContaID string, categoriaID string, newStatus string, dueDateUnix int64, hasDueDate bool, contactID string, now int64, allowBoxOverdraft bool) error {
-	return h.updateFutureRecurringTransactions(tx, ruleID, "", 0, newDate, oldCurrentDate, tipo, newAmount, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, dueDateUnix, hasDueDate, contactID, now, allowBoxOverdraft)
+func (h *TransactionHandler) updateAllRecurringTransactions(tx *sql.Tx, ruleID string, newDate int64, oldCurrentDate int64, tipo string, newAmount int64, descricao string, anotacoes string, attachmentPath string, origemContaID string, destinoContaID string, categoriaID string, newStatus string, dueDateUnix int64, hasDueDate bool, contactID string, now int64) error {
+	return h.updateFutureRecurringTransactions(tx, ruleID, "", 0, newDate, oldCurrentDate, tipo, newAmount, descricao, anotacoes, attachmentPath, origemContaID, destinoContaID, categoriaID, newStatus, dueDateUnix, hasDueDate, contactID, now)
 }
 
-func (h *TransactionHandler) updateSingleTransactionInTx(tx *sql.Tx, id string, tipo string, newAmount int64, newDate int64, descricao string, anotacoes string, attachmentPath string, origemContaID string, destinoContaID string, categoriaID string, newStatus string, now int64, allowBoxOverdraft bool) error {
+func (h *TransactionHandler) updateSingleTransactionInTx(tx *sql.Tx, id string, tipo string, newAmount int64, newDate int64, descricao string, anotacoes string, attachmentPath string, origemContaID string, destinoContaID string, categoriaID string, newStatus string, now int64) error {
 	if err := h.ensureTransactionsMutableByInvoiceStatusTx(tx, []string{id}); err != nil {
 		return err
 	}
@@ -11040,10 +10856,6 @@ func (h *TransactionHandler) updateSingleTransactionInTx(tx *sql.Tx, id string, 
 		return err
 	}
 
-	if err := h.adjustReserveForSingleTransactionUpdateTx(tx, id, oldTrType, oldCategoryID, oldAmount, tipo, categoriaID, newAmount, newDate, now, allowBoxOverdraft); err != nil {
-		return err
-	}
-
 	var catID interface{}
 	if categoriaID != "" {
 		catID = categoriaID
@@ -11077,51 +10889,6 @@ func (h *TransactionHandler) updateSingleTransactionInTx(tx *sql.Tx, id string, 
 	return nil
 }
 
-func reserveAffectsExpense(categoryID string) bool {
-	return strings.TrimSpace(categoryID) != ""
-}
-
-func reserveRelevantFieldsChanged(oldType string, oldCategoryID sql.NullString, oldAmount int64, newType, newCategoryID string, newAmount int64) bool {
-	oldExpense := oldType == models.TransactionTypeExpense && oldCategoryID.Valid && reserveAffectsExpense(oldCategoryID.String)
-	newExpense := newType == models.TransactionTypeExpense && reserveAffectsExpense(newCategoryID)
-
-	if !oldExpense && !newExpense {
-		return false
-	}
-	if oldExpense != newExpense {
-		return true
-	}
-	return strings.TrimSpace(oldCategoryID.String) != strings.TrimSpace(newCategoryID) || oldAmount != newAmount
-}
-
-func (h *TransactionHandler) reverseActiveConsumesForTransactionTx(tx *sql.Tx, transactionID string, now int64) error {
-	if strings.TrimSpace(transactionID) == "" {
-		return nil
-	}
-	events, err := activeConsumeEventsBySourceTransactionTx(tx, h.WorkspaceID, transactionID)
-	if err != nil {
-		return err
-	}
-	for _, event := range events {
-		if err := insertReversalLedgerEventTx(tx, h.WorkspaceID, event, transactionID, now, now); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (h *TransactionHandler) adjustReserveForSingleTransactionUpdateTx(tx *sql.Tx, transactionID string, oldType string, oldCategoryID sql.NullString, oldAmount int64, newType, newCategoryID string, newAmount, newDate, now int64, allowBoxOverdraft bool) error {
-	if !reserveRelevantFieldsChanged(oldType, oldCategoryID, oldAmount, newType, newCategoryID, newAmount) {
-		return nil
-	}
-
-	if err := h.reverseActiveConsumesForTransactionTx(tx, transactionID, now); err != nil {
-		return err
-	}
-
-	return h.consumeBoxReserveOnExpenseCreationTx(tx, newType, newCategoryID, newAmount, transactionID, newDate, now, allowBoxOverdraft)
-}
-
 func safeAddMonths(dateUnix int64, months int64) int64 {
 	t := time.Unix(dateUnix, 0).UTC()
 	originalDay := t.Day()
@@ -11144,6 +10911,12 @@ func safeAddMonths(dateUnix int64, months int64) int64 {
 	}
 
 	return time.Date(targetYear, time.Month(targetMonth), originalDay, 12, 0, 0, 0, time.UTC).Unix()
+}
+
+const notificacoesReturnContext = "notificacoes"
+
+func isNotificacoesReturnContext(r *http.Request) bool {
+	return strings.TrimSpace(r.URL.Query().Get("origem")) == notificacoesReturnContext
 }
 
 func isHXFromContas(r *http.Request) bool {
@@ -11184,13 +10957,14 @@ func (h *TransactionHandler) respondRowAndCloseSheet(w http.ResponseWriter, r *h
 
 	_ = h.renderLancamentosResumoOOB(&buf, r)
 
+	w.Header().Set("HX-Trigger", "refreshFinancials")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	buf.WriteTo(w)
 }
 
 func (h *TransactionHandler) respondBroadEditAndCloseSheet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("HX-Reswap", "none")
-	w.Header().Set("HX-Trigger", "refreshLancamentosList")
+	w.Header().Set("HX-Trigger", `{"refreshLancamentosList":null,"refreshFinancials":null}`)
 	var buf bytes.Buffer
 	fmt.Fprint(&buf, `<div id="bottom-sheet-container" hx-swap-oob="true"></div>`)
 	fmt.Fprint(&buf, `<div id="lancamento-form-error" hx-swap-oob="true" class="hidden"></div>`)
@@ -11328,7 +11102,7 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 			return
 		}
 		if err := tx.Commit(); err != nil {
-			respondTogglePagamentoIndeterminateOutcome(w, r)
+			respondTogglePagamentoCommitError(w, r, err)
 			return
 		}
 		h.respondTogglePagamentoCommitted(w, r, id)
@@ -11354,7 +11128,7 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 	// explicit payment_action=pending can undo a payment.
 	if paymentStatus == newStatus {
 		if err := tx.Commit(); err != nil {
-			respondTogglePagamentoIndeterminateOutcome(w, r)
+			respondTogglePagamentoCommitError(w, r, err)
 			return
 		}
 		h.respondTogglePagamentoCommitted(w, r, id)
@@ -11382,6 +11156,20 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 			return
 		}
 		nextAccountID = requestedPaymentAccountID
+	}
+
+	// Guarda financeira central de TRANSFER: confirmação/estorno de status de
+	// uma transferência legada com cartão em qualquer ponta não pode aplicar
+	// efeito de saldo artificial.
+	if trType == models.TransactionTypeTransfer {
+		if err := validateTransferCardFreeTx(tx, trType, h.WorkspaceID, nextAccountID, destAccountID.String); err != nil {
+			if errors.Is(err, errTransferCreditCardAccount) {
+				http.Error(w, "Transferências não podem envolver cartões de crédito. Use contas de caixa ou de investimento.", http.StatusUnprocessableEntity)
+				return
+			}
+			http.Error(w, "erro ao validar contas da transferência", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	now := time.Now().Unix()
@@ -11471,7 +11259,7 @@ func (h *TransactionHandler) HandleTogglePagamento(w http.ResponseWriter, r *htt
 	}
 
 	if err := tx.Commit(); err != nil {
-		respondTogglePagamentoIndeterminateOutcome(w, r)
+		respondTogglePagamentoCommitError(w, r, err)
 		return
 	}
 
@@ -11492,6 +11280,21 @@ func (h *TransactionHandler) respondTogglePagamentoPreCommitError(w http.Respons
 	default:
 		return false
 	}
+}
+
+// respondTogglePagamentoCommitError distinguishes a transaction that provably
+// never reached the driver commit from an indeterminate commit outcome.
+// database/sql checks the transaction context before invoking driver.Tx.Commit,
+// so context.Canceled/DeadlineExceeded and ErrTxDone in this handler mean the
+// transaction was rolled back, not committed. SQLite contention and any other
+// commit error remain indeterminate.
+func respondTogglePagamentoCommitError(w http.ResponseWriter, r *http.Request, err error) {
+	if requestContextError(err) ||
+		(errors.Is(err, sql.ErrTxDone) && requestContextError(r.Context().Err())) {
+		http.Error(w, "request timeout", http.StatusRequestTimeout)
+		return
+	}
+	respondTogglePagamentoIndeterminateOutcome(w, r)
 }
 
 func respondTogglePagamentoIndeterminateOutcome(w http.ResponseWriter, r *http.Request) {
@@ -11653,13 +11456,6 @@ func (h *TransactionHandler) HandleBulkDelete(w http.ResponseWriter, r *http.Req
 	}
 
 	now := time.Now().Unix()
-	for _, id := range ids {
-		if err := h.reverseActiveConsumesForTransactionTx(tx, id, now); err != nil {
-			http.Error(w, "erro ao ajustar reserva em lote", http.StatusInternalServerError)
-			return
-		}
-	}
-
 	if err := h.deleteTransactionsByIDsTx(tx, ids, now); err != nil {
 		if errors.Is(err, errInvoicePaymentTransactionProtected) {
 			respondInvoicePaymentTransactionProtected(w)
@@ -11685,7 +11481,12 @@ func (h *TransactionHandler) HandleBulkDelete(w http.ResponseWriter, r *http.Req
 		return
 	}
 	committed = true
+	w.Header().Set("HX-Trigger", "refreshFinancials")
 	if err := h.renderLancamentosTableBodyFromRequest(w, r); err != nil {
+		if errors.Is(err, errLancamentosFinancialProjectionUnavailable) {
+			respondLancamentosFinancialUnavailable(w, r)
+			return
+		}
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -11917,7 +11718,12 @@ func (h *TransactionHandler) HandleBulkUpdate(w http.ResponseWriter, r *http.Req
 		return
 	}
 	committed = true
+	w.Header().Set("HX-Trigger", "refreshFinancials")
 	if err := h.renderLancamentosTableBodyFromRequest(w, r); err != nil {
+		if errors.Is(err, errLancamentosFinancialProjectionUnavailable) {
+			respondLancamentosFinancialUnavailable(w, r)
+			return
+		}
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
@@ -12191,6 +11997,8 @@ func (h *TransactionHandler) fetchTransactionRow(id string) (TransactionRow, err
 	}
 	return list[0], nil
 }
+
+var errLancamentosFinancialProjectionUnavailable = errors.New("lancamentos financial projection unavailable")
 
 func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano int, filters LancamentosFilters) (LancamentosData, error) {
 	if err := autoCloseWorkspaceInvoices(h.DB, h.WorkspaceID); err != nil {
@@ -12491,7 +12299,10 @@ func (h *TransactionHandler) buildLancamentosData(accountFilter string, mes, ano
 					}
 					reference := fmt.Sprintf("%04d-%02d", refYear, refMonth)
 
-					total, count := CalculateVirtualInvoiceTotal(h.DB, h.WorkspaceID, card.accountID, reference)
+					total, count, calcErr := CalculateVirtualInvoiceTotal(h.DB, h.WorkspaceID, card.accountID, reference)
+					if calcErr != nil {
+						return LancamentosData{}, fmt.Errorf("%w: %v", errLancamentosFinancialProjectionUnavailable, calcErr)
+					}
 					if total > 0 {
 						var inv InvoiceRow
 						inv.ID = "virtual-" + card.accountID + "-" + reference
@@ -13675,18 +13486,15 @@ func formatDueDateCompact(dueUnix int64) string {
 }
 
 type ModalPickerItem struct {
-	ID                 string
-	Name               string
-	Icon               string
-	Color              string
-	Type               string
-	BoxID              string
-	BoxReservedBalance int64
-	BoxName            string
-	LimitMax           int64
-	LimitSpent         int64
-	ParentID           string
-	ParentName         string
+	ID         string
+	Name       string
+	Icon       string
+	Color      string
+	Type       string
+	LimitMax   int64
+	LimitSpent int64
+	ParentID   string
+	ParentName string
 }
 
 type ModalPickerData struct {
@@ -13731,18 +13539,15 @@ func (h *TransactionHandler) HandleCategorySelector(w http.ResponseWriter, r *ht
 		}
 
 		items = append(items, ModalPickerItem{
-			ID:                 c.ID,
-			Name:               c.Name,
-			Icon:               c.Icon,
-			Color:              c.Color,
-			Type:               c.Type,
-			BoxID:              c.BoxID,
-			BoxReservedBalance: c.BoxReservedBalance,
-			BoxName:            c.BoxName,
-			LimitMax:           c.LimitMax,
-			LimitSpent:         c.LimitSpent,
-			ParentID:           c.ParentID,
-			ParentName:         c.ParentName,
+			ID:         c.ID,
+			Name:       c.Name,
+			Icon:       c.Icon,
+			Color:      c.Color,
+			Type:       c.Type,
+			LimitMax:   c.LimitMax,
+			LimitSpent: c.LimitSpent,
+			ParentID:   c.ParentID,
+			ParentName: c.ParentName,
 		})
 	}
 

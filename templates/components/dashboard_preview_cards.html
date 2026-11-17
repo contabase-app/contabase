@@ -1,0 +1,550 @@
+{{define "dashboard-preview-hero"}}
+<section class="cbp-card cbp-hero{{if not .MonthFilter.IsCurrent}} cbp-focus-card is-focus-muted{{end}}" id="cbp-hero" data-cbp-section="balance" data-cbp-focus-card aria-labelledby="cbp-hero-title">
+        {{if not .MonthFilter.IsCurrent}}
+    <div class="cbp-focus-overlay" data-cbp-focus-overlay>
+        <div class="cbp-focus-note" id="cbp-focus-content-hero-message" role="note">
+            <strong>Posição atual</strong>
+            <p>Este card mostra a posição atual e não corresponde a {{.SelectedMonthLabel}}.</p>
+        </div>
+    </div>
+    <button type="button" class="cbp-focus-control" data-cbp-focus-toggle aria-expanded="false" aria-controls="cbp-focus-content-hero" aria-describedby="cbp-focus-content-hero-message">
+        <span class="sr-only">Saldo total: </span><span data-cbp-focus-toggle-text>Ver dados atuais</span>
+        <i data-lucide="eye" aria-hidden="true"></i>
+    </button>
+    {{end}}
+<div class="cbp-focus-content" id="cbp-focus-content-hero" data-cbp-focus-content{{if not .MonthFilter.IsCurrent}} inert aria-hidden="true"{{end}}>
+    <div class="cbp-card-head">
+        <div>
+            <h2 id="cbp-hero-title">Saldo total</h2>
+            <p>Consolidado de todas as contas</p>
+            {{if not .MonthFilter.IsCurrent}}<span class="cbp-period-badge">Posição atual</span>{{end}}
+        </div>
+        <button type="button" class="cbp-icon-btn" data-privacy-toggle aria-label="Ocultar valores financeiros"><i data-privacy-icon data-lucide="eye" aria-hidden="true"></i></button>
+    </div>
+    <div class="cbp-hero-meta">
+        <span class="cbp-chip {{if eq .Balance.TrendDirection "up"}}is-positive{{else if eq .Balance.TrendDirection "down"}}is-negative{{else}}is-neutral{{end}}">{{if eq .Balance.TrendDirection "up"}}↑{{else if eq .Balance.TrendDirection "down"}}↓{{else}}—{{end}} <span data-sensitive>{{.Balance.TrendPercent}}</span></span>
+        <span>em 30 dias</span>
+        <button type="button" class="cbp-info-btn" data-f1-info-button aria-expanded="false" aria-controls="cbp-info-real" aria-label="Explicação sobre o saldo total"><i data-lucide="info" aria-hidden="true"></i></button>
+    </div>
+    <p class="cbp-hero-value{{if .Balance.IsNegative}} is-negative{{end}}">{{if .Balance.RealBalanceAvailable}}<span data-sensitive>R$ {{.Balance.Money.Reais}}{{.Balance.Money.Cents}}</span>{{else}}Indisponível{{end}}</p>
+    <div class="cbp-info-panel" id="cbp-info-real" data-f1-info-panel role="note" hidden>
+        <p>Soma do saldo de todas as suas contas. Pode incluir investimentos, que nem sempre podem ser usados na hora.</p>
+        <p>O Saldo Total não é o mesmo que dinheiro disponível para gastar. Investimentos podem ter prazo para resgate.</p>
+    </div>
+    <div class="cbp-invested{{if .BalanceComposition.Available}} cbp-composition{{end}}">
+        <div class="cbp-invested-head">
+            <span>{{if .BalanceComposition.Available}}Composição do saldo{{else}}Investido{{end}}</span>
+            <button type="button" class="cbp-info-btn" data-f1-info-button aria-expanded="false" aria-controls="cbp-info-invested" aria-label="Entenda a composição do saldo"><i data-lucide="info" aria-hidden="true"></i></button>
+        </div>
+        {{if .BalanceComposition.Available}}
+        <div class="cbp-composition-bar" data-sensitive role="img" aria-label="{{.BalanceComposition.AriaLabel}}">
+            <svg viewBox="0 0 100 10" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                <rect class="cbp-composition-track" x="0" y="0" width="100" height="10"></rect>
+                <rect class="cbp-composition-invested" x="0" y="0" width="{{.BalanceComposition.InvestedBarPercent}}" height="10"></rect>
+                {{if gt .BalanceComposition.OtherBarPercent 0}}<rect class="cbp-composition-other" x="{{.BalanceComposition.InvestedBarPercent}}" y="0" width="{{.BalanceComposition.OtherBarPercent}}" height="10"></rect>{{end}}
+            </svg>
+        </div>
+        <div class="cbp-composition-legend">
+            <div class="cbp-composition-row">
+                <span class="cbp-composition-dot is-invested" aria-hidden="true"></span>
+                <span>Investimentos</span>
+                <strong data-sensitive>R$ {{.BalanceComposition.Invested.Reais}}{{.BalanceComposition.Invested.Cents}}</strong>
+                <small data-sensitive>{{.BalanceComposition.InvestedShareLabel}}</small>
+            </div>
+            <div class="cbp-composition-row">
+                <span class="cbp-composition-dot is-other" aria-hidden="true"></span>
+                <span>Demais contas</span>
+                <strong data-sensitive>R$ {{.BalanceComposition.Other.Reais}}{{.BalanceComposition.Other.Cents}}</strong>
+                <small data-sensitive>{{.BalanceComposition.OtherShareLabel}}</small>
+            </div>
+        </div>
+        <p class="cbp-composition-note">Valores já incluídos no Saldo total, sem soma duplicada.</p>
+        <div class="cbp-info-panel" id="cbp-info-invested" data-f1-info-panel role="note" hidden>
+            <p>A composição usa as mesmas contas ativas que formam o Saldo total. Investimentos são um subconjunto e não são somados novamente.</p>
+            <p>A posição aplicada conhecida é independente do saldo financeiro e aparece na página de investimentos quando o módulo está habilitado.</p>
+        </div>
+        {{else}}
+        {{if .Invested.Available}}
+        <div class="cbp-invested-value"><strong data-sensitive>R$ {{.Invested.Money.Reais}}{{.Invested.Money.Cents}}</strong><small>{{.Invested.Note}}</small></div>
+        {{else}}
+        <div class="cbp-invested-value"><strong class="is-muted">Indisponível</strong><small>{{.Invested.Note}}</small></div>
+        {{end}}
+        <div class="cbp-info-panel" id="cbp-info-invested" data-f1-info-panel role="note" hidden>
+            <p>Soma dos saldos das contas do tipo investimento. Esses valores já estão incluídos no Saldo Total e não são somados novamente.</p>
+            <p>A posição aplicada conhecida é independente do saldo financeiro e aparece na página de investimentos quando o módulo está habilitado.</p>
+        </div>
+        {{end}}
+    </div>
+    </div>
+</section>
+{{end}}
+
+{{define "dashboard-preview-cashflow"}}
+<section class="cbp-card cbp-cashflow{{if not .MonthFilter.IsCurrent}} cbp-focus-card is-focus-muted{{end}}" id="cbp-flow-card" data-cbp-section="cashflow" data-cbp-flow-root data-cbp-focus-card aria-labelledby="cbp-flow-title">
+        {{if not .MonthFilter.IsCurrent}}
+    <div class="cbp-focus-overlay" data-cbp-focus-overlay>
+        <div class="cbp-focus-note" id="cbp-focus-content-flow-message" role="note">
+            <strong>Janela própria</strong>
+            <p>Este gráfico cobre o histórico de 6 ou 12 meses e não corresponde a {{.SelectedMonthLabel}}.</p>
+        </div>
+    </div>
+    <button type="button" class="cbp-focus-control" data-cbp-focus-toggle aria-expanded="false" aria-controls="cbp-focus-content-flow" aria-describedby="cbp-focus-content-flow-message">
+        <span class="sr-only">Fluxo de caixa: </span><span data-cbp-focus-toggle-text>Ver dados atuais</span>
+        <i data-lucide="eye" aria-hidden="true"></i>
+    </button>
+    {{end}}
+<div class="cbp-focus-content" id="cbp-focus-content-flow" data-cbp-focus-content{{if not .MonthFilter.IsCurrent}} inert aria-hidden="true"{{end}}>
+    <div class="cbp-card-head">
+        <div>
+            <h2 id="cbp-flow-title">Fluxo de caixa</h2>
+            <p>{{.CashFlow.RangeLabel}} · histórico realizado por data de pagamento</p>
+            {{if not .MonthFilter.IsCurrent}}<span class="cbp-period-badge is-own-window">Janela própria</span>{{end}}
+        </div>
+        <div class="cbp-seg" role="group" aria-label="Período do fluxo de caixa">
+            {{range .CashFlow.RangeOptions}}
+            <a class="cbp-seg-option{{if .Active}} is-active{{end}}" href="{{.Href}}"{{if .Active}} aria-current="true"{{end}} hx-get="{{.Href}}" hx-target="#cbp-flow-card" hx-select="#cbp-flow-card" hx-swap="outerHTML" hx-push-url="true">{{.Label}}</a>
+            {{end}}
+        </div>
+    </div>
+    {{if .CashFlow.Available}}
+    {{if .CashFlow.HasData}}
+    <div class="cbp-flow-legend">
+        <span><i class="cbp-dot is-income" aria-hidden="true"></i>Entradas <b class="is-income" data-sensitive>R$ {{.CashFlow.OperationalIncome.Reais}}{{.CashFlow.OperationalIncome.Cents}}</b></span>
+        {{if .CashFlow.HasAdjustments}}<span><i class="cbp-dot is-adjustment" aria-hidden="true"></i>Ajustes de caixa <b class="is-adjustment" data-sensitive>R$ {{.CashFlow.AdjustmentIncome.Reais}}{{.CashFlow.AdjustmentIncome.Cents}}</b></span>{{end}}
+        <span><i class="cbp-dot is-expense" aria-hidden="true"></i>Saídas <b class="is-expense" data-sensitive>R$ {{.CashFlow.TotalExpense.Reais}}{{.CashFlow.TotalExpense.Cents}}</b></span>
+        <span class="cbp-flow-net">{{.CashFlow.NetLabel}} <b class="{{.CashFlow.NetToneClass}}" data-sensitive>R$ {{.CashFlow.Net.Reais}}{{.CashFlow.Net.Cents}}</b></span>
+    </div>
+    <div class="cbp-flow-panel" id="cbp-flow-panel" data-cbp-flow-panel>
+        <div class="cbp-flow-plot" data-cbp-flow-plot data-sensitive role="group" aria-label="Gráfico de fluxo de caixa realizado por mês. Use as setas para percorrer os meses ou consulte a tabela de valores.">
+            <svg class="cbp-flow-svg" viewBox="0 0 {{.CashFlow.ChartWidth}} {{.CashFlow.ChartHeight}}" preserveAspectRatio="xMidYMid meet" role="group" aria-label="Fluxo de caixa mensal">
+                <g class="cbp-flow-grid" aria-hidden="true">
+                    {{range .CashFlow.GridLines}}
+                    <line x1="{{$.CashFlow.PlotLeft}}" y1="{{.Y}}" x2="{{$.CashFlow.PlotRight}}" y2="{{.Y}}"></line>
+                    <text class="cbp-flow-axis-label" x="{{$.CashFlow.PlotLeft}}" y="{{.Y}}" text-anchor="end" dominant-baseline="middle">{{.Label}}</text>
+                    {{end}}
+                </g>
+                <line class="cbp-flow-baseline" x1="{{.CashFlow.PlotLeft}}" y1="{{.CashFlow.BaselineY}}" x2="{{.CashFlow.PlotRight}}" y2="{{.CashFlow.BaselineY}}" aria-hidden="true"></line>
+                {{range $index, $month := .CashFlow.Months}}
+                <g class="cbp-flow-group" data-flow-index="{{$index}}" data-flow-label="{{$month.FullLabel}}" data-flow-income="R$ {{$month.Income.Reais}}{{$month.Income.Cents}}" data-flow-expense="R$ {{$month.Expense.Reais}}{{$month.Expense.Cents}}" data-flow-net="R$ {{$month.Net.Reais}}{{$month.Net.Cents}}" data-flow-net-label="{{$month.NetLabel}}" data-flow-net-tone="{{$month.NetToneClass}}"{{if $month.IsCurrent}} data-flow-current="true"{{end}} tabindex="0" role="group" aria-label="{{$month.FullLabel}}{{if $month.IsCurrent}}, mês atual{{end}}: entradas R$ {{$month.Income.Reais}}{{$month.Income.Cents}}, saídas R$ {{$month.Expense.Reais}}{{$month.Expense.Cents}}, {{$month.NetLabel}} R$ {{$month.Net.Reais}}{{$month.Net.Cents}}">
+                    {{if $month.IsCurrent}}<rect class="cbp-flow-current-band" x="{{$month.HitX}}" y="{{$month.HitY}}" width="{{$month.HitW}}" height="{{$month.HitH}}" rx="8" aria-hidden="true"></rect>{{end}}
+                    <rect class="cbp-flow-hit" x="{{$month.HitX}}" y="{{$month.HitY}}" width="{{$month.HitW}}" height="{{$month.HitH}}" rx="10" fill="transparent"></rect>
+                    <rect class="cbp-flow-bar is-income" x="{{$month.IncomeX}}" y="{{$month.IncomeY}}" width="{{$month.IncomeW}}" height="{{$month.IncomeH}}" rx="3" aria-hidden="true" pointer-events="none"></rect>
+                    <rect class="cbp-flow-bar is-expense" x="{{$month.ExpenseX}}" y="{{$month.ExpenseY}}" width="{{$month.ExpenseW}}" height="{{$month.ExpenseH}}" rx="3" aria-hidden="true" pointer-events="none"></rect>
+                    <text class="cbp-flow-month{{if $month.IsCurrent}} is-current{{end}}" x="{{$month.LabelX}}" y="{{$month.LabelY}}" text-anchor="middle" aria-hidden="true" pointer-events="none">{{$month.Label}}</text>
+                </g>
+                {{end}}
+            </svg>
+            <div class="cbp-flow-tooltip" data-flow-tooltip role="status" aria-live="polite" hidden>
+                <p class="cbp-flow-tooltip-month" data-flow-tooltip-label></p>
+                <p class="cbp-flow-tooltip-row is-income"><span>Entradas</span><b data-flow-tooltip-income></b></p>
+                <p class="cbp-flow-tooltip-row is-expense"><span>Saídas</span><b data-flow-tooltip-expense></b></p>
+                <p class="cbp-flow-tooltip-net"><span data-flow-tooltip-net-label>Resultado do período</span><b data-flow-tooltip-net></b></p>
+            </div>
+        </div>
+        <p class="cbp-note">Escala até <span data-sensitive>{{.CashFlow.MaxLabel}}</span>. Transferências e compras individuais no cartão não entram; pagamentos de fatura entram como saída.</p>
+        <details class="cbp-flow-table">
+            <summary>Ver valores do período</summary>
+            <div class="cbp-table-scroll">
+                <table>
+                    <thead><tr><th scope="col">Mês</th><th scope="col">Entradas</th><th scope="col">Saídas</th><th scope="col">Resultado</th></tr></thead>
+                    <tbody>
+                        {{range .CashFlow.Months}}
+                        <tr><th scope="row">{{.FullLabel}}</th><td data-sensitive>R$ {{.Income.Reais}}{{.Income.Cents}}</td><td data-sensitive>R$ {{.Expense.Reais}}{{.Expense.Cents}}</td><td class="{{.NetToneClass}}" data-sensitive>R$ {{.Net.Reais}}{{.Net.Cents}}</td></tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    </div>
+    <button type="button" class="cbp-flow-toggle" data-cbp-flow-toggle aria-expanded="false" aria-controls="cbp-flow-panel">
+        <span data-cbp-flow-toggle-text>Ver gráfico</span>
+        <i class="cbp-flow-toggle-icon is-expand" data-lucide="chevron-down" aria-hidden="true"></i>
+        <i class="cbp-flow-toggle-icon is-collapse" data-lucide="chevron-up" aria-hidden="true"></i>
+    </button>
+    {{else}}
+    <div class="cbp-empty"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i><p>Nenhuma movimentação realizada no período.</p><a href="/lancamentos">Ver lançamentos</a></div>
+    {{end}}
+    {{else}}
+    <div class="cbp-empty"><i data-lucide="triangle-alert" aria-hidden="true"></i><p>Não foi possível montar o fluxo de caixa agora.</p><a href="{{.CashFlow.RetryHref}}">Tentar novamente</a></div>
+    {{end}}
+    </div>
+</section>
+{{end}}
+
+{{define "dashboard-preview-accounts"}}
+<section class="cbp-card cbp-accounts{{if not .MonthFilter.IsCurrent}} cbp-focus-card is-focus-muted{{end}}" id="cbp-accounts" data-cbp-section="accounts" data-cbp-focus-card aria-labelledby="cbp-accounts-title">
+        {{if not .MonthFilter.IsCurrent}}
+    <div class="cbp-focus-overlay" data-cbp-focus-overlay>
+        <div class="cbp-focus-note" id="cbp-focus-content-accounts-message" role="note">
+            <strong>Posição atual</strong>
+            <p>Este card mostra a posição atual das contas e não corresponde a {{.SelectedMonthLabel}}.</p>
+        </div>
+    </div>
+    <button type="button" class="cbp-focus-control" data-cbp-focus-toggle aria-expanded="false" aria-controls="cbp-focus-content-accounts" aria-describedby="cbp-focus-content-accounts-message">
+        <span class="sr-only">Suas contas: </span><span data-cbp-focus-toggle-text>Ver dados atuais</span>
+        <i data-lucide="eye" aria-hidden="true"></i>
+    </button>
+    {{end}}
+<div class="cbp-focus-content" id="cbp-focus-content-accounts" data-cbp-focus-content{{if not .MonthFilter.IsCurrent}} inert aria-hidden="true"{{end}}>
+    <div class="cbp-card-head">
+        <div><h2 id="cbp-accounts-title">Suas contas</h2><p>{{len .PreviewAccounts}} contas · saldos por instituição</p>{{if not .MonthFilter.IsCurrent}}<span class="cbp-period-badge">Posição atual</span>{{end}}</div>
+        <a class="cbp-link" href="/lancamentos">Extrato</a>
+    </div>
+    {{if .PreviewAccounts}}
+    <ul class="cbp-account-list">
+        {{range $index, $account := .PreviewAccounts}}
+        {{if lt $index 6}}
+        <li>
+            <a class="cbp-account-row" href="/lancamentos?conta={{$account.ID}}">
+                <span class="cbp-account-avatar {{$account.ToneClass}}">
+                    {{if $account.ProviderLogoPath}}<img src="{{assetPath $account.ProviderLogoPath}}" alt="" width="28" height="28" data-avatar-fallback><span class="hidden" data-avatar-text>{{$account.ProviderMark}}</span>{{else if $account.ProviderMark}}{{$account.ProviderMark}}{{else}}CB{{end}}
+                </span>
+                <span class="cbp-account-copy"><strong>{{$account.Name}}</strong><small>{{$account.TypeLabel}}</small></span>
+                <span class="cbp-account-value">
+                    {{if $account.InvestmentPatrimony}}<small>Saldo financeiro</small>{{end}}
+                    <strong data-sensitive>R$ {{$account.Money.Reais}}{{$account.Money.Cents}}</strong>
+                    <em class="{{if eq $account.TrendDirection "up"}}is-positive{{else if eq $account.TrendDirection "down"}}is-negative{{else}}is-neutral{{end}}" data-sensitive>{{if eq $account.TrendDirection "up"}}↑{{else if eq $account.TrendDirection "down"}}↓{{else}}—{{end}} {{$account.TrendPercent}}</em>
+                </span>
+            </a>
+        </li>
+        {{end}}
+        {{end}}
+    </ul>
+    {{if gt (len .PreviewAccounts) 6}}
+    <details class="cbp-more">
+        <summary>Ver todas as {{len .PreviewAccounts}} contas</summary>
+        <ul class="cbp-account-list">
+            {{range $index, $account := .PreviewAccounts}}
+            {{if ge $index 6}}
+            <li>
+                <a class="cbp-account-row" href="/lancamentos?conta={{$account.ID}}">
+                    <span class="cbp-account-avatar {{$account.ToneClass}}">
+                        {{if $account.ProviderLogoPath}}<img src="{{assetPath $account.ProviderLogoPath}}" alt="" width="28" height="28" data-avatar-fallback><span class="hidden" data-avatar-text>{{$account.ProviderMark}}</span>{{else if $account.ProviderMark}}{{$account.ProviderMark}}{{else}}CB{{end}}
+                    </span>
+                    <span class="cbp-account-copy"><strong>{{$account.Name}}</strong><small>{{$account.TypeLabel}}</small></span>
+                    <span class="cbp-account-value"><strong data-sensitive>R$ {{$account.Money.Reais}}{{$account.Money.Cents}}</strong><em class="{{if eq $account.TrendDirection "up"}}is-positive{{else if eq $account.TrendDirection "down"}}is-negative{{else}}is-neutral{{end}}" data-sensitive>{{if eq $account.TrendDirection "up"}}↑{{else if eq $account.TrendDirection "down"}}↓{{else}}—{{end}} {{$account.TrendPercent}}</em></span>
+                </a>
+            </li>
+            {{end}}
+            {{end}}
+        </ul>
+    </details>
+    {{end}}
+    {{else}}
+    <div class="cbp-empty"><i data-lucide="landmark" aria-hidden="true"></i><p>Nenhuma conta cadastrada.</p><a href="/configuracoes/contas">Cadastrar conta</a></div>
+    {{end}}
+    </div>
+</section>
+{{end}}
+
+{{define "dashboard-preview-commitments"}}
+<section class="cbp-card cbp-commitments{{if not .MonthFilter.IsCurrent}} cbp-focus-card is-focus-muted{{end}}" id="cbp-commitments" data-cbp-section="commitments" data-v2-action-tabs data-cbp-focus-card aria-labelledby="cbp-commitments-title">
+        {{if not .MonthFilter.IsCurrent}}
+    <div class="cbp-focus-overlay" data-cbp-focus-overlay>
+        <div class="cbp-focus-note" id="cbp-focus-content-commitments-message" role="note">
+            <strong>Janela atual</strong>
+            <p>Estes vencimentos usam uma janela futura própria e não correspondem a {{.SelectedMonthLabel}}.</p>
+        </div>
+    </div>
+    <button type="button" class="cbp-focus-control" data-cbp-focus-toggle aria-expanded="false" aria-controls="cbp-focus-content-commitments" aria-describedby="cbp-focus-content-commitments-message">
+        <span class="sr-only">Próximos compromissos: </span><span data-cbp-focus-toggle-text>Ver dados atuais</span>
+        <i data-lucide="eye" aria-hidden="true"></i>
+    </button>
+    {{end}}
+<div class="cbp-focus-content" id="cbp-focus-content-commitments" data-cbp-focus-content{{if not .MonthFilter.IsCurrent}} inert aria-hidden="true"{{end}}>
+    <div class="cbp-card-head">
+        <div><h2 id="cbp-commitments-title">Próximos compromissos</h2><p>Próximos 7 dias + atrasados</p>{{if not .MonthFilter.IsCurrent}}<span class="cbp-period-badge is-own-window">Janela atual</span>{{end}}</div>
+        <a class="cbp-link" href="/contas">Ver todos</a>
+    </div>
+    <div class="cbp-tabs" role="tablist" aria-label="Próximos compromissos">
+        <button type="button" id="cbp-tab-payables" role="tab" aria-selected="true" aria-controls="cbp-panel-payables" data-v2-action-tab="payables">A pagar <span>{{.Payable7dCount}}</span></button>
+        <button type="button" id="cbp-tab-receivables" role="tab" aria-selected="false" aria-controls="cbp-panel-receivables" data-v2-action-tab="receivables" tabindex="-1">A receber <span>{{.Receivable7dCount}}</span></button>
+    </div>
+    <div id="cbp-panel-payables" role="tabpanel" aria-labelledby="cbp-tab-payables" data-v2-action-panel="payables">
+        {{if .PendingPayables}}
+        <div class="cbp-commitment-summary is-payable">
+            <span class="cbp-commitment-summary-label">Total a pagar</span>
+            <strong data-sensitive>R$ {{.Payable7dTotal.Reais}}{{.Payable7dTotal.Cents}}</strong>
+            <span class="cbp-commitment-summary-count">{{.Payable7dCount}} {{if eq .Payable7dCount 1}}item{{else}}itens{{end}}</span>
+        </div>
+        <ul class="cbp-commitment-list">
+            {{range .PendingPayables}}
+            <li>
+                <a class="cbp-commitment-row" href="/contas">
+                    <span class="cbp-date-chip">{{if .DueDateShort}}<b>{{slice .DueDateShort 0 2}}</b><span>{{slice .DueDateShort 3 5}}</span>{{else}}<b>—</b><span>data</span>{{end}}</span>
+                    <span class="cbp-commitment-copy"><strong>{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</strong><small><span class="cbp-chip {{if .IsOverdue}}is-negative{{else}}is-neutral{{end}}">{{if .IsOverdue}}Vencido{{else}}{{.StatusLabel}}{{end}}</span><span>{{.DueDateLabel}}</span></small></span>
+                    <b class="cbp-commitment-amount" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</b>
+                </a>
+            </li>
+            {{end}}
+        </ul>
+        {{if gt .Payable7dCount (len .PendingPayables)}}<p class="cbp-commitment-cap">Mostrando os {{len .PendingPayables}} primeiros de {{.Payable7dCount}}.</p>{{end}}
+        {{else}}
+        <div class="cbp-empty"><i data-lucide="circle-check" aria-hidden="true"></i><p>Nenhuma conta a pagar no curto prazo.</p></div>
+        {{end}}
+    </div>
+    <div id="cbp-panel-receivables" role="tabpanel" aria-labelledby="cbp-tab-receivables" data-v2-action-panel="receivables" hidden>
+        {{if .PendingReceivables}}
+        <div class="cbp-commitment-summary is-receivable">
+            <span class="cbp-commitment-summary-label">Total a receber</span>
+            <strong data-sensitive>R$ {{.Receivable7dTotal.Reais}}{{.Receivable7dTotal.Cents}}</strong>
+            <span class="cbp-commitment-summary-count">{{.Receivable7dCount}} {{if eq .Receivable7dCount 1}}item{{else}}itens{{end}}</span>
+        </div>
+        <ul class="cbp-commitment-list">
+            {{range .PendingReceivables}}
+            <li>
+                <a class="cbp-commitment-row" href="/contas">
+                    <span class="cbp-date-chip">{{if .DueDateShort}}<b>{{slice .DueDateShort 0 2}}</b><span>{{slice .DueDateShort 3 5}}</span>{{else}}<b>—</b><span>data</span>{{end}}</span>
+                    <span class="cbp-commitment-copy"><strong>{{if .Description}}{{.Description}}{{else}}Sem descrição{{end}}</strong><small><span class="cbp-chip {{if .IsOverdue}}is-negative{{else}}is-positive{{end}}">{{if .IsOverdue}}Vencido{{else}}{{.StatusLabel}}{{end}}</span><span>{{.DueDateLabel}}</span></small></span>
+                    <b class="cbp-commitment-amount is-positive" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</b>
+                </a>
+            </li>
+            {{end}}
+        </ul>
+        {{if gt .Receivable7dCount (len .PendingReceivables)}}<p class="cbp-commitment-cap">Mostrando os {{len .PendingReceivables}} primeiros de {{.Receivable7dCount}}.</p>{{end}}
+        {{else}}
+        <div class="cbp-empty"><i data-lucide="circle-check" aria-hidden="true"></i><p>Nenhum recebimento no curto prazo.</p></div>
+        {{end}}
+    </div>
+    </div>
+</section>
+{{end}}
+
+{{define "dashboard-preview-cards"}}
+<section class="cbp-card cbp-cards{{if and (not .MonthFilter.IsCurrent) (not .CardsPeriodAware)}} cbp-focus-card is-focus-muted{{end}}" id="cbp-cards" data-cbp-section="cards" data-cbp-focus-card aria-labelledby="cbp-cards-title">
+        {{if and (not .MonthFilter.IsCurrent) (not .CardsPeriodAware)}}
+    <div class="cbp-focus-overlay" data-cbp-focus-overlay>
+        <div class="cbp-focus-note" id="cbp-focus-content-cards-message" role="note">
+            <strong>Posição atual</strong>
+            <p>Estes cartões mostram a posição atual e não correspondem a {{.SelectedMonthLabel}}.</p>
+        </div>
+    </div>
+    <button type="button" class="cbp-focus-control" data-cbp-focus-toggle aria-expanded="false" aria-controls="cbp-focus-content-cards" aria-describedby="cbp-focus-content-cards-message">
+        <span class="sr-only">Cartões de crédito: </span><span data-cbp-focus-toggle-text>Ver dados atuais</span>
+        <i data-lucide="eye" aria-hidden="true"></i>
+    </button>
+    {{end}}
+<div class="cbp-focus-content" id="cbp-focus-content-cards" data-cbp-focus-content{{if and (not .MonthFilter.IsCurrent) (not .CardsPeriodAware)}} inert aria-hidden="true"{{end}}>
+    <div class="cbp-card-head">
+        <div><h2 id="cbp-cards-title">Cartões de crédito</h2>{{if .CardsPeriodAware}}<p>Faturas da competência · {{.SelectedMonthLabel}}</p><span class="cbp-period-badge is-selected">{{.SelectedMonthLabel}}</span>{{else}}<p>Faturas, vencimentos e limite disponível</p>{{if not .MonthFilter.IsCurrent}}<span class="cbp-period-badge">Posição atual</span>{{end}}{{end}}</div>
+        <a class="cbp-link" href="/faturas">Ver faturas</a>
+    </div>
+    {{if .PreviewCards}}
+    <div class="cbp-card-rail" data-v2-carousel data-card-count="{{len .PreviewCards}}" role="group" aria-label="Cartões de crédito">
+        {{range $index, $card := .PreviewCards}}
+        {{template "credit-card-tile" $card}}
+        {{end}}
+        {{if .CanManageOps}}
+        <a class="cb-v2-credit-card cbp-credit-card cbp-credit-card--add" data-wallet-add-card href="/configuracoes/cartoes" aria-label="Adicionar cartão">
+            <span class="cbp-cc-add-icon" aria-hidden="true"><i data-lucide="plus"></i></span>
+            <span class="cbp-cc-add-copy">
+                <strong>Adicionar cartão</strong>
+                <span>Cadastre um novo cartão</span>
+            </span>
+        </a>
+        {{end}}
+    </div>
+    <div class="cbp-carousel-nav">
+        <p data-wallet-position aria-live="polite">Cartão 1 de {{len .PreviewCards}}</p>
+        <div><button type="button" class="cbp-icon-btn" data-v2-carousel-prev aria-label="Cartão anterior"><i data-lucide="chevron-left" aria-hidden="true"></i></button><button type="button" class="cbp-icon-btn" data-v2-carousel-next aria-label="Próximo cartão"><i data-lucide="chevron-right" aria-hidden="true"></i></button></div>
+    </div>
+    {{else if .CanManageOps}}
+    <div class="cbp-card-rail" data-v2-carousel data-card-count="0" role="group" aria-label="Cartões de crédito">
+        <a class="cb-v2-credit-card cbp-credit-card cbp-credit-card--add" data-wallet-add-card href="/configuracoes/cartoes" aria-label="Adicionar cartão">
+            <span class="cbp-cc-add-icon" aria-hidden="true"><i data-lucide="plus"></i></span>
+            <span class="cbp-cc-add-copy">
+                <strong>Adicionar cartão</strong>
+                <span>Cadastre um novo cartão</span>
+            </span>
+        </a>
+    </div>
+    {{else}}
+    <a class="cbp-empty cbp-empty--link" href="/configuracoes/cartoes"><i data-lucide="credit-card" aria-hidden="true"></i><p>Cadastre seu primeiro cartão.</p><span>Acompanhe faturas, vencimentos e limite disponível.</span></a>
+    {{end}}
+    </div>
+</section>
+{{end}}
+
+{{define "dashboard-preview-categories"}}
+<section class="cbp-card cbp-categories" id="cbp-categories" data-cbp-section="categories" aria-labelledby="cbp-categories-title">
+    <div class="cbp-card-head">
+        <div><h2 id="cbp-categories-title">Gastos por categoria</h2><p>{{.Categories.CurrentLabel}}</p><span class="cbp-period-badge is-selected">{{.SelectedMonthLabel}}</span></div>
+        <a class="cbp-link" href="/relatorios">Detalhar</a>
+    </div>
+    {{if .CategoryBreakdown}}
+    <div class="cbp-category-list{{if le (len .CategoryBreakdown) 2}} is-sparse{{end}}" role="list" aria-label="Gastos por categoria">
+        {{range .CategoryBreakdown}}
+        <div class="cbp-category-bar-row {{.ColorClass}}" role="listitem">
+            <div class="cbp-category-bar-head">
+                <span class="cbp-category-icon" aria-hidden="true"><i data-lucide="{{.Icon}}"></i></span>
+                <strong>{{.Name}}</strong>
+                <span class="cbp-category-amount" data-sensitive>R$ {{.Amount.Reais}}{{.Amount.Cents}}</span>
+                <small data-sensitive>{{.ShareLabel}}<span class="sr-only"> do total</span></small>
+            </div>
+            <progress class="cbp-category-progress" value="{{.BarPercent}}" max="100" aria-label="{{.Name}}: {{.ShareLabel}} do total de gastos">{{.ShareLabel}}</progress>
+        </div>
+        {{end}}
+    </div>
+    <p class="cbp-note">Competência do mês, incluindo pendentes.</p>
+    {{else}}
+    <div class="cbp-empty"><i data-lucide="chart-pie" aria-hidden="true"></i><p>Nenhuma despesa registrada neste período.</p><a href="/relatorios">Ver relatórios</a></div>
+    {{end}}
+</section>
+{{end}}
+
+{{define "dashboard-preview-financial"}}
+<section class="cbp-card cbp-finance" id="cbp-finance" data-cbp-section="finance" aria-labelledby="cbp-finance-title">
+    <div class="cbp-card-head">
+        <div>
+            <h2 id="cbp-finance-title">Visão financeira</h2>
+            <p>Entradas, saídas e compromissos registrados.</p>
+        </div>
+        <button type="button" class="cbp-info-btn" data-f1-info-button aria-expanded="false" aria-controls="cbp-info-finance" aria-label="Entenda a visão financeira"><i data-lucide="info" aria-hidden="true"></i></button>
+    </div>
+    <div class="cbp-info-panel" id="cbp-info-finance" data-f1-info-panel role="note" hidden>
+        <p>Realizado: dinheiro que já entrou ou saiu. Pendente: compromissos registrados e ainda não liquidados. Projetado: resultado se os compromissos considerados forem liquidados.</p>
+        <p>Projeção não é saldo disponível, lucro, meta ou garantia de fechamento.</p>
+    </div>
+    {{if .Financial.Error}}
+    <div class="cbp-finance-empty is-error" role="status">
+        <i data-lucide="cloud-off" aria-hidden="true"></i>
+        <strong>Projeção indisponível</strong>
+        <p>{{.Financial.ErrorMessage}}</p>
+    </div>
+    {{else}}
+    <div class="cbp-finance-tabs" role="tablist" aria-label="Meses da visão financeira" data-cbp-finance-tabs>
+        {{range $index, $month := .Financial.Months}}
+        <button type="button" class="cbp-finance-tab{{if eq $index 0}} is-active{{end}}" id="cbp-finance-tab-{{$month.Key}}" role="tab" aria-selected="{{if eq $index 0}}true{{else}}false{{end}}" aria-controls="cbp-finance-panel-{{$month.Key}}" aria-label="{{if $month.TabAriaLabel}}{{$month.TabAriaLabel}}{{else}}{{$month.Label}}{{end}}" tabindex="{{if eq $index 0}}0{{else}}-1{{end}}" data-cbp-finance-tab>
+            <span>{{if $month.TabLabel}}{{$month.TabLabel}}{{else}}{{$month.Label}}{{end}}</span>
+        </button>
+        {{end}}
+    </div>
+    {{range $index, $month := .Financial.Months}}
+    <div class="cbp-finance-panel" id="cbp-finance-panel-{{$month.Key}}" role="tabpanel" aria-labelledby="cbp-finance-tab-{{$month.Key}}" data-cbp-finance-panel{{if ne $index 0}} hidden{{end}}>
+        <div class="cbp-finance-panel-head">
+            <span class="cbp-finance-active-month">{{$month.Label}}</span>
+            <span class="cbp-state-badge {{$month.StateClass}}">{{$month.StateLabel}}</span>
+        </div>
+        {{if $month.IsPast}}<p class="cbp-finance-status-note">Histórico: somente valores realizados.</p>
+        {{else if $month.StateReason}}<p class="cbp-finance-status-note">{{$month.StateReason}}</p>{{end}}
+        <div class="cbp-finance-blocks{{if $month.IsPast}} is-single{{end}}">
+            <div class="cbp-finance-block is-realized" role="group" aria-label="Realizado">
+                <div class="cbp-finance-block-head">
+                    <span class="cbp-finance-block-title">Realizado</span>
+                    <span class="cbp-finance-block-sub">Movimentação do mês.</span>
+                </div>
+                <dl class="cbp-finance-metrics">
+                    <div class="cbp-finance-metric is-income">
+                        <dt class="cbp-finance-label">Entradas</dt>
+                        <dd><strong class="is-positive" data-sensitive>R$ {{$month.RealizedIncome.Reais}}{{$month.RealizedIncome.Cents}}</strong></dd>
+                    </div>
+                    <div class="cbp-finance-metric is-expense">
+                        <dt class="cbp-finance-label">Saídas</dt>
+                        <dd><strong class="is-negative" data-sensitive>R$ {{$month.RealizedExpense.Reais}}{{$month.RealizedExpense.Cents}}</strong></dd>
+                    </div>
+                    {{if $month.HasAdjustments}}
+                    <div class="cbp-finance-metric is-adjustment">
+                        <dt class="cbp-finance-label"><span>Ajustes de caixa</span><small>reversões de pagamento, fora da receita operacional</small></dt>
+                        <dd><strong data-sensitive>R$ {{$month.AdjustmentIncome.Reais}}{{$month.AdjustmentIncome.Cents}}</strong></dd>
+                    </div>
+                    {{end}}
+                </dl>
+                <div class="cbp-finance-result">
+                    <span>Resultado realizado</span>
+                    <strong class="{{$month.RealizedToneClass}}" data-sensitive>R$ {{$month.RealizedNet.Reais}}{{$month.RealizedNet.Cents}}</strong>
+                </div>
+            </div>
+            {{if not $month.IsPast}}
+            <div class="cbp-finance-block is-projected" role="group" aria-label="Projetado">
+                <div class="cbp-finance-block-head">
+                    <span class="cbp-finance-block-title">Projetado</span>
+                    <span class="cbp-finance-block-sub">Compromissos registrados.</span>
+                </div>
+                {{if $month.HasPendingItems}}
+                <dl class="cbp-finance-metrics">
+                    <div class="cbp-finance-metric is-pending is-income">
+                        <dt class="cbp-finance-label">A receber</dt>
+                        <dd><strong data-sensitive>R$ {{$month.PendingIncome.Reais}}{{$month.PendingIncome.Cents}}</strong></dd>
+                    </div>
+                    <div class="cbp-finance-metric is-pending is-expense">
+                        <dt class="cbp-finance-label">A pagar</dt>
+                        <dd><strong data-sensitive>R$ {{$month.PendingExpense.Reais}}{{$month.PendingExpense.Cents}}</strong></dd>
+                    </div>
+                </dl>
+                {{end}}
+                <div class="cbp-finance-result">
+                    <span>{{$month.ProjectedLabel}}</span>
+                    {{if $month.ProjectedAvailable}}<strong class="{{$month.ProjectedToneClass}}" data-sensitive>R$ {{$month.ProjectedNet.Reais}}{{$month.ProjectedNet.Cents}}</strong>
+                    {{else}}<span class="cbp-finance-na">Indisponível</span>{{end}}
+                </div>
+            </div>
+            {{end}}
+        </div>
+        {{if and $month.PendingAvailable (not $month.HasPendingItems)}}<p class="cbp-finance-note">{{if $month.NoPendingRegistered}}Nenhum compromisso pendente registrado. A projeção não presume compromissos futuros.{{else}}Não há pendentes datados neste mês; há compromissos sem vencimento fora do total mensal.{{end}}</p>{{end}}
+    </div>
+    {{end}}
+    {{$overdueVisible := and .Financial.Overdue.Available .Financial.Overdue.HasRegistered}}
+    {{$undatedVisible := or .Financial.Undated.HasRegistered (gt .Financial.ObligationsWithoutDateCount 0)}}
+    {{if or $overdueVisible $undatedVisible .Financial.Recurrence.ShowWarning}}
+    <details class="cbp-finance-details">
+        <summary class="cbp-finance-details-summary">
+            <span class="cbp-finance-details-title">Cobertura e pendências</span>
+            <span class="cbp-finance-details-tail">
+                <span class="cbp-finance-details-hint">{{if $undatedVisible}}Itens sem data{{else if $overdueVisible}}Vencidos anteriores{{else}}Cobertura parcial{{end}}</span>
+                <span class="cbp-finance-details-chevron" aria-hidden="true"><i data-lucide="chevron-down"></i></span>
+            </span>
+        </summary>
+        <div class="cbp-finance-details-body">
+            {{if $overdueVisible}}
+            <div class="cbp-finance-extra">
+                <div class="cbp-finance-extra-head"><span>Vencidos de meses anteriores</span>{{if gt .Financial.Overdue.Count 0}}<span data-sensitive>{{if eq .Financial.Overdue.Count 1}}1 item{{else}}{{.Financial.Overdue.Count}} itens{{end}}</span>{{end}}</div>
+                <div class="cbp-finance-extra-values">
+                    {{if .Financial.Overdue.HasIncome}}<span class="is-positive" data-sensitive>R$ {{.Financial.Overdue.Income.Reais}}{{.Financial.Overdue.Income.Cents}} a receber</span>{{end}}
+                    {{if .Financial.Overdue.HasExpense}}<span class="is-negative" data-sensitive>R$ {{.Financial.Overdue.Expense.Reais}}{{.Financial.Overdue.Expense.Cents}} a pagar</span>{{end}}
+                </div>
+            </div>
+            {{end}}
+            {{if $undatedVisible}}
+            <div class="cbp-finance-extra">
+                <div class="cbp-finance-extra-head"><span>Compromissos sem vencimento</span>{{if .Financial.Undated.HasRegistered}}<span data-sensitive>{{.Financial.Undated.Count}}</span>{{end}}</div>
+                <small>Não alocados a um mês. Contagem global do workspace.{{if gt .Financial.ObligationsWithoutDateCount 0}} A composição financeira registra <span data-sensitive>{{.Financial.ObligationsWithoutDateCount}}</span> {{if eq .Financial.ObligationsWithoutDateCount 1}}pendência sem data{{else}}pendências sem data{{end}}, incluindo faturas; o valor não é exibido.{{end}}</small>
+            </div>
+            {{end}}
+            {{if .Financial.Recurrence.ShowWarning}}<p class="cbp-finance-footnote {{.Financial.Recurrence.ToneClass}}">{{.Financial.Recurrence.Warning}}</p>{{end}}
+        </div>
+    </details>
+    {{end}}
+    {{end}}
+</section>
+{{end}}
+
+{{define "dashboard-preview-goals"}}
+<section class="cbp-card cbp-goals" id="cbp-goals" data-cbp-section="goals" aria-labelledby="cbp-goals-title">
+    <div class="cbp-card-head">
+        <div><h2 id="cbp-goals-title">Metas de gastos</h2><p>Limites por categoria</p><span class="cbp-period-badge is-selected">{{.SelectedMonthLabel}}</span></div>
+        <a class="cbp-link" href="/metas?aba=limites">Ajustar</a>
+    </div>
+    {{if .Limits}}
+    <div class="cbp-goal-list">
+        {{range .Limits}}
+        {{$noLimit := and (eq .Limit.Reais "0") (eq .Limit.Cents ",00")}}
+        <div class="cbp-goal-row">
+            <div class="cbp-goal-head">
+                <span class="cbp-goal-icon" title="{{.IconLabel}}"><i data-lucide="{{.IconOrDefault}}" aria-hidden="true"></i><span class="sr-only">Ícone: {{.IconLabel}}</span></span>
+                <strong>{{.CategoryName}}</strong>
+                <span data-sensitive>{{if $noLimit}}R$ {{.Spent.Reais}}{{.Spent.Cents}} gastos{{else}}R$ {{.Spent.Reais}}{{.Spent.Cents}} <span class="cbp-goal-sep">de</span> R$ {{.Limit.Reais}}{{.Limit.Cents}}{{end}}</span>
+            </div>
+            {{if $noLimit}}
+            <p class="cbp-note">Sem limite definido para esta categoria.</p>
+            {{else}}
+            <progress class="cbp-progress cbp-progress--{{.Tone}}" value="{{.Percent}}" max="100" aria-label="{{.CategoryName}}: {{.ToneLabel}}, {{.PercentExact}}% de R$ {{.Limit.Reais}}{{.Limit.Cents}}">{{.PercentExact}}%</progress>
+            <div class="cbp-goal-meta"><span>{{.ToneLabel}}</span><strong aria-hidden="true" data-sensitive>{{.PercentExact}}%</strong></div>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="cbp-empty"><i data-lucide="target" aria-hidden="true"></i><p>Nenhum limite definido.</p><a href="/metas?aba=limites">Criar limite</a></div>
+    {{end}}
+</section>
+{{end}}

@@ -78,9 +78,9 @@ func TestSQLiteRuntimeSchemaReopensMigration79FromRelativePath(t *testing.T) {
 		_ = owner.Close()
 		t.Fatal(err)
 	}
-	if version != 82 {
+	if version != currentSchemaVersion {
 		_ = owner.Close()
-		t.Fatalf("schema version=%d want=82", version)
+		t.Fatalf("schema version=%d want=%d", version, currentSchemaVersion)
 	}
 	if err := owner.Close(); err != nil {
 		t.Fatalf("close after migration: %v", err)
@@ -99,8 +99,8 @@ func TestSQLiteRuntimeSchemaReopensMigration79FromRelativePath(t *testing.T) {
 	if err := reopened.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != 82 {
-		t.Fatalf("reopened schema version=%d want=82", version)
+	if version != currentSchemaVersion {
+		t.Fatalf("reopened schema version=%d want=%d", version, currentSchemaVersion)
 	}
 	if err := ValidateSQLiteRuntimeSchema(relative); err != nil {
 		t.Fatalf("preflight after reopen: %v", err)

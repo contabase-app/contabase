@@ -88,7 +88,7 @@ func notificationCategorySQL(t *testing.T, workspace string, now time.Time) (str
 				return true
 			}
 			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || printNode(selector.X) != "h.DB" {
+			if !ok || printNode(selector.X) != "h.notificationReader()" {
 				return true
 			}
 			if selector.Sel.Name != "Query" || len(call.Args) != 5 {
@@ -290,7 +290,7 @@ func TestTenantNotificationsCategoryN34RealFunction(t *testing.T) {
 	if rows := tenantScopeRows(t, db, query, args...); len(rows) != 1 || rows[0][3] != int64(19500) {
 		t.Fatalf("live-month SQL financial fixture=%v", rows)
 	}
-	want := []NotificationItem{{Key: "limit:limit-a", Title: "Limite de categoria estourado", Description: "OWNED A · limite " + formatCurrencyLabel(10000), Money: MoneyMinor(9500), Icon: "gauge", Color: "red", CreatedAt: 222}}
+	want := []NotificationItem{{Key: "limit:limit-a", Title: "Limite de categoria estourado", Description: "OWNED A · limite " + formatCurrencyLabel(10000), Money: MoneyMinor(9500), HasMoney: true, Icon: "gauge", Color: "red", CreatedAt: 222, TargetType: notificationTargetLimit, TargetID: "limit-a"}}
 	for _, business := range []bool{false, true} {
 		if got := h.exceededCostLimits(business); !reflect.DeepEqual(got, want) {
 			t.Fatalf("real same-tenant notifications=%+v want=%+v", got, want)

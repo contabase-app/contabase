@@ -2,6 +2,8 @@
 
 Este guia mostra como instalar o ContaBase com Docker.
 
+Comece pelo [Guia Completo de Instalação](https://contabase.pages.dev/setup/) para escolher a versão e o método. Este documento preserva os comandos e os detalhes técnicos do Docker.
+
 Existem dois caminhos:
 
 | Caminho | Quando usar |
@@ -20,6 +22,7 @@ Você precisa de:
 - Linux com Docker;
 - Docker e Docker Compose (`docker compose` ou `docker-compose` standalone).
 - Git, se usar o instalador guiado;
+- `flock` (util-linux), obrigatório para a atualização segura da Beta 8;
 - porta `8080` livre, ou outra porta escolhida.
 
 Se Docker não estiver instalado e você usa Debian/Ubuntu, o instalador pode perguntar se você deseja instalar as dependências.
@@ -28,7 +31,7 @@ Se Docker não estiver instalado e você usa Debian/Ubuntu, o instalador pode pe
 
 ## Caminho 1: instalador guiado com Docker
 
-Este caminho usa o repositório completo.
+Este caminho usa o repositório completo e o helper legado da tag. O Bootstrap Beta é um fluxo separado: fixa imagem por digest, exige catálogo homologado por versão/arquitetura e não instala dependências automaticamente. A central [de instalação](https://contabase.pages.dev/setup/) informa seus gates. Compose manual não recebe estado administrativo nem o comando `contabase-update`.
 
 Clone a versão desejada:
 
@@ -42,13 +45,14 @@ cd contabase
 Execute o instalador:
 
 ```bash
+chmod +x scripts/install.sh scripts/install-contabase-docker.sh scripts/update-contabase-docker.sh
 ./scripts/install.sh
 ```
 
 Escolha:
 
 ```text
-1) Instalar com Docker Compose
+1) Instalar via Docker Compose
 ```
 
 O instalador verifica:
@@ -61,6 +65,31 @@ O instalador verifica:
 - `python3`.
 
 Se faltar Docker ou Compose em Debian/Ubuntu, ele pergunta se pode instalar.
+
+## Perguntas do fluxo guiado
+
+| Quando | Pergunta literal | Padrão |
+|---|---|---|
+| Docker/Compose ausentes | `Docker/Compose nao estao instalados. Deseja instalar as dependencias agora? [s/N]:` | Não |
+| Sem override, com exemplo disponível | `Deseja criar docker-compose.override.yml para customizacoes? (s/N)` | Não |
+| Secret ausente em configuração existente | `Gerar novo valor para ${key}? (s/N)` | Não; `${key}` é o nome da chave, nunca seu valor |
+| Seleção de perfil | `Opcao (1/2/3/4):` | Sem padrão indicado; vazio ou inválido usa defaults locais |
+| Perfil 2 | `IP privado LAN:` | Sem padrão; IP privado obrigatório |
+| Perfil 3 | `Dominio HTTPS (ex: app.seudominio.com):` | Sem padrão; vazio exige configuração manual |
+| Perfil 3 | `TRUSTED_PROXIES (pode deixar vazio para configurar manualmente):` | Vazio; configure antes de expor |
+
+O menu de perfil é:
+
+```text
+Selecione o perfil de instalacao:
+1) Local Docker nesta maquina (http://localhost)
+2) Rede local/LAN por IP privado
+3) Domínio com HTTPS via proxy/tunnel/CDN
+4) Avançado / manual
+Opcao (1/2/3/4):
+```
+
+O fluxo não pergunta porta, URL completa nem confirmação final. O perfil local usa `8080`; os perfis LAN/proxy derivam URL e hosts do IP/domínio. Secrets existentes válidos são preservados; a escolha do perfil regrava as variáveis de acesso no `.env.docker`. Para portas, redes e exposição, revise `.env.docker` e `docker-compose.override.yml`; os perfis `3` e `4` criam o override quando necessário, mesmo após recusar a criação inicial. Não há a pergunta “Vai usar reverse proxy?”.
 
 ## Caminho 2: instalador Docker sem perguntas
 
@@ -92,10 +121,10 @@ Ele:
 1. Confere as dependências.
 2. Cria `.env.docker` se não existir.
 3. Gera secrets fortes.
-4. Ajusta permissões.
+4. Restringe `.env.docker` a `0600` e `data/` a `0700`, com arquivos regulares `0600` e ownership dos dados `1000:1000`.
 5. Valida o `docker-compose.yml`.
 6. Sobe os containers.
-7. Mostra a URL de acesso.
+7. Consulta o estado do container: saudável, inicializando ou falha. Só `healthy` confirma a saúde; `starting` pede espera e não anuncia aplicação operacional.
 8. Indica onde está o token de setup.
 
 O token de setup fica em:
@@ -104,18 +133,19 @@ O token de setup fica em:
 .env.docker
 ```
 
-Procure:
+O valor não é impresso pelo instalador. Consulte-o localmente com `sudo nano .env.docker` (arquivo `0600`), procurando a chave:
 
 ```text
 CONTABASE_SETUP_TOKEN=
 ```
 
 Use esse token em `/setup`.
+Não envie o valor em logs ou mensagens. Se o container estiver inicializando, acompanhe `docker compose ps --all`; em falha, consulte `docker compose logs --tail=80 contabase`. A consulta final é um retrato do estado, sem espera adicional nem recuperação automática.
 
 Depois de criar o primeiro administrador, remova ou comente essa linha e recrie a stack:
 
 ```bash
-docker compose up -d --build
+docker compose up -d --force-recreate
 ```
 
 ## Apenas validar
@@ -133,15 +163,17 @@ Esse comando valida pré-requisitos e Compose. Ele não sobe containers.
 Após instalar, use o comando global:
 
 ```bash
-contabase-update
+sudo contabase-update vX.Y.Z
 ```
 
 O comando detecta o modo Docker automaticamente e chama o script de update
 no diretório onde o ContaBase foi instalado.
 
-Opcional: `contabase-update --yes` ou `contabase-update --dry-run`
+Opcional: `sudo contabase-update --yes vX.Y.Z` ou `sudo contabase-update --dry-run vX.Y.Z`
 
-### Atualização manual
+Na Beta 8, o dispatcher autentica canal, Release, identidade da tag/commit e manifesto, verificando o bundle antes da delegação. O dispatcher Beta 7 executa o helper local e repassa a versão, sem essa autenticação completa. Trocar o checkout não troca o comando global instalado; veja a transição abaixo e os [contratos dos dispatchers](atualizacao.md#contratos-dos-dispatchers-beta-7-e-beta-8).
+
+### Fallback legado sem comando global
 
 Entre na pasta do projeto:
 
@@ -152,6 +184,7 @@ cd contabase
 Execute:
 
 ```bash
+CONTABASE_VERSION=vX.Y.Z \
 CONTABASE_INSTALL_METHOD=update-docker \
 CONTABASE_ASSUME_YES=1 \
 ./scripts/install.sh
@@ -160,8 +193,10 @@ CONTABASE_ASSUME_YES=1 \
 Ou chame o updater direto:
 
 ```bash
-./scripts/update-contabase-docker.sh
+CONTABASE_VERSION=vX.Y.Z ./scripts/update-contabase-docker.sh
 ```
+
+Use a versão publicada desejada. A variável é obrigatória em checkout por tag e, em branch, deve corresponder ao `VERSION` do alvo. Esse fallback não equivale à autenticação do bundle antes da execução feita pelo dispatcher Beta 8. O helper Beta 7 continua incompatível com HEAD destacado, mesmo com a variável; nesse caso, siga a transição abaixo.
 
 O updater preserva:
 
@@ -171,6 +206,74 @@ O updater preserva:
 - backups;
 - volumes;
 - secrets.
+
+### Transição única de instalação criada por tag (beta.7 → beta.8)
+
+Execute somente após a disponibilização oficial da Beta 8 para esse método e da tag `v1.0.0-beta.8`. A documentação não comprova publicação nem promoção do canal.
+
+Se você instalou com `git clone --branch v1.0.0-beta.7`, o checkout está com
+HEAD destacado. O updater da beta.7 recusa esse estado e o `contabase-update`
+da beta.7 executa o updater do próprio checkout; por isso nenhum dos dois
+atualiza essa instalação enquanto ela estiver na beta.7. Faça a transição uma
+única vez, sem `--force`, depois de cumprir todos os pré-requisitos:
+
+- Origem oficial, worktree limpo e diretório igual ao registrado pela instalação.
+- Estado legado válido em `/etc/contabase/install-state.env`, com método `docker` e versão instalada Beta 7. Não apague nem edite o estado para forçar a transição.
+- Container Beta 7 em execução e saudável: Docker health `healthy`, `/health` com `{"status":"healthy"}` e `/app/VERSION` igual a `v1.0.0-beta.7`. A versão efetiva vem do runtime, não do checkout.
+- [Backup adequado](backup-restauracao.md) do banco, uploads, configuração e chaves, com restauração conhecida, antes de atualizar.
+- Dispatcher Beta 7 instalado, `sudo`, Docker/Compose, `flock` (util-linux) e dependências do helper disponíveis.
+
+Faça as [conferências de origem, estado e runtime antes do checkout](atualizacao.md#transição-única-de-checkout-por-tag-beta7--beta8). Se a identidade ou a saúde do runtime anterior não puder ser comprovada, a atualização permanece bloqueada.
+
+```bash
+cd /caminho/do/contabase
+
+# Precisa estar vazio. Se houver alterações locais, pare e resolva antes.
+git status --porcelain
+
+git fetch origin tag v1.0.0-beta.8
+git checkout v1.0.0-beta.8
+
+sudo contabase-update v1.0.0-beta.8
+```
+
+O `git checkout` move o checkout para a tag nova e troca os scripts locais
+pelos da Beta 8: o `VERSION` local passa a Beta 8, enquanto o runtime e o estado instalado ainda representam Beta 7. A comprovação do runtime Beta 7 saudável é necessária para o helper reconhecer essa transição; sem ela, pode recusar a divergência entre estado e checkout.
+
+O comando global ainda é o **dispatcher Beta 7**. Ele detecta o modo Docker no estado e executa o helper Beta 8 do checkout com `CONTABASE_VERSION=v1.0.0-beta.8`, exigida no modo tag. Esse primeiro passo segue o contrato legado e **não autentica completamente o bundle antes da execução**. A validação posterior dentro do helper não equivale à autenticação antecipada do dispatcher Beta 8.
+
+O helper valida a tag na
+origem oficial, compara a tag local com a remota, reconhece HEAD destacado em
+tag oficial, cria o pacote canônico antes de alterar o runtime, atualiza a
+imagem, valida o healthcheck, confirma o checkout na tag e reinstala o
+`contabase-update` da versão nova. Ele preserva banco, uploads, `.env.docker`
+e volumes. Se o healthcheck falhar depois do novo runtime iniciar, ele não
+reativa a imagem antiga automaticamente; o serviço para e o restore exige
+decisão explícita.
+
+Execução não interativa: `sudo contabase-update --yes v1.0.0-beta.8`.
+
+Não use `git checkout --force`, `git reset --hard` ou `git clean` para
+contornar alterações locais. Não chame `./scripts/update-contabase-docker.sh`
+direto neste cenário: em checkout por tag ele falha sem `CONTABASE_VERSION`
+explícita e, executado por conta própria, não equivale à autenticação de
+canal, Release, commit e manifesto feita pelo **dispatcher Beta 8**. Invocar o dispatcher Beta 7 também não acrescenta essa autenticação ao helper local. Não troque este
+fluxo por `docker compose pull && docker compose up -d`: esse atalho não cria
+o backup canônico, não valida a identidade do runtime e não executa o
+rollback do updater.
+
+Se preferir manter uma branch local em vez de HEAD destacado, cumpra os mesmos pré-requisitos e confirme que `origin/beta` aponta exatamente para a tag Beta 8 desejada; uma branch pode avançar depois da publicação. Se divergir, use o procedimento por tag, sem forçar o checkout:
+
+```bash
+git fetch origin beta
+git fetch origin tag v1.0.0-beta.8
+# Os dois commits abaixo precisam ser idênticos antes de continuar.
+git rev-parse 'origin/beta^{commit}' 'v1.0.0-beta.8^{commit}'
+git switch -c beta --track origin/beta
+# se a branch beta local já existir:
+# git switch beta && git merge --ff-only origin/beta
+sudo contabase-update v1.0.0-beta.8
+```
 
 ## Docker manual com GHCR
 
@@ -226,6 +329,7 @@ ALLOWED_HOSTS=localhost,127.0.0.1,::1
 TRUSTED_PROXIES=
 CONTABASE_ACCESS_MODE=local-docker
 
+CONTABASE_FEATURE_INVESTMENTS=false
 CONTABASE_SETUP_TOKEN=troque-por-um-token-aleatorio-min-32-caracteres
 AUTH_ENCRYPTION_KEY=troque-por-uma-chave-base64-com-32-bytes
 SECURITY_MASTER_KEY=troque-por-uma-chave-hex-32-caracteres
@@ -236,6 +340,8 @@ UPLOADS_DIR=/app/data/uploads
 ```
 
 Se você opera no Brasil, pode manter `CONTABASE_TIMEZONE=America/Sao_Paulo`. Só altere se o seu fuso financeiro for diferente.
+
+`CONTABASE_FEATURE_INVESTMENTS=false` é o valor usado pelo instalador em instalações novas: o módulo de Investimentos nasce desativado e pode ser ativado depois. A flag é lida no startup e mudanças exigem recriar o serviço; veja [Investimentos](investimentos.md).
 
 Não use esses valores de exemplo em produção.
 
@@ -282,7 +388,7 @@ ou a URL definida em `APP_BASE_URL`.
 
 Use o `CONTABASE_SETUP_TOKEN` para criar o primeiro administrador.
 
-Depois remova ou comente o token no `.env.docker` e recrie a stack:
+Depois remova ou comente o token no `.env.docker` e recrie a stack por imagem GHCR (sem `--build`):
 
 ```bash
 docker compose up -d

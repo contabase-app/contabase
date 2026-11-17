@@ -10,14 +10,43 @@
 
 // --- Workspace/Drawer ---
 
+// The drawer is a dialog: while closed it stays out of the accessibility tree
+// and out of the tab order (`inert` + `aria-hidden`). Every trigger exposes the
+// same expanded state so the contract matches what the user sees.
+var _workspaceDrawerOpener = null;
+
+function _workspaceDrawerSetExpanded(expanded) {
+    document.querySelectorAll('[data-v2-workspace-trigger]').forEach(function(trigger) {
+        trigger.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    });
+}
+
+function _workspaceDrawerFocus(el) {
+    if (!el || typeof el.focus !== 'function') return;
+    try {
+        el.focus({ preventScroll: true });
+    } catch (error) {
+        el.focus();
+    }
+}
+
 window.openWorkspaceDrawer = function() {
     var drawer = document.getElementById('workspaceDrawer');
     var backdrop = document.getElementById('drawerBackdrop');
     if (typeof window.contabaseDebugUI === 'function') window.contabaseDebugUI('openWorkspaceDrawer called. Drawer:', !!drawer, 'Backdrop:', !!backdrop);
     if (!drawer || !backdrop) return;
+    var wasClosed = drawer.classList.contains('translate-x-full');
+    if (wasClosed) {
+        var active = document.activeElement;
+        _workspaceDrawerOpener = active && active !== document.body && active !== document.documentElement ? active : null;
+    }
+    drawer.removeAttribute('inert');
+    drawer.removeAttribute('aria-hidden');
     drawer.classList.remove('translate-x-full');
     backdrop.classList.remove('opacity-0', 'pointer-events-none');
     backdrop.classList.add('opacity-100');
+    _workspaceDrawerSetExpanded(true);
+    if (wasClosed) _workspaceDrawerFocus(drawer.querySelector('[data-v2-workspace-close]'));
     if (typeof window.overlayDidOpen === 'function') window.overlayDidOpen('workspace-drawer');
     if (typeof window.contabaseDebugUI === 'function') window.contabaseDebugUI('Fetching /workspace/list via HTMX');
     htmx.ajax('GET', '/workspace/list', { target: '#ws-drawer-nav', swap: 'innerHTML' });
@@ -30,9 +59,20 @@ window.closeWorkspaceDrawer = function() {
     if (!drawer || !backdrop) return;
     var wasOpen = !drawer.classList.contains('translate-x-full');
     drawer.classList.add('translate-x-full');
+    drawer.setAttribute('inert', '');
+    drawer.setAttribute('aria-hidden', 'true');
     backdrop.classList.add('opacity-0', 'pointer-events-none');
     backdrop.classList.remove('opacity-100');
-    if (wasOpen && typeof window.overlayDidClose === 'function') window.overlayDidClose();
+    _workspaceDrawerSetExpanded(false);
+    if (wasOpen) {
+        var opener = _workspaceDrawerOpener;
+        _workspaceDrawerOpener = null;
+        // A trigger inside a closed <dialog> cannot take focus back.
+        if (opener && document.contains(opener) && !(opener.closest && opener.closest('dialog:not([open])'))) {
+            _workspaceDrawerFocus(opener);
+        }
+        if (typeof window.overlayDidClose === 'function') window.overlayDidClose();
+    }
 };
 
 window.toggleWorkspacePanel = function() {

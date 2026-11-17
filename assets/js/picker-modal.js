@@ -80,15 +80,14 @@
     var ns = window.ContaBaseFormLancamento;
     if (ns && ns.applyCategorySelection) {
       ns.applyCategorySelection(
-        { id: data.id, name: data.name, icon: data.icon, color: data.color, type: data.type, boxId: '', boxReserved: '0' },
+        { id: data.id, name: data.name, icon: data.icon, color: data.color, type: data.type, limitMax: '0', limitSpent: '0' },
         {
           visualMode: 'htmx-picker',
-          onBoxOverdraftChange: function() { if (window.updateBoxOverdraftWarning) window.updateBoxOverdraftWarning(); },
           onRefreshIcons: function() { if (typeof window.refreshIcons === 'function') window.refreshIcons(); }
         }
       );
     } else if (typeof window.selectPickerItem === 'function') {
-      window.selectPickerItem(data.id, data.name, data.icon, data.color, data.type, '', '0');
+      window.selectPickerItem(data.id, data.name, data.icon, data.color, data.type, '0', '0');
     }
 
     var picker = document.getElementById('modalPickerBackdrop');

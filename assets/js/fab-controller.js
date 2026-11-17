@@ -50,13 +50,7 @@
             newIconName = "target";
             extraIconClass = "group-hover:scale-110";
             
-            // Prefer DOM attribute (set by server via data-active-tab on #metas-tabs
-            // or #metas-conteudo), over URL param, to avoid timing issues with hx-replace-url
-            // during OOB swaps.
-            var metasContent = document.getElementById('metas-tabs') || document.getElementById('metas-conteudo');
-            var activeTab = metasContent ? metasContent.getAttribute('data-active-tab') : null;
-            var aba = (activeTab === 'caixinhas') ? 'caixinha' : 'limite';
-            button.setAttribute('hx-get', '/metas/novo?aba=' + aba);
+            button.setAttribute('hx-get', '/metas/novo?aba=limite');
             button.setAttribute('hx-target', '#bottom-sheet-container');
             button.setAttribute('hx-swap', 'innerHTML');
             button.setAttribute('hx-push-url', 'false');

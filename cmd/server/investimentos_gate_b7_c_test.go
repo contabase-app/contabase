@@ -54,7 +54,7 @@ func b7GateTransactionMux(t *testing.T, h *investimentosRoutesHarness) *http.Ser
 	t.Helper()
 	mux := http.NewServeMux()
 	txBase := handlers.TransactionHandler{DB: h.db, Templates: transacoesEditarStubTemplates{}}
-	registerTransacoesRoutes(mux, h.db, h.service, h.signer, &txBase)
+	registerTransacoesRoutes(mux, newSQLDBProvider(h.db), h.service, h.signer, &txBase)
 	return mux
 }
 

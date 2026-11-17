@@ -4,9 +4,9 @@
    legado --cb-* não é declarado aqui (o shell já o fornece quando necessário). */
 
 .cb-v2-contatos-content {
-  width: min(100%, 1180px);
+  width: min(100%, var(--ui-content-standard));
   margin: 0 auto;
-  padding: 30px 0 24px;
+  padding-bottom: 24px;
 }
 
 /* Header: composição e tipografia vêm de .ui-page-header/.ui-eyebrow/

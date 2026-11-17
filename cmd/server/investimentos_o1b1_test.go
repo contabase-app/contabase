@@ -99,7 +99,7 @@ func (f *o1b1Fixture) read(t *testing.T, want int) services.InvestmentSettlement
 
 func (f *o1b1Fixture) stable(t *testing.T) string {
 	t.Helper()
-	return o1aSnapshot(t, f.h, "accounts", "transactions", "account_balance_adjustments", "box_virtual_ledger",
+	return o1aSnapshot(t, f.h, "accounts", "transactions", "account_balance_adjustments",
 		"investments", "investment_valuations", "investment_purchases", "investment_withdrawals", "investment_withdrawal_allocations",
 		"investment_reference_revisions", "investment_financial_revisions", "investment_financial_adjustments", "investment_purchase_funding",
 		"investment_settlement_applications", "investment_settlement_prior_effects", "investment_result_classifications")

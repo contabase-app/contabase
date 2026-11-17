@@ -28,7 +28,7 @@
                 <button type="button" data-type="transferencia" aria-pressed="{{if eq .TipoInicial "transferencia"}}true{{else}}false{{end}}" class="tab-button h-11 rounded-lg px-1 {{if eq .TipoInicial "transferencia"}}is-active-transferencia{{end}}">
                     <span class="flex items-center justify-center gap-1 sm:gap-1.5">
                         <i data-lucide="arrow-left-right" class="hidden h-3.5 w-3.5 sm:block" aria-hidden="true"></i>
-                        <span>Transferir</span>
+                        <span>Transferência</span>
                     </span>
                 </button>
             </div>
@@ -37,7 +37,7 @@
         <div id="lancamento-form-error-region" class="sheet-error-region" aria-live="assertive" aria-atomic="true">
             <div id="lancamento-form-error" class="hidden"></div>
         </div>
-        <form id="lancamento-form" {{if and .IsEdit .ReturnInvoiceID}}hx-post="/transacoes/{{.EditID}}/salvar" hx-swap="none"{{else if .IsEdit}}hx-put="/transacoes/{{.EditID}}" hx-target="#tx-{{.EditID}}" hx-swap="outerHTML"{{else}}hx-post="/transacoes" hx-swap="none"{{end}} hx-indicator="#htmx-indicator" hx-sync="this:drop" class="sheet-form sheet-lancamento-form" data-series-edit="{{if .IsSeriesEdit}}true{{else}}false{{end}}" data-is-edit="{{if .IsEdit}}true{{else}}false{{end}}" data-initial-type="{{if .TipoInicial}}{{.TipoInicial}}{{else}}despesa{{end}}" data-initial-origin-id="{{.OrigemContaID}}" data-initial-date="{{.DataPreenchida}}" data-initial-status="{{if .StatusInicial}}{{.StatusInicial}}{{else}}paid{{end}}" enctype="multipart/form-data">
+        <form id="lancamento-form" {{if and .IsEdit .ReturnInvoiceID}}hx-post="/transacoes/{{.EditID}}/salvar" hx-swap="none"{{else if and .IsEdit (eq .ReturnContext "notificacoes")}}hx-put="/transacoes/{{.EditID}}?origem=notificacoes" hx-swap="none"{{else if .IsEdit}}hx-put="/transacoes/{{.EditID}}" hx-target="#tx-{{.EditID}}" hx-swap="outerHTML"{{else}}hx-post="/transacoes" hx-swap="none"{{end}} hx-indicator="#htmx-indicator" hx-sync="this:drop" class="sheet-form sheet-lancamento-form" data-series-edit="{{if .IsSeriesEdit}}true{{else}}false{{end}}" data-is-edit="{{if .IsEdit}}true{{else}}false{{end}}" data-return-context="{{.ReturnContext}}" data-is-business="{{if .IsBusiness}}true{{else}}false{{end}}" data-explicit-due-differs="{{if .ExplicitDueDiffers}}true{{else}}false{{end}}" data-initial-type="{{if .TipoInicial}}{{.TipoInicial}}{{else}}despesa{{end}}" data-initial-origin-id="{{.OrigemContaID}}" data-initial-date="{{.DataPreenchida}}" data-initial-status="{{if .StatusInicial}}{{.StatusInicial}}{{else}}paid{{end}}" enctype="multipart/form-data">
             <input id="tipoLancamento" type="hidden" name="tipo" value="{{if .TipoInicial}}{{.TipoInicial}}{{else}}despesa{{end}}">
             {{if .ReturnInvoiceID}}<input type="hidden" name="return_invoice_id" value="{{.ReturnInvoiceID}}">{{end}}
             <input id="origemContaId" type="hidden" name="origem_conta_id" value="{{.OrigemContaID}}">
@@ -45,7 +45,6 @@
             <input id="destinoContaId" type="hidden" name="destino_conta_id" value="{{.DestinoContaID}}">
             <input id="escopoEdicao" type="hidden" name="escopo_edicao" value="single">
 			<input id="invoiceAssignmentMode" type="hidden" name="invoice_assignment_mode" value="{{if .IsEdit}}{{if .InvoiceAssignmentMode}}{{.InvoiceAssignmentMode}}{{else}}preserve{{end}}{{else}}auto{{end}}">
-            <input id="permitirExcedenteCaixinha" type="hidden" name="permitir_excedente_caixinha" value="0">
             <input id="csrfToken" type="hidden" name="csrf_token" value="">
 
             <div class="sheet-amount-panel sheet-amount-panel--premium relative">
@@ -98,7 +97,7 @@
                     </div>
                 </div>
                 <div class="sheet-field">
-                    <label for="dataLancamento" class="sheet-field-label">Data de competência</label>
+                    <label for="dataLancamento" id="dataLancamentoLabel" class="sheet-field-label">{{.PrimaryDateLabel}}</label>
                     <div class="relative">
                         <span class="sheet-control-icon pointer-events-none absolute inset-y-0 left-4 flex items-center" aria-hidden="true">
                             <i data-lucide="calendar" class="h-4 w-4"></i>
@@ -177,6 +176,11 @@
                 </div>
             </section>
             {{end}}
+
+            <div class="sheet-form-section-head">
+                <h3 class="sheet-form-section-title">Conta e categoria</h3>
+                <p class="sheet-form-section-hint">Origem, destino e classificação do lançamento.</p>
+            </div>
 
             <button id="origemPicker" type="button" aria-haspopup="dialog"
                 class="sheet-picker sheet-account-picker flex w-full items-center justify-between gap-3 rounded-xl border text-left">
@@ -322,24 +326,11 @@
                     Atenção: este lançamento pode ultrapassar o limite da categoria.
                 </p>
             </div>
-            <div id="categoryReserveInfo" class="sheet-info hidden">
-                <p class="sheet-info__text">
-                    <span class="sheet-info__label">Reserva:</span>
-                    <span id="reserveInfoText" data-sensitive></span>
-                </p>
-                <p class="sheet-info__note">Esta despesa consumirá automaticamente essa reserva.</p>
-            </div>
-
-            <section id="boxOverdraftWarning" class="sheet-notice sheet-notice--warning hidden p-4">
-                <label class="flex items-start gap-3">
-                    <input id="allowBoxOverdraftCheckbox" type="checkbox" class="sheet-checkbox mt-0.5">
-                    <span class="text-xs leading-relaxed">
-                        Esta despesa ultrapassa o Saldo da sua Reserva. Ao confirmar, a despesa será mantida no seu histórico e a reserva ficara com saldo negativo (excedente) até que você faça um novo aporte.
-                    </span>
-                </label>
-            </section>
-
-            <section class="sheet-card sheet-options" aria-label="Parcelamento e recorrência">
+            <section class="sheet-card sheet-options" aria-labelledby="sheetOptionsTitle">
+                <header class="sheet-options-head">
+                    <h3 id="sheetOptionsTitle" class="sheet-options-title">Parcelamento e recorrência</h3>
+                    <p class="sheet-options-hint">Opcional</p>
+                </header>
                 <div class="sheet-option">
                     <input id="parcelada" name="parcelada" type="checkbox" class="toggle-input sr-only">
                     <label for="parcelada" class="toggle-label sheet-option__row">
@@ -403,10 +394,12 @@
 
             {{if .IsEdit}}
             <section class="sheet-card sheet-meta-card" aria-label="Informações do lançamento">
+                {{if .IsBusiness}}
                 <div class="sheet-meta-row">
                     <span class="sheet-meta-row__label">Competência</span>
                     <span class="sheet-meta-row__value">{{if .CompetenciaDisplay}}{{.CompetenciaDisplay}}{{else}}-{{end}}</span>
                 </div>
+                {{end}}
                 {{if .VencimentoDisplay}}
                 <div class="sheet-meta-row">
                     <span class="sheet-meta-row__label">Vencimento</span>
@@ -415,7 +408,7 @@
                 {{end}}
                 {{if .PaidAtDisplay}}
                 <div class="sheet-meta-row">
-                    <span class="sheet-meta-row__label">Data de pagamento</span>
+                    <span class="sheet-meta-row__label">{{.PaidAtLabel}}</span>
                     <span class="sheet-meta-row__value is-success">{{.PaidAtDisplay}}</span>
                 </div>
                 {{end}}
@@ -519,8 +512,8 @@
                         {{if .IsSeriesEdit}}
                         data-series-delete-open
                         {{else}}
-                        hx-delete="/transacoes/{{.EditID}}?escopo=single{{if .ReturnInvoiceID}}&invoice_id={{.ReturnInvoiceID}}&from_sheet=1{{end}}"
-                        {{if .ReturnInvoiceID}}hx-swap="none"{{else}}hx-target="#tx-{{.EditID}}" hx-swap="delete"{{end}}
+                        hx-delete="/transacoes/{{.EditID}}?escopo=single{{if .ReturnInvoiceID}}&invoice_id={{.ReturnInvoiceID}}&from_sheet=1{{end}}{{if eq .ReturnContext "notificacoes"}}&origem=notificacoes{{end}}"
+                        {{if eq .ReturnContext "notificacoes"}}hx-target="#main-content" hx-swap="none"{{else if .ReturnInvoiceID}}hx-swap="none"{{else}}hx-target="#tx-{{.EditID}}" hx-swap="delete"{{end}}
                         hx-confirm="Remover este lançamento?"
                         data-hx-after="closeBottomSheet"
                         {{end}}
@@ -671,7 +664,7 @@
 
     <div id="categoriaModal" class="hidden">
         {{range .Categories}}
-        <span class="category-option" data-category-id="{{.ID}}" data-category-name="{{.Name}}" data-category-icon="{{.Icon}}" data-category-color="{{.Color}}" data-category-type="{{.Type}}"{{if .BoxID}} data-box-id="{{.BoxID}}" data-box-reserved="{{.BoxReservedBalance}}" data-box-name="{{.BoxName}}"{{end}}{{if .LimitMax}} data-limit-max="{{.LimitMax}}" data-limit-spent="{{.LimitSpent}}"{{end}}{{if .ParentID}} data-category-parent-id="{{.ParentID}}" data-category-parent-name="{{.ParentName}}"{{end}}></span>
+        <span class="category-option" data-category-id="{{.ID}}" data-category-name="{{.Name}}" data-category-icon="{{.Icon}}" data-category-color="{{.Color}}" data-category-type="{{.Type}}"{{if .LimitMax}} data-limit-max="{{.LimitMax}}" data-limit-spent="{{.LimitSpent}}"{{end}}{{if .ParentID}} data-category-parent-id="{{.ParentID}}" data-category-parent-name="{{.ParentName}}"{{end}}></span>
         {{end}}
     </div>
 </div>

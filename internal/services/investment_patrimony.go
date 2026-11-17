@@ -74,6 +74,23 @@ func readInvestmentPatrimony(ctx context.Context, db *sql.DB, workspaceID, accou
 		return result, err
 	}
 	defer tx.Rollback()
+	result, err = readInvestmentPatrimonyTx(ctx, tx, workspaceID, accountID)
+	if err != nil {
+		return result, err
+	}
+	if err := tx.Commit(); err != nil {
+		return WorkspaceInvestmentPatrimony{}, err
+	}
+	return result, nil
+}
+
+// ReadWorkspaceInvestmentPatrimonyTx reuses the caller's read snapshot.
+func ReadWorkspaceInvestmentPatrimonyTx(ctx context.Context, tx *sql.Tx, workspaceID string) (WorkspaceInvestmentPatrimony, error) {
+	return readInvestmentPatrimonyTx(ctx, tx, workspaceID, "")
+}
+
+func readInvestmentPatrimonyTx(ctx context.Context, tx *sql.Tx, workspaceID, accountID string) (WorkspaceInvestmentPatrimony, error) {
+	result := WorkspaceInvestmentPatrimony{Coverage: InvestmentPatrimonyUnavailable}
 	rows, err := tx.QueryContext(ctx, `SELECT id, name, archived_at IS NOT NULL FROM accounts
 		WHERE workspace_id = ? AND type = 'INVESTMENT' AND (? = '' OR id = ?) ORDER BY name, id`, workspaceID, accountID, accountID)
 	if err != nil {
@@ -151,9 +168,6 @@ func readInvestmentPatrimony(ctx context.Context, db *sql.DB, workspaceID, accou
 		if account.Archived && account.HasMaintainedInvestments {
 			result.ArchivedMaintainedAccountCount++
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return WorkspaceInvestmentPatrimony{}, err
 	}
 	return result, nil
 }

@@ -353,71 +353,10 @@ func TestHandleHistoricoLimiteOtherWorkspaceCategoryDoesNotLeak(t *testing.T) {
 	assertContains(t, body, "Categoria A")
 }
 
-func TestHandleHistoricoCaixinhaOtherWorkspaceAccountDoesNotLeakLabel(t *testing.T) {
-	db := openTestDB(t)
-	defer db.Close()
-	seedTrendScenario(t, db)
-
-	now := time.Now().UTC().Unix()
-
-	// Give ws-a account a distinctive name
-	execTestSQL(t, db, `
-		UPDATE accounts SET name = 'Conta A - ws-a' WHERE id = 'a-check' AND workspace_id = 'ws-a'
-	`)
-	// Create a separate ws-b account with different ID
-	execTestSQL(t, db, `
-		INSERT INTO accounts (id, workspace_id, name, type, initial_balance, current_balance, created_at, updated_at)
-		VALUES ('b-check-extra', 'ws-b', 'Conta B - ws-b', 'CHECKING', 0, 0, ?, ?)
-	`, now, now)
-
-	// Create box and ledger event in ws-a only
-	execTestSQL(t, db, `
-		INSERT INTO boxes (id, workspace_id, name, category_id, target_amount, monthly_recharge, created_at, updated_at)
-		VALUES ('box-isolation', 'ws-a', 'Box Isolation', 'a-cat', 100000, 10000, ?, ?)
-	`, now, now)
-	execTestSQL(t, db, `
-		INSERT INTO transactions (id, workspace_id, user_id, account_id, category_id, type, amount, date, description, status, created_at, updated_at)
-		VALUES ('tx-isolation', 'ws-a', 'user-a', 'a-check', 'a-cat', 'EXPENSE', 5000, ?, 'Despesa ws-a', 'paid', ?, ?)
-	`, now, now, now)
-	execTestSQL(t, db, `
-		INSERT INTO box_virtual_ledger (id, box_id, amount, type, description, source_transaction_id, reference_date, created_at)
-		VALUES ('h-isolation', 'box-isolation', -5000, 'CONSUME', 'Consumo', 'tx-isolation', ?, ?)
-	`, now, now)
-
-	h := MetasHandler{ActorRole: testMetasAdminRole,
-		DB:          db,
-		Templates:   testHistoryTemplates(t),
-		WorkspaceID: "ws-a",
-		UserID:      "user-a",
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/metas/caixinha/historico?box_id=box-isolation", nil)
-	rr := httptest.NewRecorder()
-	h.HandleHistoricoCaixinha(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200, body=%s", rr.Code, rr.Body.String())
-	}
-
-	body := rr.Body.String()
-	// Must show ws-a account name via LEFT JOIN
-	assertContains(t, body, "Conta A - ws-a")
-	// Must NOT show ws-b account name
-	if strings.Contains(body, "Conta B - ws-b") {
-		t.Fatalf("history leaked ws-b account name into ws-a response via JOIN")
-	}
-}
-
 func TestMetasCardOpensHistoryNotMenuOnBodyClick(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 	seedTrendScenario(t, db)
-
-	now := time.Now().UTC().Unix()
-	execTestSQL(t, db, `
-		INSERT INTO boxes (id, workspace_id, name, category_id, target_amount, monthly_recharge, created_at, updated_at)
-		VALUES ('box-test', 'ws-a', 'Box Teste', 'a-cat', 100000, 10000, ?, ?)
-	`, now, now)
 
 	execTestSQL(t, db, `
 		INSERT INTO cost_limits (id, workspace_id, category_id, max_amount_monthly)

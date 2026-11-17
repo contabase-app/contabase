@@ -1,197 +1,209 @@
-/* Investment surfaces inside the global V2 shell. The financial components keep
-   their existing markup and behavior; these aliases only adopt shared tokens. */
-.investment-page {
-    --cb-bg: var(--v2-canvas);
-    --cb-bg-soft: var(--v2-detail-surface);
-    --cb-surface-1: var(--v2-surface);
-    --cb-surface-2: var(--v2-surface-raised);
-    --cb-surface-3: var(--v2-surface-hover);
-    --cb-border-subtle: var(--v2-border);
-    --cb-border-strong: var(--v2-border-strong);
-    --cb-border-focus: var(--v2-accent);
-    --cb-text-main: var(--v2-text);
-    --cb-text-muted: var(--v2-muted);
-    --cb-text-subtle: var(--v2-subtle);
-    --cb-accent: var(--v2-accent);
-    color: var(--cb-text-main);
-}
+/* Investment surfaces inside the global V2 shell. Financial components keep
+   their existing markup and behavior; presentation consumes the canonical
+   --ui-* tokens inherited from the shell. */
 
-.investment-content { width: min(100%, 1180px); margin-inline: auto; padding: 30px 0 12px; display: flex; flex-direction: column; gap: 1.25rem; }
-.investment-page h1 { font-size: 1.875rem; font-weight: 700; letter-spacing: -.025em; line-height: 1.2; overflow-wrap: anywhere; }
-.investment-page h2 { font-size: 1.125rem; font-weight: 650; line-height: 1.4; }
+.investment-content {
+    /* Investments uses the ergonomic page measure for its list, detail and
+       form surfaces; width, centering and top padding follow D4-C3. */
+    width: min(100%, var(--ui-content-standard));
+    margin-inline: auto;
+    padding: 30px 0 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+.investment-page h2 { font-size: var(--ui-fs-lg); font-weight: 630; line-height: 1.4; }
 .investment-page h1, .investment-page h2 { text-wrap: balance; }
-.investment-page p { line-height: 1.55; }
-.investment-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.investment-page p:not(.ui-page-description) { line-height: 1.55; }
+/* The header composition is the global ui-page-header. The page envelope uses
+   a 20px flex gap, so the header contributes 4px to keep the canonical 24px
+   vertical rhythm (18px on mobile with the 16px gap). */
+.investment-page .ui-page-header { margin-bottom: 4px; }
+.investment-heading { flex-wrap: wrap; }
+.investment-heading-copy { min-width: 0; }
+.investment-heading .ui-page-title { overflow-wrap: anywhere; }
 .investment-heading-actions { display: flex; align-items: center; gap: .6rem; flex: 0 0 auto; }
 .investment-header-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-width: 0; }
 .investment-header-top .investment-back { margin-bottom: 0; }
 .investment-heading-actions [data-privacy-toggle],
-.investment-header-top [data-privacy-toggle] { width: 44px; height: 44px; min-height: 44px; padding: 0; flex: 0 0 auto; }
-.investment-heading p { margin-top: .45rem; color: var(--cb-text-main); opacity: .85; }
-.investment-page .cb-button { min-height: 44px; padding: .65rem 1rem; text-transform: none; letter-spacing: 0; font-size: .875rem; font-weight: 600; flex-shrink: 0; }
-.investment-page .cb-button:disabled { opacity: .5; cursor: not-allowed; }
-.investment-page :is(button,a,input,select,textarea):focus-visible { outline: 2px solid var(--cb-border-focus); outline-offset: 3px; }
-.investment-page .cb-input { width: 100%; min-height: 44px; }
-.investment-page .cb-input::placeholder { color: var(--cb-text-main); opacity: .7; }
-.investment-section-title { margin-bottom: .65rem; }
+.investment-header-top [data-privacy-toggle] { width: var(--ui-icon-button-size-sm); height: var(--ui-icon-button-size-sm); min-height: var(--ui-icon-button-size-sm); padding: 0; flex: 0 0 auto; }
+.investment-account-context { margin: .35rem 0 0; color: var(--ui-text-subtle); font-size: var(--ui-fs-md); overflow-wrap: anywhere; }
+/* In-page actions keep the large control height for comfortable touch targets;
+   header utilities stay on the compact ui-btn--sm measure. */
+.investment-page .ui-btn:not(.ui-btn--sm) { min-height: var(--ui-control-height-lg); flex-shrink: 0; }
+.investment-page a:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
+.investment-section-title { margin: 0 0 10px; color: var(--ui-text); font-size: var(--ui-fs-card-title); font-weight: 630; letter-spacing: -.015em; }
 
-/* Consolidated indicators: compact cards with the number as the reading target.
-   Every card keeps the same rows so values align across the grid. */
-.investment-metrics { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1.2fr; gap: .65rem; }
-.investment-metrics > div { padding: .9rem 1rem; background: var(--cb-surface-1); border: 1px solid var(--cb-border-subtle); border-radius: 12px; min-width: 0; }
+/* Consolidated indicators: one card per reading, aligned to the shared KPI
+   contract (surface, radius, typography and muted supporting copy). */
+.investment-metrics { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1.2fr; gap: var(--ui-layout-gap-compact); }
+.investment-metrics > div { display: grid; gap: 6px; padding: 16px; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-card); box-shadow: var(--ui-shadow-panel); min-width: 0; }
 .investment-detail-metrics { grid-template-columns: 1fr 1fr 1.35fr 1fr; }
 .investment-account-metrics { grid-template-columns: repeat(3, minmax(0,1fr)); }
-.investment-page dt { font-size: .8125rem; color: var(--cb-text-main); opacity: .8; line-height: 1.4; }
-.investment-metrics dd { margin-top: .35rem; font-size: 1.2rem; font-weight: 700; line-height: 1.3; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.investment-detail-metrics dd { font-size: 1.35rem; }
-.investment-metrics dd.is-unknown { font-weight: 500; opacity: .78; }
-.investment-metrics p, .investment-row p { margin-top: .2rem; font-size: .75rem; color: var(--cb-text-main); opacity: .8; overflow-wrap: anywhere; }
+.investment-page dt { margin: 0; font-size: var(--ui-fs-sm); color: var(--ui-text-muted); font-weight: 600; letter-spacing: .015em; line-height: 1.35; }
+.investment-metrics dd { margin: 0; font-size: clamp(18px, 2.3vw, 23px); font-weight: 680; letter-spacing: -.025em; line-height: 1.15; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.investment-detail-metrics dd { font-size: clamp(19px, 2.4vw, 24px); }
+.investment-metrics dd.is-unknown { color: var(--ui-text-muted); font-weight: 500; }
+.investment-metrics dd.is-positive { color: var(--ui-success); }
+.investment-metrics dd.is-negative { color: var(--ui-danger); }
+.investment-metrics p, .investment-row p { margin: 0; font-size: var(--ui-fs-sm); color: var(--ui-text-subtle); line-height: 1.45; overflow-wrap: anywhere; }
+.investment-metrics dd p { margin-top: 6px; }
+.investment-row dd p { margin-top: 2px; }
 
-.investment-note { font-size: .8125rem; color: var(--cb-text-main); opacity: .85; max-width: 90ch; margin-top: .6rem; }
-.investment-note.is-confirm { padding: .75rem .9rem; border: 1px solid var(--cb-border-subtle); border-radius: 10px; background: var(--cb-surface-2); opacity: 1; }
+.investment-note { max-width: 90ch; margin-top: 8px; color: var(--ui-text-muted); font-size: var(--ui-fs-md); line-height: 1.5; }
+.investment-note.is-confirm { padding: 12px 14px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-control); background: var(--ui-surface-raised); color: var(--ui-text); }
 
-.investment-toolbar { display: flex; justify-content: space-between; align-items: end; gap: 1rem; flex-wrap: wrap; }
-.investment-filter { display: flex; align-items: end; gap: .65rem; flex-wrap: wrap; }
+.investment-toolbar { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.investment-filter { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .investment-filter > div { flex: 1 1 180px; min-width: 0; }
 .investment-filter select { min-width: 180px; }
-.investment-search { width: min(100%, 330px); }
+.investment-search { width: min(100%, 340px); }
 
 /* List: identity first, then the three readings, then the explicit way in. */
-.investment-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .6rem; }
-.investment-row { display: grid; grid-template-columns: minmax(180px,1.5fr) minmax(130px,1fr) minmax(150px,1.2fr) minmax(135px,1fr) auto; gap: 1rem; align-items: center; padding: 1.1rem 1.25rem; border: 1px solid var(--cb-border-subtle); border-radius: 12px; background: var(--cb-surface-1); }
+.investment-list { display: flex; flex-direction: column; gap: 10px; padding: 0; margin: 0; list-style: none; }
+.investment-row { display: grid; grid-template-columns: minmax(180px,1.5fr) minmax(130px,1fr) minmax(150px,1.2fr) minmax(135px,1fr) auto; gap: 18px; align-items: center; padding: 16px 18px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-card); background: var(--ui-surface); }
 .investment-row > * { min-width: 0; }
-.investment-row:hover, .investment-row:focus-within { border-color: var(--cb-border-strong); }
-.investment-name { font-size: 1rem; font-weight: 650; overflow-wrap: anywhere; }
-.investment-name:hover { text-decoration: underline; }
+.investment-row:hover, .investment-row:focus-within { border-color: var(--ui-border-strong); }
+.investment-name { color: var(--ui-text); font-size: var(--ui-fs-card-title); font-weight: 620; letter-spacing: -.01em; text-decoration: none; overflow-wrap: anywhere; }
+.investment-name:hover { color: var(--ui-accent-text); text-decoration: underline; text-underline-offset: 3px; }
 .investment-account-name { font-weight: 600; }
-.investment-account-context { margin-top: .35rem; font-size: .875rem; overflow-wrap: anywhere; }
-.investment-row dd { margin-top: .25rem; font-weight: 600; font-size: .9375rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.investment-row dl { align-self: start; }
-.investment-row dd.is-unknown { font-weight: 500; opacity: .78; }
-.investment-status { display: inline-block; border-radius: 999px; padding: .2rem .6rem; font-size: .75rem; font-weight: 600; margin-top: .4rem; color: var(--cb-text-main); background: color-mix(in srgb, var(--v2-tone-neutral) 18%, transparent); }
-.investment-status.is-active { color: color-mix(in srgb, var(--v2-tone-ok) 80%, var(--cb-text-main)); background: color-mix(in srgb, var(--v2-tone-ok) 16%, transparent); }
-.investment-status.is-cancelled { color: color-mix(in srgb, var(--v2-tone-danger) 80%, var(--cb-text-main)); background: color-mix(in srgb, var(--v2-tone-danger) 16%, transparent); }
-.investment-status.is-reversed { color: color-mix(in srgb, var(--v2-tone-attention) 80%, var(--cb-text-main)); background: color-mix(in srgb, var(--v2-tone-attention) 14%, transparent); }
+.investment-row dd { margin: 2px 0 0; color: var(--ui-text); font-size: var(--ui-fs-base); font-weight: 640; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.investment-row dl { align-self: start; min-width: 0; }
+.investment-row dd.is-unknown { color: var(--ui-text-muted); font-weight: 500; }
 /* Reversed purchases stay in the history: muted, with their receipt note and
    no action. Independent purchases keep their normal presentation. */
 .investment-purchases > li.is-reversed { opacity: .82; }
-.investment-purchase-reversal-note { margin-top: .55rem; padding: .55rem .7rem; border-radius: 8px; background: var(--cb-surface-2); font-size: .8125rem; line-height: 1.5; }
-.investment-purchase-actions { margin-top: .55rem; }
-.investment-reversal-target { font-size: .875rem; }
-.investment-detail-link { display: inline-flex; align-items: center; justify-content: flex-end; gap: .4rem; min-height: 44px; font-size: .8125rem; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
-.investment-empty, .investment-empty-search { padding: 1.75rem; background: var(--cb-surface-1); border: 1px dashed var(--cb-border-strong); border-radius: 12px; }
-.investment-empty p { margin: .4rem 0 1rem; }
-.investment-back { display: inline-flex; align-items: center; min-height: 44px; font-size: .875rem; margin-bottom: .35rem; }
+.investment-purchase-reversal-note { margin-top: 10px; padding: 10px 12px; border-radius: var(--ui-radius-control); background: var(--ui-surface-raised); font-size: var(--ui-fs-md); line-height: 1.5; }
+.investment-purchase-actions { margin-top: 10px; }
+.investment-reversal-target { font-size: var(--ui-fs-md); }
+.investment-detail-link { align-self: center; justify-self: end; justify-content: flex-end; }
+.investment-empty-search { padding: 16px 18px; border: 1px dashed var(--ui-border-strong); border-radius: var(--ui-radius-card); background: var(--ui-surface); color: var(--ui-text-muted); font-size: var(--ui-fs-md); }
+.investment-back { display: inline-flex; align-items: center; min-height: var(--ui-control-height-lg); margin-bottom: 4px; color: var(--ui-text-muted); font-size: var(--ui-fs-md); text-decoration: none; }
+.investment-back:hover { color: var(--ui-text); }
 
 /* Actions: one primary step, one edit step, one administrative step. */
-.investment-actions { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+.investment-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .investment-action-admin { margin-left: auto; }
-.investment-cancel-unavailable { flex: 1 1 100%; display: flex; flex-direction: column; align-items: flex-start; gap: .55rem; padding: .8rem .9rem; border: 1px dashed var(--cb-border-strong); border-radius: 10px; background: var(--cb-surface-2); }
-.investment-cancel-unavailable .cb-button:disabled { width: auto; opacity: .65; }
-.investment-cancel-blockers { font-size: .8125rem; line-height: 1.5; }
-.investment-cancel-blockers > p + ul { margin-top: .25rem; }
-.investment-cancel-blockers ul { list-style: disc; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .2rem; }
-.investment-cancel-blockers > p:last-child { margin-top: .4rem; }
+.investment-cancel-unavailable { flex: 1 1 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 14px; border: 1px dashed var(--ui-border-strong); border-radius: var(--ui-radius-control); background: var(--ui-surface-raised); }
+.investment-cancel-unavailable .ui-btn:disabled { width: auto; }
+.investment-cancel-blockers { font-size: var(--ui-fs-md); line-height: 1.5; }
+.investment-cancel-blockers > p + ul { margin-top: 4px; }
+.investment-cancel-blockers ul { display: flex; flex-direction: column; gap: 3px; padding-left: 18px; list-style: disc; }
+.investment-cancel-blockers > p:last-child { margin-top: 6px; }
 
-.investment-detail-layout { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(0,1fr); gap: 1rem; align-items: start; }
-.investment-history, .investment-information { min-width: 0; padding: 1.25rem; }
-.investment-history > p { margin: .4rem 0 .9rem; font-size: .8125rem; }
+.investment-detail-layout { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(0,1fr); gap: 16px; align-items: start; }
+.investment-history, .investment-information { min-width: 0; padding: var(--ui-panel-pad); }
+.investment-history > h2, .investment-information > h2 { margin: 0 0 4px; }
+.investment-history > p { margin: 4px 0 12px; color: var(--ui-text-muted); font-size: var(--ui-fs-md); line-height: 1.5; }
 .investment-history-scroll { overflow-x: auto; }
-.investment-history-table { width: 100%; font-size: .875rem; text-align: left; font-variant-numeric: tabular-nums; }
-.investment-history-table th { font-weight: 500; background: var(--cb-surface-2); }
-.investment-history-table td { border-bottom: 1px solid var(--cb-border-subtle); overflow-wrap: anywhere; }
+.investment-history-table { width: 100%; border-collapse: collapse; font-size: var(--ui-fs-md); text-align: left; font-variant-numeric: tabular-nums; }
+.investment-history-table th { padding: 10px 12px; border-bottom: 1px solid var(--ui-border); background: var(--ui-surface-raised); color: var(--ui-text-muted); font-size: var(--ui-fs-label); font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.investment-history-table td { padding: 11px 12px; border-bottom: 1px solid var(--ui-border); color: var(--ui-text); overflow-wrap: anywhere; }
+.investment-history-table tbody tr:hover { background: var(--ui-surface-hover); }
 .investment-history-table tr:last-child td { border-bottom: 0; }
-.investment-purchases { list-style: none; padding: 0; margin: 0; }
-.investment-purchases > li { padding: 1rem 0; border-bottom: 1px solid var(--cb-border-subtle); }
-.investment-purchases > li:last-child { border-bottom: 0; }
-.investment-purchase-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
-.investment-purchase-terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: .75rem 1.5rem; margin-top: .75rem; }
-.investment-purchase-terms dd { font-size: .875rem; margin-top: .2rem; overflow-wrap: anywhere; white-space: pre-wrap; }
-.investment-history-empty { display: flex; flex-direction: column; align-items: start; gap: .9rem; padding: 1rem 1.1rem; border: 1px dashed var(--cb-border-strong); border-radius: 12px; background: var(--cb-surface-2); }
-.investment-history-empty p { font-size: .875rem; }
-.investment-information h2 { margin-bottom: .9rem; }
-.investment-information dl { display: flex; flex-direction: column; gap: .6rem; }
-.investment-information dl > div { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.2fr); gap: .75rem; padding-bottom: .55rem; border-bottom: 1px solid var(--cb-border-subtle); }
+.investment-purchases { padding: 0; margin: 0; list-style: none; }
+.investment-purchases > li { padding: 14px 0; border-bottom: 1px solid var(--ui-border); }
+.investment-purchases > li:last-child { border-bottom: 0; padding-bottom: 0; }
+.investment-purchase-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; color: var(--ui-text-muted); font-size: var(--ui-fs-md); font-variant-numeric: tabular-nums; }
+.investment-purchase-heading strong { color: var(--ui-text); font-size: var(--ui-fs-card-title); font-weight: 640; }
+.investment-purchase-terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 12px 24px; margin-top: 12px; }
+.investment-purchase-terms dd { margin: 2px 0 0; color: var(--ui-text); font-size: var(--ui-fs-md); overflow-wrap: anywhere; white-space: pre-wrap; }
+.investment-history-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 16px 18px; border: 1px dashed var(--ui-border-strong); border-radius: var(--ui-radius-card); background: var(--ui-surface-raised); }
+.investment-history-empty p { margin: 0; color: var(--ui-text-muted); font-size: var(--ui-fs-md); }
+.investment-information h2 { margin-bottom: 14px; }
+.investment-information dl { display: flex; flex-direction: column; gap: 0; }
+.investment-information dl > div { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.2fr); gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--ui-border); }
+.investment-information dt { color: var(--ui-text-muted); font-size: var(--ui-fs-sm); }
 .investment-information dl > div:last-child { border-bottom: 0; padding-bottom: 0; }
-.investment-information dd { font-size: .875rem; overflow-wrap: anywhere; }
-.investment-information-note { margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--cb-border-subtle); }
-.investment-information-note h3 { font-size: .8125rem; font-weight: 700; letter-spacing: .02em; color: var(--cb-text-muted); }
-.investment-information-note p { margin-top: .4rem; overflow-wrap: anywhere; }
+.investment-information dd { margin: 0; color: var(--ui-text); font-size: var(--ui-fs-md); overflow-wrap: anywhere; }
+.investment-information-note { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--ui-border); }
+.investment-information-note h3 { margin: 0; color: var(--ui-text-muted); font-size: var(--ui-fs-label); font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.investment-information-note p { margin-top: 6px; color: var(--ui-text-muted); font-size: var(--ui-fs-md); overflow-wrap: anywhere; }
 
 /* Drawers. Without JS the panels stay in the document flow (see the :has()
    fallback below) so every form keeps working through the native POST. */
-.investment-drawer { position: fixed; inset: 0 0 0 auto; margin: 0; width: min(580px, 100%); max-width: 100%; height: 100vh; height: 100dvh; max-height: 100dvh; overflow-y: auto; overscroll-behavior: contain; scroll-padding-bottom: 7rem; border: 0; border-left: 1px solid var(--cb-border-subtle); padding: max(1.5rem, env(safe-area-inset-top)) max(1.5rem, env(safe-area-inset-right)) max(1.5rem, env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left)); background: var(--cb-surface-1); color: var(--cb-text-main); }
+.investment-drawer { position: fixed; inset: 0 0 0 auto; margin: 0; width: min(580px, 100%); max-width: 100%; height: 100vh; height: 100dvh; max-height: 100dvh; overflow-y: auto; overscroll-behavior: contain; scroll-padding-bottom: 7rem; border: 0; border-left: 1px solid var(--ui-border); padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); background: var(--ui-surface); color: var(--ui-text); box-shadow: var(--ui-shadow-floating); }
 .investment-drawer::backdrop { background: rgb(0 0 0 / .55); }
 .investment-drawer[open] { animation: investment-panel-in 180ms ease-out; }
-.investment-drawer-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
-.investment-drawer-heading p { font-size: .875rem; margin-top: .35rem; opacity: .85; }
-.investment-close { width: 44px; }
-.investment-drawer form { margin-top: .5rem; }
-.investment-drawer form > button[type="submit"] { width: 100%; margin-top: .25rem; }
-.investment-drawer [role="alert"] { padding: .75rem; color: var(--cb-text-main); background: var(--cb-surface-2); border: 1px solid var(--cb-border-strong); border-radius: 8px; margin-bottom: 1rem; }
+.investment-drawer-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.investment-drawer-heading h2 { margin: 0; color: var(--ui-text); font-size: var(--ui-fs-lg); font-weight: 640; letter-spacing: -.02em; line-height: 1.25; }
+.investment-drawer-heading p { max-width: 46ch; margin: 5px 0 0; color: var(--ui-text-muted); font-size: 12.5px; line-height: 1.45; }
+.investment-close { width: var(--ui-control-height-lg); min-width: var(--ui-control-height-lg); padding: 0; }
+.investment-drawer form { margin-top: 4px; }
+.investment-drawer form > button[type="submit"] { width: 100%; margin-top: 4px; }
+.investment-drawer [role="alert"] { margin-bottom: 16px; padding: 12px; border: 1px solid color-mix(in srgb, var(--ui-danger) 34%, var(--ui-border)); border-radius: var(--ui-radius-control); background: color-mix(in srgb, var(--ui-danger) 8%, var(--ui-surface)); color: var(--ui-text); }
 .investment-drawer [aria-busy="true"] button[type="submit"] { opacity: .5; pointer-events: none; }
 .investment-page [hidden] { display: none !important; }
 
-.investment-fieldset { border: 0; padding: 0; margin: 0 0 1.25rem; min-width: 0; }
+.investment-fieldset { border: 0; padding: 0; margin: 0 0 20px; min-width: 0; }
 .investment-fieldset:last-of-type { margin-bottom: 0; }
-.investment-fieldset legend { padding: 0; margin-bottom: .7rem; font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--cb-text-muted); }
-.investment-fieldset + .investment-fieldset { padding-top: 1.15rem; border-top: 1px solid var(--cb-border-subtle); }
+.investment-fieldset legend { padding: 0; margin-bottom: 10px; color: var(--ui-text-muted); font-size: var(--ui-fs-label); font-weight: 650; letter-spacing: .05em; text-transform: uppercase; }
+.investment-fieldset + .investment-fieldset { padding-top: 18px; border-top: 1px solid var(--ui-border); }
 .investment-fieldset :is(input, select, textarea) { width: 100%; }
-.investment-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 1rem; }
+.investment-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
 .investment-field-grid > div, .investment-field-wide { min-width: 0; }
-.investment-field-wide { margin-top: 1rem; }
-.investment-help { font-size: .8125rem; margin-top: .4rem; opacity: .82; }
-.investment-feedback { padding: .75rem; border: 1px solid var(--cb-border-strong); border-radius: 8px; background: var(--cb-surface-2); }
-.investment-confirm-field { display: flex; align-items: center; gap: .65rem; min-height: 44px; font-size: .875rem; cursor: pointer; }
-.investment-confirm-field input { width: 1.25rem; height: 1.25rem; min-height: 0; flex: none; accent-color: var(--cb-accent); }
+.investment-field-wide { margin-top: 16px; }
+.investment-help { margin-top: 5px; color: var(--ui-text-muted); font-size: var(--ui-fs-sm); line-height: 1.45; }
+.investment-feedback { padding: 12px; border: 1px solid color-mix(in srgb, var(--ui-danger) 34%, var(--ui-border)); border-radius: var(--ui-radius-control); background: color-mix(in srgb, var(--ui-danger) 8%, var(--ui-surface)); color: var(--ui-text); }
+.investment-feedback p { margin: 0; }
+.investment-feedback p + p, .investment-feedback p + ul { margin-top: 4px; }
+.investment-feedback ul { margin-left: 16px; }
+.investment-confirm-field { display: flex; align-items: center; gap: 10px; min-height: var(--ui-control-height-lg); color: var(--ui-text); font-size: var(--ui-fs-md); line-height: 1.45; cursor: pointer; }
+.investment-confirm-field input { width: 20px; height: 20px; min-height: 0; flex: none; accent-color: var(--ui-accent); }
 
 /* Funding chooser: "transfer now" or money already sitting in the investment
    account (record-only, no ledger write). The choice help sits under each
    radio; the source select and the record note toggle via [hidden]. */
-.investment-funding-options { display: grid; gap: .35rem; }
-.investment-funding-options .investment-confirm-field { align-items: flex-start; padding-top: .55rem; min-height: 0; }
-.investment-funding-choice-help { display: block; margin-top: .15rem; font-size: .8125rem; font-weight: 400; opacity: .82; }
+.investment-funding-options { display: grid; gap: 6px; }
+.investment-funding-options .investment-confirm-field { align-items: flex-start; padding-top: 8px; min-height: 0; }
+.investment-funding-choice-help { display: block; margin-top: 3px; color: var(--ui-text-muted); font-size: var(--ui-fs-sm); font-weight: 400; line-height: 1.45; }
 
 /* Cancellation reuses the detail drawer and the existing history panels. The
    receipt stays read-only; only the explicit confirmation form writes. */
-.investment-cancellation-terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: .75rem 1.5rem; margin: .9rem 0; }
-.investment-cancellation-terms dd { margin-top: .2rem; font-size: .875rem; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-.investment-cancellation-preview { margin-top: 1.25rem; padding-top: 1.15rem; border-top: 1px solid var(--cb-border-subtle); }
-.investment-cancellation-preview h3 { font-size: 1rem; font-weight: 650; }
-.investment-cancellation-preview > p { margin-top: .4rem; font-size: .875rem; }
-.investment-cancellation-preview ul { margin: .4rem 0 0 1.1rem; font-size: .875rem; }
-.investment-cancellation-receipt > p { margin: .4rem 0 .9rem; font-size: .875rem; }
+.investment-cancellation-terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px 24px; margin: 12px 0; }
+.investment-cancellation-terms dt { color: var(--ui-text-muted); font-size: var(--ui-fs-sm); }
+.investment-cancellation-terms dd { margin: 2px 0 0; color: var(--ui-text); font-size: var(--ui-fs-md); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.investment-cancellation-preview { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--ui-border); }
+.investment-cancellation-preview h3 { margin: 0; color: var(--ui-text); font-size: var(--ui-fs-card-title); font-weight: 630; }
+.investment-cancellation-preview > p { margin-top: 6px; color: var(--ui-text-muted); font-size: var(--ui-fs-md); line-height: 1.5; }
+.investment-cancellation-preview ul { margin: 6px 0 0 18px; color: var(--ui-text-muted); font-size: var(--ui-fs-md); }
+.investment-cancellation-receipt > p { margin: 6px 0 14px; color: var(--ui-text-muted); font-size: var(--ui-fs-md); }
 
 /* Without JS: the openers cannot work, so the panels stay visible in the flow
    and the marker disappears from the DOM as soon as a browser runs scripts. */
 .investment-page:has(noscript > .investment-nojs) [data-investment-open],
 .investment-page:has(noscript > .investment-nojs) [data-investment-close] { display: none; }
-.investment-page:has(noscript > .investment-nojs) .investment-drawer { display: block; position: static; inset: auto; margin: 0; width: 100%; max-width: 100%; height: auto; max-height: none; overflow: visible; border: 1px solid var(--cb-border-subtle); border-radius: 14px; padding: 1.25rem; }
-.investment-page:has(noscript > .investment-nojs) .investment-drawer + .investment-drawer { margin-top: .9rem; }
+.investment-page:has(noscript > .investment-nojs) .investment-drawer { display: block; position: static; inset: auto; margin: 0; width: 100%; max-width: 100%; height: auto; max-height: none; overflow: visible; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-panel); padding: var(--ui-panel-pad); }
+.investment-page:has(noscript > .investment-nojs) .investment-drawer + .investment-drawer { margin-top: 14px; }
 
 @keyframes investment-panel-in { from { transform: translateX(24px); opacity: .5; } to { transform: translateX(0); opacity: 1; } }
+
+@media (max-width: 1023px) {
+    .investment-heading-actions [data-privacy-toggle],
+    .investment-header-top [data-privacy-toggle] { width: var(--ui-control-height-lg); height: var(--ui-control-height-lg); min-height: var(--ui-control-height-lg); }
+    .investment-page .ui-btn--sm { min-height: var(--ui-control-height-lg); }
+}
 
 @media (max-width: 1200px) {
     .investment-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
     .investment-row { grid-template-columns: repeat(3,minmax(0,1fr)); }
     .investment-identity { grid-column: 1 / -1; }
-    .investment-detail-link { grid-column: 1 / -1; }
+    .investment-detail-link { grid-column: 1 / -1; justify-self: stretch; }
 }
 
-@media (max-width: 760px) {
-    .investment-content { padding: 20px 0 8px; gap: 1rem; }
+@media (max-width: 767px) {
+    .investment-content { padding: 20px 0 8px; gap: 16px; }
+    .investment-page .ui-btn--sm { min-height: var(--ui-control-height-lg); }
+    .investment-page .ui-page-header { margin-bottom: 2px; }
     .investment-heading { align-items: stretch; flex-direction: column; }
     .investment-heading-actions { width: 100%; }
-    .investment-heading-actions .cb-button { flex: 1 1 auto; }
-    .investment-page h1 { font-size: 1.5rem; }
-    /* 16px keeps mobile browsers from zooming the page when a field takes focus. */
-    .investment-page .cb-input, .investment-page .cb-input::placeholder { font-size: 1rem; }
-    .investment-metrics { gap: .5rem; }
-    .investment-metrics > div { padding: .8rem .75rem; }
-    .investment-metrics dt { font-size: .75rem; }
-    .investment-metrics dd, .investment-detail-metrics dd { font-size: 1.05rem; }
+    .investment-heading-actions .ui-btn--primary { flex: 1 1 auto; }
+    .investment-metrics { gap: 10px; }
+    .investment-metrics > div { padding: 14px; }
+    .investment-metrics dt { font-size: var(--ui-fs-sm); }
+    .investment-metrics dd, .investment-detail-metrics dd { font-size: 18px; }
     .investment-detail-metrics { grid-template-columns: minmax(0,1fr); }
-    .investment-row { grid-template-columns: repeat(2,minmax(0,1fr)); gap: .85rem; padding: .95rem; }
+    .investment-row { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; padding: 14px; }
     .investment-row dl:last-of-type { grid-column: 1 / -1; }
     .investment-detail-link { justify-content: flex-start; }
     .investment-detail-layout { grid-template-columns: minmax(0,1fr); }
@@ -202,7 +214,7 @@
     .investment-action-admin { margin-left: 0; }
     .investment-field-grid { grid-template-columns: minmax(0,1fr); }
     .investment-cancellation-terms { grid-template-columns: minmax(0,1fr); }
-    .investment-drawer { padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left)); }
+    .investment-drawer { padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
 }
 
 @media (max-width: 380px) {
@@ -212,14 +224,14 @@
 
 @media (prefers-reduced-motion: reduce) {
     .investment-drawer[open] { animation: none; }
-    .investment-page .cb-button { transition: none; }
+    .investment-page .ui-btn { transition: none; }
 }
 
-.investment-withdrawal-option { padding: 1rem 0; border-bottom: 1px solid var(--cb-border-subtle); min-width: 0; }
-.investment-withdrawal-option .investment-field-grid { margin-top: .75rem; }
+.investment-withdrawal-option { padding: 14px 0; border-bottom: 1px solid var(--ui-border); min-width: 0; }
+.investment-withdrawal-option .investment-field-grid { margin-top: 12px; }
 .investment-withdrawal-option label, .investment-withdrawal-allocations { overflow-wrap: anywhere; }
-.investment-withdrawal-allocations { margin-top: .75rem; padding-left: 1.25rem; font-size: .875rem; }
-.investment-withdrawal-allocations li + li { margin-top: .75rem; }
+.investment-withdrawal-allocations { margin-top: 12px; padding-left: 18px; color: var(--ui-text-muted); font-size: var(--ui-fs-md); }
+.investment-withdrawal-allocations li + li { margin-top: 10px; }
 
 /* === Privacidade ===
    Reusa o estado global (sessionStorage contabasePrivacy + body
@@ -244,7 +256,7 @@
   align-items: center;
   justify-content: flex-start;
   visibility: visible;
-  color: var(--cb-text-muted);
+  color: var(--ui-text-muted);
   font-variant-numeric: normal;
   letter-spacing: .12em;
 }

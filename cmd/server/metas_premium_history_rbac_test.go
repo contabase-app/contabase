@@ -22,11 +22,6 @@ func TestMetasPremiumHistoryKeepsReadOnlyPermissionContract(t *testing.T) {
 		permission string
 	}{
 		{
-			name:       "box history",
-			route:      `mux.HandleFunc("/metas/caixinha/historico", withAuth(`,
-			permission: "permGoalsWrite",
-		},
-		{
 			name:       "limit history",
 			route:      `mux.HandleFunc("/metas/limite/historico", withAuth(`,
 			permission: "permDashboardRead",

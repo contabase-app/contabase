@@ -5,10 +5,10 @@ data/
 *.db-wal
 *.db-shm
 
-# Binários compilados localmente e diretórios de distribuição
-main
-dist/
-bin/
+# Binários compilados localmente e diretórios de distribuição (somente na raiz)
+/main
+/dist/
+/bin/
 *.exe
 *.exe~
 *.dll
@@ -24,6 +24,11 @@ compose.local.yaml
 compose.local.yml
 docker-compose.override.yml
 !docker-compose.override.example.yml
+# Gerados pelo adaptador Docker por digest (nunca versionar)
+docker-compose.image.yml
+.docker-home/
+.contabase-tmp/
+.contabase-bootstrap-install
 certs/
 *.pem
 node_modules/
@@ -38,8 +43,7 @@ tailwindcss
 
 .playwright-mcp
 
-# CSS compilado (gerado automaticamente a partir de assets/css/input.css)
-assets/css/style.css
+# CSS compilado (assets/css/style.css) é rastreado intencionalmente.
 
 # Backup de recuperação (.git órfão)
 .git.orphan-backup/
@@ -52,6 +56,10 @@ data/backups/*.db
 .tmp-*/
 .tmp-clean-install*/
 .tmp-export/
+
+# Caches reproduziveis de ferramentas locais
+__pycache__/
+*.pyc
 
 # Impeccable design tooling
 .impeccable/

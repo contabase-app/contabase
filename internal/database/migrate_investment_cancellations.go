@@ -10,7 +10,7 @@ type cancellationSchemaObject struct {
 	kind, name, table, ddl string
 }
 
-func cancellation79Objects() []cancellationSchemaObject {
+func cancellation79ObjectsForSchema(version int) []cancellationSchemaObject {
 	table := `CREATE TABLE investment_cancellations (
  workspace_id TEXT NOT NULL, id TEXT NOT NULL, investment_id TEXT NOT NULL, purchase_id TEXT NOT NULL,
  original_transaction_id TEXT NOT NULL, compensation_transaction_id TEXT NOT NULL,
@@ -67,7 +67,7 @@ func cancellation79Objects() []cancellationSchemaObject {
 		q += " BEGIN SELECT RAISE(ABORT,'investment cancellation integrity'); END"
 		objects = append(objects, cancellationSchemaObject{"trigger", name, on, q})
 	}
-	addTrigger("trg_cancellation79_insert", "investment_cancellations", "INSERT", cancellation79Collision("NEW")+" OR NOT ("+cancellation79Relation("NEW", true)+") OR NOT ("+cancellation79JSON("NEW")+")")
+	addTrigger("trg_cancellation79_insert", "investment_cancellations", "INSERT", cancellation79Collision("NEW")+" OR NOT ("+cancellation79RelationForSchema(version, "NEW", true)+") OR NOT ("+cancellation79JSON("NEW")+")")
 	for _, action := range []string{"UPDATE", "DELETE"} {
 		addTrigger("trg_cancellation79_receipt_"+strings.ToLower(action), "investment_cancellations", action, "")
 		for _, parent := range []struct{ table, match string }{
@@ -94,7 +94,7 @@ func cancellation79Objects() []cancellationSchemaObject {
 			addTrigger("trg_cancellation79_child_"+child+"_"+strings.ToLower(action), child, action, condition)
 		}
 	}
-	for _, link := range cancellation79TransactionLinks {
+	for _, link := range cancellation79TransactionLinksForSchema(version) {
 		for _, action := range []string{"INSERT", "UPDATE"} {
 			condition := ""
 			for _, ref := range []string{"OLD", "NEW"} {
@@ -180,7 +180,26 @@ func cancellation79JSON(r string) string {
 	return "(" + strings.Join(checks, " AND ") + ")"
 }
 
+func cancellation79Objects() []cancellationSchemaObject {
+	return cancellation79ObjectsForSchema(82)
+}
+
+func cancellation79TransactionLinksForSchema(version int) []cancellationTransactionLink {
+	links := make([]cancellationTransactionLink, 0, len(cancellation79TransactionLinks))
+	for _, link := range cancellation79TransactionLinks {
+		if version >= 83 && link.table == "box_virtual_ledger" {
+			continue
+		}
+		links = append(links, link)
+	}
+	return links
+}
+
 func cancellation79Relation(r string, inserting bool) string {
+	return cancellation79RelationForSchema(82, r, inserting)
+}
+
+func cancellation79RelationForSchema(version int, r string, inserting bool) string {
 	q := `EXISTS(SELECT 1 FROM investments i
  JOIN investment_purchases p ON p.workspace_id=i.workspace_id AND p.investment_id=i.id AND p.id=` + r + `.purchase_id
  JOIN transactions o ON o.workspace_id=i.workspace_id AND o.id=` + r + `.original_transaction_id
@@ -220,7 +239,7 @@ func cancellation79Relation(r string, inserting bool) string {
 		}
 		q += " AND NOT EXISTS(SELECT 1 FROM " + child + " x WHERE x.workspace_id=i.workspace_id AND x.investment_id=i.id)"
 	}
-	for _, link := range cancellation79TransactionLinks {
+	for _, link := range cancellation79TransactionLinksForSchema(version) {
 		scope := "x." + link.scope + "=i.workspace_id"
 		if link.scope == "" {
 			scope = "EXISTS(SELECT 1 FROM boxes b WHERE b.id=x.box_id AND b.workspace_id=i.workspace_id)"

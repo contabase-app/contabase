@@ -3,64 +3,119 @@
  *
  * Loaded after app-shell.css and before any page/component stylesheet.
  *
- * Reference split:
- *  - Structural palette (canvas, sidebar, surfaces, borders, text, controls):
- *    the authenticated shell, which is the palette rendered by /contas.
- *  - Brand accent and financial semantics: the approved Premium Dashboard
- *    identity. Light values were already identical; dark values converge on the
- *    Dashboard's refiner scale so the Dashboard does not lose its identity.
+ * This file is the only source of raw palette, semantic color, typography,
+ * spacing, radius, shadow, focus and motion values for the authenticated app.
+ * Page stylesheets consume --ui-*; they must not redefine it.
  *
- * No page may redefine these tokens. Page stylesheets consume them.
+ * Structure:
+ *  1. Global foundation (authenticated shell and every page). The structural
+ *     palette, semantic colors and navigation geometry are the B10.2 shell
+ *     identity adopted globally in R1.3-D4-A.
+ *  2. Dashboard V2 component context: only the values that remain exclusive to
+ *     the Dashboard composition (panel radius and two tone steps).
+ *  3. Compatibility aliases (value-free): --v2-* and --cb-*.
+ *
+ * The Dashboard block is a context binding, not a second Design System: every
+ * value lives here and the Dashboard consumes --ui-* directly.
  */
 
 .cb-v2,
 .cb-v2-body {
-    /* --- Structural colors (reference: /contas) -------------------------- */
-    --ui-canvas: var(--v2-canvas);
-    --ui-sidebar: var(--v2-sidebar);
-    --ui-surface: var(--v2-surface);
-    --ui-surface-raised: var(--v2-surface-raised);
-    --ui-surface-hover: var(--v2-surface-hover);
-    --ui-border: var(--v2-border);
-    --ui-border-strong: var(--v2-border-strong);
-    --ui-text: var(--v2-text);
-    --ui-text-muted: var(--v2-muted);
-    --ui-text-subtle: var(--v2-subtle);
-    --ui-progress-track: var(--v2-progress-track);
+    /* --- Structural colors (B10.2 shell identity) ------------------------ */
+    --ui-canvas: #0e1013;
+    --ui-sidebar: #121519;
+    --ui-surface: #16191e;
+    --ui-surface-raised: #1c2026;
+    --ui-surface-hover: #232830;
+    --ui-surface-overlay: color-mix(in srgb, var(--ui-surface) 92%, transparent);
+    --ui-border: rgba(255, 255, 255, 0.08);
+    --ui-border-subtle: var(--ui-border);
+    --ui-border-strong: rgba(255, 255, 255, 0.16);
+    --ui-text: #f1f3f5;
+    --ui-text-muted: #a6adb8;
+    --ui-text-subtle: #9aa2ae;
+    --ui-progress-track: #2a3038;
+    --ui-detail-surface: #1b2129;
+    --ui-tab-badge: #303a47;
 
-    /* --- Brand accent and financial semantics ---------------------------- */
-    --ui-accent: var(--v2-accent);
-    --ui-accent-strong: var(--v2-accent-strong);
-    --ui-accent-soft: var(--v2-accent-soft);
-    --ui-focus: var(--v2-accent-strong);
-    --ui-success: var(--v2-positive);
-    --ui-warning: var(--v2-warning);
-    --ui-danger: var(--v2-danger);
-    --ui-info: var(--v2-info);
-
-    /* Action colors stay darker than the decorative accent so white text
-       keeps AA contrast in both themes. */
+    /* --- Brand accent ----------------------------------------------------
+       Fill and text are separate roles. The violet fill is preserved; text
+       uses the lighter step already present in the global identity so links
+       meet AA on the dark surfaces. */
+    --ui-accent: #8b5cf6;
+    --ui-accent-text: #a78bfa;
+    --ui-accent-strong: var(--ui-accent-text);
+    --ui-accent-2: #7c4dff;
+    --ui-accent-soft: rgba(139, 92, 246, 0.14);
+    --ui-accent-on-soft: #d8ccff;
+    --ui-focus: var(--ui-accent-text);
     --ui-action-bg: #6d4de0;
     --ui-action-bg-hover: #5b2fcc;
     --ui-action-fg: #ffffff;
+    --ui-action-gradient-start: #7a55ff;
+    --ui-action-gradient-end: #5b32d6;
+    --ui-action-shadow: 0 10px 22px -12px rgba(108, 71, 255, 0.8);
+
+    /* --- Financial semantics --------------------------------------------- */
+    --ui-success: #34d399;
+    --ui-success-soft: rgba(52, 211, 153, 0.12);
+    --ui-danger: #fb7185;
+    --ui-danger-soft: rgba(251, 113, 133, 0.12);
+    --ui-warning: #fbbf24;
+    --ui-warning-soft: rgba(251, 191, 36, 0.12);
+    --ui-info: #60a5fa;
+    --ui-info-soft: rgba(96, 165, 250, 0.12);
+
+    --ui-tone-ok: var(--ui-success);
+    --ui-tone-attention: var(--ui-warning);
+    --ui-tone-near: color-mix(in srgb, var(--ui-warning) 72%, var(--ui-danger));
+    --ui-tone-exceeded: var(--ui-danger);
+    --ui-tone-initial: color-mix(in srgb, var(--ui-accent) 52%, var(--ui-text-muted));
+    --ui-tone-progress: var(--ui-accent);
+    --ui-tone-complete: var(--ui-success);
+    --ui-tone-info: var(--ui-info);
+    --ui-tone-neutral: var(--ui-text-muted);
+    --ui-tone-danger: var(--ui-danger);
+    --ui-tone-soft: var(--ui-detail-surface);
+    --ui-tone-track: var(--ui-progress-track);
+
+    --ui-row-hover-text: #c4b5fd;
+    --ui-fab-border: #9a8bff;
+    --ui-fab-hover: #9b8cfb;
+    --ui-avatar-surface: #2b2547;
+    --ui-avatar-text: #d9ccff;
 
     /* --- Typography ------------------------------------------------------ */
     --ui-font-family: "Geist Sans", system-ui, sans-serif;
+    --ui-fs-2xs: 9px;       /* component exception: compact counters */
+    --ui-fs-caption: 10px;
+    --ui-fs-label: 10.5px;
+    --ui-fs-body-sm: 11px;
     --ui-fs-xs: 10px;
     --ui-fs-sm: 11.5px;
     --ui-fs-md: 13px;
+    --ui-fs-base: 13px;
+    --ui-fs-card-title: 15px;
+    --ui-fs-card-subtitle: 12px;
+    --ui-fs-action: 12.5px;
+    --ui-fs-tab: 11px;
+    --ui-fs-tab-strong: 12px;
+    --ui-fs-badge: 10px;
     --ui-fs-lg: 17px;
-    /* Page title: the h1 of a content page (Contas and the pages migrated
-       next). Display: a page-level greeting/identity heading, one step below
-       the page title. Both belong to the same scale; a page never hardcodes a
-       font size outside it. */
+    --ui-fs-xl: 17px;
+    --ui-fs-2xl: 19px;
     --ui-fs-title: clamp(25px, 3.4vw, 32px);
     --ui-fs-display: clamp(20px, 2.6vw, 25px);
+    --ui-fs-dashboard-greeting: clamp(26px, 3.2vw, 38px);
+    --ui-fs-dashboard-hero: clamp(31px, 3.3vw, 44px);
+    --ui-fs-dashboard-hero-wide: clamp(30px, 9.5cqw, 44px);
+    --ui-fs-dashboard-hero-mobile: clamp(30px, 9vw, 40px);
+    --ui-fs-dashboard-flow-axis: 9px;
     --ui-fw-display: 640;
     --ui-fw-title: 680;
     --ui-fw-item: 590;
 
-    /* --- Geometry (official scale) --------------------------------------- */
+    /* --- Geometry -------------------------------------------------------- */
     --ui-border-width: 1px;
     --ui-radius-panel: 18px;   /* large panel, sheet, modal */
     --ui-radius-card: 14px;    /* KPI, compact card, raised block */
@@ -68,8 +123,12 @@
     --ui-radius-button: 12px;
     --ui-radius-tab: 12px;     /* tablist container (never a full pill) */
     --ui-radius-tab-item: 8px;
+    --ui-radius-dashboard-tab-item: 9px;
     --ui-radius-badge: 999px;  /* compact chip/badge only */
-    --ui-radius-pill: 999px;   /* compact action pills only */
+    --ui-radius-pill: 999px;   /* compact filter/segment */
+    --ui-radius-action-pill: 999px;
+    --ui-radius-card-face: 18px;
+    --ui-radius-info: 12px;
 
     /* Compatibility aliases for the first Premium consumers. */
     --ui-radius-xs: 8px;
@@ -83,84 +142,155 @@
     --ui-panel-pad: 22px;
     --ui-gap: 18px;
     --ui-section-gap: 24px;
-
-    /* Tile: avatar, icon tile and compact row action. */
+    --ui-card-pad: 18px 20px;
+    --ui-card-pad-compact: 14px 16px;
+    --ui-card-head-gap: 14px;
+    --ui-card-head-gap-compact: 12px;
+    --ui-layout-gap: 16px;
+    --ui-layout-gap-compact: 14px;
     --ui-radius-tile: 10px;
+    /* Page measures. `max` is the shell/data surface; `standard` is the
+       ergonomic measure for forms, settings, detail and reading pages. Page
+       stylesheets choose the measure by purpose instead of hardcoding it. */
+    --ui-content-max: 1560px;
+    --ui-content-standard: 1180px;
 
-    /* --- Authenticated navigation (sidebar, drawer, bottom nav) -----------
-       One geometry for every authenticated route. Page stylesheets must not
-       redefine these values or the active state; the shell owns them. */
-    --ui-nav-width: 248px;
-    --ui-nav-width-collapsed: 72px;
-    --ui-nav-item-height: 40px;
+    /* Dashboard list density. Component-level, not structural page tokens. */
+    --ui-list-row-gap: 10px;
+    --ui-list-row-padding-block: 9px;
+    --ui-list-row-min-height: 56px;
+    --ui-list-row-radius: 10px;
+    --ui-list-row-separator: 1px solid var(--ui-border);
+    --ui-list-avatar-size: 38px;
+    --ui-list-copy-gap: 2px;
+    --ui-list-compact-gap: 8px;
+    --ui-list-compact-min-height: 32px;
+
+    /* --- Authenticated navigation (shell-owned) -------------------------- */
+    --ui-nav-width: 264px;
+    --ui-nav-width-collapsed: 80px;
+    --ui-nav-item-height: 42px;
     --ui-nav-item-height-sm: 34px;
     --ui-nav-group-height: 38px;
-    --ui-nav-item-radius: 10px;
+    --ui-nav-item-radius: 12px;
     --ui-nav-item-radius-sm: 8px;
     --ui-nav-item-pad: 11px;
     --ui-nav-gap: 10px;
-    --ui-nav-active-bg: var(--v2-accent-soft);
-    --ui-nav-active-fg: var(--v2-accent-on-soft);
-    --ui-nav-active-icon: var(--v2-accent-strong);
-    --ui-nav-active-indicator: var(--v2-accent);
-    --ui-nav-active-indicator-width: 2px;
+    --ui-nav-active-bg: var(--ui-accent-soft);
+    --ui-nav-active-fg: var(--ui-accent-on-soft);
+    --ui-nav-active-icon: var(--ui-accent);
+    /* Quick actions are secondary rows: they keep the former 40 px density
+       instead of the 42 px primary navigation height. */
+    --ui-quick-action-height: 40px;
 
     /* Shell icon buttons: collapse toggle, theme, notifications, appbar. */
     --ui-icon-button-size: 40px;      /* appbar / touch context */
     --ui-icon-button-size-sm: 34px;   /* sidebar header */
     --ui-icon-button-size-xs: 30px;   /* dense footer utilities */
     --ui-icon-button-radius: 10px;
-    --ui-icon-button-bg: var(--v2-surface);
-    --ui-icon-button-border: var(--v2-border);
+    --ui-icon-button-bg: var(--ui-surface);
+    --ui-icon-button-border: var(--ui-border);
 
     /* --- Interaction states ---------------------------------------------- */
     --ui-disabled-opacity: .5;
     --ui-transition: 160ms ease;
-    --ui-field-bg: var(--v2-surface-raised);
-    --ui-field-border: var(--v2-border-strong);
-    /* Mouse/touch focus is a quiet neutral emphasis. Keyboard focus adds the
-       outline from the modality helper, so the field never needs a violet ring. */
+    --ui-field-bg: var(--ui-surface-raised);
+    --ui-field-border: var(--ui-border-strong);
     --ui-field-focus-border: color-mix(in srgb, var(--ui-border-strong) 35%, var(--ui-text-muted));
 
-    /* Tabs: neutral container, active item with a perceptible violet surface.
-       The active state never depends on a 1px border alone. */
-    --ui-tab-bg: var(--v2-surface-raised);
-    --ui-tab-active-bg: color-mix(in srgb, var(--v2-accent) 16%, var(--v2-surface));
-    --ui-tab-active-fg: var(--v2-accent-strong);
-    --ui-tab-active-border: color-mix(in srgb, var(--v2-accent) 42%, var(--v2-border));
+    --ui-tab-bg: var(--ui-surface-raised);
+    --ui-tab-active-bg: color-mix(in srgb, var(--ui-accent) 16%, var(--ui-surface));
+    --ui-tab-active-fg: var(--ui-accent-text);
+    --ui-tab-active-border: color-mix(in srgb, var(--ui-accent) 42%, var(--ui-border));
 
-    /* Competence month rail: same selection language everywhere. */
-    --ui-month-active-bg: color-mix(in srgb, var(--v2-accent) 18%, var(--v2-surface));
-    --ui-month-active-fg: var(--v2-accent-strong);
-    --ui-month-active-border: color-mix(in srgb, var(--v2-accent) 52%, var(--v2-border));
+    --ui-month-active-bg: color-mix(in srgb, var(--ui-accent) 18%, var(--ui-surface));
+    --ui-month-active-fg: var(--ui-accent-text);
+    --ui-month-active-border: color-mix(in srgb, var(--ui-accent) 52%, var(--ui-border));
 
+    /* --- Elevation ------------------------------------------------------- */
+    --ui-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 18px 40px -30px rgba(0, 0, 0, 0.85);
     --ui-shadow-panel: 0 1px 2px #00000026, 0 18px 40px -28px #00000073;
     --ui-shadow-raised: 0 12px 28px -20px #00000099;
-    --ui-shadow-floating: 0 18px 40px -18px #000000b3;   /* fixed bar / dock */
+    --ui-shadow-floating: 0 18px 40px -18px #000000b3;
 
-    /* --- Breakpoints (canonical scale) ------------------------------------
-       CSS variables cannot be used inside @media, so this is documentation:
-       359  extreme compact (bottom nav labels)
-       389  compact mobile (paddings, icon sizes)
-       639  phone landscape / large phone
-       767  mobile layout of the Premium components
-       1023 shell switches to drawer + bottom nav
-       1279 desktop compact
-       1759 wide desktop (Dashboard two columns)
-       Legacy page stylesheets still use 640/699/900/1180/1240; they keep
-       their own values until their turn in the migration (section 17). */
+    /* --- Dashboard component identity (approved B10.2) ------------------ */
+    --ui-hero-bg: linear-gradient(160deg, #1a1d23 0%, #15181d 100%);
+    --ui-hero-text: #f5f7fa;
+    --ui-hero-muted: #a6adb8;
+    --ui-hero-border: #2a3038;
+    --ui-hero-mini: #1f232a;
+    --ui-hero-mini-border: #2d333c;
 
-    /* --- Compatibility bridge for legacy --cb-* consumers ----------------
-       Scoped to the authenticated shell. Legacy pages keep their markup,
-       Tailwind utilities and component classes; only the palette/geometry
-       primitives they already reference now resolve to the canonical values.
-       Standalone/auth surfaces outside .cb-v2 are untouched. */
+    --ui-chart-0: #8b5cf6;
+    --ui-chart-1: #38bdf8;
+    --ui-chart-2: #fb7185;
+    --ui-chart-3: #fbbf24;
+    --ui-chart-4: #2dd4bf;
+    --ui-chart-other: #3a414b;
+
+    --ui-avatar-tone-0: #c4b5fd;
+    --ui-avatar-tone-0-soft: rgba(139, 92, 246, 0.16);
+    --ui-avatar-tone-1: #93c5fd;
+    --ui-avatar-tone-1-soft: rgba(59, 130, 246, 0.15);
+    --ui-avatar-tone-2: #f9a8d4;
+    --ui-avatar-tone-2-soft: rgba(236, 72, 153, 0.15);
+    --ui-avatar-tone-3: #fcd34d;
+    --ui-avatar-tone-3-soft: rgba(245, 158, 11, 0.15);
+    --ui-avatar-tone-4: #6ee7b7;
+    --ui-avatar-tone-4-soft: rgba(16, 185, 129, 0.15);
+
+    /* --- Layer scale ----------------------------------------------------- */
+    --ui-z-navigation: 20;
+    --ui-z-fab: 25;
+    --ui-z-drawer: 50;
+    --ui-z-feedback: 60;
+
+    /* ====================================================================
+       Compatibility aliases — no independent values below this line.
+       ==================================================================== */
+
+    --v2-canvas: var(--ui-canvas);
+    --v2-surface: var(--ui-surface);
+    --v2-surface-2: var(--ui-surface-raised);
+    --v2-surface-raised: var(--ui-surface-raised);
+    --v2-surface-hover: var(--ui-surface-hover);
+    --v2-border: var(--ui-border);
+    --v2-border-strong: var(--ui-border-strong);
+    --v2-text: var(--ui-text);
+    --v2-muted: var(--ui-text-muted);
+    --v2-subtle: var(--ui-text-subtle);
+    --v2-accent: var(--ui-accent);
+    --v2-accent-strong: var(--ui-accent-text);
+    --v2-accent-soft: var(--ui-accent-soft);
+    --v2-positive: var(--ui-success);
+    --v2-danger: var(--ui-danger);
+    --v2-warning: var(--ui-warning);
+    --v2-info: var(--ui-info);
+    --v2-detail-surface: var(--ui-detail-surface);
+    --v2-progress-track: var(--ui-progress-track);
+    --v2-row-hover-text: var(--ui-row-hover-text);
+    --v2-fab-border: var(--ui-fab-border);
+    --v2-fab-hover: var(--ui-fab-hover);
+    --v2-tone-ok: var(--ui-tone-ok);
+    --v2-tone-attention: var(--ui-tone-attention);
+    --v2-tone-near: var(--ui-tone-near);
+    --v2-tone-exceeded: var(--ui-tone-exceeded);
+    --v2-tone-initial: var(--ui-tone-initial);
+    --v2-tone-progress: var(--ui-tone-progress);
+    --v2-tone-complete: var(--ui-tone-complete);
+    --v2-tone-info: var(--ui-tone-info);
+    --v2-tone-neutral: var(--ui-tone-neutral);
+    --v2-tone-danger: var(--ui-tone-danger);
+    --v2-tone-soft: var(--ui-tone-soft);
+    --v2-z-navigation: var(--ui-z-navigation);
+
+
     --cb-bg: var(--ui-canvas);
     --cb-bg-soft: var(--ui-surface-raised);
     --cb-surface-1: var(--ui-surface);
     --cb-surface-2: var(--ui-surface-raised);
     --cb-surface-3: var(--ui-surface-hover);
-    --cb-surface-overlay: color-mix(in srgb, var(--ui-surface) 92%, transparent);
+    --cb-surface-overlay: var(--ui-surface-overlay);
     --cb-border-subtle: var(--ui-border);
     --cb-border-strong: var(--ui-border-strong);
     --cb-border-focus: var(--ui-focus);
@@ -169,6 +299,7 @@
     --cb-text-subtle: var(--ui-text-subtle);
     --cb-text-inverse: var(--ui-canvas);
     --cb-accent: var(--ui-accent);
+    --cb-accent-ink: var(--ui-accent-text);
     --cb-accent-solid: var(--ui-action-bg);
     --cb-accent-hover: var(--ui-action-bg-hover);
     --cb-accent-text: var(--ui-action-fg);
@@ -181,12 +312,95 @@
 
 html[data-theme="light"] .cb-v2,
 html[data-theme="light"] .cb-v2-body {
-    --ui-month-active-bg: color-mix(in srgb, var(--v2-accent) 16%, var(--v2-surface));
-    --ui-month-active-border: color-mix(in srgb, var(--v2-accent) 46%, var(--v2-border));
+    --ui-canvas: #f4f5f7;
+    --ui-sidebar: #fbfcfd;
+    --ui-surface: #ffffff;
+    --ui-surface-raised: #f8f9fb;
+    --ui-surface-hover: #eef1f5;
+    --ui-border: #e4e7ec;
+    --ui-border-strong: #cfd5dd;
+    --ui-text: #161a22;
+    --ui-text-muted: #5f6b7a;
+    --ui-text-subtle: #666f7c;
+    --ui-progress-track: #eef1f5;
+    --ui-detail-surface: #f7f9fb;
+    --ui-tab-badge: #e7ebf0;
 
+    --ui-accent: #6c47ff;
+    --ui-accent-text: #5b2fcc;
+    --ui-accent-soft: #f0ebff;
+    --ui-accent-on-soft: #4f2ca8;
+    --ui-focus: var(--ui-accent-text);
+    --ui-action-bg: #6c47ff;
+    --ui-action-bg-hover: #5534bd;
+
+    --ui-success: #0b6f4b;
+    --ui-success-soft: #e8f7f0;
+    --ui-danger: #b3274a;
+    --ui-danger-soft: #fdeef3;
+    --ui-warning: #8a5a00;
+    --ui-warning-soft: #fdf5e6;
+    --ui-info: #2a5fc5;
+    --ui-info-soft: #eaf2ff;
+
+    --ui-tone-near: color-mix(in srgb, var(--ui-warning) 78%, var(--ui-danger));
+    --ui-tone-initial: color-mix(in srgb, var(--ui-accent) 48%, var(--ui-text-muted));
+    --ui-tone-complete: #0f7a4a;
+
+    --ui-row-hover-text: #5130ae;
+    --ui-fab-border: #6b47d7;
+    --ui-fab-hover: #5534bd;
+    --ui-avatar-surface: #ddd9ff;
+    --ui-avatar-text: #45318b;
+
+    --ui-month-active-bg: color-mix(in srgb, var(--ui-accent) 16%, var(--ui-surface));
+    --ui-month-active-border: color-mix(in srgb, var(--ui-accent) 46%, var(--ui-border));
+
+    --ui-shadow-card: 0 1px 2px rgba(22, 26, 34, 0.04), 0 18px 40px -32px rgba(22, 26, 34, 0.14);
     --ui-shadow-panel: 0 1px 2px #0f172a0a, 0 18px 40px -30px #0f172a1f;
     --ui-shadow-raised: 0 10px 24px -18px #0f172a1f;
     --ui-shadow-floating: 0 16px 36px -20px #0f172a33;
+
+    --ui-hero-bg: linear-gradient(160deg, #ffffff 0%, #fcfcfd 100%);
+    --ui-hero-text: #161a22;
+    --ui-hero-muted: #5f6b7a;
+    --ui-hero-border: #e4e7ec;
+    --ui-hero-mini: #f8f9fb;
+    --ui-hero-mini-border: #eef1f5;
+
+    --ui-chart-0: #6c47ff;
+    --ui-chart-1: #2f6bdd;
+    --ui-chart-2: #b3274a;
+    --ui-chart-3: #8a5a00;
+    --ui-chart-4: #0f7a52;
+    --ui-chart-other: #d5dae2;
+
+    --ui-avatar-tone-0: #6c47ff;
+    --ui-avatar-tone-0-soft: #f0ebff;
+    --ui-avatar-tone-1: #2f6bdd;
+    --ui-avatar-tone-1-soft: #eaf2ff;
+    --ui-avatar-tone-2: #b0309a;
+    --ui-avatar-tone-2-soft: #fdeef8;
+    --ui-avatar-tone-3: #b7791f;
+    --ui-avatar-tone-3-soft: #fdf5e6;
+    --ui-avatar-tone-4: #0f9d68;
+    --ui-avatar-tone-4-soft: #e8f7f0;
+}
+
+/* ========================================================================
+   Dashboard V2 component context — B10.2 identity.
+   R1.3-D4-A promoted the structural palette, semantic colors and navigation
+   geometry to the global foundation above. This scope keeps only the values
+   that are exclusive to the Dashboard composition.
+   ======================================================================== */
+.cb-preview.cb-v2 {
+    --ui-tone-near: #fb923c;
+    --ui-tone-initial: color-mix(in srgb, var(--ui-accent) 55%, var(--ui-text-muted));
+    --ui-radius-panel: 20px;
+}
+
+html[data-theme="light"] .cb-preview.cb-v2 {
+    --ui-tone-near: #c2410c;
 }
 
 @media (max-width: 767px) {

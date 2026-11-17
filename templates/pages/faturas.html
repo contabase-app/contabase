@@ -53,15 +53,15 @@
 {{define "faturas-empty-content"}}
 <section id="faturas-content" class="cb-v2-faturas-empty" aria-labelledby="faturas-empty-title">
     <div class="cb-v2-faturas-empty-icon"><i data-lucide="calendar-search" aria-hidden="true"></i></div>
-    <p class="cb-v2-eyebrow">{{.PeriodLabel}}</p>
+    <p class="ui-eyebrow">{{.PeriodLabel}}</p>
     <h2 id="faturas-empty-title">Nenhuma fatura para este período</h2>
     <p>Não há uma fatura aberta para <strong>{{.CardName}}</strong>. Você pode consultar outro mês ou criar esta competência manualmente.</p>
     <div class="cb-v2-faturas-empty-navigation">
-        <a href="{{.PreviousURL}}"><i data-lucide="chevron-left"></i>Mês anterior</a>
-        <a href="{{.NextURL}}">Mês seguinte<i data-lucide="chevron-right"></i></a>
+        <a class="ui-btn ui-btn--secondary ui-btn--sm" href="{{.PreviousURL}}"><i data-lucide="chevron-left"></i>Mês anterior</a>
+        <a class="ui-btn ui-btn--secondary ui-btn--sm" href="{{.NextURL}}">Mês seguinte<i data-lucide="chevron-right"></i></a>
     </div>
     <form hx-post="{{.OpenInvoiceURL}}" hx-target="#faturas-content" hx-swap="outerHTML" hx-push-url="{{if .IsFaturasIndex}}false{{else}}true{{end}}">
-        <button type="submit" class="cb-v2-faturas-empty-create"><i data-lucide="plus"></i>Abrir fatura</button>
+        <button type="submit" class="ui-btn ui-btn--primary"><i data-lucide="plus"></i>Abrir fatura</button>
     </form>
 </section>
 {{end}}
@@ -419,8 +419,8 @@
     </div>
 
     {{end}}
-    {{if not .HideMonthNavigation}}<div class="cb-card-dense px-4 py-3 md:p-5">
-        <h3 class="cb-section-title mb-2 md:mb-3.5">Faturas do cartão</h3>
+    {{if not .HideMonthNavigation}}<div class="ui-panel cb-invoice-month-nav">
+        <h3 class="cb-invoice-month-title">Faturas do cartão</h3>
         <div id="monthSelector" data-month-selector class="w-full">
             <a href="{{.MesAnteriorURL}}"
                 class="month-control btn-tactile flex items-center justify-center"

@@ -14,6 +14,9 @@ fail_test() { printf 'FAIL: %s\n' "$1" >&2; FAIL_COUNT=$((FAIL_COUNT + 1)); }
 pass_test() { printf 'PASS: %s\n' "$1"; PASS_COUNT=$((PASS_COUNT + 1)); }
 
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/contabase-version-policy-test.XXXXXX")"
+# Resolve symlinked ancestors and duplicate separators (e.g. /var on macOS);
+# the production proof path check intentionally rejects them.
+TEST_ROOT="$(cd "$TEST_ROOT" && pwd -P)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
 # ------------------------------------------------------------------------------
@@ -331,6 +334,48 @@ run_wrapper_for "v0.1.0-beta.9" "v${H3}.0.0" "beta.9 -> huge major (UPDATE)" 0 w
 run_wrapper_for "v${H3}.0.0" "v0.1.0-beta.9" "huge major -> beta.9 (DOWNGRADE)" 1 w9
 
 echo ""
+echo "=== INTEGRATION: docker-image dispatch precedes version shortcut ==="
+mkdir -p "$TEST_ROOT/image-bin"
+cat > "$TEST_ROOT/image-bin/python3" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$CONTABASE_TEST_DISPATCH_LOG"
+printf 'assume=%s\n' "${CONTABASE_ASSUME_YES:-0}" >> "$CONTABASE_TEST_DISPATCH_LOG"
+SH
+chmod +x "$TEST_ROOT/image-bin/python3"
+image_state="$TEST_ROOT/image-state.env"
+printf 'CONTABASE_INSTALL_METHOD=docker-image\nCONTABASE_CHANNEL=beta\nCONTABASE_INSTALLED_VERSION=v1.0.0-beta.8\n' > "$image_state"
+for entry in "$WRAPPER" "$LEAF_DOCKER"; do
+  dispatch_log="$TEST_ROOT/dispatch-$(basename "$entry").log"
+  if env PATH="$TEST_ROOT/image-bin:$PATH" CONTABASE_STATE_FILE="$image_state" \
+      CONTABASE_TEST_DISPATCH_LOG="$dispatch_log" CONTABASE_UPDATE_RESOLVE_ONLY=1 \
+      bash "$entry" v1.0.0-beta.8 --channel beta --dry-run && \
+      grep -q 'contabase-docker-image-update.py' "$dispatch_log" && \
+      grep -Fxq "$image_state" "$dispatch_log" && grep -Fxq -- '--dry-run' "$dispatch_log"; then
+    pass_test "docker-image: $(basename "$entry") delega antes de igualdade/Git"
+  else
+    fail_test "docker-image: despacho incorreto em $(basename "$entry")"
+  fi
+done
+for entry in "$WRAPPER" "$LEAF_DOCKER"; do
+  dispatch_log="$TEST_ROOT/headless-$(basename "$entry").log"
+  if env PATH="$TEST_ROOT/image-bin:$PATH" CONTABASE_STATE_FILE="$image_state" \
+      CONTABASE_TEST_DISPATCH_LOG="$dispatch_log" CONTABASE_ASSUME_YES=1 \
+      bash "$entry" --yes </dev/null && grep -Fxq 'assume=1' "$dispatch_log" && \
+      [ "$(grep -Fxc -- '--yes' "$dispatch_log")" = 1 ]; then
+    pass_test "docker-image: $(basename "$entry") preserva assume-yes sem duplicar flags"
+  else
+    fail_test "docker-image: headless/flags divergentes em $(basename "$entry")"
+  fi
+done
+printf 'CONTABASE_IMAGE_INDEX_DIGEST=sha256:invalid\n' >> "$image_state"
+sed 's/CONTABASE_INSTALL_METHOD=docker-image/CONTABASE_INSTALL_METHOD=docker/' "$image_state" > "$TEST_ROOT/conflict.env"
+if CONTABASE_STATE_FILE="$TEST_ROOT/conflict.env" bash "$LEAF_DOCKER" --dry-run >/dev/null 2>&1; then
+  fail_test "docker-image: contradicao caiu no legado"
+else
+  pass_test "docker-image: contradicao bloqueada antes do legado"
+fi
+
+echo ""
 echo "=== NEGATIVE PROOF: ALREADY_CURRENT / DOWNGRADE no mutam filesystem ==="
 
 test_no_fs_mutation() {
@@ -407,6 +452,46 @@ done
 echo ""
 echo "=== RELEASE LEAF DIRECT ==="
 
+prepare_release_contract_fixture() {
+  local sandbox="$1" current="$2"
+  cat > "$sandbox/bin/systemctl" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "${SYSTEMCTL_LOG:-/dev/null}"
+case "$*" in
+  *--property=FragmentPath*) printf '%s\n' "$RELEASE_SERVICE_FILE" ;;
+  *--property=DropInPaths*) : ;;
+  *--property=NeedDaemonReload*) printf 'no\n' ;;
+esac
+EOF
+  # Ownership is a synthetic root boundary; no host system directory is used.
+  cat > "$sandbox/bin/stat" <<'EOF'
+#!/bin/sh
+case "$1:$2" in -c:%u) echo 0 ;; -c:%a) echo 755 ;; *) exit 1 ;; esac
+EOF
+  chmod +x "$sandbox/bin/systemctl" "$sandbox/bin/stat"
+  cat >> "$sandbox/config/contabase.env" <<EOF
+DATA_DIR=$sandbox/data
+DB_FILE=$sandbox/data/contabase.db
+UPLOADS_DIR=$sandbox/data/uploads
+PORT=8080
+EOF
+  cat > "$sandbox/contabase.service" <<EOF
+[Service]
+User=contabase
+Group=contabase
+WorkingDirectory=$sandbox/install
+EnvironmentFile=$sandbox/config/contabase.env
+ExecStart=$sandbox/install/contabase
+EOF
+  cat > "$sandbox/config/install-state.env" <<EOF
+CONTABASE_STATE_VERSION=1
+CONTABASE_INSTALL_METHOD=release
+CONTABASE_CHANNEL=beta
+CONTABASE_INSTALLED_VERSION=$current
+CONTABASE_REPO_PATH=
+EOF
+}
+
 run_release_leaf() {
   local current="$1" target="$2" expected_rc="$3" label="$4"
   local safe_label
@@ -441,9 +526,11 @@ EOF
 AUTH_ENCRYPTION_KEY=test-auth-key-not-real
 SECURITY_MASTER_KEY=test-security-key-not-real
 EOF
+  prepare_release_contract_fixture "$sandbox" "$current"
 
   local rc=0
   PATH="$sandbox/bin:$PATH" \
+  RELEASE_SERVICE_FILE="$sandbox/contabase.service" \
   SYSTEMCTL_LOG="$sandbox/systemctl.log" \
   CONTABASE_VERSION="$target" \
   CONTABASE_ASSUME_YES=1 \
@@ -458,12 +545,12 @@ EOF
   fi
 
   local systemctl_calls=0
-  [ -f "$sandbox/systemctl.log" ] && systemctl_calls="$(wc -l < "$sandbox/systemctl.log" | tr -d ' ')"
+  [ ! -f "$sandbox/systemctl.log" ] || systemctl_calls="$(awk '$1 != "show" { n++ } END { print n+0 }' "$sandbox/systemctl.log")"
   local backup_files
   backup_files="$(find "$sandbox" -name '*.pre-update*' -o -name '*.staging.*' -o -name '*.previous.*' 2>/dev/null | wc -l | tr -d ' ')"
 
   if [ "$systemctl_calls" -ne 0 ]; then
-    fail_test "Release leaf: $label -> systemctl chamado ($systemctl_calls vezes); esperado 0"
+    fail_test "Release leaf: $label -> systemctl mutavel chamado ($systemctl_calls vezes); esperado 0"
   elif [ "$backup_files" -ne 0 ]; then
     fail_test "Release leaf: $label -> arquivos de backup/staging/swap presentes; esperado 0"
   else
@@ -505,9 +592,11 @@ CONTABASE_CHANNEL=beta
 CONTABASE_INSTALLED_VERSION=v0.1.0-beta.9
 CONTABASE_REPO_PATH=
 EOF
+  prepare_release_contract_fixture "$sandbox" "v0.1.0-beta.9"
 
   local rc=0
   PATH="$sandbox/bin:$PATH" \
+  RELEASE_SERVICE_FILE="$sandbox/contabase.service" \
   SYSTEMCTL_LOG="$sandbox/systemctl.log" \
   CONTABASE_VERSION="v0.1.0-beta.9" \
   CONTABASE_ASSUME_YES=1 \
@@ -545,6 +634,7 @@ EOF
   cp "$LEAF_SOURCE" "$dir/scripts/update-contabase-source.sh"
   mkdir -p "$dir/scripts/lib"
   cp "$REPO_DIR/scripts/lib/contabase-recovery.sh" "$dir/scripts/lib/contabase-recovery.sh"
+  cp "$REPO_DIR/scripts/lib/contabase-install-state.sh" "$dir/scripts/lib/contabase-install-state.sh"
 
   cat > "$dir/bin/id" <<'EOF'
 #!/bin/sh
@@ -565,15 +655,32 @@ EOF
 #!/bin/sh
 GIT_LOG="${GIT_LOG:-/dev/null}"
 log() { printf '%s\n' "$*" >> "$GIT_LOG"; }
+if [ "${1:-}" = "-C" ]; then shift 2; fi
 cmd="$1"
 shift
 case "$cmd" in
   branch) [ "${1:-}" = "--show-current" ] && echo "${GIT_BRANCH:-main}" ;;
+  config)
+    case "$*" in
+      *"remote.origin.url"*) echo "https://github.com/contabase-app/contabase.git" ;;
+      *"branch.main.remote"*) echo "origin" ;;
+      *"branch.main.merge"*) echo "refs/heads/main" ;;
+      *".remote") echo "origin" ;;
+      *".merge") echo "refs/heads/main" ;;
+    esac
+    ;;
+  remote)
+    case "$*" in
+      *"get-url --all origin"*) echo "https://github.com/contabase-app/contabase.git" ;;
+    esac
+    ;;
   log) echo "abc123 test commit" ;;
   fetch) log "fetch $*"; exit 0 ;;
   rev-parse)
     case "$*" in
       *"@{upstream}"*) exit 1 ;;
+      *"FETCH_HEAD^{commit}"*) echo "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ;;
+      *"HEAD^{commit}"*) echo "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ;;
       *":scripts/ops/backup.sh") log "rev-parse backup.sh"; echo "${BLOB_ID:-deadbeef}" ;;
       *) echo "HEAD" ;;
     esac ;;
@@ -676,7 +783,9 @@ echo "=== DOCKER LEAF DIRECT ==="
 
 setup_docker_sandbox() {
   local dir="$1"
-  mkdir -p "$dir/bin" "$dir/.git" "$dir/tmp"
+  mkdir -p "$dir/bin" "$dir/.git" "$dir/tmp" "$dir/scripts/lib"
+  cp "$LEAF_DOCKER" "$dir/scripts/update-contabase-docker.sh"
+  cp "$REPO_DIR/scripts/lib/contabase-install-state.sh" "$REPO_DIR/scripts/lib/contabase-recovery.sh" "$dir/scripts/lib/"
   cat > "$dir/.env.docker" <<'EOF'
 AUTH_ENCRYPTION_KEY=test-auth-key-not-real
 SECURITY_MASTER_KEY=test-security-key-not-real
@@ -689,7 +798,12 @@ log() { printf '%s\n' "$*" >> "$DOCKER_LOG"; }
 if [ "$1" = "compose" ]; then
   shift
   case "$1" in
-    config) exit 0 ;;
+    config)
+      if [ "$*" = 'config --format json' ]; then
+        printf '{"name":"fixture-project","services":{"contabase":{"build":{"context":"."}}}}\n'
+      fi
+      exit 0
+      ;;
     ps) exit 0 ;;
     down) log "compose down"; exit "${DOCKER_DOWN_RC:-0}" ;;
     up) log "compose up $*"; exit 0 ;;
@@ -711,17 +825,38 @@ STUB
 #!/bin/sh
 GIT_LOG="${GIT_LOG:-/dev/null}"
 log() { printf '%s\n' "$*" >> "$GIT_LOG"; }
+if [ "${1:-}" = "-C" ]; then shift 2; fi
 cmd="$1"
 shift
 case "$cmd" in
   branch) [ "${1:-}" = "--show-current" ] && echo "${GIT_BRANCH:-main}" ;;
+  config)
+    case "$*" in
+      *"remote.origin.url"*) echo "https://github.com/contabase-app/contabase.git" ;;
+      *"branch.main.remote"*) echo "origin" ;;
+      *"branch.main.merge"*) echo "refs/heads/main" ;;
+      *".remote") echo "origin" ;;
+      *".merge") echo "refs/heads/main" ;;
+      *"url."*) exit 1 ;;
+    esac
+    ;;
+  remote)
+    case "$*" in
+      *"get-url --all origin"*) echo "https://github.com/contabase-app/contabase.git" ;;
+    esac
+    ;;
   log) echo "abc123 test commit" ;;
   fetch) log "fetch $*"; exit 0 ;;
   rev-list) echo "0" ;;
+  for-each-ref) exit 0 ;;
   rev-parse)
     case "$*" in
+      *"--is-shallow-repository"*) echo false ;;
+      *"FETCH_HEAD^{commit}"*) echo "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ;;
+      *"HEAD^{commit}"*) echo "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ;;
       *":scripts/ops/backup.sh") log "rev-parse backup.sh"; echo "${BLOB_ID:-deadbeef}" ;;
-      *) echo "HEAD" ;;
+      *"refs/tags/"*) exit 1 ;;
+      *) echo "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ;;
     esac ;;
   show)
     case "$*" in
@@ -730,6 +865,11 @@ case "$cmd" in
       *) echo "" ;;
     esac ;;
   hash-object) echo "${BLOB_ID:-deadbeef}" ;;
+  status) echo "" ;;
+  merge-base) exit 0 ;;
+  archive) exit 0 ;;
+  checkout) exit 0 ;;
+  merge) exit 0 ;;
   pull) log "pull $*"; echo "pulled" ;;
   reset) exit 0 ;;
   clean) exit 0 ;;
@@ -773,7 +913,7 @@ EOF
     CONTABASE_STATE_FILE="$dir/install-state.env" \
     CONTABASE_ASSUME_YES=1 \
     CONTABASE_VERSION="$explicit_ver" \
-      bash "$LEAF_DOCKER" >"$out" 2>&1
+      bash "$dir/scripts/update-contabase-docker.sh" >"$out" 2>&1
   ) || rc=$?
   echo "$rc"
 }
@@ -862,6 +1002,8 @@ u3g_source_commit() {
   local repo="$1" version="$2" sentinel="$3" msg="$4"
   mkdir -p "$repo/scripts/lib"
   cp "$REPO_DIR/scripts/lib/contabase-recovery.sh" "$repo/scripts/lib/contabase-recovery.sh"
+  cp "$REPO_DIR/scripts/lib/contabase-install-state.sh" "$repo/scripts/lib/contabase-install-state.sh"
+  cp "$REPO_DIR/scripts/lib/contabase-update-wrapper.sh" "$repo/scripts/lib/contabase-update-wrapper.sh"
   printf '%s\n' "$version" > "$repo/VERSION"
   printf 'module github.com/contabase-app/contabase\n\ngo 1.23\n' > "$repo/go.mod"
   mkdir -p "$repo/scripts/ops"
@@ -884,6 +1026,10 @@ EOF
   cat > "$repo/.gitignore" <<'GITIGNORE'
 scripts/update-contabase-source.sh
 install-state.env
+finalize.pending
+.finalize.pending.*
+transition.pending
+.transition.pending.*
 tmp/
 data/
 install/
@@ -915,6 +1061,11 @@ case "\$1" in
     n=\$(cat "\$FETCH_COUNT_FILE" 2>/dev/null || echo 0)
     n=\$((n+1))
     echo "\$n" > "\$FETCH_COUNT_FILE"
+    exec env \
+      GIT_CONFIG_COUNT=1 \
+      GIT_CONFIG_KEY_0="url.file://\${REMOTE_DIR}.insteadOf" \
+      GIT_CONFIG_VALUE_0="https://github.com/contabase-app/contabase.git" \
+      "\$GIT_REAL" "\$@"
     ;;
   merge-base)
     if [ ! -f "\$MOVE_FLAG" ]; then
@@ -1032,6 +1183,7 @@ u3g_make_source_ab() {
   "$U3G_GIT_REAL" clone -q "$remote" "$local"
   "$U3G_GIT_REAL" -C "$local" config user.email "t@e"
   "$U3G_GIT_REAL" -C "$local" config user.name "t"
+  "$U3G_GIT_REAL" -C "$local" remote set-url origin https://github.com/contabase-app/contabase.git
   "$U3G_GIT_REAL" -C "$local" reset --hard -q "$OID_C"
   cp "$LEAF_SOURCE" "$local/scripts/update-contabase-source.sh"
   u3g_source_stubs "$bin" "$local"
@@ -1086,6 +1238,8 @@ u3g_source_ab_test() {
   grep -q "$OID_B" "$base/git.log" && { fail_test "U3G Source A->B: OID B vazou em comando de conteudo"; ok=0; }
   grep -q '^pull' "$base/git.log" && { fail_test "U3G Source A->B: git pull foi usado"; ok=0; }
   grep -q 'CONTABASE_INSTALLED_VERSION=v0.1.0-beta.9' "$local/install-state.env" || { fail_test "U3G Source A->B: estado final nao confirmou beta.9"; ok=0; }
+  grep -q "CONTABASE_INSTALL_COMMIT=$OID_A" "$local/install-state.env" || { fail_test "U3G Source A->B: commit final nao foi atualizado"; ok=0; }
+  grep -q 'CONTABASE_INSTALL_REF_KIND=branch' "$local/install-state.env" || { fail_test "U3G Source A->B: proveniencia branch nao foi registrada"; ok=0; }
   [ "$(tr -d '[:space:]' < "$local/install/VERSION")" = "v0.1.0-beta.9" ] || { fail_test "U3G Source A->B: bundle final nao confirmou beta.9"; ok=0; }
   [ "$ok" = "1" ] && pass_test "U3G Source A->B: OID congelado A, 1 fetch, sem pull, HEAD/snapshot/helper de A"
 }
@@ -1305,6 +1459,8 @@ u3g_docker_commit() {
   local repo="$1" version="$2" sentinel="$3" msg="$4"
   mkdir -p "$repo/scripts/lib"
   cp "$REPO_DIR/scripts/lib/contabase-recovery.sh" "$repo/scripts/lib/contabase-recovery.sh"
+  cp "$REPO_DIR/scripts/lib/contabase-install-state.sh" "$repo/scripts/lib/contabase-install-state.sh"
+  cp "$REPO_DIR/scripts/lib/contabase-update-wrapper.sh" "$repo/scripts/lib/contabase-update-wrapper.sh"
   printf '%s\n' "$version" > "$repo/VERSION"
   mkdir -p "$repo/scripts/ops"
   printf '#!/bin/sh\necho backup-helper-%s\n' "$sentinel" > "$repo/scripts/ops/backup.sh"
@@ -1329,8 +1485,18 @@ GITIGNORE
 }
 
 u3g_docker_stubs() {
-  local bin="$1" dir="$2"
+  local bin="$1" dir="$2" real_python
+  real_python="$(command -v python3)"
   mkdir -p "$bin"
+  cat > "$bin/python3" <<EOF
+#!/bin/sh
+if [ "\$3" = "-" ] && [ "\$4" = replace ] && [ "\$5" = "\${CONTABASE_STATE_FILE:-}" ] \
+  && [ -n "\${PERSIST_FAIL_ONCE_FILE:-}" ] && [ ! -f "\$PERSIST_FAIL_ONCE_FILE" ]; then
+  touch "\$PERSIST_FAIL_ONCE_FILE"
+  exit 1
+fi
+exec "$real_python" "\$@"
+EOF
   cat > "$bin/id" <<'EOF'
 #!/bin/sh
 echo 0
@@ -1354,10 +1520,16 @@ if [ "\$1" = "compose" ]; then
   shift
   sub=""
   for a in "\$@"; do
-    case "\$a" in config|ps|exec|down|up|port|logs) sub="\$a"; break ;; esac
+    case "\$a" in config|build|ps|exec|down|up|port|logs) sub="\$a"; break ;; esac
   done
   case "\$sub" in
-    config) exit 0 ;;
+    config)
+      case " \$* " in
+        *' --format json '*) printf '{"name":"contabase-test","services":{"contabase":{"build":{"context":"."}}}}\n' ;;
+      esac
+      exit 0
+      ;;
+    build) exit 0 ;;
     ps)
       if [ -f "\${DOCKER_RUNNING_FILE:-/nonexistent}" ]; then
         if [ "\${DOCKER_HIDE_CONTAINER_AFTER_UP:-0}" = "1" ] \
@@ -1388,7 +1560,7 @@ if [ "\$1" = "compose" ]; then
           fi
           if [ "\$expect" = "file" ]; then
             printf 'file=%s\n' "\$arg" >> "\$DOCKER_COMPOSE_CAPTURE"
-            last_file="\$arg"; expect=""; continue
+            case "\$arg" in *contabase-compose-override*) last_file="\$arg";; esac; expect=""; continue
           fi
           case "\$arg" in
             --project-directory) expect="project" ;;
@@ -1441,7 +1613,7 @@ case "\$1" in
         fi
         ;;
       *'{{.Config.Image}}'*) echo contabase:fixture-old ;;
-      *'{{.Image}}'*) echo sha256:fixture-old ;;
+      *'{{.Image}}'*) echo sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
       *) exit 1 ;;
     esac
     ;;
@@ -1451,27 +1623,19 @@ case "\$1" in
     [ -f "\${DOCKER_RUNTIME_VERSION_FILE:-/nonexistent}" ] || exit 67
     cat "\$DOCKER_RUNTIME_VERSION_FILE"
     ;;
-  image) exit 0 ;;
+  image)
+    if [ "\$2" = inspect ]; then printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'; fi
+    exit 0
+    ;;
   *) exit 0 ;;
 esac
 exit 0
-EOF
-  cat > "$bin/install" <<'EOF'
-#!/bin/sh
-dst=""
-for arg in "$@"; do dst="$arg"; done
-if [ -n "${PERSIST_FAIL_ONCE_FILE:-}" ] && [ "$dst" = "${CONTABASE_STATE_FILE:-}" ] \
-  && [ ! -f "$PERSIST_FAIL_ONCE_FILE" ]; then
-  touch "$PERSIST_FAIL_ONCE_FILE"
-  exit 1
-fi
-exec /usr/bin/install "$@"
 EOF
   cat > "$bin/sudo" <<'EOF'
 #!/bin/sh
 exec "$@"
 EOF
-  chmod +x "$bin/id" "$bin/curl" "$bin/docker" "$bin/sudo" "$bin/install"
+  chmod +x "$bin/id" "$bin/curl" "$bin/docker" "$bin/sudo" "$bin/python3"
 }
 
 u3g_make_docker_ab() {
@@ -1490,6 +1654,7 @@ u3g_make_docker_ab() {
   "$U3G_GIT_REAL" clone -q "$remote" "$local"
   "$U3G_GIT_REAL" -C "$local" config user.email "t@e"
   "$U3G_GIT_REAL" -C "$local" config user.name "t"
+  "$U3G_GIT_REAL" -C "$local" remote set-url origin https://github.com/contabase-app/contabase.git
   "$U3G_GIT_REAL" -C "$local" reset --hard -q "$OID_C"
   cp "$LEAF_DOCKER" "$local/scripts/update-contabase-docker.sh"
   u3g_docker_stubs "$bin" "$local"
@@ -1531,7 +1696,7 @@ u3g_docker_ab_test() {
     DOCKER_TARGET_VERSION="v0.1.0-beta.9" \
     NEW_RUNTIME_MARKER="$base/new-runtime" \
     HEALTHCHECK_ATTEMPTS=1 \
-      bash "$LEAF_DOCKER" >"$base/out.log" 2>&1
+      bash "$local/scripts/update-contabase-docker.sh" >"$base/out.log" 2>&1
   ) || rc=$?
 
   local fetch_count=0
@@ -1594,7 +1759,7 @@ u3i_docker_runtime_mismatch_retry_test() {
     DOCKER_KEEP_RUNTIME_ON_UP=1 \
     NEW_RUNTIME_MARKER="$base/new-runtime" \
     HEALTHCHECK_ATTEMPTS=1 \
-      bash "$LEAF_DOCKER" >"$base/first.log" 2>&1
+      bash "$local/scripts/update-contabase-docker.sh" >"$base/first.log" 2>&1
   ) || first_rc=$?
 
   local ok=1 head_after_first
@@ -1628,7 +1793,7 @@ u3i_docker_runtime_mismatch_retry_test() {
     DOCKER_TARGET_VERSION="v0.1.0-beta.9" \
     NEW_RUNTIME_MARKER="$base/new-runtime" \
     HEALTHCHECK_ATTEMPTS=1 \
-      bash "$LEAF_DOCKER" >"$base/retry.log" 2>&1
+      bash "$local/scripts/update-contabase-docker.sh" >"$base/retry.log" 2>&1
   ) || retry_rc=$?
 
   [ "$retry_rc" = 0 ] || { fail_test "U3I mismatch retry: segunda execucao rc=$retry_rc"; ok=0; }
@@ -1656,7 +1821,7 @@ u3i_docker_mount_policy_test() {
     CONTABASE_ASSUME_YES=1 DOCKER_RUNNING_FILE="$base/runtime-running" DOCKER_RUNTIME_VERSION_FILE="$base/runtime-version" \
     DOCKER_TARGET_VERSION="v0.1.0-beta.9" DOCKER_MOUNTS_FILE_AFTER_UP="$base/mounts-after-up" \
     NEW_RUNTIME_MARKER="$base/new-runtime" HEALTHCHECK_ATTEMPTS=1 \
-      bash "$LEAF_DOCKER" >"$base/out.log" 2>&1
+      bash "$local/scripts/update-contabase-docker.sh" >"$base/out.log" 2>&1
   ) || rc=$?
 
   local ok=1
@@ -1686,7 +1851,7 @@ u3i_docker_container_selection_test() {
     CONTABASE_ASSUME_YES=1 DOCKER_RUNNING_FILE="$base/runtime-running" DOCKER_RUNTIME_VERSION_FILE="$base/runtime-version" \
     DOCKER_TARGET_VERSION="v0.1.0-beta.9" DOCKER_EFFECTIVE_CONTAINER_ID="compose-service-container" \
     DOCKER_FOREIGN_CONTAINER_ID="foreign-healthy-container" NEW_RUNTIME_MARKER="$base/new-runtime" HEALTHCHECK_ATTEMPTS=1 \
-      bash "$LEAF_DOCKER" >"$base/out.log" 2>&1
+      bash "$local/scripts/update-contabase-docker.sh" >"$base/out.log" 2>&1
   ) || rc=$?
 
   local ok=1
@@ -1714,7 +1879,7 @@ u3i_docker_ambiguous_container_test() {
     CONTABASE_ASSUME_YES=1 DOCKER_RUNNING_FILE="$base/runtime-running" DOCKER_RUNTIME_VERSION_FILE="$base/runtime-version" \
     DOCKER_TARGET_VERSION="v0.1.0-beta.9" DOCKER_EXTRA_CONTAINER_ID_AFTER_UP="second-container" \
     NEW_RUNTIME_MARKER="$base/new-runtime" HEALTHCHECK_ATTEMPTS=1 \
-      bash "$LEAF_DOCKER" >"$base/out.log" 2>&1
+      bash "$local/scripts/update-contabase-docker.sh" >"$base/out.log" 2>&1
   ) || rc=$?
 
   local ok=1
@@ -1777,7 +1942,7 @@ u3h_docker_retry_test() {
       health) export HEALTH_FAIL_ONCE_FILE="$base/health-fail" ;;
       persist) export PERSIST_FAIL_ONCE_FILE="$base/persist-fail" ;;
     esac
-    bash "$LEAF_DOCKER" >"$base/first.log" 2>&1
+    bash "$local/scripts/update-contabase-docker.sh" >"$base/first.log" 2>&1
   ) || rc_first=$?
 
   local ok=1 head_after_first
@@ -1818,7 +1983,7 @@ u3h_docker_retry_test() {
     DOCKER_TARGET_VERSION="$expected_version" \
     NEW_RUNTIME_MARKER="$base/new-runtime" \
     HEALTHCHECK_ATTEMPTS=1 \
-      bash "$LEAF_DOCKER" >"$base/retry.log" 2>&1
+      bash "$local/scripts/update-contabase-docker.sh" >"$base/retry.log" 2>&1
   ) || rc_retry=$?
 
   local head_final runtime_final fetch_count
@@ -1880,7 +2045,7 @@ u3g_docker_dirty_test() {
     CONTABASE_UPDATE_WRAPPER="$local/usr-local-bin/contabase-update" \
     CONTABASE_UPDATE_ALIAS="$local/usr-local-bin/cb-update" \
     CONTABASE_ASSUME_YES=1 \
-      bash "$LEAF_DOCKER" >"$base/out.log" 2>&1
+      bash "$local/scripts/update-contabase-docker.sh" >"$base/out.log" 2>&1
   ) || rc=$?
 
   local fetch_count=0
@@ -1914,7 +2079,7 @@ u3g_docker_skip_pull_dirty_test() {
     CONTABASE_UPDATE_WRAPPER="$local/usr-local-bin/contabase-update" \
     CONTABASE_UPDATE_ALIAS="$local/usr-local-bin/cb-update" \
     CONTABASE_ASSUME_YES=1 \
-      bash "$LEAF_DOCKER" --skip-pull >"$base/out.log" 2>&1
+      bash "$local/scripts/update-contabase-docker.sh" --skip-pull >"$base/out.log" 2>&1
   ) || rc=$?
 
   [ "$rc" -ne 0 ] && pass_test "U3G Docker --skip-pull dirty: FAIL-CLOSED" \
@@ -1940,7 +2105,7 @@ u3g_docker_force_reset_skip_pull_test() {
     CONTABASE_UPDATE_WRAPPER="$local/usr-local-bin/contabase-update" \
     CONTABASE_UPDATE_ALIAS="$local/usr-local-bin/cb-update" \
     CONTABASE_ASSUME_YES=1 \
-      bash "$LEAF_DOCKER" --force-reset --skip-pull >"$base/out.log" 2>&1
+      bash "$local/scripts/update-contabase-docker.sh" --force-reset --skip-pull >"$base/out.log" 2>&1
   ) || rc=$?
 
   [ "$rc" -ne 0 ] && pass_test "U3G Docker --force-reset --skip-pull: REJECT" \
@@ -1985,7 +2150,7 @@ u3g_docker_compose_override_test() {
     DOCKER_TARGET_VERSION="v0.1.0-beta.9" \
     NEW_RUNTIME_MARKER="$base/new-runtime" \
     HEALTHCHECK_ATTEMPTS=1 \
-      bash "$LEAF_DOCKER" >"$base/out.log" 2>&1
+      bash "$local/scripts/update-contabase-docker.sh" >"$base/out.log" 2>&1
   ) || rc=$?
 
   local up_line capture="$base/compose.capture" local_real
@@ -1994,16 +2159,16 @@ u3g_docker_compose_override_test() {
 
   local ok=1
   if [ -n "$up_line" ]; then
-    printf '%s' "$up_line" | grep -q -- "--build" || { fail_test "U3G Docker override: up sem --build"; ok=0; }
+    printf '%s' "$up_line" | grep -q -- "--no-build" || { fail_test "U3G Docker override: up deve usar imagem fixada"; ok=0; }
     printf '%s' "$up_line" | grep -q -- "contabase-compose-override" || { fail_test "U3G Docker override: override canonico ausente nos args"; ok=0; }
   else
-    fail_test "U3G Docker override: compose up --build nao chamado"
+    fail_test "U3G Docker override: compose up da imagem fixada nao chamado"
     ok=0
   fi
   [ -f "$capture" ] || { fail_test "U3G Docker override: captura comportamental ausente"; ok=0; }
   if [ -f "$capture" ]; then
     grep -Fxq "project=$local_real" "$capture" || { fail_test "U3G Docker override: project-directory nao preservou o repo"; ok=0; }
-    [ "$(grep -c '^file=' "$capture")" = "3" ] || { fail_test "U3G Docker override: cadeia -f nao tem base + host + canonico"; ok=0; }
+    [ "$(grep -c '^file=' "$capture")" = "4" ] || { fail_test "U3G Docker override: cadeia -f nao tem base + host + canonico + ativacao"; ok=0; }
     sed -n '1p' "$capture" | grep -q '^project=' || { fail_test "U3G Docker override: project-directory fora da precedencia esperada"; ok=0; }
     sed -n '2p' "$capture" | grep -q 'contabase-build-snapshot.*/docker-compose.yml$' || { fail_test "U3G Docker override: base nao veio do snapshot"; ok=0; }
     sed -n '3p' "$capture" | grep -q 'file=docker-compose.override.yml$' || { fail_test "U3G Docker override: override local nao ficou entre base e canonico"; ok=0; }

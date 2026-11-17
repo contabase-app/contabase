@@ -21,9 +21,9 @@ O ContaBase usa SemVer. A tag pública, o arquivo `VERSION`, o changelog e a not
 - `v1.0.0-beta.6` — sexta candidata da linha 1.0, publicada como prerelease.
 - `v1.0.0-beta.7` — sétima candidata da linha 1.0, publicada como prerelease com artifacts Linux amd64/arm64, checksums e imagem GHCR; a promoção do canal Beta depende do smoke real de instalação e atualização.
 
-## Candidata em preparação
+## ContaBase v1.0.0-beta.8
 
-- Nenhuma candidata em preparação após a publicação da `v1.0.0-beta.7`.
+- **Novidades da Beta 8:** remoção de Reservas e avanço do schema para 83, com updater autenticado por commit/manifesto, `flock`, proveniência de instalação, backup pré-migration verificável e correções de concorrência. A instalação exige verificar a disponibilidade da tag, GitHub Release, artefatos, GHCR e canal, além da homologação do método; esta seção não comprova publicação.
 
 ## Processo de publicação
 
@@ -107,15 +107,17 @@ A release contém:
 
 O workflow compila CSS, executa testes e `go vet`, gera os binários Linux, valida a estrutura dos bundles e confere SHA-256.
 
+A partir da Beta 8, o canal de instalação também publica o manifesto autenticado do updater em `updaters/vX.Y.Z-beta.N/updater.sha256`, com commit, versão, SHA-256 do bundle e métodos suportados. Ele não é um asset da GitHub Release e só pode apontar para uma tag/release existente.
+
 Assets são comparados por checksum antes do upload. Assets idênticos são preservados; apenas assets ausentes são enviados. Assets divergentes, inesperados ou incompletos bloqueiam o pipeline. Nenhum asset é apagado ou sobrescrito automaticamente.
 
 ## Instalação por método
 
 - **Docker via GHCR:** tag fixa de versão e `beta` como canal mutável; sem `latest`;
 - **release artifact:** recomendado para VPS/LXC Debian sem Docker;
-- **source/build local:** avançado, para desenvolvimento e customização.
+- **source/build local (Source legado):** avançado, para desenvolvimento e customização.
 
-A entrada recomendada é via canal público de instalação em https://get-contabase.pages.dev.
+A entrada recomendada é o [Guia Completo de Instalação](https://contabase.pages.dev/setup/) no site oficial. A URL de distribuição do script abaixo é um endpoint separado; a mudança do endereço do site não altera esse endpoint.
 
 ```bash
 curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh && bash /tmp/contabase-install.sh
@@ -123,9 +125,13 @@ curl -fsSLo /tmp/contabase-install.sh https://get-contabase.pages.dev/install.sh
 
 ## Atualizações
 
-O update Docker possui backup, healthcheck e rollback de runtime.
-O update source possui script próprio.
-O update por release artifact segue o mesmo contrato de segurança (backup canônico obrigatório, healthcheck e rollback por restore explícito).
+Os updates Docker e Release exigem backup canônico e verificam o healthcheck. Backup não significa rollback automático: nos fluxos legados e no Release, a recuperação só pode usar uma cópia qualificada da Beta 6, com identidade exata, prova administrativa local válida e antes de qualquer tentativa de startup da candidata. Beta 7, Beta 8 e versões desconhecidas não são destinos de rollback automático; a recuperação automática avançada da Beta 8 fica adiada.
+
+O método `docker-image`, fixado por digest, não realiza rollback automático nem emite ou consome provas de recuperação. O update do Source legado possui script próprio e preserva as mesmas restrições da recuperação histórica.
+
+O Source Bootstrap é experimental e não possui atualização automática suportada; para novas instalações VPS/LXC, prefira o release artifact.
+
+Após tentativa de startup da candidata, falhas não autorizam executar automaticamente código antigo sobre dados potencialmente migrados. Pode haver indisponibilidade até intervenção administrativa especializada com artefato verificado compatível com o schema atual. Preserve banco, WAL, uploads, configuração, chaves e backup. Restore de dados é uma operação separada, exige decisão explícita e nunca é automático.
 
 ## Onde acompanhar
 
@@ -133,6 +139,8 @@ O update por release artifact segue o mesmo contrato de segurança (backup canô
 - [Release Notes](../RELEASE_NOTES.md)
 - [GitHub Releases](https://github.com/contabase-app/contabase/releases)
 - [GHCR](https://github.com/contabase-app/contabase/pkgs/container/contabase)
+- [Nota da v1.0.0-beta.8](releases/v1.0.0-beta.8.md)
+- [Nota da v1.0.0-beta.7 — publicada](releases/v1.0.0-beta.7.md)
 - [Nota da v1.0.0-beta.5 — publicada](releases/v1.0.0-beta.5.md)
 - [Nota da v1.0.0-beta.4 — publicada](releases/v1.0.0-beta.4.md)
 - [Nota da v1.0.0-beta.3 — publicada](releases/v1.0.0-beta.3.md)
@@ -140,4 +148,4 @@ O update por release artifact segue o mesmo contrato de segurança (backup canô
 - [Nota da v0.1.0-beta.9](releases/v0.1.0-beta.9.md)
 - [Nota da v0.1.0-beta.8](releases/v0.1.0-beta.8.md)
 - [Nota da v0.1.0-beta.7](releases/v0.1.0-beta.7.md)
-- [Canal de instalação](https://get-contabase.pages.dev)
+- [Acessar a Página Oficial](https://contabase.pages.dev/)

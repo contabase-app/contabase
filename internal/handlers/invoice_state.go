@@ -54,6 +54,7 @@ type invoiceFinancialSnapshot struct {
 	ActivePaymentSum        int64
 	LegacyPaidAmount        int64
 	EffectivePaid           int64
+	HasMovements            bool
 }
 
 var (
@@ -92,6 +93,31 @@ const invoiceEffectivePaidSQLExpr = `CASE
 	ELSE COALESCE(i.paid_amount, 0)
 END`
 
+// A zero total is not the same as an untouched period: purchases, refunds and
+// payments can net to zero. The flag only observes existing invoice records.
+const invoiceHasMovementsIASQL = `(CASE
+	WHEN COALESCE(i.paid_amount, 0) <> 0 THEN 1
+	WHEN EXISTS (
+		SELECT 1
+		FROM transactions t
+		WHERE t.workspace_id = a.workspace_id
+		  AND t.invoice_id = i.id
+	) THEN 1
+	WHEN EXISTS (
+		SELECT 1
+		FROM invoice_refunds ir
+		WHERE ir.workspace_id = a.workspace_id
+		  AND ir.invoice_id = i.id
+	) THEN 1
+	WHEN EXISTS (
+		SELECT 1
+		FROM invoice_payments ip
+		WHERE ip.workspace_id = a.workspace_id
+		  AND ip.invoice_id = i.id
+	) THEN 1
+	ELSE 0
+END)`
+
 // transactionNetAmountTSQL is the effective expense amount for queries that
 // use the fixed transaction alias t. Refunds are contra-expenses, never income.
 const transactionNetAmountTSQL = `CASE WHEN t.id IS NULL THEN NULL ELSE contabase_refund_net(t.amount, (
@@ -125,6 +151,7 @@ const invoiceGeneralRefundTotalIASQL = `COALESCE((
 
 func loadInvoiceFinancialSnapshotTx(tx *sql.Tx, workspaceID, invoiceID string) (invoiceFinancialSnapshot, error) {
 	var snapshot invoiceFinancialSnapshot
+	var hasMovements int
 	err := tx.QueryRow(`
 		SELECT
 			i.id,
@@ -157,7 +184,8 @@ func loadInvoiceFinancialSnapshotTx(tx *sql.Tx, workspaceID, invoiceID string) (
 				  AND ip.invoice_id = i.id
 				  AND ip.reversed_at IS NULL
 			), 0),
-			COALESCE(i.paid_amount, 0)
+			COALESCE(i.paid_amount, 0),
+			`+invoiceHasMovementsIASQL+`
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id
 		WHERE i.id = ? AND a.workspace_id = ? AND a.type = ?
@@ -172,16 +200,19 @@ func loadInvoiceFinancialSnapshotTx(tx *sql.Tx, workspaceID, invoiceID string) (
 		&snapshot.ActivePaymentCount,
 		&snapshot.ActivePaymentSum,
 		&snapshot.LegacyPaidAmount,
+		&hasMovements,
 	)
 	if err != nil {
 		return snapshot, err
 	}
+	snapshot.HasMovements = hasMovements != 0
 	snapshot.EffectivePaid = effectivePaidFromModernAndLegacy(snapshot.TotalPaymentRecordCount, snapshot.ActivePaymentSum, snapshot.LegacyPaidAmount)
 	return snapshot, nil
 }
 
-func loadInvoiceFinancialSnapshotDB(db *sql.DB, workspaceID, invoiceID string) (invoiceFinancialSnapshot, error) {
+func loadInvoiceFinancialSnapshotDB(db reportQueryer, workspaceID, invoiceID string) (invoiceFinancialSnapshot, error) {
 	var snapshot invoiceFinancialSnapshot
+	var hasMovements int
 	err := db.QueryRow(`
 		SELECT
 			i.id,
@@ -214,7 +245,8 @@ func loadInvoiceFinancialSnapshotDB(db *sql.DB, workspaceID, invoiceID string) (
 				  AND ip.invoice_id = i.id
 				  AND ip.reversed_at IS NULL
 			), 0),
-			COALESCE(i.paid_amount, 0)
+			COALESCE(i.paid_amount, 0),
+			`+invoiceHasMovementsIASQL+`
 		FROM invoices i
 		JOIN accounts a ON a.id = i.account_id
 		WHERE i.id = ? AND a.workspace_id = ? AND a.type = ?
@@ -229,10 +261,12 @@ func loadInvoiceFinancialSnapshotDB(db *sql.DB, workspaceID, invoiceID string) (
 		&snapshot.ActivePaymentCount,
 		&snapshot.ActivePaymentSum,
 		&snapshot.LegacyPaidAmount,
+		&hasMovements,
 	)
 	if err != nil {
 		return snapshot, err
 	}
+	snapshot.HasMovements = hasMovements != 0
 	snapshot.EffectivePaid = effectivePaidFromModernAndLegacy(snapshot.TotalPaymentRecordCount, snapshot.ActivePaymentSum, snapshot.LegacyPaidAmount)
 	return snapshot, nil
 }

@@ -37,7 +37,7 @@ func f10Before27(t *testing.T) *sql.DB {
 	}
 	for _, m := range migrations {
 		if m.version > 27 {
-			f10Exec(t, db, `INSERT INTO schema_migrations(version,name) VALUES(?,?)`, m.version, m.name)
+			f10Exec(t, db, `INSERT INTO schema_migrations(version,name) VALUES(?,?)`, m.version, "test-only excluded: "+m.name)
 		}
 	}
 	return db

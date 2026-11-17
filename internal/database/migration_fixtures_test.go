@@ -27,4 +27,7 @@ func completeHistoricalBaselineForTest(t *testing.T, db *sql.DB) {
 			}
 		}
 	}
+	if _, err := db.Exec(legacyReserveDDL); err != nil {
+		t.Fatalf("create legacy reserve baseline: %v", err)
+	}
 }

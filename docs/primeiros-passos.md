@@ -14,7 +14,7 @@ Recomendado começar pelo `scripts/install.sh` — ele oferece um menu interativ
 
 | Se você... | Use este método | Por quê |
 |------------|-----------------|---------|
-| Quer começar pelo instalador guiado | [install.sh (menu interativo)](instalacao.md) | Entrada única; escolhe o método certo por você. |
+| Quer começar pelo instalador guiado | [install.sh (menu interativo)](instalacao.md) | Bootstrap exige admissão; helpers legados têm fluxo próprio. |
 | Quer testar rápido em homelab ou máquina local | [Docker (instalador guiado)](instalacao-docker.md) | Mais simples; o instalador guiado cuida de secrets, permissões e containers. |
 | Já usa Docker, Dockge, Portainer ou CasaOS | [Docker manual com GHCR](instalacao-docker.md#opção-manual-docker-compose-com-ghcr-sem-clonar-o-repositório) | Imagem pronta do GHCR; compose/env copiáveis; sem clone. |
 | Quer rodar em VPS/LXC sem Docker | [Release/LXC/VPS (instalador guiado)](instalacao-lxc-vps.md) | Binário pronto com systemd e validação de checksum; sem Go/Node. |
@@ -28,7 +28,7 @@ Independentemente do método:
 2. **Teste o restore** em outro lugar.
 3. **Valide o healthcheck** (`/health`).
 4. **Use HTTPS** se expuser para a internet (via proxy, tunnel ou CDN).
-5. **Remova o token de setup** após criar o primeiro administrador.
+5. **Remova o token de setup** após criar o primeiro administrador. Em Docker, recrie o container com o mesmo Compose e confirme que o token saiu do ambiente; em systemd, reinicie o serviço.
 
 Leia também:
 

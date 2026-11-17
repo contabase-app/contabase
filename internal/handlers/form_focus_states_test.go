@@ -31,21 +31,18 @@ func TestPremiumFormFocusUsesNeutralBorderAndKeyboardOutline(t *testing.T) {
 	}
 
 	shell := readTestFile(t, "assets/css/app-shell.css")
-	for _, expected := range []string{
-		".cb-v2 .cb-input:focus,",
-		"border-color: var(--ui-field-focus-border);",
-		`html[data-input-modality="keyboard"] .cb-v2 .cb-input:focus,`,
-	} {
-		if !strings.Contains(shell, expected) {
-			t.Fatalf("shell field focus missing %q", expected)
-		}
+	if strings.Contains(shell, ".cb-v2 .cb-input:focus") {
+		t.Fatal("legacy field focus must live in design-system.css, not be duplicated in the shell")
 	}
 
 	design := readTestFile(t, "assets/css/design-system.css")
 	for _, expected := range []string{
 		"--cb-field-focus-border:",
 		".cb-input:focus {",
-		"border-color: var(--cb-field-focus-border);",
+		"border-color: var(--ui-field-focus-border, var(--cb-field-focus-border));",
+		`html[data-input-modality="keyboard"] .cb-input:focus {`,
+		"outline: 2px solid var(--ui-focus, var(--cb-border-focus));",
+		"box-shadow: none;",
 	} {
 		if !strings.Contains(design, expected) {
 			t.Fatalf("design-system field focus missing %q", expected)

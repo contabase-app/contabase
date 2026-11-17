@@ -26,6 +26,10 @@
             longPressTriggered: false,
             deleteModalOpen: false,
             deleteChoice: 'selected_only',
+            deleteIDs: [],
+            deleteConfirmed: false,
+            deleteSubmitting: false,
+            deleteFailed: false,
             isTouch: (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window)
         };
 
@@ -34,10 +38,14 @@
             toggleAll: container.querySelector('[data-bulk-toggle-all]'),
             countLabel: container.querySelector('[data-bulk-count]'),
             countNum: container.querySelector('[data-bulk-count-num]'),
+            modalCount: container.querySelector('[data-bulk-modal-count]'),
             actionBar: container.querySelector('[data-bulk-bar]'),
             modal: container.querySelector('[data-bulk-modal]'),
+            deleteBtn: container.querySelector('[data-bulk-delete-btn]'),
             deleteForm: container.querySelector('[data-bulk-delete-form]'),
             deleteScopeInput: container.querySelector('[data-bulk-delete-scope]'),
+            deleteConfirm: container.querySelector('[data-action="confirm-delete"]'),
+            deleteError: container.querySelector('[data-bulk-delete-error]'),
             formsPaid: container.querySelector('[data-bulk-form-ids][data-action="paid"]'),
             formsPending: container.querySelector('[data-bulk-form-ids][data-action="pending"]'),
             formsDelete: container.querySelector('[data-bulk-form-ids][data-action="delete"]')
@@ -61,6 +69,9 @@
             }
             if (dom.countNum) {
                 dom.countNum.textContent = state.ids.length;
+            }
+            if (dom.modalCount) {
+                dom.modalCount.textContent = state.deleteModalOpen ? state.deleteIDs.length : state.ids.length;
             }
             if (dom.actionBar) {
                 dom.actionBar.classList.toggle('hidden', !activeBulkSelection);
@@ -126,22 +137,98 @@
         }
 
         function openDeleteModal() {
-            if (state.ids.length === 0) return;
-            if (window.lancamentosHasSeries && window.lancamentosHasSeries(state.ids)) {
-                state.deleteModalOpen = true;
-                if (dom.modal) dom.modal.classList.remove('hidden');
-            } else {
-                state.deleteChoice = 'selected_only';
-                updateForms();
-                submitDeleteForm();
-            }
+            if (!dom.modal || !state.ids.length || state.deleteSubmitting || state.deleteModalOpen) return;
+            state.deleteIDs = state.ids.slice();
+            state.deleteChoice = 'selected_only';
+            state.deleteModalOpen = true;
+            var hasSeries = window.lancamentosHasSeries(state.deleteIDs);
+            dom.modal.querySelector('[data-bulk-delete-title]').textContent = hasSeries ? 'Excluir série?' : 'Excluir lançamentos?';
+            dom.modal.querySelector('[data-bulk-delete-description]').textContent = hasSeries
+                ? 'Escolha se a exclusão atinge apenas os lançamentos marcados ou também as ocorrências futuras da série.'
+                : 'Confirme a exclusão dos lançamentos marcados.';
+            dom.modal.querySelector('[data-bulk-delete-scopes]').classList.toggle('hidden', !hasSeries);
+            dom.modal.querySelectorAll('[data-bulk-delete-choice]').forEach(function (radio) {
+                radio.checked = radio.value === 'selected_only';
+                radio.disabled = !hasSeries;
+            });
+            dom.deleteConfirm.disabled = state.deleteFailed;
+            syncDOM();
+            dom.modal.classList.remove('hidden');
+            dom.modal.querySelector('[data-action="cancel-delete"]').focus();
+        }
+
+        function closeDeleteModal() {
+            if (!state.deleteModalOpen || state.deleteSubmitting) return;
+            state.deleteModalOpen = false;
+            state.deleteConfirmed = false;
+            state.deleteIDs = [];
+            if (dom.modal) dom.modal.classList.add('hidden');
+            if (dom.deleteBtn) dom.deleteBtn.focus();
+        }
+
+        function deleteSelectionMatches() {
+            var checked = Array.prototype.filter.call(container.querySelectorAll('[data-tx-checkbox]'), function (cb) { return cb.checked; });
+            return state.deleteIDs.length > 0 && state.ids.length === state.deleteIDs.length && checked.length === state.deleteIDs.length &&
+                state.deleteIDs.every(function (id) {
+                    return state.ids.indexOf(id) !== -1 && checked.some(function (cb) { return cb.value === id; });
+                });
+        }
+
+        function deleteFailed() {
+            state.deleteSubmitting = false;
+            state.deleteConfirmed = false;
+            state.deleteFailed = true;
+            dom.deleteForm.removeAttribute('aria-busy');
+            if (document.activeElement === dom.deleteConfirm) dom.modal.querySelector('[role="dialog"]').focus();
+            dom.deleteConfirm.disabled = true;
+            dom.deleteConfirm.textContent = 'Confirmar exclusão';
+            // A failed response can follow a committed delete. Never retry it
+            // against a stale selection or claim that nothing was removed.
+            dom.deleteError.textContent = 'Não foi possível confirmar a exclusão. Recarregue a lista antes de tentar novamente.';
+            dom.deleteError.classList.remove('hidden');
         }
 
         function submitDeleteForm() {
-            state.deleteModalOpen = false;
-            if (dom.modal) dom.modal.classList.add('hidden');
+            if (!state.deleteModalOpen || state.deleteSubmitting || state.deleteFailed) return;
+            if (!deleteSelectionMatches()) {
+                closeDeleteModal();
+                return;
+            }
             updateForms();
-            if (dom.deleteForm) dom.deleteForm.requestSubmit();
+            state.deleteConfirmed = true;
+            try {
+                dom.deleteForm.requestSubmit();
+            } catch (error) {
+                deleteFailed();
+            }
+        }
+
+        if (dom.deleteForm) {
+            // Capture before HTMX's submit listener consumes the request.
+            dom.deleteForm.addEventListener('submit', function (event) {
+                if (!state.deleteConfirmed || state.deleteSubmitting || !deleteSelectionMatches()) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    return;
+                }
+                state.deleteConfirmed = false;
+                state.deleteSubmitting = true;
+                dom.deleteForm.setAttribute('aria-busy', 'true');
+                if (document.activeElement === dom.deleteConfirm) dom.modal.querySelector('[role="dialog"]').focus();
+                dom.deleteConfirm.disabled = true;
+                dom.deleteConfirm.textContent = 'Excluindo…';
+            }, true);
+            dom.deleteForm.addEventListener('htmx:afterRequest', function (event) {
+                if (event.detail.elt !== dom.deleteForm) return;
+                if (!event.detail.successful) {
+                    deleteFailed();
+                    return;
+                }
+                state.deleteSubmitting = false;
+                dom.deleteForm.removeAttribute('aria-busy');
+                dom.deleteConfirm.textContent = 'Confirmar exclusão';
+                closeDeleteModal();
+            });
         }
 
         function clearLongPress() {
@@ -203,15 +290,13 @@
 
             // Delete modal: close on backdrop
             if (target === dom.modal) {
-                state.deleteModalOpen = false;
-                dom.modal.classList.add('hidden');
+                closeDeleteModal();
                 return;
             }
 
             // Delete modal buttons
             if (target.closest('[data-action="cancel-delete"]')) {
-                state.deleteModalOpen = false;
-                dom.modal.classList.add('hidden');
+                closeDeleteModal();
                 return;
             }
             if (target.closest('[data-action="confirm-delete"]')) {
@@ -222,7 +307,8 @@
             // Delete scope radio
             var scopeRadio = target.closest('[data-bulk-delete-choice]');
             if (scopeRadio) {
-                state.deleteChoice = scopeRadio.value;
+                if (!state.deleteModalOpen || state.deleteSubmitting || scopeRadio.disabled) return;
+                state.deleteChoice = scopeRadio.value === 'with_future' ? 'with_future' : 'selected_only';
                 updateForms();
                 return;
             }
@@ -238,6 +324,46 @@
             }
         });
 
+        container.addEventListener('keydown', function (event) {
+            if (!state.deleteModalOpen) return;
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeDeleteModal();
+            } else if (event.key === 'Tab') {
+                var controls = Array.prototype.filter.call(dom.modal.querySelectorAll('button, input'), function (el) {
+                    if (el.matches(':disabled') || el.tabIndex < 0 || el.closest('.hidden, [hidden], [inert]') || !el.getClientRects().length) return false;
+                    var visibility = window.getComputedStyle(el).visibility;
+                    return visibility !== 'hidden' && visibility !== 'collapse';
+                });
+                // A named radio group contributes one Tab stop, even when its
+                // checked member is not the first input in DOM order.
+                controls = controls.filter(function (el, index, candidates) {
+                    if (el.type !== 'radio' || !el.name) return true;
+                    var group = candidates.filter(function (other) {
+                        return other.type === 'radio' && other.name === el.name && other.form === el.form;
+                    });
+                    return el === (group.filter(function (radio) { return radio.checked; })[0] || group[0]);
+                }).sort(function (a, b) {
+                    return (a.tabIndex || Infinity) - (b.tabIndex || Infinity);
+                });
+                var first = controls[0];
+                var last = controls[controls.length - 1];
+                if (!first) {
+                    event.preventDefault();
+                    dom.modal.querySelector('[role="dialog"]').focus();
+                } else if (controls.indexOf(document.activeElement) === -1) {
+                    event.preventDefault();
+                    (event.shiftKey ? last : first).focus();
+                } else if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first.focus();
+                }
+            }
+        });
+
         // Submit interception: populate hidden inputs before submit
         container.addEventListener('submit', function (event) {
             var form = event.target.closest('form');
@@ -249,6 +375,7 @@
 
         // External reset trigger (e.g. from hx-events after successful bulk action)
         container.addEventListener('contabase:bulk-reset', function () {
+            closeDeleteModal();
             state.mode = false;
             state.ids = [];
             syncDOM();

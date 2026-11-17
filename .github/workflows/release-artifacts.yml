@@ -28,6 +28,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve and validate public version
         id: version
@@ -111,6 +112,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Verify native stat and SQLite
         run: |
@@ -130,6 +133,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Run canonical matrix on Alpine 3.21 without coreutils
         run: ./.github/scripts/run-backup-restore-busybox.sh
@@ -143,13 +148,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      manifest: ${{ steps.manifest.outputs.manifest }}
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Go from go.mod
         uses: actions/setup-go@v5
@@ -168,6 +176,21 @@ jobs:
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: ./.github/scripts/release-validation.sh "$RELEASE_VERSION"
 
+      # Manifesto de integridade transmitido ao publicador via output do job.
+      # E produzido pelo proprio build: nao equivale a assinatura independente
+      # contra comprometimento do produtor.
+      - name: Record artifact integrity manifest
+        id: manifest
+        working-directory: release-dist
+        run: |
+          set -euo pipefail
+          manifest="$(sha256sum ./* | LC_ALL=C sort)"
+          {
+            echo 'manifest<<CONTABASE_MANIFEST_EOF'
+            printf '%s\n' "$manifest"
+            echo 'CONTABASE_MANIFEST_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
@@ -178,6 +201,60 @@ jobs:
             release-dist/checksums.txt
           if-no-files-found: error
           retention-days: 7
+
+  # Publicador dedicado: unico job com contents:write, isolado do toolchain de
+  # build. Ordem obrigatoria: download -> verificacao de manifesto/checksums ->
+  # estado da release -> anexacao de assets.
+  publish:
+    name: Publish validated release assets
+    needs:
+      - prepare
+      - artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out validated source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Download release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: contabase-release-${{ needs.prepare.outputs.version }}
+          path: release-dist
+          if-no-files-found: error
+
+      # O manifesto vem do produtor por output de job e nunca e interpolado
+      # como codigo shell: chega apenas por variavel de ambiente.
+      - name: Verify artifact manifest
+        working-directory: release-dist
+        env:
+          PRODUCER_MANIFEST: ${{ needs.artifacts.outputs.manifest }}
+          EXPECTED_FILES: |-
+            contabase-linux-amd64.tar.gz
+            contabase-linux-arm64.tar.gz
+            checksums.txt
+        run: |
+          set -euo pipefail
+          expected="$(printf '%s\n' "$EXPECTED_FILES" | LC_ALL=C sort)"
+          actual="$(find . -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "Received bundle is not the canonical three-file release set." >&2
+            printf 'received entries:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          recomputed="$(sha256sum ./* | LC_ALL=C sort)"
+          if [[ "$recomputed" != "$PRODUCER_MANIFEST" ]]; then
+            echo "Artifact digests diverge from the producer manifest." >&2
+            exit 1
+          fi
+          sha256sum -c checksums.txt
 
       - name: Preflight release state
         id: release-state
@@ -219,9 +296,11 @@ jobs:
               ;;
           esac
 
+      # Pinada por SHA completo de commit: tag v2.6.2 de
+      # softprops/action-gh-release (3bb12739c298aeb8a4eeaf626c5b8d85266b0e65).
       - name: Attach assets to GitHub Release
         if: (steps.release-state.outputs.state == 'missing' || steps.release-state.outputs.state == 'draft-compatible') && steps.release-state.outputs.upload_count != '0'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           tag_name: ${{ needs.prepare.outputs.version }}
           target_commitish: ${{ needs.prepare.outputs.commit }}
@@ -237,6 +316,7 @@ jobs:
     needs:
       - prepare
       - artifacts
+      - publish
     if: needs.prepare.outputs.publish_image == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -247,6 +327,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

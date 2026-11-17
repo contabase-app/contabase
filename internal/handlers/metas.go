@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -11,14 +10,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/contabase-app/contabase/internal/icons"
 	"github.com/contabase-app/contabase/internal/models"
 	"github.com/contabase-app/contabase/internal/paths"
-	"github.com/contabase-app/contabase/internal/services"
 
 	"github.com/google/uuid"
 )
@@ -60,65 +57,31 @@ func respondMetaFormError(w http.ResponseWriter, idPrefix string, message string
 
 type MetasData struct {
 	AppShellAccess
-	Title                   string
-	UserName                string
-	UserFirstName           string
-	UserInitials            string
-	ProfilePhotoURL         string
-	NotificationCount       int
-	MonthLabel              string
-	Aba                     string
-	ContentOOB              bool
-	HeaderActionOOB         bool
-	TotalLimits             MoneyDisplay
-	TotalAcumulado          MoneyDisplay
-	TotalAcumuladoNegativo  bool
-	RealBalance             MoneyDisplay
-	ReservedBalance         MoneyDisplay
-	FreeBalance             MoneyDisplay
-	FreeBalanceNegative     bool
-	ProgrammedContributions MoneyDisplay
-	HasMonthlyPlanning      bool
-	Margin                  MoneyDisplay
-	HasMargin               bool
-	CoverageText            string
-	CoverageSourceText      string
-	HasCoverage             bool
-	LimitesCount            int
-	CaixinhasCount          int
-	Limites                 []LimiteCard
-	Caixinhas               []CaixinhaCard
-	IsBusiness              bool
-	ActiveWorkspaceName     string
+	Title               string
+	UserName            string
+	UserFirstName       string
+	UserInitials        string
+	ProfilePhotoURL     string
+	NotificationCount   int
+	ContentOOB          bool
+	HeaderActionOOB     bool
+	TotalLimits         MoneyDisplay
+	LimitesCount        int
+	Limites             []LimiteCard
+	IsBusiness          bool
+	ActiveWorkspaceName string
 }
 
 type MetaFormData struct {
-	Mode                  string
-	OpenTab               string
-	BoxID                 string
-	LimitID               string
-	Name                  string
-	TargetAmountInput     string
-	MonthlyRechargeInput  string
-	MonthsDesiredInput    string
-	TargetMonthInput      string
-	MonthlyYieldRateInput string
-	CategoryID            string
-	CategoryName          string
-	CategoryIcon          string
-	CategoryColor         string
-	LimitIconKey          string
-	BoxIconKey            string
-	MaxAmountInput        string
-	BalanceLabel          string
-	Categories            []FormCategory
-	IsBusiness            bool
+	Mode           string
+	LimitID        string
+	CategoryID     string
+	CategoryName   string
+	CategoryIcon   string
+	CategoryColor  string
+	LimitIconKey   string
+	MaxAmountInput string
 }
-
-// BoxIconFallback devolve a chave exibida pelo seletor quando a reserva ainda
-// não tem escolha própria: a categoria vinculada ou a marca de reserva. O
-// seletor da reserva não cai no ícone neutro de categoria.
-func (f MetaFormData) BoxIconFallback() string { return icons.ResolveGoal(f.CategoryIcon) }
 
 type LimiteCard struct {
 	ID            string
@@ -148,60 +111,11 @@ func (c LimiteCard) HasOwnIcon() bool { return icons.CanonicalKey(c.IconKey) != 
 // dashboard e dos relatórios); a barra do card exibe o disponível.
 func (c LimiteCard) Tone() string { return limitToneForPercent(c.Percent) }
 
-type CaixinhaCard struct {
-	ID                 string
-	CategoryID         string
-	CategoryName       string
-	Name               string
-	Icon               string
-	IconKey            string
-	Color              string
-	Target             MoneyDisplay
-	Balance            MoneyDisplay
-	Percent            int
-	PercentColor       string
-	MonthlyRecharge    MoneyDisplay
-	MonthsLeft         int
-	ForecastLabel      string
-	TargetMonth        string
-	DeadlineLabel      string
-	RequiredMonthly    MoneyDisplay
-	RequiredState      string
-	Expenses           MoneyDisplay
-	IsNegative         bool
-	YieldForecastLabel string
-	YieldMonthsLeft    int
-}
-
-// IconOrDefault resolve escolha própria -> categoria válida -> reserva.
-// Vazio e legado inválido avançam ao próximo candidato, sem alterar o banco.
-func (c CaixinhaCard) IconOrDefault() string {
-	return icons.ResolveGoal(c.IconKey, c.Icon)
-}
-
-// IconLabel devolve o nome amigável do ícone efetivo.
-func (c CaixinhaCard) IconLabel() string { return icons.Label(c.IconOrDefault()) }
-
-// ProgressTone devolve a faixa visual da Meta. Diferente de um Limite, aqui o
-// percentual representa avanço em direção a um objetivo, não consumo.
-func (c CaixinhaCard) ProgressTone() string { return progressToneFor(c.Percent, c.IsNegative) }
-
-// ProgressToneLabel devolve o rótulo acessível do progresso da Meta.
-func (c CaixinhaCard) ProgressToneLabel() string { return progressToneLabel(c.ProgressTone()) }
-
-const (
-	requiredStateNone       = ""
-	requiredStateValue      = "value"
-	requiredStateCompleted  = "completed"
-	requiredStateNoDeadline = "no_deadline"
-)
-
 func (h *MetasHandler) HandleListarMetas(w http.ResponseWriter, r *http.Request) {
 	if !h.requireMetasPermission(w, metasPermDashboardRead) {
 		return
 	}
-	aba := normalizeMetasAba(r.URL.Query().Get("aba"))
-	data, err := h.buildMetasData("", aba)
+	data, err := h.buildMetasData("")
 	if err != nil {
 		log.Printf("build metas error: %v", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -235,9 +149,8 @@ func (h *MetasHandler) HandleMetasConceito(w http.ResponseWriter, r *http.Reques
 	reqID := perfReqID()
 	dbB := dbSnap(h.DB)
 
-	aba := normalizeMetasAba(r.URL.Query().Get("aba"))
 	tData := time.Now()
-	data, err := h.buildMetasData(reqID, aba)
+	data, err := h.buildMetasData(reqID)
 	perfStep(reqID, "Metas", "buildMetasData", time.Since(tData))
 	if err != nil {
 		log.Printf("build metas error: %v", err)
@@ -355,38 +268,15 @@ func (h *MetasHandler) HandleNovaMeta(w http.ResponseWriter, r *http.Request) {
 	reqID := perfReqID()
 	dbB := dbSnap(h.DB)
 
-	tCat := time.Now()
-	categories, err := h.queryMetaCategories()
-	perfStep(reqID, "MetasForm", "queryCategories", time.Since(tCat))
-	if err != nil {
-		log.Printf("query categories metas error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	openTab := normalizeMetaFormTab(r.URL.Query().Get("aba"))
-
-	form := MetaFormData{
-		Mode:       "create",
-		OpenTab:    openTab,
-		Categories: categories,
-		IsBusiness: workspaceType(h.DB, h.WorkspaceID) == models.WorkspaceTypeBusiness,
-	}
+	form := MetaFormData{Mode: "create"}
 
 	editID := strings.TrimSpace(r.URL.Query().Get("id"))
 	if editID != "" {
 		form.Mode = "edit"
 		tLoad := time.Now()
-		if openTab == "limite" {
-			if err := h.loadLimitFormData(&form, editID); err != nil {
-				http.Error(w, "registro não encontrado", http.StatusNotFound)
-				return
-			}
-		} else {
-			if err := h.loadBoxFormData(&form, editID); err != nil {
-				http.Error(w, "registro não encontrado", http.StatusNotFound)
-				return
-			}
+		if err := h.loadLimitFormData(&form, editID); err != nil {
+			http.Error(w, "registro não encontrado", http.StatusNotFound)
+			return
 		}
 		perfStep(reqID, "MetasForm", "loadFormData", time.Since(tLoad))
 	}
@@ -405,73 +295,6 @@ func (h *MetasHandler) HandleNovaMeta(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	perfRequest(reqID, r, time.Since(t0), buf.Len())
 	buf.WriteTo(w)
-}
-
-func (h *MetasHandler) HandleCriarCaixinha(w http.ResponseWriter, r *http.Request) {
-	t0 := time.Now()
-	reqID := perfReqID()
-
-	if err := r.ParseForm(); err != nil {
-		respondMetaFormError(w, "caixinha", "formulário inválido")
-		return
-	}
-
-	boxID := strings.TrimSpace(r.FormValue("box_id"))
-	name := strings.TrimSpace(r.FormValue("name"))
-	categoryID := strings.TrimSpace(r.FormValue("category_id"))
-	targetAmount, err := parseOptionalCurrency(r.FormValue("target_amount"))
-	if err != nil || name == "" || targetAmount < 0 {
-		respondMetaFormError(w, "caixinha", "dados inválidos")
-		return
-	}
-
-	monthlyYieldRate, err := parseMonthlyYieldRate(strings.TrimSpace(r.FormValue("monthly_yield_rate")))
-	if err != nil {
-		respondMetaFormError(w, "caixinha", "taxa de rentabilidade inválida — use o formato 0,8 para 0,8% a.m.")
-		return
-	}
-
-	monthlyRecharge, monthsDesired, err := h.resolveRechargeInputs(r, boxID, targetAmount)
-	if err != nil {
-		respondMetaFormError(w, "caixinha", err.Error())
-		return
-	}
-	targetDateValue, err := parseTargetMonthInput(strings.TrimSpace(r.FormValue("target_month")))
-	if err != nil {
-		respondMetaFormError(w, "caixinha", "data-alvo inválida")
-		return
-	}
-	categoryValue := nullableStringValue(categoryID)
-	iconKey := icons.CanonicalKey(r.FormValue("icon_key"))
-
-	tMut := time.Now()
-	now := time.Now().Unix()
-	if err := h.execMetaMutation(func(tx *sql.Tx) error {
-		if categoryID != "" {
-			if err := ensureCategoryInWorkspaceTx(tx, categoryID, h.WorkspaceID); err != nil {
-				return err
-			}
-		}
-		if boxID == "" {
-			return execOneTx(tx, `
-				INSERT INTO boxes (id, workspace_id, category_id, name, target_amount, monthly_recharge, monthly_yield_rate, target_date, icon_key, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			`, uuid.NewString(), h.WorkspaceID, categoryValue, name, targetAmount, monthlyRecharge, monthlyYieldRate, targetDateValue, iconKey, now, now)
-		}
-		return execOneTx(tx, `
-			UPDATE boxes
-			SET category_id = ?, name = ?, target_amount = ?, monthly_recharge = ?, monthly_yield_rate = ?, target_date = ?, icon_key = ?, updated_at = ?
-			WHERE id = ? AND workspace_id = ?
-		`, categoryValue, name, targetAmount, monthlyRecharge, monthlyYieldRate, targetDateValue, iconKey, now, boxID, h.WorkspaceID)
-	}); err != nil {
-		log.Printf("upsert caixinha error: %v", err)
-		respondMetaFormError(w, "caixinha", "erro ao salvar reserva")
-		return
-	}
-	perfStep(reqID, "MetasCaixinha", "mutation", time.Since(tMut))
-
-	_ = monthsDesired
-	h.renderMetasMutationOOB(w, reqID, "caixinhas", t0)
 }
 
 func (h *MetasHandler) HandleCriarLimite(w http.ResponseWriter, r *http.Request) {
@@ -536,25 +359,7 @@ func (h *MetasHandler) HandleCriarLimite(w http.ResponseWriter, r *http.Request)
 	}
 	perfStep(reqID, "MetasLimite", "mutation", time.Since(tMut))
 
-	h.renderMetasMutationOOB(w, reqID, "limites", t0)
-}
-
-func (h *MetasHandler) HandleDeleteCaixinha(w http.ResponseWriter, r *http.Request) {
-	t0 := time.Now()
-	reqID := perfReqID()
-	boxID := strings.TrimPrefix(r.URL.Path, "/metas/caixinha/")
-	if boxID == "" {
-		http.Error(w, "ID inválido", http.StatusBadRequest)
-		return
-	}
-	if err := h.execMetaMutation(func(tx *sql.Tx) error {
-		return execOneTx(tx, `DELETE FROM boxes WHERE id = ? AND workspace_id = ?`, boxID, h.WorkspaceID)
-	}); err != nil {
-		log.Printf("delete caixinha error: %v", err)
-		http.Error(w, "erro ao excluir reserva", http.StatusInternalServerError)
-		return
-	}
-	h.renderMetasMutationOOB(w, reqID, "caixinhas", t0)
+	h.renderMetasMutationOOB(w, reqID, t0)
 }
 
 func (h *MetasHandler) HandleDeleteLimite(w http.ResponseWriter, r *http.Request) {
@@ -572,182 +377,7 @@ func (h *MetasHandler) HandleDeleteLimite(w http.ResponseWriter, r *http.Request
 		http.Error(w, "erro ao excluir limite", http.StatusInternalServerError)
 		return
 	}
-	h.renderMetasMutationOOB(w, reqID, "limites", t0)
-}
-
-func (h *MetasHandler) HandleAporteCaixinha(w http.ResponseWriter, r *http.Request) {
-	t0 := time.Now()
-	reqID := perfReqID()
-
-	if err := r.ParseForm(); err != nil {
-		respondMetaFormError(w, "aporte", "formulário inválido")
-		return
-	}
-	boxID := strings.TrimSpace(r.FormValue("box_id"))
-	amount, err := parseCurrency(r.FormValue("amount"))
-	if err != nil || amount <= 0 || boxID == "" {
-		if r.FormValue("_from_sheet") == "1" {
-			h.renderSheetError(w, "aporte", "aporte inválido", boxID)
-		} else {
-			respondMetaFormError(w, "aporte", "aporte inválido")
-		}
-		return
-	}
-	note := strings.TrimSpace(r.FormValue("note"))
-	if note == "" {
-		note = "Aporte Manual"
-	}
-	now := time.Now().Unix()
-
-	if err := h.execMetaMutation(func(tx *sql.Tx) error {
-		var exists int
-		if err := tx.QueryRow(`SELECT 1 FROM boxes WHERE id = ? AND workspace_id = ?`, boxID, h.WorkspaceID).Scan(&exists); err != nil {
-			return fmt.Errorf("caixinha não autorizada ou não encontrada: %w", err)
-		}
-		return execOneTx(tx, `
-			INSERT INTO box_virtual_ledger (id, box_id, reference_date, amount, type, description, created_at)
-			SELECT ?, owner.id, ?, ?, 'RECHARGE', ?, ?
-			FROM boxes owner
-			WHERE owner.id = ? AND owner.workspace_id = ?
-		`, uuid.NewString(), now, amount, note, now, boxID, h.WorkspaceID)
-	}); err != nil {
-		log.Printf("aporte manual error: %v", err)
-		if r.FormValue("_from_sheet") == "1" {
-			h.renderSheetError(w, "aporte", "erro ao registrar aporte", boxID)
-		} else {
-			respondMetaFormError(w, "aporte", "erro ao registrar aporte")
-		}
-		return
-	}
-
-	aporteTitle := "Reserva recebeu aporte"
-	aporteMsg := fmt.Sprintf("Voce aportou %s na reserva.", formatCurrencyLabel(amount))
-	insertCaixinhaNotification(h.DB, h.UserID, h.WorkspaceID,
-		aporteTitle,
-		aporteMsg,
-		"caixinha.aporte")
-
-	h.renderMetasMutationOOB(w, reqID, "caixinhas", t0)
-}
-
-type BoxHistoryEvent struct {
-	Amount       int64
-	Type         string
-	Description  string
-	DateLabel    string
-	TypeLabel    string
-	AccountName  string
-	AccountLabel string
-	IsCredit     bool
-	Money        MoneyDisplay
-}
-
-func boxLedgerTypeLabel(typ string) string {
-	switch typ {
-	case "RECHARGE":
-		return "Aporte"
-	case "BONUS":
-		return "Ajuste/Bonus"
-	case "RELEASE":
-		return "Liberacao"
-	case "CONSUME":
-		return "Consumo"
-	case "REVERSAL":
-		return "Ajuste compensatorio"
-	default:
-		return typ
-	}
-}
-
-func transactionAccountLabel(accountType string) string {
-	switch strings.ToUpper(strings.TrimSpace(accountType)) {
-	case models.AccountTypeCreditCard:
-		return "Cartão"
-	default:
-		return "Conta"
-	}
-}
-
-func (h *MetasHandler) HandleHistoricoCaixinha(w http.ResponseWriter, r *http.Request) {
-	if !h.requireMetasPermission(w, metasPermGoalsWrite) {
-		return
-	}
-	boxID := strings.TrimSpace(r.URL.Query().Get("box_id"))
-	if boxID == "" {
-		http.Error(w, "ID inválido", http.StatusBadRequest)
-		return
-	}
-
-	var boxName string
-	if err := h.DB.QueryRow(`SELECT name FROM boxes WHERE id = ? AND workspace_id = ?`, boxID, h.WorkspaceID).Scan(&boxName); err != nil {
-		http.Error(w, "reserva não encontrada", http.StatusNotFound)
-		return
-	}
-
-	rows, err := h.DB.Query(`
-		SELECT l.amount, l.type,
-			CASE WHEN l.type = 'CONSUME' AND t.description IS NOT NULL AND t.description != ''
-			     THEN t.description
-			     ELSE l.description END as description,
-			l.reference_date, l.created_at,
-			COALESCE(a.name, ''),
-			COALESCE(a.type, '')
-		FROM box_virtual_ledger l
-		JOIN boxes owner ON owner.id = l.box_id
-		LEFT JOIN transactions t ON l.source_transaction_id = t.id AND t.workspace_id = ?
-		LEFT JOIN accounts a ON a.id = t.account_id AND a.workspace_id = t.workspace_id
-		WHERE l.box_id = ? AND owner.workspace_id = ?
-		ORDER BY l.created_at DESC, l.id DESC
-		LIMIT 100
-	`, h.WorkspaceID, boxID, h.WorkspaceID)
-	if err != nil {
-		log.Printf("query box history error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
-	var events []BoxHistoryEvent
-	for rows.Next() {
-		var e BoxHistoryEvent
-		var refDate, createdAt int64
-		var accountType string
-		if err := rows.Scan(&e.Amount, &e.Type, &e.Description, &refDate, &createdAt, &e.AccountName, &accountType); err != nil {
-			continue
-		}
-		e.DateLabel = formatDateLabel(refDate)
-		e.TypeLabel = boxLedgerTypeLabel(e.Type)
-		e.AccountLabel = transactionAccountLabel(accountType)
-		e.Money = MoneyMinor(e.Amount)
-		e.IsCredit = e.Amount >= 0
-		events = append(events, e)
-	}
-	if err := rows.Err(); err != nil {
-		log.Printf("box history rows error: %v", err)
-	}
-
-	data := struct {
-		BoxID      string
-		BoxName    string
-		Events     []BoxHistoryEvent
-		HasEvents  bool
-		IsBusiness bool
-	}{
-		BoxID:      boxID,
-		BoxName:    boxName,
-		Events:     events,
-		HasEvents:  len(events) > 0,
-		IsBusiness: workspaceType(h.DB, h.WorkspaceID) == models.WorkspaceTypeBusiness,
-	}
-
-	var buf bytes.Buffer
-	if err := h.Templates.ExecuteTemplate(&buf, "box-history", data); err != nil {
-		log.Printf("template box-history error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	buf.WriteTo(w)
+	h.renderMetasMutationOOB(w, reqID, t0)
 }
 
 func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Request) {
@@ -905,71 +535,6 @@ func (h *MetasHandler) HandleHistoricoLimite(w http.ResponseWriter, r *http.Requ
 	buf.WriteTo(w)
 }
 
-func (h *MetasHandler) HandleResgateCaixinha(w http.ResponseWriter, r *http.Request) {
-	t0 := time.Now()
-	reqID := perfReqID()
-
-	if err := r.ParseForm(); err != nil {
-		respondMetaFormError(w, "resgate", "formulário inválido")
-		return
-	}
-	boxID := strings.TrimSpace(r.FormValue("box_id"))
-	amount, err := parseCurrency(r.FormValue("amount"))
-	if err != nil || amount <= 0 || boxID == "" {
-		if r.FormValue("_from_sheet") == "1" {
-			h.renderSheetError(w, "resgate", "resgate inválido", boxID)
-		} else {
-			respondMetaFormError(w, "resgate", "resgate inválido")
-		}
-		return
-	}
-	note := strings.TrimSpace(r.FormValue("note"))
-	if note == "" {
-		note = "Liberação de reserva"
-	}
-	now := time.Now().Unix()
-
-	if err := h.execMetaMutation(func(tx *sql.Tx) error {
-		var reserved int64
-		if err := tx.QueryRow(`
-			SELECT COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0)
-			FROM boxes b
-			WHERE b.id = ? AND b.workspace_id = ?
-		`, boxID, h.WorkspaceID).Scan(&reserved); err != nil {
-			return fmt.Errorf("caixinha não autorizada ou não encontrada: %w", err)
-		}
-		if reserved <= 0 {
-			return fmt.Errorf("caixinha sem saldo reservado disponível")
-		}
-		if amount > reserved {
-			return fmt.Errorf("valor acima do saldo reservado atual")
-		}
-		return execOneTx(tx, `
-			INSERT INTO box_virtual_ledger (id, box_id, reference_date, amount, type, description, created_at)
-			SELECT ?, owner.id, ?, ?, 'RELEASE', ?, ?
-			FROM boxes owner
-			WHERE owner.id = ? AND owner.workspace_id = ?
-		`, uuid.NewString(), now, -amount, note, now, boxID, h.WorkspaceID)
-	}); err != nil {
-		log.Printf("resgate manual error: %v", err)
-		if r.FormValue("_from_sheet") == "1" {
-			h.renderSheetError(w, "resgate", "erro ao registrar liberação", boxID)
-		} else {
-			respondMetaFormError(w, "resgate", "erro ao registrar liberação")
-		}
-		return
-	}
-
-	resgateTitle := "Reserva teve saldo liberado"
-	resgateMsg := fmt.Sprintf("Voce liberou %s da reserva para o saldo livre.", formatCurrencyLabel(amount))
-	insertCaixinhaNotification(h.DB, h.UserID, h.WorkspaceID,
-		resgateTitle,
-		resgateMsg,
-		"caixinha.resgate")
-
-	h.renderMetasMutationOOB(w, reqID, "caixinhas", t0)
-}
-
 func (h *MetasHandler) execMetaMutation(run func(tx *sql.Tx) error) error {
 	tx, err := h.DB.Begin()
 	if err != nil {
@@ -982,9 +547,9 @@ func (h *MetasHandler) execMetaMutation(run func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-func (h *MetasHandler) renderMetasMutationOOB(w http.ResponseWriter, reqID string, aba string, handlerStart time.Time) {
+func (h *MetasHandler) renderMetasMutationOOB(w http.ResponseWriter, reqID string, handlerStart time.Time) {
 	tData := time.Now()
-	data, err := h.buildMetasData(reqID, aba)
+	data, err := h.buildMetasData(reqID)
 	perfStep(reqID, "MetasMutation", "buildMetasData", time.Since(tData))
 	if err != nil {
 		log.Printf("build metas after mutation error: %v", err)
@@ -1002,10 +567,7 @@ func (h *MetasHandler) renderMetasMutationOOB(w http.ResponseWriter, reqID strin
 		return
 	}
 	buf.WriteString(`<div id="bottom-sheet-container" hx-swap-oob="innerHTML"></div>`)
-	buf.WriteString(`<div id="caixinha-form-error" hx-swap-oob="true" class="hidden"></div>`)
 	buf.WriteString(`<div id="limite-form-error" hx-swap-oob="true" class="hidden"></div>`)
-	buf.WriteString(`<div id="aporte-form-error" hx-swap-oob="true" class="hidden"></div>`)
-	buf.WriteString(`<div id="resgate-form-error" hx-swap-oob="true" class="hidden"></div>`)
 	buf.WriteString(NotificationBadgeHTML(h.DB, h.UserID, h.WorkspaceID))
 	perfStep(reqID, "MetasMutation", "oobRender", time.Since(tR))
 	perfStep(reqID, "MetasMutation", "total", time.Since(handlerStart))
@@ -1014,50 +576,9 @@ func (h *MetasHandler) renderMetasMutationOOB(w http.ResponseWriter, reqID strin
 	buf.WriteTo(w)
 }
 
-func (h *MetasHandler) queryMetaCategories() ([]FormCategory, error) {
-	rows, err := h.DB.Query(`
-		SELECT id, name, icon, color, type
-		FROM categories
-		WHERE workspace_id = ?
-		ORDER BY name ASC
-	`, h.WorkspaceID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var categories []FormCategory
-	for rows.Next() {
-		var c FormCategory
-		if err := rows.Scan(&c.ID, &c.Name, &c.Icon, &c.Color, &c.Type); err != nil {
-			return nil, err
-		}
-		c.Color = normalizeUIThemeColor(c.Color)
-		categories = append(categories, c)
-	}
-	return categories, rows.Err()
-}
-
-func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, error) {
+func (h *MetasHandler) buildMetasData(reqID string) (MetasData, error) {
 	tS := time.Now()
 	now := appTime(time.Now())
-	months := []string{
-		"Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-		"Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
-	}
-	reserveBalance, err := services.CalculateWorkspaceReserveBalance(h.DB, h.WorkspaceID)
-	if err != nil {
-		return MetasData{}, fmt.Errorf("calculate workspace reserve balance: %w", err)
-	}
-	perfStep(reqID, "Metas", "reserveBalance", time.Since(tS))
-	tS = time.Now()
-
-	monthlySnapshot, snapshotErr := services.BuildMonthlyPlanningSnapshot(context.Background(), h.DB, h.WorkspaceID, now)
-	if snapshotErr != nil {
-		log.Printf("monthly planning snapshot workspace %s: %v", h.WorkspaceID, snapshotErr)
-	}
-	perfStep(reqID, "Metas", "monthlyPlanning", time.Since(tS))
-	tS = time.Now()
 
 	renderMeta := h.loadMetasRenderMetadata()
 	data := MetasData{
@@ -1066,30 +587,10 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 		UserFirstName:       renderMeta.UserFirstName,
 		UserInitials:        renderMeta.UserInitials,
 		ProfilePhotoURL:     renderMeta.ProfilePhotoURL,
-		Aba:                 normalizeMetasAba(aba),
-		MonthLabel:          fmt.Sprintf("%s %d", months[now.Month()-1], now.Year()),
-		RealBalance:         MoneyMinor(reserveBalance.RealBalance),
-		ReservedBalance:     MoneyMinor(reserveBalance.ReservedBalance),
-		FreeBalance:         MoneyMinor(reserveBalance.FreeBalance),
-		FreeBalanceNegative: reserveBalance.FreeBalance < 0,
 		IsBusiness:          renderMeta.IsBusiness,
 		ActiveWorkspaceName: renderMeta.ActiveWorkspaceName,
 	}
 	data.AppShellAccess = QueryAppShellAccess(h.DB, h.WorkspaceID, h.UserID, data.IsBusiness)
-
-	if snapshotErr == nil {
-		data.HasMonthlyPlanning = true
-		data.ProgrammedContributions = MoneyMinor(monthlySnapshot.ProgrammedContributionsCents)
-		if monthlySnapshot.MarginAvailable {
-			data.HasMargin = true
-			data.Margin = MoneyMinor(monthlySnapshot.MarginCents)
-		}
-		if monthlySnapshot.CoverageAvailable {
-			data.HasCoverage = true
-			data.CoverageText = formatCoverageText(monthlySnapshot.CoverageTenths)
-			data.CoverageSourceText = formatCoverageSourceText(monthlySnapshot.EssentialCostReferenceSource, monthlySnapshot.HistoricalMonths)
-		}
-	}
 
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 	monthEnd := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
@@ -1143,121 +644,6 @@ func (h *MetasHandler) buildMetasData(reqID string, aba string) (MetasData, erro
 	data.LimitesCount = len(data.Limites)
 	data.TotalLimits = MoneyMinor(totalLimits)
 	perfStep(reqID, "Metas", "loadLimits", time.Since(tS))
-	tS = time.Now()
-
-	boxRows, err := h.queryBoxesForMetas()
-	if err != nil {
-		return data, fmt.Errorf("query boxes: %w", err)
-	}
-	defer boxRows.Close()
-
-	var totalAcumulado int64
-	for boxRows.Next() {
-		var card CaixinhaCard
-		var targetDate sql.NullInt64
-		var target, monthly, balance int64
-		var yieldRate float64
-		var categoryID sql.NullString
-		var categoryName string
-		if err := boxRows.Scan(&card.ID, &categoryID, &card.Name, &target, &monthly, &targetDate, &card.Icon, &card.Color, &categoryName, &yieldRate, &balance, &card.IconKey); err != nil {
-			continue
-		}
-		if categoryID.Valid {
-			card.CategoryID = categoryID.String
-		}
-		card.CategoryName = categoryName
-		if strings.TrimSpace(card.CategoryName) == "" {
-			card.CategoryName = "Sem categoria"
-		}
-		card.IsNegative = balance < 0
-
-		if balance < 0 {
-			card.Percent = 0
-		} else if target > 0 {
-			card.Percent = int(float64(balance) / float64(target) * 100)
-		}
-		simpleProjection := services.EstimateBoxProjection(balance, target, monthly)
-		projection := simpleProjection
-		if yieldRate > 0 && target > 0 {
-			projection = services.EstimateBoxProjectionWithYield(balance, target, monthly, yieldRate)
-		}
-		switch projection.Status {
-		case services.BoxProjectionStatusCompleted:
-			card.ForecastLabel = "Previsão: meta concluída"
-		case services.BoxProjectionStatusForecast:
-			card.MonthsLeft = projection.MonthsLeft
-			if card.MonthsLeft == 1 {
-				card.ForecastLabel = "Previsão: 1 mês"
-			} else {
-				card.ForecastLabel = fmt.Sprintf("Previsão: %d meses", card.MonthsLeft)
-			}
-		default:
-			card.ForecastLabel = "Sem previsão"
-		}
-		card.PercentColor = "violet"
-		if card.Percent >= 75 {
-			card.PercentColor = "emerald"
-		} else if card.Percent >= 50 {
-			card.PercentColor = "sky"
-		}
-		card.Target = MoneyMinor(target)
-		card.Balance = MoneyMinor(balance)
-		card.MonthlyRecharge = MoneyMinor(monthly)
-
-		if yieldRate > 0 && target > 0 {
-			yieldProjection := services.EstimateBoxProjectionWithYield(balance, target, monthly, yieldRate)
-			switch yieldProjection.Status {
-			case services.BoxProjectionStatusForecast:
-				card.YieldMonthsLeft = yieldProjection.MonthsLeft
-				if simpleProjection.Status == services.BoxProjectionStatusNoForecast && yieldProjection.MonthsLeft > 0 {
-					if card.YieldMonthsLeft == 1 {
-						card.YieldForecastLabel = "Com rendimento est.: 1 mês"
-					} else {
-						card.YieldForecastLabel = fmt.Sprintf("Com rendimento est.: %d meses", card.YieldMonthsLeft)
-					}
-				} else if simpleProjection.MonthsLeft > yieldProjection.MonthsLeft {
-					if card.YieldMonthsLeft == 1 {
-						card.YieldForecastLabel = "Com rendimento est.: 1 mês"
-					} else {
-						card.YieldForecastLabel = fmt.Sprintf("Com rendimento est.: %d meses", card.YieldMonthsLeft)
-					}
-				}
-			}
-		}
-
-		if targetDate.Valid && targetDate.Int64 > 0 {
-			card.TargetMonth = formatMonthLabelFromUnix(targetDate.Int64)
-			card.DeadlineLabel = card.TargetMonth
-		} else {
-			card.DeadlineLabel = "Sem prazo"
-		}
-
-		if target > 0 {
-			if projection.Status == services.BoxProjectionStatusCompleted {
-				card.RequiredState = requiredStateCompleted
-			} else {
-				targetUnix := int64(0)
-				if targetDate.Valid {
-					targetUnix = targetDate.Int64
-				}
-				required, _, ok := services.EstimateRequiredMonthlyContributionByTargetDate(balance, target, targetUnix, now)
-				if ok {
-					card.RequiredState = requiredStateValue
-					card.RequiredMonthly = MoneyMinor(required)
-				} else {
-					card.RequiredState = requiredStateNoDeadline
-				}
-			}
-		} else {
-			card.RequiredState = requiredStateNone
-		}
-		totalAcumulado += balance
-		data.Caixinhas = append(data.Caixinhas, card)
-	}
-	data.CaixinhasCount = len(data.Caixinhas)
-	data.TotalAcumulado = MoneyMinor(totalAcumulado)
-	data.TotalAcumuladoNegativo = totalAcumulado < 0
-	perfStep(reqID, "Metas", "loadBoxes", time.Since(tS))
 	return data, nil
 }
 
@@ -1278,46 +664,6 @@ func resolveProfilePhotoURL(photoPath string, updatedAt int64) string {
 	}
 
 	return fmt.Sprintf("%s?v=%d", photoPath, updatedAt)
-}
-
-func (h *MetasHandler) resolveRechargeInputs(r *http.Request, boxID string, targetAmount int64) (int64, int, error) {
-	monthlyRaw := strings.TrimSpace(r.FormValue("monthly_recharge"))
-	targetMonthRaw := strings.TrimSpace(r.FormValue("target_month"))
-
-	monthlyRecharge, err := parseOptionalCurrency(monthlyRaw)
-	if err != nil {
-		return 0, 0, fmt.Errorf("recarga mensal inválida")
-	}
-
-	monthsDesired := 0
-	if targetMonthRaw != "" {
-		monthsDesired = monthsUntilTargetMonth(targetMonthRaw, appTime(time.Now()))
-	}
-
-	currentBalance := int64(0)
-	if boxID != "" {
-		_ = h.DB.QueryRow(`
-			SELECT COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0)
-			FROM boxes b
-			WHERE b.id = ? AND b.workspace_id = ?
-		`, boxID, h.WorkspaceID).Scan(&currentBalance)
-		if currentBalance < 0 {
-			currentBalance = 0
-		}
-	}
-
-	if targetAmount > 0 {
-		if monthlyRecharge <= 0 && monthsDesired > 0 {
-			if projectedMonthly, ok := services.EstimateRequiredMonthlyContribution(currentBalance, targetAmount, monthsDesired); ok {
-				monthlyRecharge = projectedMonthly
-			}
-		}
-		if monthsDesired <= 0 && monthlyRecharge > 0 {
-			monthsDesired = services.EstimateBoxProjection(currentBalance, targetAmount, monthlyRecharge).MonthsLeft
-		}
-	}
-
-	return monthlyRecharge, monthsDesired, nil
 }
 
 func (h *MetasHandler) loadLimitFormData(form *MetaFormData, id string) error {
@@ -1342,380 +688,11 @@ func (h *MetasHandler) loadLimitFormData(form *MetaFormData, id string) error {
 	return nil
 }
 
-func (h *MetasHandler) loadBoxFormData(form *MetaFormData, id string) error {
-	var targetAmount, monthlyRecharge, balance int64
-	var monthlyYieldRate float64
-	var targetDate sql.NullInt64
-	var catID sql.NullString
-	var icon, color string
-
-	err := h.DB.QueryRow(`
-		SELECT b.id, b.category_id, b.name, b.target_amount, b.monthly_recharge, b.target_date,
-			COALESCE(c.name, ''),
-			COALESCE(c.icon, ''),
-			COALESCE(c.color, '#6b7280'),
-			b.monthly_yield_rate,
-			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS balance,
-			COALESCE(b.icon_key, '')
-		FROM boxes b
-		LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
-		WHERE b.id = ? AND b.workspace_id = ?
-	`, id, h.WorkspaceID).Scan(&form.BoxID, &catID, &form.Name, &targetAmount, &monthlyRecharge, &targetDate, &form.CategoryName, &icon, &color, &monthlyYieldRate, &balance, &form.BoxIconKey)
-	if err != nil && isMissingColumnError(err, "target_date") {
-		targetDate = sql.NullInt64{}
-		monthlyYieldRate = 0
-		err = h.DB.QueryRow(`
-			SELECT b.id, b.category_id, b.name, b.target_amount, b.monthly_recharge,
-				COALESCE(c.name, ''),
-				COALESCE(c.icon, ''),
-				COALESCE(c.color, '#6b7280'),
-				COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS balance,
-				''
-			FROM boxes b
-			LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
-			WHERE b.id = ? AND b.workspace_id = ?
-		`, id, h.WorkspaceID).Scan(&form.BoxID, &catID, &form.Name, &targetAmount, &monthlyRecharge, &form.CategoryName, &icon, &color, &balance, &form.BoxIconKey)
-	}
-	if err != nil {
-		return err
-	}
-
-	if catID.Valid {
-		form.CategoryID = catID.String
-	}
-	form.CategoryIcon = icon
-	form.CategoryColor = normalizeUIThemeColor(color)
-	form.TargetAmountInput = formatCurrencyCentsBase(targetAmount)
-	form.MonthlyRechargeInput = formatCurrencyCentsBase(monthlyRecharge)
-	form.MonthlyYieldRateInput = formatMonthlyYieldRateForInput(monthlyYieldRate)
-	form.TargetMonthInput = formatMonthInputFromUnix(targetDate)
-	form.BalanceLabel = formatCurrencyLabel(balance)
-	return nil
-}
-
-func normalizeMetasAba(aba string) string {
-	if aba == "caixinhas" || aba == "reservas" {
-		return "caixinhas"
-	}
-	return "limites"
-}
-
-func formatCoverageText(tenths int64) string {
-	whole := tenths / 10
-	frac := tenths % 10
-	if frac < 0 {
-		frac = -frac
-	}
-	if whole == 0 {
-		return fmt.Sprintf("Cobre cerca de %d,%d mês", whole, frac)
-	}
-	if whole == 1 {
-		return fmt.Sprintf("Cobre cerca de %d,%d mês", whole, frac)
-	}
-	return fmt.Sprintf("Cobre cerca de %d,%d meses", whole, frac)
-}
-
-func formatCoverageSourceText(source services.MonthlyReferenceSource, historicalMonths int) string {
-	switch source {
-	case services.MonthlyReferenceSourceHistorical:
-		return fmt.Sprintf("Baseado na média dos custos essenciais dos últimos %d meses completos.", historicalMonths)
-	case services.MonthlyReferenceSourceManual:
-		return "Baseado no custo essencial mensal configurado."
+func transactionAccountLabel(accountType string) string {
+	switch strings.ToUpper(strings.TrimSpace(accountType)) {
+	case models.AccountTypeCreditCard:
+		return "Cartão"
 	default:
-		return "Estimativa baseada no custo essencial mensal de referência."
+		return "Conta"
 	}
-}
-
-func normalizeMetaFormTab(tab string) string {
-	if tab == "caixinha" || tab == "caixinhas" || tab == "reserva" || tab == "reservas" {
-		return "caixinha"
-	}
-	return "limite"
-}
-
-func monthsUntilTargetMonth(targetMonth string, now time.Time) int {
-	t, err := time.Parse("2006-01", targetMonth)
-	if err != nil {
-		return 0
-	}
-	currentMonth := appMonthStartUTC(now)
-	target := time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
-	if target.Before(currentMonth) {
-		return 0
-	}
-	months := int(target.Year()-currentMonth.Year())*12 + int(target.Month()-currentMonth.Month())
-	if months <= 0 {
-		return 1
-	}
-	return months
-}
-
-func parseTargetMonthInput(targetMonth string) (interface{}, error) {
-	if targetMonth == "" {
-		return nil, nil
-	}
-	t, err := time.Parse("2006-01", targetMonth)
-	if err != nil {
-		return nil, err
-	}
-	return time.Date(t.Year(), t.Month(), 1, 12, 0, 0, 0, time.UTC).Unix(), nil
-}
-
-func formatMonthInputFromUnix(targetDate sql.NullInt64) string {
-	if !targetDate.Valid || targetDate.Int64 <= 0 {
-		return ""
-	}
-	return time.Unix(targetDate.Int64, 0).UTC().Format("2006-01")
-}
-
-func formatMonthLabelFromUnix(targetDateUnix int64) string {
-	if targetDateUnix <= 0 {
-		return ""
-	}
-	t := time.Unix(targetDateUnix, 0).UTC()
-	months := [...]string{"jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"}
-	return fmt.Sprintf("%s/%04d", months[int(t.Month())-1], t.Year())
-}
-
-func (h *MetasHandler) queryBoxesForMetas() (*sql.Rows, error) {
-	queryWithTargetDate := `
-		SELECT b.id, b.category_id, b.name, b.target_amount, b.monthly_recharge, b.target_date,
-			COALESCE(c.icon, ''),
-			COALESCE(c.color, '#6b7280'),
-			COALESCE(c.name, ''),
-			b.monthly_yield_rate,
-			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS total_balance,
-			COALESCE(b.icon_key, '')
-		FROM boxes b
-		LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
-		WHERE b.workspace_id = ?
-		ORDER BY b.name
-	`
-	rows, err := h.DB.Query(queryWithTargetDate, h.WorkspaceID)
-	if err == nil || !isMissingColumnError(err, "target_date") {
-		return rows, err
-	}
-
-	queryLegacy := `
-		SELECT b.id, b.category_id, b.name, b.target_amount, b.monthly_recharge, NULL AS target_date,
-			COALESCE(c.icon, ''),
-			COALESCE(c.color, '#6b7280'),
-			COALESCE(c.name, ''),
-			0.0 AS monthly_yield_rate,
-			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0) AS total_balance,
-			''
-		FROM boxes b
-		LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
-		WHERE b.workspace_id = ?
-		ORDER BY b.name
-	`
-	return h.DB.Query(queryLegacy, h.WorkspaceID)
-}
-
-func isMissingColumnError(err error, column string) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "no such column") && strings.Contains(msg, strings.ToLower(column))
-}
-
-func parseMonthlyYieldRate(raw string) (float64, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return 0, nil
-	}
-	raw = strings.ReplaceAll(raw, ",", ".")
-	rate, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return 0, err
-	}
-	if rate < 0 {
-		return 0, nil
-	}
-	if rate > 100 {
-		return 0, fmt.Errorf("taxa maxima de 100%% a.m.")
-	}
-	return rate / 100.0, nil
-}
-
-func parseOptionalCurrency(raw string) (int64, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return 0, nil
-	}
-	value, err := parseCurrency(raw)
-	if err == nil {
-		return value, nil
-	}
-
-	cleaned := currencyNoiseRe.ReplaceAllString(raw, "")
-	cleaned = strings.ReplaceAll(cleaned, " ", "")
-	if strings.HasPrefix(cleaned, "-") {
-		return 0, err
-	}
-	normalized, normalizeErr := normalizeDecimalString(cleaned)
-	if normalizeErr == nil {
-		parsed, parseErr := strconv.ParseFloat(normalized, 64)
-		if parseErr == nil && parsed == 0 {
-			return 0, nil
-		}
-	}
-	return 0, err
-}
-
-func nullableStringValue(value string) interface{} {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil
-	}
-	return value
-}
-
-func formatMonthlyYieldRateForInput(rate float64) string {
-	if rate <= 0 {
-		return ""
-	}
-	ratePercent := rate * 100.0
-	formatted := strconv.FormatFloat(ratePercent, 'f', -1, 64)
-	formatted = strings.ReplaceAll(formatted, ".", ",")
-	return formatted
-}
-
-type BoxSheetData struct {
-	BoxID               string
-	BoxName             string
-	CategoryName        string
-	IconKey             string
-	CategoryIcon        string
-	Color               string
-	Balance             MoneyDisplay
-	Target              MoneyDisplay
-	AvailableForRelease MoneyDisplay
-	ErrorMessage        string
-}
-
-// IconOrDefault resolve escolha própria -> categoria válida -> reserva, a mesma
-// herança da listagem. Categoria vazia, chave legada inválida e reserva sem
-// categoria caem na marca de poupança, sem gravar nada no banco.
-func (d BoxSheetData) IconOrDefault() string {
-	return icons.ResolveGoal(d.IconKey, d.CategoryIcon)
-}
-
-// IconLabel devolve o nome amigável do ícone efetivo.
-func (d BoxSheetData) IconLabel() string { return icons.Label(d.IconOrDefault()) }
-
-func (h *MetasHandler) buildBoxSheetData(boxID string) (BoxSheetData, error) {
-	var d BoxSheetData
-	var targetAmount int64
-	var balanceCents int64
-	var categoryID, categoryName, color sql.NullString
-
-	err := h.DB.QueryRow(`
-		SELECT b.name, b.category_id, b.target_amount,
-			COALESCE(c.name, ''),
-			COALESCE(c.icon, ''),
-			COALESCE(c.color, '#6b7280'),
-			COALESCE(b.icon_key, ''),
-			COALESCE((SELECT SUM(amount) FROM box_virtual_ledger WHERE box_id = b.id), 0)
-		FROM boxes b
-		LEFT JOIN categories c ON c.id = b.category_id AND c.workspace_id = b.workspace_id
-		WHERE b.id = ? AND b.workspace_id = ?
-	`, boxID, h.WorkspaceID).Scan(&d.BoxName, &categoryID, &targetAmount, &categoryName, &d.CategoryIcon, &color, &d.IconKey, &balanceCents)
-
-	if err != nil {
-		return d, fmt.Errorf("box not found: %w", err)
-	}
-
-	d.BoxID = boxID
-	if categoryID.Valid && categoryID.String != "" {
-		d.CategoryName = categoryName.String
-	}
-	d.Color = color.String
-	d.Balance = MoneyMinor(balanceCents)
-	if targetAmount > 0 {
-		d.Target = MoneyMinor(targetAmount)
-	}
-	if balanceCents > 0 {
-		d.AvailableForRelease = MoneyMinor(balanceCents)
-	}
-
-	return d, nil
-}
-
-func (h *MetasHandler) HandleAporteCaixinhaSheet(w http.ResponseWriter, r *http.Request) {
-	if !h.requireMetasPermission(w, metasPermGoalsWrite) {
-		return
-	}
-	boxID := strings.TrimSpace(r.URL.Query().Get("box_id"))
-	if boxID == "" {
-		http.Error(w, "id invalido", http.StatusBadRequest)
-		return
-	}
-
-	data, err := h.buildBoxSheetData(boxID)
-	if err != nil {
-		http.Error(w, "reserva nao encontrada", http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.Templates.ExecuteTemplate(w, "caixinha-aporte-sheet", data); err != nil {
-		log.Printf("render aporte sheet error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-	}
-}
-
-func (h *MetasHandler) HandleResgateCaixinhaSheet(w http.ResponseWriter, r *http.Request) {
-	if !h.requireMetasPermission(w, metasPermGoalsWrite) {
-		return
-	}
-	boxID := strings.TrimSpace(r.URL.Query().Get("box_id"))
-	if boxID == "" {
-		http.Error(w, "id invalido", http.StatusBadRequest)
-		return
-	}
-
-	data, err := h.buildBoxSheetData(boxID)
-	if err != nil {
-		http.Error(w, "reserva nao encontrada", http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.Templates.ExecuteTemplate(w, "caixinha-resgate-sheet", data); err != nil {
-		log.Printf("render resgate sheet error: %v", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-	}
-}
-
-func (h *MetasHandler) renderSheetError(w http.ResponseWriter, idPrefix string, message string, boxID string) {
-	data, err := h.buildBoxSheetData(boxID)
-	if err != nil {
-		respondMetaFormError(w, idPrefix, message)
-		return
-	}
-	data.ErrorMessage = message
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-	var buf bytes.Buffer
-	var tmpl string
-	if idPrefix == "aporte" {
-		tmpl = "caixinha-aporte-sheet"
-	} else {
-		tmpl = "caixinha-resgate-sheet"
-	}
-
-	buf.WriteString(`<div id="bottom-sheet-container" hx-swap-oob="innerHTML">`)
-	if err := h.Templates.ExecuteTemplate(&buf, tmpl, data); err != nil {
-		log.Printf("render %s sheet error: %v", idPrefix, err)
-		fmt.Fprintf(w, `<div id="%s-sheet-error" hx-swap-oob="true" class="rounded-xl border border-rose-500/35 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">%s</div>`, idPrefix, template.HTMLEscapeString(message))
-		return
-	}
-	buf.WriteString(`</div>`)
-
-	buf.WriteString(fmt.Sprintf(`<div id="%s-form-error" hx-swap-oob="true" class="hidden"></div>`, idPrefix))
-
-	buf.WriteTo(w)
 }

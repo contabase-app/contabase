@@ -47,6 +47,16 @@ test('creation and edit endpoints keep their original htmx contracts', () => {
   assert.match(template, /enctype="multipart\/form-data"/);
 });
 
+test('notifications return context keeps the editor off the missing row target', () => {
+  assert.match(template, /data-return-context="{{\.ReturnContext}}"/);
+  assert.match(template, /hx-put="\/transacoes\/{{\.EditID}}\?origem=notificacoes" hx-swap="none"/);
+  assert.match(template, /origem=notificacoes/);
+
+  const source = fs.readFileSync(path.join(__dirname, 'form-lancamento.js'), 'utf8');
+  assert.match(source, /returnContext === 'notificacoes'/);
+  assert.match(source, /deleteSeriesTransactionAndRefresh\(transactionID, scope, form\.dataset\.returnContext\)/);
+});
+
 test('hidden fields keep their names and ids', () => {
   const hidden = {
     tipoLancamento: 'tipo',
@@ -55,7 +65,6 @@ test('hidden fields keep their names and ids', () => {
     destinoContaId: 'destino_conta_id',
     escopoEdicao: 'escopo_edicao',
     invoiceAssignmentMode: 'invoice_assignment_mode',
-    permitirExcedenteCaixinha: 'permitir_excedente_caixinha',
     csrfToken: 'csrf_token',
     statusPagamentoHidden: 'status_pagamento',
     categoriaId: 'categoria_id',
@@ -91,8 +100,7 @@ test('conditional field hooks used by form-lancamento.js are present', () => {
   for (const id of [
     'origemPicker', 'destinoPicker', 'categoriaPicker', 'transferDirectionHint',
     'paymentScheduleNotice', 'faturaSelector', 'parcelasBox', 'recorrenciaBox',
-    'totalOccurrencesBox', 'categoryLimitInfo', 'categoryReserveInfo',
-    'boxOverdraftWarning', 'detalhesAdicionaisBody'
+    'totalOccurrencesBox', 'categoryLimitInfo', 'detalhesAdicionaisBody'
   ]) {
     assert.match(template, new RegExp(`id="${id}"`), `missing #${id}`);
   }
@@ -137,7 +145,6 @@ test('tabs expose pressed state and the sheet has a single title hook', () => {
 
 test('auxiliary financial values opt into the existing privacy mask', () => {
   assert.match(template, /id="limitInfoText" data-sensitive/);
-  assert.match(template, /id="reserveInfoText" data-sensitive/);
 });
 
 test('responsive sheet contracts keep anti-zoom, safe area and reduced motion', () => {
@@ -155,7 +162,7 @@ test('responsive sheet contracts keep anti-zoom, safe area and reduced motion', 
   assert.match(css, /@media \(max-width: 767px\)[\s\S]*?#valor-input \{[\s\S]*?grid-column: 1;[\s\S]*?grid-row: 2;/);
   assert.match(css, /@media \(max-width: 767px\)[\s\S]*?\.sheet-status-field \{[\s\S]*?grid-column: 2;[\s\S]*?grid-row: 2;/);
   assert.match(css, /@media \(max-width: 767px\)[\s\S]*?\.sheet-status-caption \{ display: none; \}/);
-  assert.match(css, /@media \(max-width: 767px\)[\s\S]*?\.sheet-status-btn \{[\s\S]*?width: 48px;[\s\S]*?min-width: 48px;[\s\S]*?height: 56px;/);
+  assert.match(css, /@media \(max-width: 767px\)[\s\S]*?\.sheet-status-btn \{[\s\S]*?width: 48px;[\s\S]*?min-width: 48px;[\s\S]*?height: 60px;/);
   assert.match(css, /@media \(max-width: 767px\)[\s\S]*?\.sheet-status-label \{ display: none; \}/);
 });
 
@@ -184,7 +191,7 @@ test('amount field and payment status are independent layout blocks', () => {
   assert.match(css, /\.sheet-amount-input-shell:focus-within \{[\s\S]*?box-shadow:/);
   assert.doesNotMatch(css, /\.sheet-amount-field:focus-within/);
   assert.doesNotMatch(css, /\.sheet-status-btn\s*\{[^}]*position:\s*absolute/);
-  assert.match(css, /\.sheet-status-btn \{[\s\S]*?height: 56px;[\s\S]*?min-width: 108px;/);
+  assert.match(css, /\.sheet-status-btn \{[\s\S]*?height: 60px;[\s\S]*?min-width: 108px;/);
   assert.match(css, /\.sheet-status-btn \{[\s\S]*?flex-direction: row/);
 });
 
@@ -370,6 +377,58 @@ test('installment preview uses semantic hint classes instead of ad-hoc utilities
 });
 
 // --- F8-01: transfers must use two different accounts ----------------------
+
+test('date label follows Personal persisted fields and keeps Business competence', () => {
+  const { ns, elements } = runtime();
+  const form = fakeElement({ dataset: { isBusiness: 'false' } });
+  const label = fakeElement({ textContent: 'Data de competência' });
+  const status = fakeElement({ value: 'pending' });
+  const type = fakeElement({ value: 'despesa' });
+  const origin = fakeElement({ value: 'conta' });
+  elements.set('lancamento-form', form);
+  elements.set('dataLancamentoLabel', label);
+  elements.set('statusPagamentoHidden', status);
+  elements.set('tipoLancamento', type);
+  elements.set('origemTipo', origin);
+
+  ns.syncDateLabel();
+  assert.equal(label.textContent, 'Data de vencimento');
+
+  status.value = 'paid';
+  ns.syncDateLabel();
+  assert.equal(label.textContent, 'Data do lançamento');
+
+  origin.value = 'cartao';
+  ns.syncDateLabel();
+  assert.equal(label.textContent, 'Data da compra');
+
+  status.value = 'pending';
+  ns.syncDateLabel();
+  assert.equal(label.textContent, 'Data da compra');
+
+  origin.value = 'conta';
+  type.value = 'receita';
+  ns.syncDateLabel();
+  assert.equal(label.textContent, 'Data de recebimento prevista');
+
+  status.value = 'paid';
+  ns.syncDateLabel();
+  assert.equal(label.textContent, 'Data do lançamento');
+
+  type.value = 'transferencia';
+  ns.syncDateLabel();
+  assert.equal(label.textContent, 'Data da transferência');
+
+  form.dataset.explicitDueDiffers = 'true';
+  type.value = 'despesa';
+  status.value = 'pending';
+  ns.syncDateLabel();
+  assert.equal(label.textContent, 'Data do lançamento');
+
+  form.dataset.isBusiness = 'true';
+  ns.syncDateLabel();
+  assert.equal(label.textContent, 'Data de competência');
+});
 
 test('validateTransferAccounts blocks same-account transfers with a visible message', () => {
   const { ns, elements } = runtime();

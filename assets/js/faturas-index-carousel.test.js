@@ -42,7 +42,15 @@ function node(initialClasses = []) {
     };
 }
 
-function createWorld({ count, cardWidth = 300, gap = 16, clientWidth = 900, selectedIndex = 0, reducedMotion = false } = {}) {
+function createWorld({
+    count,
+    cardWidth = 300,
+    gap = 16,
+    clientWidth = 900,
+    selectedIndex = 0,
+    reducedMotion = false,
+    href = 'http://localhost/faturas?cartao=card-0&mes=11&ano=2026',
+} = {}) {
     const timers = new Map();
     let timerID = 0;
     let sections = [];
@@ -147,6 +155,9 @@ function createWorld({ count, cardWidth = 300, gap = 16, clientWidth = 900, sele
         },
         querySelectorAll(selector) {
             if (selector === '#faturas-index-card-rail') return sections;
+            if (selector === '[data-faturas-card]') {
+                return sections.flatMap((item) => item.querySelectorAll(selector));
+            }
             if (selector === '[data-month-selector] a') return [monthLink];
             return [];
         },
@@ -157,7 +168,7 @@ function createWorld({ count, cardWidth = 300, gap = 16, clientWidth = 900, sele
 
     const windowListeners = new Map();
     const window = {
-        location: { origin: 'http://localhost' },
+        location: { origin: 'http://localhost', pathname: '/faturas', href },
         getComputedStyle: () => ({ scrollPaddingLeft: '0px', scrollPaddingRight: '0px' }),
         matchMedia: () => ({ matches: reducedMotion }),
         setTimeout: (fn) => {
@@ -415,4 +426,54 @@ test('arrow navigation restores snap before scrolling', () => {
 test('initial selected reveal suspends snap so it is not pulled back', () => {
     const ui = createWorld({ count: 5, clientWidth: 400, selectedIndex: 2 });
     assert.equal(ui.rail.classList.contains('is-snap-suspended'), true);
+});
+
+test('clicking a card moves the only selected state and aria-current immediately', () => {
+    const ui = createWorld({ count: 4, clientWidth: 900, selectedIndex: 0 });
+    ui.cards[2].emit('click', { preventDefault() {} });
+
+    assert.deepEqual(ui.selectedIndexes(), [2]);
+    assert.equal(ui.cards[0].getAttribute('aria-current'), null);
+    assert.equal(ui.cards[2].getAttribute('aria-current'), 'page');
+    assert.equal(ui.cards.filter((card) => card.getAttribute('aria-current') === 'page').length, 1);
+});
+
+test('failed card navigation restores the confirmed selection and focus target', () => {
+    const ui = createWorld({
+        count: 4,
+        clientWidth: 900,
+        selectedIndex: 0,
+        href: 'http://localhost/faturas?cartao=card-0&mes=11&ano=2026',
+    });
+    ui.cards[1].emit('click', { preventDefault() {} });
+    assert.deepEqual(ui.selectedIndexes(), [1]);
+
+    ui.body.emit('htmx:afterRequest', { detail: { elt: ui.target, failed: true } });
+
+    assert.deepEqual(ui.selectedIndexes(), [0]);
+    assert.equal(ui.cards[0].getAttribute('aria-current'), 'page');
+    assert.equal(ui.cards[1].getAttribute('aria-current'), null);
+});
+
+test('browser history restore follows the selected card in the URL', () => {
+    const ui = createWorld({ count: 5, clientWidth: 400, selectedIndex: 0 });
+    ui.window.location.href = 'http://localhost/faturas?cartao=card-3&mes=11&ano=2026';
+
+    ui.body.emit('htmx:historyRestore', {});
+
+    assert.deepEqual(ui.selectedIndexes(), [3]);
+    assert.equal(ui.cards[3].getAttribute('aria-current'), 'page');
+    assert.ok(ui.rail.scrollLeft > 0);
+});
+
+test('atomic rail replacement keeps a reordered server selection', () => {
+    const ui = createWorld({ count: 3, clientWidth: 400, selectedIndex: 0 });
+    const next = ui.replaceSection({ count: 4, clientWidth: 400, selectedIndex: 2 });
+
+    assert.equal(next.cards.filter((card) => card.classList.contains('is-selected')).length, 1);
+    assert.equal(next.cards[2].classList.contains('is-selected'), true);
+    assert.equal(next.cards[2].getAttribute('aria-current'), 'page');
+    assert.equal(next.cards[0].getAttribute('aria-current'), null);
+    assert.ok(next.rail.scrollLeft > 0);
+    assert.equal(ui.requests.length, 0);
 });

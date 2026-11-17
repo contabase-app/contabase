@@ -34,7 +34,7 @@ func c2bInput(t *testing.T, p *database.RuntimeDBs, s InvestmentSettlement, a In
 func c2bFinancialSnapshot(t *testing.T, db *sql.DB) string {
 	t.Helper()
 	var out strings.Builder
-	for _, table := range []string{"accounts", "financial_transactions", "account_balance_adjustments", "box_virtual_ledger", "investments", "investment_valuations", "investment_purchases", "investment_withdrawals", "investment_withdrawal_allocations", "investment_reference_revisions", "investment_financial_revisions", "investment_financial_adjustments", "investment_purchase_funding", "investment_settlement_revisions", "investment_settlement_receipts", "investment_settlement_applications", "investment_settlement_prior_effects"} {
+	for _, table := range []string{"accounts", "financial_transactions", "account_balance_adjustments", "investments", "investment_valuations", "investment_purchases", "investment_withdrawals", "investment_withdrawal_allocations", "investment_reference_revisions", "investment_financial_revisions", "investment_financial_adjustments", "investment_purchase_funding", "investment_settlement_revisions", "investment_settlement_receipts", "investment_settlement_applications", "investment_settlement_prior_effects"} {
 		order := "rowid"
 		if table == "financial_transactions" {
 			order = "id"
@@ -108,10 +108,6 @@ func TestInvestmentClassificationResultScenarios(t *testing.T) {
 			a := c2aApply(t, p, fin)
 			in := c2bInput(t, p, s, a)
 			before := c2bFinancialSnapshot(t, p.DB)
-			reserveBefore, err := CalculateWorkspaceReserveBalance(p.DB, "ws-a")
-			if err != nil {
-				t.Fatal(err)
-			}
 			r := c2bClassify(t, p, in)
 			if r.Nature != tc.nature || r.EconomicDate != s.Input.EconomicDate || r.Version != 1 {
 				t.Fatal(r)
@@ -126,10 +122,6 @@ func TestInvestmentClassificationResultScenarios(t *testing.T) {
 			if before != c2bFinancialSnapshot(t, p.DB) {
 				t.Fatal("C2B changed financial snapshot")
 			}
-			reserveAfter, err := CalculateWorkspaceReserveBalance(p.DB, "ws-a")
-			if err != nil || reserveBefore != reserveAfter {
-				t.Fatal("reserve changed", err)
-			}
 			if tc.result == 0 {
 				if r.TransactionID != "" {
 					t.Fatal("zero/unknown monetary transaction")
@@ -138,7 +130,7 @@ func TestInvestmentClassificationResultScenarios(t *testing.T) {
 				var amount, at, created int64
 				var typ, mode, day string
 				var paid sql.NullInt64
-				if err = p.DB.QueryRow(`SELECT amount,type,effect_mode,date,date_civil,created_at,paid_at FROM transactions WHERE workspace_id=? AND id=?`, in.WorkspaceID, r.TransactionID).Scan(&amount, &typ, &mode, &at, &day, &created, &paid); err != nil {
+				if err := p.DB.QueryRow(`SELECT amount,type,effect_mode,date,date_civil,created_at,paid_at FROM transactions WHERE workspace_id=? AND id=?`, in.WorkspaceID, r.TransactionID).Scan(&amount, &typ, &mode, &at, &day, &created, &paid); err != nil {
 					t.Fatal(err)
 				}
 				want := tc.result
@@ -333,13 +325,12 @@ func TestInvestmentClassificationBalanceModesAndProtection(t *testing.T) {
 	if before != c2bFinancialSnapshot(t, p.DB) {
 		t.Fatal("protected mutation affected finances")
 	}
-	exec(t, p.Immediate, `INSERT INTO boxes(id,workspace_id,name,category_id,target_amount) VALUES('c2b-box','ws-a','Reserva','c2b-loss',100000)`)
-	if _, err = p.Immediate.Exec(`INSERT INTO box_virtual_ledger(id,box_id,amount,type,source_transaction_id,reference_date) VALUES('c2b-consume','c2b-box',-25500,'CONSUME',?,1)`, r.TransactionID); err == nil {
-		t.Fatal("classification moved reserves")
+	var reserveObjects int
+	if err = p.DB.QueryRow(`SELECT COUNT(1) FROM sqlite_schema WHERE name IN ('boxes','box_virtual_ledger','box_contribution_lifecycle_events','trg_c2b_reserve','trg_c2b_reserve_update')`).Scan(&reserveObjects); err != nil {
+		t.Fatal(err)
 	}
-	exec(t, p.Immediate, `INSERT INTO box_virtual_ledger(id,box_id,amount,type,reference_date) VALUES('ordinary-bonus','c2b-box',100,'BONUS',1)`)
-	if _, err = p.Immediate.Exec(`UPDATE box_virtual_ledger SET source_transaction_id=? WHERE id='ordinary-bonus'`, r.TransactionID); err == nil {
-		t.Fatal("classification reserve update allowed")
+	if reserveObjects != 0 {
+		t.Fatalf("reserve schema objects = %d, want 0", reserveObjects)
 	}
 	// STANDARD still applies and reverses exactly once, including omitted mode.
 	tx, err = p.Immediate.Begin()
@@ -395,15 +386,22 @@ func TestInvestmentClassificationNetOfIRIOFFees(t *testing.T) {
 }
 
 func TestInvestmentClassificationNotActivatedByHTTPOrJobs(t *testing.T) {
-	for _, root := range []string{"../../cmd/server", "../handlers", "../jobs"} {
-		if _, err := os.Stat(root); os.IsNotExist(err) {
-			continue
-		}
+	scan := func(root string) ([]string, error) {
+		var findings []string
 		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			if d.IsDir() {
+				// Runtime data and hidden staging directories are not Go source.
+				// Other test packages create and remove .contabase-snapshot-*
+				// directories under data/ while the full suite runs.
+				if path != root && (d.Name() == "data" || strings.HasPrefix(d.Name(), ".")) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 				return nil
 			}
 			b, err := os.ReadFile(path)
@@ -413,17 +411,58 @@ func TestInvestmentClassificationNotActivatedByHTTPOrJobs(t *testing.T) {
 			calls := strings.Count(string(b), "ClassifyInvestmentSettlementResult(")
 			if filepath.Clean(path) == filepath.Clean("../handlers/investment_settlement_effects.go") {
 				if calls != 1 {
-					t.Errorf("expected one explicit O1B2 C2B invocation: %s", path)
+					findings = append(findings, fmt.Sprintf("expected one explicit O1B2 C2B invocation: %s", path))
 				}
 				return nil // The O1B2 HTTP suite verifies opt-in and explicit POST.
 			}
 			if calls != 0 {
-				t.Errorf("automatic C2B activation: %s", path)
+				findings = append(findings, fmt.Sprintf("automatic C2B activation: %s", path))
 			}
 			return nil
 		})
+		return findings, err
+	}
+	for _, root := range []string{"../../cmd/server", "../handlers", "../jobs"} {
+		if _, err := os.Stat(root); os.IsNotExist(err) {
+			continue
+		}
+		findings, err := scan(root)
 		if err != nil {
 			t.Fatal(err)
 		}
+		for _, finding := range findings {
+			t.Error(finding)
+		}
 	}
+	t.Run("detects synthetic activation", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "synthetic.go"), []byte("package synthetic\n\nfunc activate() { ClassifyInvestmentSettlementResult() }\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		findings, err := scan(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 1 || !strings.Contains(findings[0], "automatic C2B activation") {
+			t.Fatalf("synthetic activation not detected: %v", findings)
+		}
+	})
+	t.Run("ignores runtime data and hidden staging", func(t *testing.T) {
+		root := t.TempDir()
+		for _, dir := range []string{"data", ".contabase-snapshot-test"} {
+			if err := os.MkdirAll(filepath.Join(root, dir), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, dir, "synthetic.go"), []byte("package synthetic\n\nfunc activate() { ClassifyInvestmentSettlementResult() }\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		findings, err := scan(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(findings) != 0 {
+			t.Fatalf("runtime data scanned: %v", findings)
+		}
+	})
 }

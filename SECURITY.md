@@ -40,6 +40,7 @@ Os seguintes recursos estão presentes e operacionais no código atual:
 - Credenciais da identidade de seed histórica não são reativadas no startup. Hashes correspondentes à senha pública ou inválidos são inutilizados, e a conta exige recuperação administrativa explícita, preservando fatores 2FA e vínculos existentes.
 - Cookies seguros: `HttpOnly`, `SameSite=Lax` e `Secure`.
 - Sessões de usuário hashadas com SHA-256 no banco de dados; botões ativos de revogação remota ("Sair dos outros dispositivos").
+- Logout explícito por `POST` com CSRF revoga a sessão atual, limpa cookies e remove o cache local de histórico/sessão. Trocar a senha revoga todas as sessões e pré-autenticações, inclusive a atual, e exige novo login. O reset administrativo da própria conta mostra a senha temporária uma única vez e encerra a sessão do administrador.
 - Proteção CSRF via HMAC (Double-submit mitigation).
 - Limitadores de acesso em memória temporária contra requisições agressivas em rotas autenticáveis, com chaves hashadas, limpeza de expirados e teto de 10.000 buckets por processo.
 - Bloqueio persistente e temporário (Account Lockout) em banco de dados contra força bruta focada em tentativas repetidas de senha ou 2FA.
@@ -54,9 +55,10 @@ Os seguintes recursos estão presentes e operacionais no código atual:
 - Mitigação de CSV Injection nas exportações CSV disponíveis para campos textuais controlados por usuários.
 
 **Atualização e Recuperação:**
-- Os fluxos de instalação e atualização só reativam automaticamente um código ou imagem anterior quando há prova administrativa local de conteúdo verificado da própria Beta 6 e nenhuma tentativa de startup da candidata. Não há downgrade automático para a Beta 5.
-- O fallback de código não restaura banco, schema, configuração ou chaves. Depois de uma tentativa de startup, o retorno automático é bloqueado e a recuperação exige artefato corrigido compatível com o schema atual, com plano próprio para restore.
-- A política inicial de recuperação reconhece somente `v1.0.0-beta.6`; versões futuras exigem revisão específica.
+- Os updaters a partir da Beta 8 autenticam o dispatcher e o bundle por commit, manifesto, versão e SHA-256, exigem `flock` e validam a proveniência da instalação. A atualização falha fechada sem identidade verificada e não usa wrapper por URL como fallback.
+- O backup pré-migration é publicado com manifesto de integridade e o restore administrativo valida o banco, o manifesto e as foreign keys. Backup não é restore automático; qualquer restauração de dados exige decisão explícita do operador.
+- A recuperação automática de código ou imagem continua restrita à cópia histórica qualificada da Beta 6, com prova administrativa local válida e antes de qualquer tentativa de startup da candidata. Beta 7, Beta 8 e versões desconhecidas não são destinos de rollback automático; o método Docker por digest também não executa rollback automático.
+- Depois de uma tentativa de startup da candidata, o retorno automático é bloqueado e a recuperação exige artefato corrigido compatível com o schema atual, com plano próprio para restore. O fallback de código nunca restaura banco, schema, configuração ou chaves.
 
 ---
 

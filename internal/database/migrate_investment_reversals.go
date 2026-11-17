@@ -14,7 +14,7 @@ import (
 // financial effect at all). History is preserved: the purchase row stays and
 // the receipt is the immutable, durable idempotency record.
 
-func reversal80Objects() []cancellationSchemaObject {
+func reversal80ObjectsForSchema(version int) []cancellationSchemaObject {
 	table := `CREATE TABLE investment_purchase_reversals (
  workspace_id TEXT NOT NULL, id TEXT NOT NULL, investment_id TEXT NOT NULL, purchase_id TEXT NOT NULL,
  movement TEXT NOT NULL CHECK(movement IN ('TRANSFER','RECORD')),
@@ -72,7 +72,7 @@ func reversal80Objects() []cancellationSchemaObject {
 		q += " BEGIN SELECT RAISE(ABORT,'investment purchase reversal integrity'); END"
 		objects = append(objects, cancellationSchemaObject{"trigger", name, on, q})
 	}
-	addTrigger("trg_reversal80_insert", "investment_purchase_reversals", "INSERT", reversal80Collision("NEW")+" OR NOT ("+reversal80Relation("NEW", true)+") OR NOT ("+reversal80JSON("NEW")+")")
+	addTrigger("trg_reversal80_insert", "investment_purchase_reversals", "INSERT", reversal80Collision("NEW")+" OR NOT ("+reversal80RelationForSchema(version, "NEW", true)+") OR NOT ("+reversal80JSON("NEW")+")")
 	for _, action := range []string{"UPDATE", "DELETE"} {
 		addTrigger("trg_reversal80_receipt_"+strings.ToLower(action), "investment_purchase_reversals", action, "")
 		for _, parent := range []struct{ table, match string }{
@@ -97,7 +97,7 @@ func reversal80Objects() []cancellationSchemaObject {
 	// The original and compensating transfers keep the same protection family
 	// as schema 79: no reconciliation, refund, invoice or parent link may be
 	// attached to them once the receipt exists.
-	for _, link := range cancellation79TransactionLinks {
+	for _, link := range cancellation79TransactionLinksForSchema(version) {
 		for _, action := range []string{"INSERT", "UPDATE"} {
 			condition := ""
 			for _, ref := range []string{"OLD", "NEW"} {
@@ -174,7 +174,15 @@ var reversal80Dependents = []string{
 // revalidation arm drops those reality pins so later independent movements on
 // the accounts never invalidate a historical receipt (mirroring schemas 79
 // and 81).
+func reversal80Objects() []cancellationSchemaObject {
+	return reversal80ObjectsForSchema(82)
+}
+
 func reversal80Relation(r string, inserting bool) string {
+	return reversal80RelationForSchema(82, r, inserting)
+}
+
+func reversal80RelationForSchema(version int, r string, inserting bool) string {
 	from := ` FROM investments i
  JOIN investment_purchases p ON p.workspace_id=i.workspace_id AND p.investment_id=i.id AND p.id=` + r + `.purchase_id
  JOIN accounts a ON a.workspace_id=i.workspace_id AND a.id=i.account_id AND a.id=` + r + `.investment_account_id`
@@ -226,7 +234,7 @@ func reversal80Relation(r string, inserting bool) string {
  AND NOT EXISTS(SELECT 1 FROM account_balance_adjustments x WHERE x.workspace_id=i.workspace_id AND x.account_id IN(a.id,s.id))
  AND NOT EXISTS(SELECT 1 FROM investment_adoption_confirmations x WHERE x.workspace_id=i.workspace_id AND x.account_id=a.id)`
 	}
-	for _, link := range cancellation79TransactionLinks {
+	for _, link := range cancellation79TransactionLinksForSchema(version) {
 		scope := "x." + link.scope + "=i.workspace_id"
 		if link.scope == "" {
 			scope = "EXISTS(SELECT 1 FROM boxes b WHERE b.id=x.box_id AND b.workspace_id=i.workspace_id)"

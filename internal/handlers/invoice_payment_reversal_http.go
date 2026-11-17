@@ -56,6 +56,12 @@ func (h *FaturasHandler) handleReverseInvoicePayment(
 
 	location := "/cartoes/faturas/" + url.PathEscape(result.InvoiceID)
 	if r.Header.Get("HX-Request") == "true" {
+		if handled, err := h.renderFaturasIndexMutation(w, r, result.InvoiceID, true); handled {
+			if err != nil {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+			return
+		}
 		w.Header().Set("HX-Redirect", location)
 		w.WriteHeader(http.StatusOK)
 		return

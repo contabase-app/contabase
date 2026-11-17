@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/contabase-app/contabase/internal/auth"
@@ -61,17 +60,18 @@ func handleRequiredPasswordChangeSubmit(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	currentToken := ctx.SessionToken
-	if strings.TrimSpace(currentToken) == "" {
-		if cookie, err := r.Cookie(sessionCookieName); err == nil {
-			currentToken = cookie.Value
-		}
-	}
-	if err := authService.ChangePasswordAndRevokeAuthArtifacts(ctx.UserID, string(hash), currentToken); err != nil {
+	if err := authService.ChangePasswordAndRevokeAuthArtifacts(ctx.UserID, string(hash), ""); err != nil {
 		handleRequiredPasswordChangePage(w, tpl, csrfToken, "Não foi possível atualizar a senha.")
 		return
 	}
 	writeAuthAuditEvent(db, r, ctx.UserID, ctx.ActiveWorkspaceID, "TEMPORARY_PASSWORD_CHANGED", map[string]string{"method": "required_change"})
 	log.Printf("temporary password changed: user=%s", ctx.UserID)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	clearAuthCookies(w, r)
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Trigger", "contabase:logout")
+		w.Header().Set("HX-Redirect", "/login")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }

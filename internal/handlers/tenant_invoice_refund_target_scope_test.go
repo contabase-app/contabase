@@ -291,7 +291,7 @@ func TestTenantInvoiceRefundTargetN22RealFlow(t *testing.T) {
 			if len(after["transactions"]) != len(before["transactions"])+1 {
 				t.Fatal("refund flow materialized an unexpected transaction count")
 			}
-			for _, key := range []string{"invoice_payments", "schema", "accounts", "boxes", "box_virtual_ledger"} {
+			for _, key := range []string{"invoice_payments", "schema", "accounts"} {
 				if !reflect.DeepEqual(before[key], after[key]) {
 					t.Fatalf("refund flow changed %s", key)
 				}

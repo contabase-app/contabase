@@ -1,6 +1,6 @@
 # Investimentos
 
-Este guia descreve o código da `v1.0.0-beta.7`, publicada como prerelease. A disponibilidade no canal de instalação depende da promoção da versão distribuída.
+Este guia descreve o código da `v1.0.0-beta.8`, candidato local ainda não publicado. A disponibilidade no canal de instalação depende da promoção da versão distribuída e da flag da instância. A Beta 8 remove Reservas, mas não promove Investimentos automaticamente no canal público.
 
 ## Disponibilidade
 
@@ -45,7 +45,8 @@ Após um estorno individual, contas e lote não ficam congelados: movimentos, re
 
 ## Limites da versão
 
-- O fluxo de aplicações usa schema 82; a migration experimental 78 não integra o startup.
+- O fluxo de aplicações usa o schema 83; as migrations 79 a 82 permanecem aplicadas e a migration experimental 78 não integra o startup.
+- As operações de investimento não dependem mais de referências de Reservas. A remoção de Reservas não altera o principal aplicado, o histórico de compras nem os recibos.
 - Adoção histórica e resgates financeiros das novas aplicações permanecem indisponíveis. As proteções do backend recusam as saídas não homologadas desse inventário.
 - A compra inicial não é elegível ao estorno individual. O lote inicial record-only pode ser cancelado pelo fluxo próprio da schema 81; não há estorno individual da compra inicial.
 - `CONTABASE_FEATURE_INVESTMENT_OPERATIONS`, `CONTABASE_FEATURE_INVESTMENT_SETTLEMENTS` e `CONTABASE_FEATURE_INVESTMENT_SETTLEMENT_EFFECTS` continuam desabilitadas por padrão e exigem `true` ou `1`, além das flags anteriores na hierarquia. São controles de operações financeiras, não pré-requisitos para cadastro e aplicações com origem. Habilitá-las não homologa adoção histórica ou saídas das novas aplicações.

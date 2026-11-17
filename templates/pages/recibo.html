@@ -5,52 +5,83 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Recibo #{{.TransactionID}}</title>
+    <link rel="stylesheet" href="{{assetPath "/assets/css/geist-sans.css"}}">
     <link rel="stylesheet" href="{{assetPath "/assets/css/recibo.css"}}">
 </head>
 <body>
     <main class="sheet">
         <header class="top">
             <div class="brand">
-                {{if .WorkspaceLogoLightURL}}
-                <img src="{{.WorkspaceLogoLightURL}}" alt="Logo da empresa" class="brand-logo" data-avatar-fallback>
-                <span data-avatar-text class="brand-fallback receipt-hidden">{{.WorkspaceInitials}}</span>
-                {{else if .WorkspaceLogoURL}}
-                <img src="{{.WorkspaceLogoURL}}" alt="Logo da empresa" class="brand-logo" data-avatar-fallback>
-                <span data-avatar-text class="brand-fallback receipt-hidden">{{.WorkspaceInitials}}</span>
-                {{else}}
-                <span class="brand-fallback">{{.WorkspaceInitials}}</span>
-                {{end}}
-                <div>
+                <span class="brand-mark" aria-hidden="true">
+                    {{if .WorkspaceLogoLightURL}}
+                    <img src="{{.WorkspaceLogoLightURL}}" alt="" class="brand-logo" data-avatar-fallback data-receipt-logo>
+                    <span data-avatar-text class="brand-fallback receipt-hidden">{{.WorkspaceInitials}}</span>
+                    {{else if .WorkspaceLogoURL}}
+                    <img src="{{.WorkspaceLogoURL}}" alt="" class="brand-logo" data-avatar-fallback data-receipt-logo>
+                    <span data-avatar-text class="brand-fallback receipt-hidden">{{.WorkspaceInitials}}</span>
+                    {{else}}
+                    <span class="brand-fallback">{{.WorkspaceInitials}}</span>
+                    {{end}}
+                </span>
+                <div class="brand-copy">
+                    <p class="eyebrow">Comprovante de transação</p>
                     <h1 class="title">Recibo</h1>
-                    <p class="meta">Emissão: {{.IssueDateLabel}} · Referência: {{.TransactionID}}</p>
+                    <p class="meta">Emitido em {{.IssueDateLabel}}</p>
                 </div>
             </div>
-            <div class="company">
-                <strong>{{.WorkspaceName}}</strong><br>
-                {{if .WorkspaceDocument}}CNPJ/CPF: {{.WorkspaceDocument}}<br>{{end}}
-                {{if .WorkspacePhone}}{{.WorkspacePhone}}<br>{{end}}
-                {{if .WorkspaceAddress}}{{.WorkspaceAddress}}{{end}}
+            <div class="reference">
+                <span class="reference-label">Referência</span>
+                <strong class="reference-value">#{{.TransactionID}}</strong>
             </div>
         </header>
 
+        <section class="amount-panel" aria-labelledby="receipt-amount-label">
+            <p id="receipt-amount-label" class="amount-label">Valor do recibo</p>
+            <p class="amount-value">{{.AmountLabel}}</p>
+            <p class="amount-description">{{.Description}}</p>
+        </section>
+
+        <div class="parties">
+            <section class="party" aria-labelledby="receipt-issuer-label">
+                <p id="receipt-issuer-label" class="party-label">Emitente</p>
+                <strong class="party-name">{{.WorkspaceName}}</strong>
+                <dl class="party-details">
+                    {{if .WorkspaceDocument}}<div><dt>CNPJ/CPF</dt><dd>{{.WorkspaceDocument}}</dd></div>{{end}}
+                    {{if .WorkspacePhone}}<div><dt>Telefone</dt><dd>{{.WorkspacePhone}}</dd></div>{{end}}
+                    {{if .WorkspaceAddress}}<div><dt>Endereço</dt><dd>{{.WorkspaceAddress}}</dd></div>{{end}}
+                </dl>
+            </section>
+            <section class="party" aria-labelledby="receipt-contact-label">
+                <p id="receipt-contact-label" class="party-label">Contraparte</p>
+                <strong class="party-name">{{.ContactName}}</strong>
+                <dl class="party-details">
+                    <div><dt>CNPJ/CPF</dt><dd>{{.ContactDocument}}</dd></div>
+                    <div><dt>Data do lançamento</dt><dd>{{.DateLabel}}</dd></div>
+                </dl>
+            </section>
+        </div>
+
         <p class="text">
             Declaramos para os devidos fins que <strong>{{.DeclarationVerb}}</strong> {{.DeclarationPrep}} <strong>{{.ContactName}}</strong>, inscrito no CNPJ/CPF
-            <strong>{{.ContactDocument}}</strong>, a importância de <strong>{{.AmountLabel}}</strong> referente a
+            <strong>{{.ContactDocument}}</strong>, a importância de <strong class="text-amount">{{.AmountLabel}}</strong> referente a
             <strong>{{.Description}}</strong> na data de <strong>{{.DateLabel}}</strong>.
         </p>
 
         {{if .WarningMessage}}
-        <div class="warning">{{.WarningMessage}}</div>
+        <div class="warning" role="note">{{.WarningMessage}}</div>
         {{end}}
 
-        <div class="sign">
-            {{.WorkspaceName}} · {{.IssueDateLabel}}
-        </div>
-
-        <div class="actions">
-            <a href="/lancamentos" class="btn">Voltar ao Fluxo de Caixa</a>
-            {{if .CanPrint}}<button class="btn primary" data-onclick="print">Imprimir Recibo</button>{{end}}
-        </div>
+        <footer class="receipt-footer">
+            <div class="sign">
+                <span class="sign-line" aria-hidden="true"></span>
+                <span>{{.WorkspaceName}}</span>
+                <span>{{.IssueDateLabel}}</span>
+            </div>
+            <div class="actions">
+                <a href="/lancamentos" class="btn">Voltar ao Fluxo de Caixa</a>
+                {{if .CanPrint}}<button class="btn primary" data-onclick="print">Imprimir Recibo</button>{{end}}
+            </div>
+        </footer>
     </main>
     <script src="{{assetPath "/assets/js/recibo.js"}}"></script>
 </body>

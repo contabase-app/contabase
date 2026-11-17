@@ -346,8 +346,8 @@ func TestBusinessUpdateDueDateDisparaRefreshDaLista(t *testing.T) {
 	}
 
 	trigger := rr.Header().Get("HX-Trigger")
-	if trigger != "refreshLancamentosList" {
-		t.Fatalf("HX-Trigger = %q, want refreshLancamentosList", trigger)
+	if !strings.Contains(trigger, "refreshLancamentosList") || !strings.Contains(trigger, "refreshFinancials") {
+		t.Fatalf("HX-Trigger = %q, want refreshLancamentosList and refreshFinancials", trigger)
 	}
 	reswap := rr.Header().Get("HX-Reswap")
 	if reswap != "none" {

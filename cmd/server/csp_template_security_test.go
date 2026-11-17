@@ -317,13 +317,11 @@ func TestProgressTemplatesUseNativeElementsWithoutInlineWidths(t *testing.T) {
 		"templates/components/credit_card.html": {
 			`<progress class="cb-card-progress" value="{{.LimitPercent}}" max="100"`,
 		},
-		"templates/pages/dashboard.html": {
+		"templates/components/dashboard_preview_cards.html": {
 			// Medidores de Limites e de Metas usam o mesmo elemento nativo.
-			`<progress class="cb-v2-meter-track" value="{{.Percent}}" max="100"`,
+			`<progress class="cbp-progress cbp-progress--{{.Tone}}" value="{{.Percent}}" max="100"`,
 		},
 		"templates/pages/metas.html": {
-			// Reservas: barra de progresso nativa, sem largura inline.
-			`<progress class="metas-progress" value="{{.Percent}}" max="100"`,
 			// Limites: a mesma barra nativa comunica o disponível.
 			`<progress class="metas-progress" {{if ge .Percent 100}}value="0"`,
 		},
@@ -355,7 +353,6 @@ func TestProgressTemplatesUseNativeElementsWithoutInlineWidths(t *testing.T) {
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(testFile), "..", ".."))
 	for _, relativePath := range []string{
-		"assets/css/dashboard.css",
 		"assets/css/metas.css",
 		"assets/css/faturas.css",
 	} {
@@ -368,19 +365,6 @@ func TestProgressTemplatesUseNativeElementsWithoutInlineWidths(t *testing.T) {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s is missing native progress styling %q", relativePath, want)
 			}
-		}
-	}
-}
-
-func TestLegacyDashboardCardsTemplateHasNoInlineProgressStyle(t *testing.T) {
-	content, err := fs.ReadFile(contabase.TemplatesFS, "templates/components/dashboard-cards.html")
-	if err != nil {
-		t.Fatalf("read dashboard cards template: %v", err)
-	}
-	body := string(content)
-	for _, forbidden := range []string{"card-cc-bar", `style="width: {{.LimitPercent}}%`} {
-		if strings.Contains(body, forbidden) {
-			t.Errorf("legacy dashboard cards template retains obsolete inline progress markup %q", forbidden)
 		}
 	}
 }

@@ -127,7 +127,7 @@ func TestCivil4BA_PersonalProducerDropsUnexpectedDueDate(t *testing.T) {
 	wsID := p1SeedBase(t, db, "personal")
 	h := TransactionHandler{DB: db, WorkspaceID: wsID, UserID: "u-p1-personal"}
 	totalOcc := int64(3)
-	_, err := h.insertTransaction("EXPENSE", 10000, "p1 Personal Drop", "", "", MustCivilWriteDate("2026-07-12"), "acc-personal", "", "cat-personal", 1, "pending", true, "MONTHLY", "", MustOptionalCivilWriteDate("2026-07-20"), &totalOcc, "", false)
+	_, err := h.insertTransaction("EXPENSE", 10000, "p1 Personal Drop", "", "", MustCivilWriteDate("2026-07-12"), "acc-personal", "", "cat-personal", 1, "pending", true, "MONTHLY", "", MustOptionalCivilWriteDate("2026-07-20"), &totalOcc, "")
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
@@ -1004,7 +1004,7 @@ func TestCivil4BA_ConversionBusinessPreservesPersistedDueDate(t *testing.T) {
 
 	handler := TransactionHandler{DB: db, WorkspaceID: wsID, UserID: userID, Templates: p1ToggleTemplates()}
 	// Create non-recurring transaction with due_date 2026-07-20
-	_, err := handler.insertTransaction("EXPENSE", 15000, "p1 Preserve Conv", "", "", MustCivilWriteDate("2026-07-10"), "acc-preserve", "", "cat-preserve", 1, "pending", false, "", "", MustOptionalCivilWriteDate("2026-07-20"), nil, "", false)
+	_, err := handler.insertTransaction("EXPENSE", 15000, "p1 Preserve Conv", "", "", MustCivilWriteDate("2026-07-10"), "acc-preserve", "", "cat-preserve", 1, "pending", false, "", "", MustOptionalCivilWriteDate("2026-07-20"), nil, "")
 	if err != nil {
 		t.Fatalf("insert non-recurring: %v", err)
 	}
@@ -1156,7 +1156,7 @@ func TestCivil4BA_RecurringProducerPreservesZeroDueDateOffset(t *testing.T) {
 	handler := TransactionHandler{DB: db, WorkspaceID: wsID, UserID: userID}
 	totalOcc := int64(3)
 	// Same date for competence and due_date → offset zero
-	_, err := handler.insertTransaction("EXPENSE", 10000, "p1 Zero Off", "", "", MustCivilWriteDate("2026-07-10"), "acc-zerooff", "", "cat-zerooff", 1, "pending", true, "MONTHLY", "", MustOptionalCivilWriteDate("2026-07-10"), &totalOcc, "", false)
+	_, err := handler.insertTransaction("EXPENSE", 10000, "p1 Zero Off", "", "", MustCivilWriteDate("2026-07-10"), "acc-zerooff", "", "cat-zerooff", 1, "pending", true, "MONTHLY", "", MustOptionalCivilWriteDate("2026-07-10"), &totalOcc, "")
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
@@ -1225,7 +1225,7 @@ func p1SeedBusinessWorkspace(t *testing.T, db *sql.DB, suffix string) (wsID, use
 func p1PreserveConvertTx(t *testing.T, db *sql.DB, wsID, userID, desc string) (txID string) {
 	t.Helper()
 	handler := TransactionHandler{DB: db, WorkspaceID: wsID, UserID: userID, Templates: p1ToggleTemplates()}
-	_, err := handler.insertTransaction("EXPENSE", 15000, desc, "", "", MustCivilWriteDate("2026-07-10"), "acc-"+wsID[6:], "", "cat-"+wsID[6:], 1, "pending", false, "", "", MustOptionalCivilWriteDate("2026-07-20"), nil, "", false)
+	_, err := handler.insertTransaction("EXPENSE", 15000, desc, "", "", MustCivilWriteDate("2026-07-10"), "acc-"+wsID[6:], "", "cat-"+wsID[6:], 1, "pending", false, "", "", MustOptionalCivilWriteDate("2026-07-20"), nil, "")
 	if err != nil {
 		t.Fatalf("insert non-recurring: %v", err)
 	}

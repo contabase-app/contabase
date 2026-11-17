@@ -3,7 +3,56 @@
 Este documento é o índice principal das notas de lançamento do ContaBase.
 Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
-## Última Beta publicada
+## ContaBase v1.0.0-beta.8
+
+A Beta 8 remove definitivamente o domínio de Reservas, avança o schema para 83 e promove o Dashboard V2 a página principal do aplicativo. A migration `reserve_physical_removal` elimina tabelas, histórico, notificações, rotas, serviços e telas de Reservas; os dados financeiros são preservados e a migration aborta se houver vínculo histórico protegido.
+
+**Novidades**
+
+- **Dashboard V2 como página principal:** a tela inicial passa a servir exclusivamente o Dashboard V2, com um snapshot financeiro único e consistente para os oito cartões do resumo. Não há mais código do dashboard antigo no aplicativo.
+- **Saldo total e obrigações de 30/60 dias:** o Dashboard separa o saldo total das contas não arquivadas que não são cartão de crédito das obrigações de 30 e 60 dias. Não há saldo reservado nem subtração automática de Reservas; uma composição não comprovável aparece como indisponível em vez de número inferido.
+- **Notificações interativas:** notificações de vencimento e pagamento levam à fatura ou ao lançamento correspondente e permitem pagar diretamente pela notificação, com os gestos de swipe preservados.
+- **Transferências pendentes:** a aba `A Transferir` lista transferências internas pendentes e permite editar e confirmar pelo fluxo próprio.
+- **Apoiar o Projeto:** o rodapé do aplicativo exibe por padrão o link "Apoiar o Projeto", com destino na página de apoio do site oficial (`https://contabase.pages.dev/apoiar/`, que acompanha a publicação da versão). `CONTABASE_SUPPORT_URL` substitui opcionalmente o destino; valores vazios ou inválidos são ignorados com segurança e o padrão é mantido.
+- **Orientação de atualização no admin:** diagnóstico de versão/canal e instruções específicas por método de instalação.
+
+**Melhorias**
+
+- **Shell Premium Fintech global:** todas as páginas passam a usar a mesma navegação, cabeçalhos e larguras de conteúdo do Dashboard, com tokens visuais unificados e componentes compartilhados.
+- **Interface harmonizada:** Investimentos, Faturas, Relatórios, Administração e demais páginas alinhadas ao design system, com logos de cartões refinados e limpeza de CSS legado.
+- **PWA:** instalação do aplicativo restaurada e refinamentos de usabilidade em máscaras, recibos e formulários.
+- **Acessibilidade e responsividade:** foco, contraste e áreas de toque revisados nas superfícies atualizadas.
+
+**Correções**
+
+- **Sessão e credenciais:** o shell expõe logout explícito por `POST` com CSRF; a troca de senha revoga todas as sessões e pré-autenticações, limpa os cookies e exige novo login. O reset administrativo da própria conta mostra a senha temporária uma única vez e encerra a sessão do administrador.
+- **Integridade do Dashboard:** erros de leitura do banco durante a composição do resumo passam a invalidar o snapshot inteiro e responder 503, em vez de exibir valores parciais.
+- **Pagamento e recorrência:** cancelamento anterior ao commit do driver retorna 408 sem efeito; falha genérica de commit permanece 409/429 indeterminada. Contenção SQLite na exclusão recorrente, antes do commit, retorna 503 com `Retry-After: 1` e rollback sem skip ou exclusão parcial; contenção no commit permanece 409 indeterminada.
+- **Transferências sem cartões de crédito:** transferências envolvendo cartão de crédito em qualquer ponta passam a ser rejeitadas (422) na criação, na edição e na confirmação de pendentes; o pagamento de fatura permanece o único fluxo legítimo que movimenta valor com cartões e registros legados continuam legíveis.
+- **Exclusão de categorias protegida:** categoria em uso por lançamentos, regras de recorrência, limites, subcategorias ou classificações de investimento passa a responder 409 em vez de destruir vínculos históricos.
+- **Recuperação de restore:** interrupções do restore administrativo entre a preparação e a conclusão passam a ser recuperadas no startup com o layout real de staging dos writers; a validação continua fechada contra caminhos fora do diretório do banco.
+- **Restauração de backup legado — autenticação:** após restaurar um backup, a página inicial e o acesso a transações passam a usar a conexão atual do banco. Falhas de leitura do banco na página inicial respondem 503 em vez de redirecionar para `/setup`; o primeiro setup e o isolamento por workspace permanecem inalterados. A correção é coberta por testes de regressão de dashboard, transações, isolamento por workspace e concorrência. Em instalações afetadas, reiniciar o serviço de forma controlada pode restabelecer a operação temporariamente, mas a recuperação definitiva é usar a versão corrigida.
+- **Investimentos — limite de requisição:** mutações em `/investimentos` passam a limitar o corpo da requisição a 64 KiB (413 quando excedido), protegendo o servidor antes da autenticação.
+- **Exclusão em lote:** o diálogo de confirmação foi endurecido contra acionamento acidental e o contraste da ajuda foi corrigido.
+- **Faturas e recorrências:** excluir um lançamento recorrente de uma fatura não faz mais a cobrança voltar como "Previsto". Recorrências com versões, início, término ou quantidade limitada respeitam esses limites, não duplicam lançamentos nem exceções preservadas e mantêm os valores da fatura coerentes. Os dados continuam isolados por workspace.
+- **Erros financeiros em faturas:** quando os dados financeiros de uma fatura existente não puderem ser calculados, o aplicativo informa indisponibilidade temporária em vez de dizer que a fatura não existe. A resposta é controlada em HTML e HTMX, sem detalhes internos.
+- **Fluxo de caixa 6M/12M:** a alternância entre 6 e 12 meses foi validada. Quando os meses adicionais não têm movimentação, os totais permanecem iguais por serem o resultado correto do período; o cálculo não mudou.
+
+**Compatibilidade**
+
+- **Atualização:** `v1.0.0-beta.7` (schema 82) → `v1.0.0-beta.8` (schema 83). Faça backup antes. A migration 83 é transacional e não possui down migration; o retorno exige restaurar o snapshot pré-migration e descarta gravações posteriores. Não há downgrade automático de binário após o schema 83.
+- **Updater autenticado:** dispatcher beta.8 com `updater.sha256`, commit autorizado, verificação de bundle, `flock` (obrigatório; falha fechado sem ele) e proveniência de instalação. A transição beta.7 → beta.8 inclui bootstrap isolado do updater Release, sem fallback para wrapper por URL e suporte a atualização Docker/Source por tag.
+- **Backup e restore:** o snapshot anterior à migration é publicado com `.manifest.json` contendo SHA-256, tamanho, schema e data. O restore administrativo valida o manifesto, a integridade SQLite e as foreign keys; backups antigos sem manifesto exigem modo legado explícito.
+- **Investimentos:** continua implementado e independente de Reservas; a ativação pública depende da flag da instância. Instalações novas nascem com `CONTABASE_FEATURE_INVESTMENTS=false` e atualizações preservam o valor existente. A Beta 8 não habilita o módulo automaticamente no canal público.
+
+**Limitações**
+
+- O smoke autenticado das páginas principais e o smoke real de instalação/atualização permanecem pendentes. Antes de instalar, confirme a disponibilidade da versão e dos artefatos no [Guia Completo de Instalação](https://contabase.pages.dev/setup/); estas notas não comprovam publicação nem homologação operacional.
+- Testes manuais com leitor de tela e Safari/WebKit ainda não foram executados no Dashboard V2 e no shell global.
+- A pendência herdada da Beta 7 sobre recorrências legadas (a movimentação podendo ignorar ocorrências em faturas já pagas) permanece em aberto nesta versão.
+- Backups antigos sem `.manifest.json` exigem o modo legado explícito no painel.
+
+## Histórico da Beta 7
 
 - **v1.0.0-beta.7 — prerelease publicada em 1 de novembro de 2026** — *Cancelamentos, estornos e operabilidade de Investimentos*
 

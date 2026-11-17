@@ -21,8 +21,12 @@ func TestNotificacoesPageUsesGlobalAppShell(t *testing.T) {
 			Title:       "Fatura aguardando pagamento",
 			Description: "Cartão A · vence em 07/09",
 			Money:       MoneyMinor(12345),
+			HasMoney:    true,
 			Icon:        "triangle-alert",
 			Color:       "amber",
+			TargetType:  notificationTargetInvoice,
+			TargetID:    "invoice-a",
+			CanOpen:     true,
 		}},
 	}
 
@@ -54,9 +58,6 @@ func TestNotificacoesPageUsesGlobalAppShell(t *testing.T) {
 func TestNotificationBadgeHTMLUsesV2BadgeTarget(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
-	seedCaixinhaNotificacoesScenario(t, db)
-	insertCaixinhaNotification(db, "user-a", "ws-a", "Aviso", "Mensagem", "caixinha.aporte")
-
 	html := NotificationBadgeHTML(db, "user-a", "ws-a")
 	if !strings.Contains(html, `id="notification-badge"`) || !strings.Contains(html, `hx-swap-oob="true"`) {
 		t.Fatalf("badge OOB target mismatch: %s", html)

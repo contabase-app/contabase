@@ -1,6 +1,10 @@
 package handlers
 
-import "html/template"
+import (
+	"html/template"
+
+	"github.com/contabase-app/contabase/internal/support"
+)
 
 func withAppShellTestFuncs(funcs template.FuncMap) template.FuncMap {
 	if funcs == nil {
@@ -12,6 +16,7 @@ func withAppShellTestFuncs(funcs template.FuncMap) template.FuncMap {
 	funcs["SetupTokenStillConfigured"] = func(any) bool { return false }
 	funcs["appCurrentTime"] = func() any { return nil }
 	funcs["appVersion"] = func() string { return "test" }
+	funcs["supportLink"] = func() support.Link { return support.Link{} }
 	funcs["publicURL"] = func(path string) string { return "https://contabase.test" + path }
 	funcs["sub"] = func(a, b int) int { return a - b }
 	for name, fn := range IconTemplateFuncs() {

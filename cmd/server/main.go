@@ -18,7 +18,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,7 +34,9 @@ import (
 	"github.com/contabase-app/contabase/internal/httpcookies"
 	"github.com/contabase-app/contabase/internal/models"
 	"github.com/contabase-app/contabase/internal/paths"
-	"github.com/contabase-app/contabase/internal/services"
+	"github.com/contabase-app/contabase/internal/runtimelease"
+	"github.com/contabase-app/contabase/internal/support"
+	"github.com/contabase-app/contabase/internal/updates"
 	"github.com/contabase-app/contabase/internal/version"
 
 	"github.com/google/uuid"
@@ -49,7 +50,11 @@ const (
 	bootstrapRestoreMaxBodyBytes  = 32 << 20
 	bootstrapSetupTokenEnv        = "CONTABASE_SETUP_TOKEN"
 	bootstrapSetupTokenMinLength  = 32
+
+	adminBackupImportBusyMessage = "O sistema está concluindo outra operação. Tente novamente em instantes."
 )
+
+var adminBackupImportTooLargeMessage = fmt.Sprintf("O backup excede o limite de %d MiB para importação.", adminBackupImportMaxBodyBytes>>20)
 
 func bindTransactionHandlerRuntimeDBs(h *handlers.TransactionHandler, dbs *database.RuntimeDBs) {
 	if h == nil || dbs == nil {
@@ -72,12 +77,13 @@ func main() {
 	}
 	dbFilePath := sqlitePathFromURL(dbURL)
 
-	runtimeDBs, err := database.OpenRuntimeDBs(dbURL)
+	runtimeDBs, err := openRuntimeDBsAfterRestoreRecovery(dbURL)
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
 		log.Fatalf("failed to open database: %v", err)
 	}
 	db := runtimeDBs.DB
+	dbProvider := newSQLDBProvider(db)
 
 	slog.Info("database initialized successfully")
 
@@ -110,7 +116,6 @@ func main() {
 	adminBackupExportRateLimitPolicy := rateLimitPolicy{Limit: 6, Window: 5 * time.Minute}
 	adminBackupImportRateLimitPolicy := rateLimitPolicy{Limit: 3, Window: 10 * time.Minute}
 	adminIdentityMutationRateLimitPolicy := rateLimitPolicy{Limit: 20, Window: 10 * time.Minute}
-	adminHeavyReadRateLimitPolicy := rateLimitPolicy{Limit: 10, Window: 5 * time.Minute}
 	adminDebugMutationRateLimitPolicy := rateLimitPolicy{Limit: 3, Window: 30 * time.Minute}
 	securitySettingsRateLimitPolicy := rateLimitPolicy{Limit: 5, Window: 10 * time.Minute}
 	financialBulkRateLimitPolicy := rateLimitPolicy{Limit: 12, Window: 5 * time.Minute}
@@ -140,13 +145,23 @@ func main() {
 	relBase := handlers.RelatoriosHandler{DB: db, Templates: tpl}
 	faturasBase := handlers.FaturasHandler{DB: db, WriterDB: runtimeDBs.Immediate, Templates: tpl}
 	notificacoesBase := handlers.NotificacoesHandler{DB: db, Templates: tpl}
-	configBase := handlers.ConfiguracoesHandler{DB: db, Templates: tpl, AuthService: authService, BaseURL: baseURL}
+	bindNotificacoesHandler := func(ctx authContext) handlers.NotificacoesHandler {
+		h := notificacoesBase
+		h.WorkspaceID = ctx.ActiveWorkspaceID
+		h.UserID = ctx.UserID
+		h.CanReadTransactions = models.HasPermission(&ctx.Member, string(permTransactionsRead))
+		h.CanViewDashboard = models.HasPermission(&ctx.Member, string(permDashboardRead))
+		h.CanUpdatePaymentStatus = models.HasPermission(&ctx.Member, string(permInvoicesStatusUpdate))
+		return h
+	}
+	configBase := handlers.ConfiguracoesHandler{DB: db, Templates: tpl, AuthService: authService, BaseURL: baseURL, Updates: updates.New(version.Version, os.Getenv("CONTABASE_STATE_FILE"))}
 	newConfigHandler := func(ctx authContext) handlers.ConfiguracoesHandler {
 		h := configBase
 		h.WorkspaceID = ctx.ActiveWorkspaceID
 		h.UserID = ctx.UserID
 		h.ActorRole = ctx.Role
 		h.SessionToken = ctx.SessionToken
+		h.SecureCookie = ctx.SecureCookie
 		h.CanConfigRead = models.HasPermission(&ctx.Member, string(permConfigRead))
 		h.CanConfigWrite = models.HasPermission(&ctx.Member, string(permConfigWrite))
 		return h
@@ -154,6 +169,7 @@ func main() {
 	refreshDeps := func(newRuntimeDBs *database.RuntimeDBs) {
 		runtimeDBs = newRuntimeDBs
 		db = newRuntimeDBs.DB
+		dbProvider.Store(newRuntimeDBs.DB)
 		authService.DB = newRuntimeDBs.DB
 		bindTransactionHandlerRuntimeDBs(&txBase, newRuntimeDBs)
 		contatosBase.DB = newRuntimeDBs.DB
@@ -204,6 +220,20 @@ func main() {
 	})
 	mux.HandleFunc("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join("assets", "manifest.json"))
+	})
+	// Minimal pass-through service worker. It exists so browsers can consider
+	// the app installable; it never caches authenticated or financial data.
+	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Service-Worker-Allowed", "/")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		http.ServeFile(w, r, filepath.Join("assets", "js", "sw.js"))
 	})
 
 	setupHandler := func(w http.ResponseWriter, r *http.Request) {
@@ -305,20 +335,48 @@ func main() {
 			handleSetupPage(w, tpl, csrfToken, "Arquivo inválido. Envie um backup com extensão .db.")
 			return
 		}
-		tmpRestorePath, cleanup, err := saveBootstrapBackupRestoreUpload(dbFilePath, file)
+		manifestFile, _, manifestErr := r.FormFile("manifest_file")
+		hasManifest := manifestErr == nil
+		if manifestErr != nil && !errors.Is(manifestErr, http.ErrMissingFile) {
+			handleSetupPage(w, tpl, csrfToken, "Não foi possível ler o manifesto enviado.")
+			return
+		}
+		if hasManifest {
+			defer manifestFile.Close()
+		}
+		legacy := r.FormValue("legacy_restore") == "1"
+		if hasManifest && legacy {
+			handleSetupPage(w, tpl, csrfToken, "Envie o manifesto ou use a restauração legada explícita, não ambos.")
+			return
+		}
+		if !hasManifest && !legacy {
+			handleSetupPage(w, tpl, csrfToken, "Manifesto SHA-256 (.manifest.json) obrigatório para backups novos. Para backup legado, marque a restauração legada explícita.")
+			return
+		}
+		tmpRestorePath, cleanup, err := saveBootstrapBackupRestoreUpload(dbFilePath, header.Filename, file)
 		if err != nil {
 			log.Printf("bootstrap restore upload save failed: %v", err)
 			handleSetupPage(w, tpl, csrfToken, "Não foi possível salvar o backup enviado.")
 			return
 		}
 		defer cleanup()
-		if err := validateBootstrapRestoreCandidate(tmpRestorePath); err != nil {
+		if hasManifest {
+			if err := saveRestoreManifestUpload(tmpRestorePath, manifestFile); err != nil {
+				log.Printf("bootstrap restore manifest save failed: %v", err)
+				handleSetupPage(w, tpl, csrfToken, "Não foi possível salvar o manifesto enviado.")
+				return
+			}
+		}
+		if err := validateRestoreCandidate(tmpRestorePath, hasManifest, legacy); err != nil {
 			handleSetupPage(w, tpl, csrfToken, "Backup inválido ou incompatível.")
 			return
 		}
+		if legacy {
+			slog.Warn("bootstrap_restore_legacy_without_manifest", "client_ip", clientIP(r))
+		}
 
 		var result adminRestoreResult
-		err = coordinator.Replace(func(current *serverRuntime) error {
+		err = coordinator.ReplaceContext(r.Context(), func(current *serverRuntime) error {
 			mode, err := isDatabaseBootstrapMode(current.DBs.DB)
 			if err != nil {
 				return err
@@ -330,7 +388,10 @@ func main() {
 		}, func(old *serverRuntime) (*serverRuntime, error) {
 			var next *serverRuntime
 			var restoreErr error
-			result, next, restoreErr = restoreBootstrapBackupFromFile(old, dbURL, dbFilePath, tmpRestorePath, database.OpenRuntimeDBs, startRuntime)
+			validator := func(candidate string) error {
+				return validateRestoreCandidate(candidate, hasManifest, legacy)
+			}
+			result, next, restoreErr = restoreSQLiteBackupFromFile(r.Context(), old, dbURL, dbFilePath, tmpRestorePath, database.OpenRuntimeDBs, startRuntime, validator)
 			if restoreErr == nil {
 				bootstrapSetupGuard.Consume()
 			}
@@ -338,15 +399,21 @@ func main() {
 		})
 		if err != nil {
 			log.Printf("bootstrap restore failed: %v", err)
+			if result.RuntimeState == adminRuntimeUnknown {
+				slog.Error("admin_backup_restore_stage", "stage", "bootstrap_runtime_recovery_failed", "rollback_state", result.RollbackState, "runtime_state", result.RuntimeState)
+			}
+			if errors.Is(err, context.Canceled) && result.RuntimeState != adminRuntimeUnknown {
+				return
+			}
+			if !result.CommitmentReached && result.RuntimeState != adminRuntimeUnknown && (errors.Is(err, errServerRuntimeBusy) || errors.Is(err, context.DeadlineExceeded)) {
+				handleSetupPageWithStatus(w, tpl, csrfToken, adminBackupImportBusyMessage, http.StatusServiceUnavailable)
+				return
+			}
 			if errors.Is(err, errRestoreRevalidationDenied) {
 				handleSetupPageWithStatus(w, tpl, csrfToken, "Autorização do restore expirou. Recarregue /setup e tente novamente.", http.StatusForbidden)
 				return
 			}
-			if result.RolledBack {
-				handleSetupPage(w, tpl, csrfToken, "Não foi possível restaurar o backup. A restauração foi revertida; verifique os logs do servidor.")
-			} else {
-				handleSetupPage(w, tpl, csrfToken, "Backup inválido ou incompatível. Verifique os logs do servidor.")
-			}
+			handleSetupPageWithStatus(w, tpl, csrfToken, adminRestoreFailureMessage(result), http.StatusInternalServerError)
 			return
 		}
 		log.Printf("bootstrap restore completed successfully")
@@ -665,33 +732,14 @@ func main() {
 		if !requireGlobalAdmin(w, r, ctx) {
 			return
 		}
-		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/backups") {
+		if !requireRecentAuthentication(w, r, authService, ctx, "/admin/backups/exportar") {
 			return
 		}
 		if !allowRateLimit(w, r, userIPRateLimitKey("admin:backup:export", ctx, r), adminBackupExportRateLimitPolicy) {
 			return
 		}
 
-		backupPath, cleanup, err := createAdminExportBackupContext(r.Context(), db, dbFilePath)
-		if err != nil {
-			log.Printf("backup export prepare error: %v", err)
-			http.Error(w, "backup indisponivel", http.StatusInternalServerError)
-			return
-		}
-		defer cleanup()
-
-		f, err := os.Open(backupPath)
-		if err != nil {
-			log.Printf("backup export open error: %v", err)
-			http.Error(w, "backup indisponivel", http.StatusInternalServerError)
-			return
-		}
-		defer f.Close()
-		setAdminBackupDownloadHeaders(w, time.Now())
-		if _, err := io.Copy(w, f); err != nil {
-			log.Printf("backup export error: %v", err)
-		}
-		slog.Info("admin_action", "action", "backup_export", "actor_user_id", ctx.UserID, "client_ip", clientIP(r))
+		handleAdminBackupExport(w, r, db, dbFilePath, ctx.UserID)
 	}))
 
 	mux.HandleFunc("/dashboard/balance-series", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -706,42 +754,7 @@ func main() {
 		h.ServeHTTP(w, r)
 	}))
 
-	mux.HandleFunc("/", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		if !database.HasAnyUser(db) {
-			redirectToSetup(w, r)
-			return
-		}
-		if !hasPermission(ctx.Role, permDashboardRead) {
-			respondForbidden(w, r)
-			return
-		}
-
-		handlers.ScheduleRecurringMaterializationFallback(ctx.ActiveWorkspaceID)
-
-		t0 := time.Now()
-		reqID := handlers.PerfReqID()
-		dbB := handlers.DbSnap(db)
-
-		data := handlers.BuildDashboardData(db, ctx.UserID, ctx.ActiveWorkspaceID)
-		handlers.PerfStep(reqID, "Dashboard", "BuildDashboardData", time.Since(t0))
-
-		tR := time.Now()
-		handlers.SortDashboardCardsByPaymentPriority(data.Cards, time.Now())
-		if err := tpl.ExecuteTemplate(w, "dashboard-page", data); err != nil {
-			log.Printf("template error: %v", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		handlers.PerfStep(reqID, "Dashboard", "templateRender", time.Since(tR))
-
-		dbA := handlers.DbSnap(db)
-		handlers.PerfDBDelta(reqID, "Dashboard", "total", dbB, dbA)
-		handlers.PerfRequest(reqID, r, time.Since(t0), 0)
-	}))
+	registerDashboardRoute(mux, dbProvider, tpl, authService, csrfSigner, handlers.ScheduleRecurringMaterializationFallback)
 
 	mux.HandleFunc("/transacoes/nova", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if !hasPermission(ctx.Role, permTransactionsCreate) {
@@ -1214,7 +1227,7 @@ func main() {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}))
 
-	registerTransacoesRoutes(mux, db, authService, csrfSigner, &txBase)
+	registerTransacoesRoutes(mux, dbProvider, authService, csrfSigner, &txBase)
 
 	registerInvestimentosRoutes(mux, authService, csrfSigner, &investimentosBase)
 
@@ -1235,6 +1248,8 @@ func main() {
 		}
 	}))
 
+	registerReservasRemovalTombstones(mux)
+
 	mux.HandleFunc("/metas/novo", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1250,21 +1265,6 @@ func main() {
 		h.ActorRole = ctx.Role
 		h.HandleNovaMeta(w, r)
 	}))
-	mux.HandleFunc("/metas/caixinha", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !hasPermission(ctx.Role, permGoalsWrite) {
-			respondForbidden(w, r)
-			return
-		}
-		h := metasBase
-		h.WorkspaceID = ctx.ActiveWorkspaceID
-		h.UserID = ctx.UserID
-		h.ActorRole = ctx.Role
-		h.HandleCriarCaixinha(w, r)
-	}))
 	mux.HandleFunc("/metas/limite", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1279,20 +1279,6 @@ func main() {
 		h.UserID = ctx.UserID
 		h.ActorRole = ctx.Role
 		h.HandleCriarLimite(w, r)
-	}))
-	mux.HandleFunc("/metas/caixinha/", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		if r.Method == http.MethodDelete {
-			if !hasPermission(ctx.Role, permGoalsWrite) {
-				respondForbidden(w, r)
-				return
-			}
-			h := metasBase
-			h.WorkspaceID = ctx.ActiveWorkspaceID
-			h.UserID = ctx.UserID
-			h.HandleDeleteCaixinha(w, r)
-			return
-		}
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}))
 	mux.HandleFunc("/metas/limite/historico", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if r.Method != http.MethodGet {
@@ -1322,81 +1308,6 @@ func main() {
 			return
 		}
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}))
-	mux.HandleFunc("/metas/caixinha/aporte", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !hasPermission(ctx.Role, permGoalsWrite) {
-			respondForbidden(w, r)
-			return
-		}
-		h := metasBase
-		h.WorkspaceID = ctx.ActiveWorkspaceID
-		h.UserID = ctx.UserID
-		h.ActorRole = ctx.Role
-		h.HandleAporteCaixinha(w, r)
-	}))
-	mux.HandleFunc("/metas/caixinha/resgate", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !hasPermission(ctx.Role, permGoalsWrite) {
-			respondForbidden(w, r)
-			return
-		}
-		h := metasBase
-		h.WorkspaceID = ctx.ActiveWorkspaceID
-		h.UserID = ctx.UserID
-		h.ActorRole = ctx.Role
-		h.HandleResgateCaixinha(w, r)
-	}))
-	mux.HandleFunc("/metas/caixinha/aporte/sheet", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !hasPermission(ctx.Role, permGoalsWrite) {
-			respondForbidden(w, r)
-			return
-		}
-		h := metasBase
-		h.WorkspaceID = ctx.ActiveWorkspaceID
-		h.UserID = ctx.UserID
-		h.ActorRole = ctx.Role
-		h.HandleAporteCaixinhaSheet(w, r)
-	}))
-	mux.HandleFunc("/metas/caixinha/resgate/sheet", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !hasPermission(ctx.Role, permGoalsWrite) {
-			respondForbidden(w, r)
-			return
-		}
-		h := metasBase
-		h.WorkspaceID = ctx.ActiveWorkspaceID
-		h.UserID = ctx.UserID
-		h.ActorRole = ctx.Role
-		h.HandleResgateCaixinhaSheet(w, r)
-	}))
-	mux.HandleFunc("/metas/caixinha/historico", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !hasPermission(ctx.Role, permGoalsWrite) {
-			respondForbidden(w, r)
-			return
-		}
-		h := metasBase
-		h.WorkspaceID = ctx.ActiveWorkspaceID
-		h.UserID = ctx.UserID
-		h.ActorRole = ctx.Role
-		h.HandleHistoricoCaixinha(w, r)
 	}))
 
 	mux.HandleFunc("/relatorios", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1571,9 +1482,7 @@ func main() {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		h := notificacoesBase
-		h.WorkspaceID = ctx.ActiveWorkspaceID
-		h.UserID = ctx.UserID
+		h := bindNotificacoesHandler(ctx)
 		h.HandleExibirNotificacoes(w, r)
 	}))
 	mux.HandleFunc("/notificacoes/limpar", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -1585,9 +1494,7 @@ func main() {
 			respondForbidden(w, r)
 			return
 		}
-		h := notificacoesBase
-		h.WorkspaceID = ctx.ActiveWorkspaceID
-		h.UserID = ctx.UserID
+		h := bindNotificacoesHandler(ctx)
 		h.HandleLimparTudo(w, r)
 	}))
 	mux.HandleFunc("/notificacoes/", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -2025,6 +1932,7 @@ func main() {
 		}
 		http.NotFound(w, r)
 	}))
+	registerAdminUpdateRoutes(mux, authService, csrfSigner, newConfigHandler)
 	mux.HandleFunc("/admin/usuarios", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -2264,13 +2172,13 @@ func main() {
 					` data-workspace-theme="%s" data-workspace-active="%s">`+
 					`<i data-lucide="layout-grid" class="cb-v2-workspace-choice-icon w-4 h-4 shrink-0"></i><span class="min-w-0 flex-1">`+
 					`<span class="block truncate">%s</span>`+
-					`<span class="block text-[11px] text-zinc-500">%s · tema %s</span></span>`+
+					`<span class="cb-v2-workspace-choice-meta block text-[11px] text-[var(--cb-text-muted)]">%s · tema %s</span></span>`+
 					`</button>`,
 				template.HTMLEscapeString(ws.ID), template.HTMLEscapeString(theme.Token), active, template.HTMLEscapeString(ws.Name), typeLabel, strings.ToLower(template.HTMLEscapeString(theme.Nome)),
 			)
 		}
 		if len(workspaces) == 0 {
-			fmt.Fprintf(w, `<p class="text-xs text-zinc-500 px-2">Nenhum workspace disponível</p>`)
+			fmt.Fprintf(w, `<p class="text-xs text-[var(--cb-text-muted)] px-2">Nenhum workspace disponível</p>`)
 		}
 	}))
 	mux.HandleFunc("/admin/backups", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -2289,8 +2197,11 @@ func main() {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		started := time.Now()
 		var preliminaryCtx authContext
-		if err := coordinator.Read(func(current *serverRuntime) error {
+		readCtx, cancelRead := context.WithTimeout(r.Context(), serverRuntimeImportReadWait)
+		defer cancelRead()
+		if err := coordinator.ReadContext(readCtx, func(current *serverRuntime) error {
 			var authErr error
 			preliminaryCtx, authErr = resolveAdminRestoreIdentity(w, r, current.DBs.DB)
 			if authErr != nil {
@@ -2305,33 +2216,25 @@ func main() {
 			}
 			return nil
 		}); err != nil {
-			if errors.Is(err, errRecentAdminAuthenticationRequired) {
+			switch {
+			case errors.Is(err, errRecentAdminAuthenticationRequired):
 				redirectToAdminReauthentication(w, r, "/admin/backups")
-			} else if errors.Is(err, errRestoreRevalidationDenied) {
-				respondForbidden(w, r)
-			} else {
+			case errors.Is(err, errRestoreRevalidationDenied):
+				writeAdminBackupImportForbidden(w, r)
+			case errors.Is(err, context.Canceled):
+				slog.Info("admin_action", "action", "backup_import_canceled", "stage", "preliminary_read", "client_ip", clientIP(r))
+			case errors.Is(err, context.DeadlineExceeded), errors.Is(err, errServerRuntimeBusy):
+				slog.Warn("admin_action", "action", "backup_import_busy", "stage", "preliminary_read", "client_ip", clientIP(r), "wait_ms", time.Since(started).Milliseconds())
+				writeAdminBackupImportFailure(w, adminBackupImportBusyMessage, http.StatusConflict)
+			default:
 				http.Error(w, "service unavailable", http.StatusServiceUnavailable)
 			}
 			return
 		}
-		renderFailure := func(message string, status int) {
-			if err := coordinator.Read(func(_ *serverRuntime) error {
-				fresh := newConfigHandler(preliminaryCtx)
-				fresh.RenderConfigSectionWithFlashStatus(w, "admin-backups", message, "", status)
-				return nil
-			}); err != nil {
-				http.Error(w, "service unavailable", http.StatusServiceUnavailable)
-			}
-		}
 		backupImportRateLimitKey := userIPRateLimitKey("admin_backup_import", preliminaryCtx, r)
 		if decision := rateLimiter.Allow(backupImportRateLimitKey, adminBackupImportRateLimitPolicy, time.Now()); !decision.Allowed {
-			if err := coordinator.Read(func(_ *serverRuntime) error {
-				h := newConfigHandler(preliminaryCtx)
-				writeAdminBackupImportRateLimitExceeded(w, r, h, decision)
-				return nil
-			}); err != nil {
-				http.Error(w, "service unavailable", http.StatusServiceUnavailable)
-			}
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds(decision.RetryAfter)))
+			writeAdminBackupImportFailure(w, adminBackupImportRateLimitMessage(retryAfterSeconds(decision.RetryAfter)), http.StatusTooManyRequests)
 			slog.Warn("rate_limit_blocked",
 				"family", "admin_backup_import",
 				"key_hash", rateLimitKeyHash(backupImportRateLimitKey),
@@ -2346,43 +2249,81 @@ func main() {
 		slog.Info("admin_action", "action", "backup_import_attempt", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r))
 		r.Body = http.MaxBytesReader(w, r.Body, adminBackupImportMaxBodyBytes)
 		if err := r.ParseMultipartForm(adminBackupImportMaxBodyBytes); err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				slog.Warn("admin_action", "action", "backup_import_validation_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "multipart_too_large")
+				writeAdminBackupImportFailure(w, adminBackupImportTooLargeMessage, http.StatusRequestEntityTooLarge)
+				return
+			}
 			slog.Warn("admin_action", "action", "backup_import_validation_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "multipart_parse")
-			renderFailure("Não foi possível ler o backup enviado.", http.StatusBadRequest)
+			writeAdminBackupImportFailure(w, "Não foi possível ler o backup enviado.", http.StatusBadRequest)
 			return
 		}
 		if !csrfRequestValid(csrfSigner, r) {
-			respondForbidden(w, r)
+			writeAdminBackupImportForbidden(w, r)
 			return
 		}
 		file, header, err := r.FormFile("backup_file")
 		if err != nil {
 			slog.Warn("admin_action", "action", "backup_import_validation_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "missing_file")
-			renderFailure("Selecione um arquivo de backup.", http.StatusBadRequest)
+			writeAdminBackupImportFailure(w, "Selecione um arquivo de backup.", http.StatusBadRequest)
 			return
 		}
 		defer file.Close()
+		slog.Info("admin_action", "action", "backup_import_received", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "bytes", header.Size)
 		if strings.ToLower(filepath.Ext(header.Filename)) != ".db" {
 			slog.Warn("admin_action", "action", "backup_import_validation_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "invalid_extension")
-			renderFailure("Arquivo de backup inválido.", http.StatusBadRequest)
+			writeAdminBackupImportFailure(w, "Arquivo de backup inválido.", http.StatusBadRequest)
+			return
+		}
+		manifestFile, _, manifestErr := r.FormFile("manifest_file")
+		hasManifest := manifestErr == nil
+		if manifestErr != nil && !errors.Is(manifestErr, http.ErrMissingFile) {
+			slog.Warn("admin_action", "action", "backup_import_validation_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "manifest_read_failed")
+			writeAdminBackupImportFailure(w, "Não foi possível ler o manifesto enviado.", http.StatusBadRequest)
+			return
+		}
+		if hasManifest {
+			defer manifestFile.Close()
+		}
+		legacy := r.FormValue("legacy_restore") == "1"
+		if hasManifest && legacy {
+			slog.Warn("admin_action", "action", "backup_import_validation_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "manifest_legacy_conflict")
+			writeAdminBackupImportFailure(w, "Envie o manifesto ou use a restauração legada explícita, não ambos.", http.StatusBadRequest)
+			return
+		}
+		if !hasManifest && !legacy {
+			slog.Warn("admin_action", "action", "backup_import_validation_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "manifest_missing")
+			writeAdminBackupImportFailure(w, "Manifesto SHA-256 (.manifest.json) obrigatório para backups novos. Para backup legado, marque a restauração legada explícita.", http.StatusBadRequest)
 			return
 		}
 
-		tmpPath, cleanup, err := saveAdminBackupImportUpload(dbFilePath, file)
+		tmpPath, cleanup, err := saveAdminBackupImportUpload(dbFilePath, header.Filename, file)
 		if err != nil {
 			slog.Warn("admin_action", "action", "backup_import_validation_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "upload_save_failed")
-			renderFailure("Não foi possível preparar o backup.", http.StatusInternalServerError)
+			writeAdminBackupImportFailure(w, "Não foi possível preparar o backup.", http.StatusInternalServerError)
 			return
 		}
 		defer cleanup()
+		if hasManifest {
+			if err := saveRestoreManifestUpload(tmpPath, manifestFile); err != nil {
+				slog.Warn("admin_action", "action", "backup_import_validation_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "manifest_save_failed")
+				writeAdminBackupImportFailure(w, "Não foi possível preparar o manifesto.", http.StatusInternalServerError)
+				return
+			}
+		}
 
-		if err := validateSQLiteBackupCandidate(tmpPath); err != nil {
+		if err := validateRestoreCandidate(tmpPath, hasManifest, legacy); err != nil {
 			slog.Warn("admin_action", "action", "backup_import_validation_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "sqlite_validation_failed")
-			renderFailure("Backup inválido ou incompatível.", http.StatusBadRequest)
+			writeAdminBackupImportFailure(w, "Backup inválido ou incompatível.", http.StatusBadRequest)
 			return
+		}
+		if legacy {
+			slog.Warn("admin_action", "action", "backup_import_legacy_without_manifest", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r))
 		}
 
 		var result adminRestoreResult
-		err = coordinator.Replace(func(current *serverRuntime) error {
+		err = coordinator.ReplaceContext(r.Context(), func(current *serverRuntime) error {
 			_, authErr := revalidateAdminRestoreRequest(w, r, current.DBs.DB, csrfSigner)
 			if authErr != nil {
 				logSecurityEvent(current.DBs.DB, r, preliminaryCtx.ActiveWorkspaceID, preliminaryCtx.UserID, "security.tampering", "CRITICAL", map[string]any{"reason": "restore_revalidation_denied"})
@@ -2391,27 +2332,41 @@ func main() {
 		}, func(old *serverRuntime) (*serverRuntime, error) {
 			var next *serverRuntime
 			var restoreErr error
-			result, next, restoreErr = restoreAdminBackupFromFile(old, dbURL, dbFilePath, tmpPath, database.OpenRuntimeDBs, startRuntime)
+			validator := func(candidate string) error {
+				return validateRestoreCandidate(candidate, hasManifest, legacy)
+			}
+			result, next, restoreErr = restoreSQLiteBackupFromFile(r.Context(), old, dbURL, dbFilePath, tmpPath, database.OpenRuntimeDBs, startRuntime, validator)
 			return next, restoreErr
 		})
 		if err != nil {
-			slog.Warn("admin_action", "action", "backup_import_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "restore_failed")
+			if result.RuntimeState == adminRuntimeUnknown {
+				slog.Error("admin_backup_restore_stage", "stage", "import_runtime_recovery_failed", "rollback_state", result.RollbackState, "runtime_state", result.RuntimeState)
+			}
+			if !result.CommitmentReached && result.RuntimeState != adminRuntimeUnknown && (errors.Is(err, errServerRuntimeBusy) || errors.Is(err, context.DeadlineExceeded)) {
+				slog.Warn("admin_action", "action", "backup_import_busy", "stage", "replace_lock", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "wait_ms", time.Since(started).Milliseconds())
+				writeAdminBackupImportFailure(w, adminBackupImportBusyMessage, http.StatusConflict)
+				return
+			}
+			if errors.Is(err, context.Canceled) && !result.CommitmentReached && result.RuntimeState != adminRuntimeUnknown {
+				slog.Info("admin_action", "action", "backup_import_canceled", "stage", "replace_lock", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "elapsed_ms", time.Since(started).Milliseconds())
+				return
+			}
+			slog.Warn("admin_action", "action", "backup_import_failed", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "reason", "restore_failed", "rolled_back", result.RolledBack, "rollback_state", result.RollbackState, "runtime_state", result.RuntimeState, "commitment_reached", result.CommitmentReached)
 			if errors.Is(err, errRecentAdminAuthenticationRequired) {
 				redirectToAdminReauthentication(w, r, "/admin/backups")
 				return
 			}
 			if errors.Is(err, errRestoreRevalidationDenied) {
-				respondForbidden(w, r)
+				writeAdminBackupImportForbidden(w, r)
 				return
 			}
-			message := "Não foi possível importar o backup. O runtime está indisponível."
-			if result.RolledBack {
-				message = "Não foi possível importar o backup. A restauração foi revertida."
-			}
-			renderFailure(message, http.StatusInternalServerError)
+			writeAdminBackupImportFailure(w, adminRestoreFailureMessage(result), http.StatusInternalServerError)
 			return
 		}
-		slog.Warn("admin_action", "action", "backup_import", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r))
+		slog.Warn("admin_action", "action", "backup_import", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "duration_ms", time.Since(started).Milliseconds(), "rolled_back", result.RolledBack)
+		if r.Context().Err() != nil {
+			slog.Info("admin_action", "action", "backup_import_client_canceled_after_commit", "actor_user_id", preliminaryCtx.UserID, "client_ip", clientIP(r), "duration_ms", time.Since(started).Milliseconds())
+		}
 		writeAdminBackupImportSuccess(w, r)
 	})
 	mux.HandleFunc("/admin/auditoria", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
@@ -2452,20 +2407,6 @@ func main() {
 		h := newConfigHandler(ctx)
 		slog.Info("admin_action", "action", "admin_auditoria_save", "actor_user_id", ctx.UserID, "client_ip", clientIP(r))
 		h.HandleAdminAuditoriaSave(w, r)
-	}))
-	mux.HandleFunc("/admin/caixinhas/ledger/reconciliar", withAuth(authService, csrfSigner, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !requireGlobalAdmin(w, r, ctx) {
-			return
-		}
-		if !allowRateLimit(w, r, userIPRateLimitKey("admin:heavy:ledger-reconcile", ctx, r), adminHeavyReadRateLimitPolicy) {
-			return
-		}
-		slog.Info("admin_action", "action", "admin_ledger_reconcile", "actor_user_id", ctx.UserID, "client_ip", clientIP(r))
-		handleAdminBoxLedgerReconcile(w, r, db, ctx)
 	}))
 
 	registerHealthRoute(mux, coordinator)
@@ -2509,6 +2450,7 @@ type authContext struct {
 	Member            models.WorkspaceMember
 	SessionToken      string
 	CSRFToken         string
+	SecureCookie      bool
 }
 
 func withAuth(authService *auth.Service, csrfSigner *csrfSigner, next func(http.ResponseWriter, *http.Request, authContext)) http.HandlerFunc {
@@ -2546,6 +2488,7 @@ func withAuth(authService *auth.Service, csrfSigner *csrfSigner, next func(http.
 			return
 		}
 		ctx.CSRFToken = csrfToken
+		ctx.SecureCookie = shouldUseSecureCookie(r)
 		slog.Debug("withAuth context resolved", "user_id", ctx.UserID, "workspace_id", ctx.ActiveWorkspaceID, "role", ctx.Role)
 		recordAuthenticatedAuditContext(r, ctx)
 
@@ -2676,81 +2619,11 @@ func requireGlobalAdmin(w http.ResponseWriter, r *http.Request, ctx authContext)
 	return true
 }
 
-type adminBoxLedgerIssuePayload struct {
-	Code                string `json:"code"`
-	BoxID               string `json:"box_id"`
-	SourceTransactionID string `json:"source_transaction_id"`
-	LedgerID            string `json:"ledger_id"`
-	Description         string `json:"description"`
-}
-
-type adminBoxLedgerReconcilePayload struct {
-	WorkspaceID string                       `json:"workspace_id"`
-	IssueCount  int                          `json:"issue_count"`
-	IssueCodes  []string                     `json:"issue_codes"`
-	Issues      []adminBoxLedgerIssuePayload `json:"issues"`
-}
-
-func handleAdminBoxLedgerReconcile(w http.ResponseWriter, r *http.Request, db *sql.DB, ctx authContext) {
-	workspaceID := strings.TrimSpace(r.URL.Query().Get("workspace_id"))
-	if workspaceID == "" {
-		workspaceID = ctx.ActiveWorkspaceID
-	}
-	if workspaceID == "" {
-		http.Error(w, "workspace_id obrigatório", http.StatusBadRequest)
-		return
-	}
-
-	var exists int
-	if err := db.QueryRow(`SELECT COUNT(1) FROM workspaces WHERE id = ?`, workspaceID).Scan(&exists); err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-	if exists == 0 {
-		http.Error(w, "workspace não encontrado", http.StatusNotFound)
-		return
-	}
-
-	report, err := services.ReconcileWorkspaceBoxLedger(db, workspaceID)
-	if err != nil {
-		http.Error(w, "erro ao reconciliar ledger", http.StatusInternalServerError)
-		return
-	}
-
-	issueCodesSet := make(map[string]struct{}, len(report.Issues))
-	issues := make([]adminBoxLedgerIssuePayload, 0, len(report.Issues))
-	for _, issue := range report.Issues {
-		if strings.TrimSpace(issue.Code) != "" {
-			issueCodesSet[issue.Code] = struct{}{}
-		}
-		detail := strings.TrimSpace(issue.Detail)
-		if detail == "" {
-			detail = issue.Code
-		}
-		issues = append(issues, adminBoxLedgerIssuePayload{
-			Code:                issue.Code,
-			BoxID:               issue.BoxID,
-			SourceTransactionID: issue.SourceTransaction,
-			LedgerID:            issue.LedgerID,
-			Description:         detail,
-		})
-	}
-
-	issueCodes := make([]string, 0, len(issueCodesSet))
-	for code := range issueCodesSet {
-		issueCodes = append(issueCodes, code)
-	}
-	sort.Strings(issueCodes)
-
-	payload := adminBoxLedgerReconcilePayload{
-		WorkspaceID: workspaceID,
-		IssueCount:  len(issues),
-		IssueCodes:  issueCodes,
-		Issues:      issues,
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(payload)
+// registerReservasRemovalTombstones keeps old Reservas URLs predictable and
+// mutation-free. The Metas page remains available and renders only Limites.
+func registerReservasRemovalTombstones(mux *http.ServeMux) {
+	mux.HandleFunc("/metas/caixinha", http.NotFound)
+	mux.HandleFunc("/metas/caixinha/", http.NotFound)
 }
 
 func isAuthenticated(w http.ResponseWriter, r *http.Request, authService *auth.Service) bool {
@@ -2850,17 +2723,7 @@ func clearAuthCookies(w http.ResponseWriter, r *http.Request) {
 }
 
 func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
-	expiredAt := time.Now().Add(-24 * time.Hour)
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   shouldUseSecureCookie(r),
-		MaxAge:   -1,
-		Expires:  expiredAt,
-	})
+	httpcookies.ClearSession(w, shouldUseSecureCookie(r))
 }
 
 func isAuthenticationPipelinePath(path string) bool {
@@ -3077,7 +2940,54 @@ func serveUploadedImage(w http.ResponseWriter, r *http.Request, fullPath, conten
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "no-store")
+	runtimelease.Release(r.Context())
 	http.ServeContent(w, r, filepath.Base(fullPath), info.ModTime(), file)
+}
+
+func handleAdminBackupExport(w http.ResponseWriter, r *http.Request, db *sql.DB, dbPath, actorUserID string) {
+	audit, err := beginBackupExportAudit(r, db, actorUserID)
+	if err != nil {
+		slog.Error("backup_export_audit_start_failed", "reason", "authorization_not_persisted")
+		http.Error(w, "auditoria de exportação indisponível", http.StatusInternalServerError)
+		return
+	}
+	outcome := "preparation_failed"
+	var bytesWritten int64
+	defer func() {
+		if err := audit.finish(outcome, bytesWritten); err != nil {
+			slog.Error("backup_export_audit_finish_failed", "operation_id", audit.start.OperationID, "generation_id", audit.start.GenerationID, "outcome", "indeterminate")
+		}
+	}()
+	backupPath, cleanup, err := createAdminExportBackupContext(r.Context(), db, dbPath)
+	if err != nil {
+		log.Printf("backup export prepare error: %v", err)
+		http.Error(w, "backup indisponivel", http.StatusInternalServerError)
+		return
+	}
+	defer cleanup()
+
+	f, err := os.Open(backupPath)
+	if err != nil {
+		log.Printf("backup export open error: %v", err)
+		http.Error(w, "backup indisponivel", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	setAdminBackupDownloadHeaders(w, time.Now())
+	// The snapshot is complete and standalone. Release the runtime read lease
+	// before the potentially slow client download so a restore can proceed.
+	runtimelease.Release(r.Context())
+	bytesWritten, err = io.Copy(w, f)
+	if err != nil {
+		outcome = "server_write_failed"
+		log.Printf("backup export error: %v", err)
+	} else {
+		outcome = "server_write_completed"
+	}
+	if r.Context().Err() != nil {
+		outcome = "request_canceled"
+	}
+	slog.Info("admin_action", "action", "backup_export_stream", "operation_id", audit.start.OperationID, "generation_id", audit.start.GenerationID, "outcome", outcome, "client_receipt_confirmed", false)
 }
 
 func createAdminExportBackup(db *sql.DB, dbPath string) (string, func(), error) {
@@ -3118,33 +3028,103 @@ type startServerRuntimeFunc func(*database.RuntimeDBs) (*serverRuntime, error)
 type adminRestoreResult struct {
 	PreRestoreBackupPath string
 	RolledBack           bool
+	RollbackState        string
+	RuntimeState         string
+	CommitmentReached    bool
 }
 
-func saveAdminBackupImportUpload(dbPath string, src io.Reader) (string, func(), error) {
-	return saveSQLiteRestoreUpload(dbPath, "contabase-import-*.db", src)
+const (
+	adminRollbackNotStarted = "not_started"
+	adminRollbackStarted    = "started"
+	adminRollbackCompleted  = "completed"
+	adminRollbackFailed     = "failed"
+	adminRuntimeOriginal    = "original"
+	adminRuntimeRestored    = "restored"
+	adminRuntimeUnknown     = "indeterminate"
+)
+
+func adminRestoreFailureMessage(result adminRestoreResult) string {
+	if result.RollbackState == adminRollbackFailed || result.RuntimeState == adminRuntimeUnknown {
+		return "Não foi possível restaurar o backup. A recuperação do runtime não foi concluída; o estado do banco precisa de verificação manual."
+	}
+	if result.RolledBack && result.RollbackState == adminRollbackCompleted {
+		return "Não foi possível restaurar o backup. A restauração foi revertida e o runtime original foi recuperado."
+	}
+	if result.RuntimeState == adminRuntimeOriginal {
+		return "Não foi possível restaurar o backup. O banco atual foi preservado."
+	}
+	return "Não foi possível restaurar o backup. Verifique a disponibilidade do runtime."
 }
 
-func saveBootstrapBackupRestoreUpload(dbPath string, src io.Reader) (string, func(), error) {
-	return saveSQLiteRestoreUpload(dbPath, "contabase-bootstrap-restore-*.db", src)
+// Per-call operations keep fault injection isolated from concurrent restores.
+type adminRestoreFileOps struct {
+	rename     func(string, string) error
+	remove     func(string) error
+	copy       func(string, string) error
+	checkpoint func(string)
 }
 
-func saveSQLiteRestoreUpload(dbPath, pattern string, src io.Reader) (string, func(), error) {
+func (ops *adminRestoreFileOps) renameFile(from, to string) error {
+	if ops != nil && ops.rename != nil {
+		return ops.rename(from, to)
+	}
+	return os.Rename(from, to)
+}
+
+func (ops *adminRestoreFileOps) removeFile(path string) error {
+	if ops != nil && ops.remove != nil {
+		return ops.remove(path)
+	}
+	return os.Remove(path)
+}
+
+func (ops *adminRestoreFileOps) copyFile(from, to string) error {
+	if ops != nil && ops.copy != nil {
+		return ops.copy(from, to)
+	}
+	return copyFile(from, to)
+}
+
+func (ops *adminRestoreFileOps) at(stage string) {
+	if ops != nil && ops.checkpoint != nil {
+		ops.checkpoint(stage)
+	}
+}
+
+func saveAdminBackupImportUpload(dbPath, originalName string, src io.Reader) (string, func(), error) {
+	return saveSQLiteRestoreUpload(dbPath, ".contabase-import-*", originalName, src)
+}
+
+func saveBootstrapBackupRestoreUpload(dbPath, originalName string, src io.Reader) (string, func(), error) {
+	return saveSQLiteRestoreUpload(dbPath, ".contabase-bootstrap-restore-*", originalName, src)
+}
+
+func saveSQLiteRestoreUpload(dbPath, pattern, originalName string, src io.Reader) (string, func(), error) {
 	if !isSQLiteDiskDatabasePath(dbPath) {
 		return "", nil, fmt.Errorf("restore requires disk-backed sqlite database")
+	}
+	base := sanitizeRestoreUploadName(originalName)
+	if base == "" {
+		return "", nil, fmt.Errorf("invalid restore upload filename")
 	}
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", nil, err
 	}
-	tmp, err := os.CreateTemp(dir, pattern)
+	tmpDir, err := os.MkdirTemp(dir, pattern)
 	if err != nil {
 		return "", nil, err
 	}
-	tmpPath := tmp.Name()
+	tmpPath := filepath.Join(tmpDir, base)
 	cleanup := func() {
-		if err := os.Remove(tmpPath); err != nil && !os.IsNotExist(err) {
+		if err := os.RemoveAll(tmpDir); err != nil && !os.IsNotExist(err) {
 			log.Printf("admin backup import temp cleanup failed: %v", err)
 		}
+	}
+	tmp, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		cleanup()
+		return "", nil, err
 	}
 	if _, err := io.Copy(tmp, src); err != nil {
 		_ = tmp.Close()
@@ -3163,7 +3143,62 @@ func saveSQLiteRestoreUpload(dbPath, pattern string, src io.Reader) (string, fun
 	return tmpPath, cleanup, nil
 }
 
+func sanitizeRestoreUploadName(name string) string {
+	base := filepath.Base(strings.ReplaceAll(strings.TrimSpace(name), "\\", "/"))
+	if base == "" || base == "." || base == ".." || strings.ContainsRune(base, 0) {
+		return ""
+	}
+	if strings.EqualFold(filepath.Ext(base), ".db") {
+		return base
+	}
+	return ""
+}
+
+func saveRestoreManifestUpload(candidatePath string, src io.Reader) error {
+	manifestPath := candidatePath + ".manifest.json"
+	tmp, err := os.OpenFile(manifestPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	cleanup := func() {
+		_ = tmp.Close()
+		_ = os.Remove(manifestPath)
+	}
+	written, err := io.Copy(tmp, io.LimitReader(src, 64*1024+1))
+	if err != nil {
+		cleanup()
+		return err
+	}
+	if written <= 0 || written > 64*1024 {
+		cleanup()
+		return fmt.Errorf("invalid restore manifest size")
+	}
+	if err := tmp.Sync(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(manifestPath)
+		return err
+	}
+	return nil
+}
+
 func validateSQLiteBackupCandidate(path string) error {
+	return validateContaBaseBackupCandidate(path)
+}
+
+func validateRestoreCandidate(path string, hasManifest, legacy bool) error {
+	if hasManifest && legacy {
+		return fmt.Errorf("manifest upload and legacy restore are mutually exclusive")
+	}
+	if hasManifest {
+		if err := database.ValidatePreMigrationBackup(path); err != nil {
+			return fmt.Errorf("invalid pre-migration backup manifest: %w", err)
+		}
+	} else if !legacy {
+		return fmt.Errorf("pre-migration backup manifest is required; legacy restore must be explicit")
+	}
 	return validateContaBaseBackupCandidate(path)
 }
 
@@ -3207,19 +3242,41 @@ func openSQLiteCandidateForValidation(path string) (*sql.DB, error) {
 	return db, nil
 }
 
+// restoreAdminBackupFromFile is the structural restore helper used by tests
+// and internal flows that already validated a manifest. The HTTP restore path
+// uses restoreSQLiteBackupFromFile with a manifest-aware validator.
 func restoreAdminBackupFromFile(current *serverRuntime, dbURL, dbPath, candidatePath string, openFn openRuntimeDBsFunc, startFn startServerRuntimeFunc) (adminRestoreResult, *serverRuntime, error) {
-	return restoreSQLiteBackupFromFile(current, dbURL, dbPath, candidatePath, openFn, startFn, validateSQLiteBackupCandidate)
+	return restoreAdminBackupFromFileContext(context.Background(), current, dbURL, dbPath, candidatePath, openFn, startFn)
 }
 
+func restoreAdminBackupFromFileContext(ctx context.Context, current *serverRuntime, dbURL, dbPath, candidatePath string, openFn openRuntimeDBsFunc, startFn startServerRuntimeFunc) (adminRestoreResult, *serverRuntime, error) {
+	return restoreSQLiteBackupFromFile(ctx, current, dbURL, dbPath, candidatePath, openFn, startFn, validateSQLiteBackupCandidate)
+}
+
+// restoreBootstrapBackupFromFile is the structural restore helper used by
+// tests and internal flows that already validated a manifest. The HTTP setup
+// path uses restoreSQLiteBackupFromFile with a manifest-aware validator.
 func restoreBootstrapBackupFromFile(current *serverRuntime, dbURL, dbPath, candidatePath string, openFn openRuntimeDBsFunc, startFn startServerRuntimeFunc) (adminRestoreResult, *serverRuntime, error) {
-	return restoreSQLiteBackupFromFile(current, dbURL, dbPath, candidatePath, openFn, startFn, validateBootstrapRestoreCandidate)
+	return restoreBootstrapBackupFromFileContext(context.Background(), current, dbURL, dbPath, candidatePath, openFn, startFn)
 }
 
-func restoreSQLiteBackupFromFile(current *serverRuntime, dbURL, dbPath, candidatePath string, openFn openRuntimeDBsFunc, startFn startServerRuntimeFunc, validateCandidate func(string) error) (adminRestoreResult, *serverRuntime, error) {
-	var result adminRestoreResult
+func restoreBootstrapBackupFromFileContext(ctx context.Context, current *serverRuntime, dbURL, dbPath, candidatePath string, openFn openRuntimeDBsFunc, startFn startServerRuntimeFunc) (adminRestoreResult, *serverRuntime, error) {
+	return restoreSQLiteBackupFromFile(ctx, current, dbURL, dbPath, candidatePath, openFn, startFn, validateBootstrapRestoreCandidate)
+}
+
+func restoreSQLiteBackupFromFile(ctx context.Context, current *serverRuntime, dbURL, dbPath, candidatePath string, openFn openRuntimeDBsFunc, startFn startServerRuntimeFunc, validateCandidate func(string) error) (adminRestoreResult, *serverRuntime, error) {
+	return restoreSQLiteBackupFromFileWithOps(ctx, current, dbURL, dbPath, candidatePath, openFn, startFn, validateCandidate, nil)
+}
+
+func restoreSQLiteBackupFromFileWithOps(ctx context.Context, current *serverRuntime, dbURL, dbPath, candidatePath string, openFn openRuntimeDBsFunc, startFn startServerRuntimeFunc, validateCandidate func(string) error, ops *adminRestoreFileOps) (adminRestoreResult, *serverRuntime, error) {
+	result := adminRestoreResult{RollbackState: adminRollbackNotStarted, RuntimeState: adminRuntimeUnknown}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if current == nil || current.DBs == nil || current.DBs.DB == nil || current.DBs.Immediate == nil {
 		return result, nil, fmt.Errorf("nil current server runtime")
 	}
+	result.RuntimeState = adminRuntimeOriginal
 	if openFn == nil {
 		return result, current, fmt.Errorf("nil database opener")
 	}
@@ -3232,22 +3289,43 @@ func restoreSQLiteBackupFromFile(current *serverRuntime, dbURL, dbPath, candidat
 	if !isSQLiteDiskDatabasePath(dbPath) {
 		return result, current, fmt.Errorf("restore requires disk-backed sqlite database")
 	}
+	journalPath := restoreJournalPath(dbPath)
+	if _, err := os.Lstat(journalPath); err == nil {
+		return result, current, fmt.Errorf("restore journal already exists; restart to recover the interrupted restore")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return result, current, fmt.Errorf("inspect restore journal: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return result, current, err
+	}
 	if err := validateCandidate(candidatePath); err != nil {
 		return result, current, fmt.Errorf("invalid backup candidate: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		slog.Info("admin_backup_restore_stage", "stage", "restore_canceled_before_commit", "reason", "candidate_validation")
+		return result, current, err
+	}
 	slog.Info("admin_backup_restore_stage", "stage", "candidate_validated")
 
+	result.RuntimeState = adminRuntimeUnknown
 	if err := current.Close(); err != nil {
 		return result, nil, fmt.Errorf("failed to close current server runtime: %w", err)
 	}
 	slog.Info("admin_backup_restore_stage", "stage", "current_server_runtime_closed")
+	ops.at("current_server_runtime_closed")
 
 	reopenUnchanged := func(cause error) (adminRestoreResult, *serverRuntime, error) {
 		reopened, reopenErr := reopenAdminRestoreRuntime(dbURL, openFn, startFn, false)
 		if reopenErr != nil {
+			slog.Error("admin_backup_restore_stage", "stage", "unchanged_runtime_recovery_failed", "runtime_state", result.RuntimeState)
 			return result, nil, fmt.Errorf("%w; failed to rebuild unchanged runtime: %v", cause, reopenErr)
 		}
+		result.RuntimeState = adminRuntimeOriginal
 		return result, reopened, cause
+	}
+	if err := ctx.Err(); err != nil {
+		slog.Info("admin_backup_restore_stage", "stage", "restore_canceled_before_commit", "reason", "runtime_closed")
+		return reopenUnchanged(err)
 	}
 
 	backupPath, err := nextAdminPreRestoreBackupPath(dbPath, time.Now())
@@ -3268,37 +3346,89 @@ func restoreSQLiteBackupFromFile(current *serverRuntime, dbURL, dbPath, candidat
 	}
 	result.PreRestoreBackupPath = backupPath
 	slog.Info("admin_backup_restore_stage", "stage", "pre_restore_backup_created")
+	ops.at("pre_restore_backup_created")
+	if err := ctx.Err(); err != nil {
+		slog.Info("admin_backup_restore_stage", "stage", "restore_canceled_before_commit", "reason", "pre_restore_backup")
+		return reopenUnchanged(err)
+	}
 
 	oldPath, err := nextAdminRestoreWorkingPath(dbPath, time.Now())
 	if err != nil {
 		return reopenUnchanged(err)
 	}
+	ops.at("before_commit")
+	if err := ctx.Err(); err != nil {
+		slog.Info("admin_backup_restore_stage", "stage", "restore_canceled_before_commit", "reason", "before_commit")
+		return reopenUnchanged(err)
+	}
 
+	journal := restoreJournal{
+		Version:              restoreJournalVersion,
+		Phase:                restoreJournalPhasePrepared,
+		DatabasePath:         dbPath,
+		OriginalPath:         oldPath,
+		CandidatePath:        candidatePath,
+		PreRestoreBackupPath: backupPath,
+	}
+	removeJournalAfterUnchanged := func() {
+		if err := removeRestoreJournal(journalPath); err != nil {
+			log.Printf("admin backup import journal cleanup failed: %v", err)
+		}
+	}
+	if err := writeRestoreJournal(journalPath, journal); err != nil {
+		removeJournalAfterUnchanged()
+		return reopenUnchanged(fmt.Errorf("failed to write restore journal: %w", err))
+	}
+	ops.at("restore_journal_prepared")
+	if err := ctx.Err(); err != nil {
+		slog.Info("admin_backup_restore_stage", "stage", "restore_canceled_before_commit", "reason", "restore_journal")
+		removeJournalAfterUnchanged()
+		return reopenUnchanged(err)
+	}
+
+	// Commitment point: after this rename the live pathname no longer contains
+	// the original database. From here the restore must finish or roll back
+	// even if the client connection is gone.
 	currentMoved := false
-	if err := os.Rename(dbPath, oldPath); err != nil {
+	if err := ops.renameFile(dbPath, oldPath); err != nil {
+		removeJournalAfterUnchanged()
 		return reopenUnchanged(fmt.Errorf("failed to stage current database for restore: %w", err))
 	}
 	currentMoved = true
+	result.CommitmentReached = true
+	slog.Info("admin_backup_restore_stage", "stage", "commitment_point")
+	ops.at("commitment_point")
 
 	rollback := func(cause error) (adminRestoreResult, *serverRuntime, error) {
-		result.RolledBack = true
-		rollbackRuntime, rollbackErr := rollbackAdminRestore(dbURL, dbPath, oldPath, backupPath, openFn, startFn, currentMoved)
+		result.RollbackState = adminRollbackStarted
+		slog.Warn("admin_backup_restore_stage", "stage", "rollback_started", "rollback_state", result.RollbackState, "runtime_state", result.RuntimeState)
+		rollbackRuntime, rollbackErr := rollbackAdminRestore(dbURL, dbPath, oldPath, backupPath, openFn, startFn, currentMoved, ops)
 		if rollbackErr != nil {
+			result.RollbackState = adminRollbackFailed
+			slog.Error("admin_backup_restore_stage", "stage", "rollback_failed", "rollback_state", result.RollbackState, "runtime_state", result.RuntimeState)
 			return result, nil, fmt.Errorf("%w; rollback failed: %v", cause, rollbackErr)
 		}
+		if err := removeRestoreJournal(journalPath); err != nil {
+			log.Printf("admin backup import rollback journal cleanup failed: %v", err)
+		}
+		result.RolledBack = true
+		result.RollbackState = adminRollbackCompleted
+		result.RuntimeState = adminRuntimeOriginal
+		slog.Warn("admin_backup_restore_stage", "stage", "rollback_completed", "rollback_state", result.RollbackState, "runtime_state", result.RuntimeState)
 		return result, rollbackRuntime, cause
 	}
 
-	if err := removeSQLiteSidecars(dbPath); err != nil {
+	if err := removeSQLiteSidecarsWithOps(dbPath, ops); err != nil {
 		return rollback(fmt.Errorf("failed to clean sqlite sidecars before restore: %w", err))
 	}
-	if err := removeSQLiteSidecars(candidatePath); err != nil {
+	if err := removeSQLiteSidecarsWithOps(candidatePath, ops); err != nil {
 		return rollback(fmt.Errorf("failed to clean backup candidate sidecars: %w", err))
 	}
-	if err := os.Rename(candidatePath, dbPath); err != nil {
+	if err := ops.renameFile(candidatePath, dbPath); err != nil {
 		return rollback(fmt.Errorf("failed to install backup candidate: %w", err))
 	}
 	slog.Info("admin_backup_restore_stage", "stage", "candidate_installed")
+	ops.at("candidate_installed")
 	if err := ensureRestoredDatabasePermissions(dbPath); err != nil {
 		return rollback(fmt.Errorf("failed to set restored database permissions: %w", err))
 	}
@@ -3307,36 +3437,51 @@ func restoreSQLiteBackupFromFile(current *serverRuntime, dbURL, dbPath, candidat
 	if err != nil {
 		return rollback(fmt.Errorf("failed to build restored server runtime: %w", err))
 	}
-	if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
+	journal.Phase = restoreJournalPhaseValidated
+	if err := writeRestoreJournal(journalPath, journal); err != nil {
+		if closeErr := newRuntime.Close(); closeErr != nil {
+			slog.Warn("admin_backup_restore_stage", "stage", "restored_runtime_close_failed", "error", closeErr)
+		}
+		return rollback(fmt.Errorf("failed to record restored database validation: %w", err))
+	}
+	ops.at("restore_journal_validated")
+	if err := ops.removeFile(oldPath); err != nil && !os.IsNotExist(err) {
 		log.Printf("admin backup import staged database cleanup failed: %v", err)
 	}
+	if err := removeRestoreJournal(journalPath); err != nil {
+		log.Printf("admin backup import restore journal cleanup failed: %v", err)
+	}
+	slog.Info("admin_backup_restore_stage", "stage", "restore_completed")
+	result.RuntimeState = adminRuntimeRestored
 	return result, newRuntime, nil
 }
 
-func rollbackAdminRestore(dbURL, dbPath, oldPath, backupPath string, openFn openRuntimeDBsFunc, startFn startServerRuntimeFunc, currentMoved bool) (*serverRuntime, error) {
-	slog.Warn("admin_backup_restore_stage", "stage", "rollback_started")
-	_ = removeSQLiteSidecars(dbPath)
-	_ = os.Remove(dbPath)
+func rollbackAdminRestore(dbURL, dbPath, oldPath, backupPath string, openFn openRuntimeDBsFunc, startFn startServerRuntimeFunc, currentMoved bool, ops *adminRestoreFileOps) (*serverRuntime, error) {
+	if err := removeSQLiteSidecarsWithOps(dbPath, ops); err != nil {
+		return nil, fmt.Errorf("failed to clean rollback sidecars: %w", err)
+	}
+	if err := ops.removeFile(dbPath); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to remove candidate during rollback: %w", err)
+	}
 
 	var restoreErr error
 	if currentMoved {
-		if err := os.Rename(oldPath, dbPath); err != nil {
+		if err := ops.renameFile(oldPath, dbPath); err != nil {
 			restoreErr = err
 		}
 	}
 	if restoreErr != nil {
-		if err := copyFile(backupPath, dbPath); err != nil {
+		if err := ops.copyFile(backupPath, dbPath); err != nil {
 			return nil, fmt.Errorf("failed to restore pre-restore backup: %w", err)
 		}
 	}
-	if err := removeSQLiteSidecars(dbPath); err != nil {
+	if err := removeSQLiteSidecarsWithOps(dbPath, ops); err != nil {
 		return nil, err
 	}
 	runtime, err := reopenAdminRestoreRuntime(dbURL, openFn, startFn, false)
 	if err != nil {
 		return nil, err
 	}
-	slog.Warn("admin_backup_restore_stage", "stage", "rollback_completed")
 	return runtime, nil
 }
 
@@ -3396,8 +3541,12 @@ func nextTimestampedPath(dir, prefix string, now time.Time) (string, error) {
 }
 
 func removeSQLiteSidecars(dbPath string) error {
+	return removeSQLiteSidecarsWithOps(dbPath, nil)
+}
+
+func removeSQLiteSidecarsWithOps(dbPath string, ops *adminRestoreFileOps) error {
 	for _, suffix := range []string{"-wal", "-shm"} {
-		if err := os.Remove(dbPath + suffix); err != nil && !os.IsNotExist(err) {
+		if err := ops.removeFile(dbPath + suffix); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
@@ -3526,6 +3675,9 @@ func seedWorkspaceFactoryDefaultsTx(tx *sql.Tx, workspaceID, workspaceType strin
 }
 
 func userOwnsTransaction(db *sql.DB, transactionID, userID, workspaceID string) bool {
+	if db == nil {
+		return false
+	}
 	var count int
 	if err := db.QueryRow(`
 		SELECT COUNT(1)
@@ -3628,6 +3780,63 @@ func appBaseURL() string {
 	return baseURL
 }
 
+// shouldScheduleDashboardMaterialization keeps the recurring materialization
+// fallback on real dashboard loads only. HTMX refreshes reuse the same route
+// after promotion and must not schedule another materialization pass.
+func shouldScheduleDashboardMaterialization(r *http.Request) bool {
+	return r == nil || (r.Method == http.MethodGet && r.Header.Get("HX-Request") != "true")
+}
+
+// registerDashboardRoute keeps its DB behind the runtime provider because the
+// route outlives coordinator.Replace and must never query a closed handle.
+func registerDashboardRoute(mux *http.ServeMux, dbProvider *sqlDBProvider, tpl handlers.TemplateEngine, authService *auth.Service, signer *csrfSigner, scheduleMaterialization func(string)) {
+	mux.HandleFunc("/", withAuth(authService, signer, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		currentDB := dbProvider.Load()
+		if currentDB == nil {
+			slog.Error("dashboard database unavailable", "workspace_id", ctx.ActiveWorkspaceID)
+			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		hasUsers, err := database.HasAnyUser(currentDB)
+		if err != nil {
+			slog.Error("dashboard user check failed", "error", err, "workspace_id", ctx.ActiveWorkspaceID)
+			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if !hasUsers {
+			redirectToSetup(w, r)
+			return
+		}
+		if !hasPermission(ctx.Role, permDashboardRead) {
+			respondForbidden(w, r)
+			return
+		}
+		if shouldScheduleDashboardMaterialization(r) {
+			scheduleMaterialization(ctx.ActiveWorkspaceID)
+		}
+
+		t0 := time.Now()
+		reqID := handlers.PerfReqID()
+		dbB := handlers.DbSnap(currentDB)
+
+		h := &handlers.DashboardV2Handler{
+			DB:          currentDB,
+			Templates:   tpl,
+			UserID:      ctx.UserID,
+			WorkspaceID: ctx.ActiveWorkspaceID,
+		}
+		h.ServeHTTP(w, r)
+
+		handlers.PerfStep(reqID, "Dashboard", "render", time.Since(t0))
+		handlers.PerfDBDelta(reqID, "Dashboard", "total", dbB, handlers.DbSnap(currentDB))
+		handlers.PerfRequest(reqID, r, time.Since(t0), 0)
+	}))
+}
+
 func buildFuncMap() template.FuncMap {
 	fieldValue := func(data any, name string) (reflect.Value, bool) {
 		v := reflect.ValueOf(data)
@@ -3653,6 +3862,12 @@ func buildFuncMap() template.FuncMap {
 		},
 		"appCurrentTime": func() handlers.AppTimeDisplay {
 			return handlers.FormatAppTime(time.Now())
+		},
+		// Public "Apoiar o Projeto" destination. The footer link defaults to
+		// the published support page; CONTABASE_SUPPORT_URL replaces it only
+		// when it holds a valid /apoiar/ URL.
+		"supportLink": func() support.Link {
+			return support.FromEnv()
 		},
 		"assetPath": func(path string) string {
 			fullPath := filepath.Join("assets", strings.TrimPrefix(path, "/assets/"))
@@ -3726,12 +3941,12 @@ func buildFuncMap() template.FuncMap {
 			for _, item := range groups {
 				if item.MacroGroup == macroGroup {
 					if item.RawAmount < 0 {
-						return "text-[var(--cb-danger)]"
+						return "text-[var(--ui-danger)]"
 					}
-					return "text-emerald-600 dark:text-emerald-300"
+					return "text-[var(--ui-success)]"
 				}
 			}
-			return "text-emerald-600 dark:text-emerald-300"
+			return "text-[var(--ui-success)]"
 		},
 		"caixaMacroValue": func(groups []handlers.CaixaMacroGroupAmount, macroGroup string) handlers.MoneyDisplay {
 			for _, item := range groups {
@@ -3745,12 +3960,12 @@ func buildFuncMap() template.FuncMap {
 			for _, item := range groups {
 				if item.MacroGroup == macroGroup {
 					if item.RawAmount < 0 {
-						return "text-[var(--cb-danger)]"
+						return "text-[var(--ui-danger)]"
 					}
-					return "text-emerald-600 dark:text-emerald-300"
+					return "text-[var(--ui-success)]"
 				}
 			}
-			return "text-emerald-600 dark:text-emerald-300"
+			return "text-[var(--ui-success)]"
 		},
 		"fieldString": func(data any, name string) string {
 			f, ok := fieldValue(data, name)
@@ -3832,6 +4047,19 @@ func writeAdminBackupImportSuccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func writeAdminBackupImportFailure(w http.ResponseWriter, message string, status int) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"mostrarAlerta":{"value":%q}}`, message))
+	w.WriteHeader(status)
+	_, _ = io.WriteString(w, `<div id="settings-dynamic-payload" class="w-full"><div role="alert" class="ui-panel p-4 text-sm">`+template.HTMLEscapeString(message)+`</div></div>`)
+}
+
+func writeAdminBackupImportForbidden(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("HX-Trigger", `{"mostrarAlerta":{"value":"Sua sessão expirou ou não tem permissão para importar backups."}}`)
+	respondForbidden(w, r)
 }
 
 func adminBackupImportRateLimitMessage(retryAfterSeconds int) string {
@@ -4238,65 +4466,6 @@ func seedCostLimits(db *sql.DB, workspaceID string, catIDs map[string]string, no
 	}
 }
 
-func seedBoxes(db *sql.DB, workspaceID string, catIDs map[string]string, now int64) {
-	type box struct {
-		name, desc      string
-		catName         string
-		target, monthly int64
-	}
-	boxes := []box{
-		{"Carro", "Trocar de carro até o fim do ano", "Carro", 4500000, 200000},
-		{"Viagem", "Viagem para Europa em 2027", "Viagem", 1200000, 100000},
-		{"Primeiro Milhão", "Independência financeira", "Primeiro Milhão", 100000000, 1000000},
-	}
-
-	for _, b := range boxes {
-		boxID := uuid.NewString()
-		db.Exec(`INSERT INTO boxes (id, workspace_id, name, description, category_id, target_amount, monthly_recharge, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			boxID, workspaceID, b.name, b.desc, catIDs[b.catName], b.target, b.monthly, now, now)
-
-		seedBoxLedger(db, boxID, b.name, b.monthly, now)
-	}
-}
-
-func seedBoxLedger(db *sql.DB, boxID, boxName string, monthly, now int64) {
-	type ledger struct {
-		amount      int64
-		kind        string
-		description string
-		dateStr     string
-	}
-
-	entriesByBox := map[string][]ledger{
-		"Carro": {
-			{monthly, "RECHARGE", "Recarga mensal de janeiro", "2026-01-10"},
-			{monthly, "RECHARGE", "Recarga mensal de fevereiro", "2026-02-10"},
-			{monthly, "RECHARGE", "Recarga mensal de março", "2026-03-10"},
-			{500000, "BONUS", "Venda de acessório antigo", "2026-04-08"},
-			{monthly, "RECHARGE", "Recarga mensal de maio", "2026-05-10"},
-		},
-		"Viagem": {
-			{monthly, "RECHARGE", "Recarga mensal de janeiro", "2026-01-05"},
-			{monthly, "RECHARGE", "Recarga mensal de fevereiro", "2026-02-05"},
-			{300000, "BONUS", "Aporte de férias", "2026-03-15"},
-			{monthly, "RECHARGE", "Recarga mensal de abril", "2026-04-05"},
-			{monthly, "RECHARGE", "Recarga mensal de maio", "2026-05-05"},
-		},
-		"Primeiro Milhão": {
-			{1000000, "RECHARGE", "Aporte mensal de janeiro", "2026-01-20"},
-			{1000000, "RECHARGE", "Aporte mensal de fevereiro", "2026-02-20"},
-			{1000000, "RECHARGE", "Aporte mensal de março", "2026-03-20"},
-			{5000000, "BONUS", "Bônus anual investido", "2026-04-20"},
-			{1000000, "RECHARGE", "Aporte mensal de maio", "2026-05-20"},
-		},
-	}
-
-	for _, entry := range entriesByBox[boxName] {
-		db.Exec(`INSERT INTO box_virtual_ledger (id, box_id, amount, type, description, reference_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			uuid.NewString(), boxID, entry.amount, entry.kind, entry.description, parseSeedDate(entry.dateStr), now)
-	}
-}
-
 func seedCreditCardScenarios(db *sql.DB, workspaceID, userID string, accountIDs, catIDs map[string]string, now int64) {
 	seedInvoice(db, "Cartão Nubank", accountIDs["Cartão Nubank"], "2026-05", "OPEN", "2026-05-28", "2026-06-05", 0, 0, now)
 	seedInvoiceTransaction(db, workspaceID, userID, accountIDs["Cartão Nubank"], catIDs["iFood"], "2026-05", "2026-05-03", "iFood - Almoço de domingo", 12000, now)
@@ -4394,9 +4563,10 @@ func parseSeedDate(s string) int64 {
 
 // registerTransacoesRoutes registers the /transacoes/ subtree with the
 // production guards. Extracted from main so RBAC behavior can be exercised
-// against the real route table. The base is passed by reference so restore's
-// refreshDeps rebinds stay consistent with the investimentos pattern.
-func registerTransacoesRoutes(mux *http.ServeMux, db *sql.DB, authService *auth.Service, signer *csrfSigner, base *handlers.TransactionHandler) {
+// against the real route table. The DB provider and the base handler are
+// rebound by restore's refreshDeps, so ownership checks follow the current
+// runtime instead of the connection captured at registration.
+func registerTransacoesRoutes(mux *http.ServeMux, dbProvider *sqlDBProvider, authService *auth.Service, signer *csrfSigner, base *handlers.TransactionHandler) {
 	mux.HandleFunc("/transacoes/", withAuth(authService, signer, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		h := *base
 		h.WorkspaceID = ctx.ActiveWorkspaceID
@@ -4541,7 +4711,7 @@ func registerTransacoesRoutes(mux *http.ServeMux, db *sql.DB, authService *auth.
 				respondForbidden(w, r)
 				return
 			}
-			if ctx.Role == models.RoleUser && !userOwnsTransaction(db, id, ctx.UserID, ctx.ActiveWorkspaceID) {
+			if ctx.Role == models.RoleUser && !userOwnsTransaction(dbProvider.Load(), id, ctx.UserID, ctx.ActiveWorkspaceID) {
 				respondForbidden(w, r)
 				return
 			}
@@ -4598,7 +4768,7 @@ func registerInvestimentosRoutes(mux *http.ServeMux, authService *auth.Service, 
 		return h
 	}
 	registerInvestmentSettlementRoutes(mux, authService, signer, base)
-	mux.HandleFunc("/investimentos", withAuth(authService, signer, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+	mux.HandleFunc("/investimentos", limitInvestmentMutationBodies(withAuth(authService, signer, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		permission := models.PermissionInvestmentsRead
 		switch r.Method {
 		case http.MethodGet:
@@ -4618,8 +4788,8 @@ func registerInvestimentosRoutes(mux *http.ServeMux, authService *auth.Service, 
 		} else {
 			h.HandleCriarInvestimento(w, r)
 		}
-	}))
-	mux.HandleFunc("/investimentos/", withAuth(authService, signer, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
+	})))
+	mux.HandleFunc("/investimentos/", limitInvestmentMutationBodies(withAuth(authService, signer, func(w http.ResponseWriter, r *http.Request, ctx authContext) {
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/investimentos/"), "/")
 		if len(parts) == 3 && parts[0] != "" && parts[1] == "cancelamento" && parts[2] == "previa" {
 			if r.Method != http.MethodPost {
@@ -4738,5 +4908,5 @@ func registerInvestimentosRoutes(mux *http.ServeMux, authService *auth.Service, 
 		} else {
 			h.HandleEditarInvestimento(w, r, parts[0])
 		}
-	}))
+	})))
 }

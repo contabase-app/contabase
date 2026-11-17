@@ -77,6 +77,30 @@ Somente `true` ou `1` habilitam o módulo. `false`, `0`, vazio ou valor desconhe
 
 No Compose do projeto, `.env.docker` é a fonte da flag, sem repasse implícito pelo shell. Um `environment` explícito em `docker-compose.override.yml` continua tendo precedência. Se a desativação era feita somente prefixando o comando do shell, registre `CONTABASE_FEATURE_INVESTMENTS=false` no arquivo antes de atualizar.
 
+## Link "Apoiar o Projeto"
+
+O rodapé do aplicativo exibe por padrão o link **Apoiar o Projeto**, apontando para a página pública de apoio do site oficial:
+
+```text
+https://contabase.pages.dev/apoiar/
+```
+
+O link não exige configuração e não autoriza pagamentos nem armazena dados de apoiadores: apenas navega até a página pública.
+
+`CONTABASE_SUPPORT_URL` substitui opcionalmente o destino, para instalações que prefiram apontar para uma página própria:
+
+```env
+CONTABASE_SUPPORT_URL=https://exemplo.com/apoiar/
+```
+
+Regras de validação do override:
+
+- apenas origens públicas `https` com caminho `/apoiar/` são aceitas; `http` somente em `localhost`, `127.0.0.1` ou `::1`, para validação local;
+- consultas, fragmentos e credenciais embutidos na URL são rejeitados;
+- valor vazio ou inválido é ignorado com segurança: o link continua visível apontando para o destino padrão e o valor rejeitado nunca é renderizado.
+
+No Docker, o arquivo é `.env.docker`. Em binário/systemd, é `/etc/contabase/contabase.env`. A alteração exige reiniciar ou recriar o serviço, porque o ambiente do processo é fixado no startup.
+
 ## APP_BASE_URL
 
 É a URL principal do ContaBase.

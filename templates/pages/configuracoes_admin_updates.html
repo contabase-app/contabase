@@ -1,0 +1,257 @@
+{{define "configuracoes-admin_updates-page"}}
+{{template "configuracoes-admin-section-start" .}}
+{{template "configuracoes-admin_updates-content" .}}
+{{template "configuracoes-admin-section-end" .}}
+{{end}}
+
+{{define "configuracoes-admin_updates-content"}}
+<div id="settings-dynamic-payload" class="w-full">
+    <div class="admin-page">
+        <header class="ui-page-header admin-page-header">
+            <div class="admin-page-header__copy">
+                <p class="ui-eyebrow">Administração da instância</p>
+                <h1 class="ui-page-title">Atualizações</h1>
+                <p class="ui-page-description">Consulte versões publicadas e veja como atualizar esta instalação.</p>
+            </div>
+        </header>
+        {{template "configuracoes-admin_updates-panel" .}}
+    </div>
+</div>
+<script src="{{assetPath "/assets/js/admin-updates.js"}}"></script>
+{{end}}
+
+{{define "configuracoes-admin_updates-panel"}}
+{{$status := .Updates.Status}}
+{{$method := .Updates.Method}}
+{{$supported := or (eq $method "release") (eq $method "source") (eq $method "docker")}}
+{{$canUpdate := or (eq $status "newer") (eq $status "current")}}
+{{$showCommand := and $supported $canUpdate}}
+{{$methodLabel := "Não identificado"}}
+{{if eq $method "release"}}{{$methodLabel = "Release / systemd"}}{{else if eq $method "source"}}{{$methodLabel = "Source legado"}}{{else if eq $method "docker"}}{{$methodLabel = "Docker Compose (instalador)"}}{{else if eq $method "docker-image"}}{{$methodLabel = "Docker por imagem/digest"}}{{else if eq $method "source-bootstrap"}}{{$methodLabel = "Source Bootstrap"}}{{end}}
+{{$supportClass := "ui-badge--neutral"}}
+{{$supportLabel := "Não identificada"}}
+{{if eq $method "release"}}{{$supportClass = "ui-badge--success"}}{{$supportLabel = "Atualização suportada"}}{{else if eq $method "source"}}{{$supportClass = "ui-badge--info"}}{{$supportLabel = "Disponível com ressalvas"}}{{else if eq $method "docker"}}{{$supportClass = "ui-badge--info"}}{{$supportLabel = "Disponível com ressalvas"}}{{else if eq $method "docker-image"}}{{$supportClass = "ui-badge--warning"}}{{$supportLabel = "Em validação"}}{{else if eq $method "source-bootstrap"}}{{$supportClass = "ui-badge--danger"}}{{$supportLabel = "Não suportada"}}{{end}}
+{{$noCommandHint := "A consulta de versões não foi concluída. Tente novamente antes de copiar qualquer comando."}}
+{{if eq $status "empty"}}{{$noCommandHint = "Nenhuma versão foi publicada no canal."}}{{else if eq $status "checking"}}{{$noCommandHint = "A consulta de versões ainda está em andamento."}}{{end}}
+{{$healthcheckURL := .UpdatesHealthcheckURL}}
+{{if not $healthcheckURL}}{{$healthcheckURL = "http://localhost:8080/health"}}{{end}}
+<div id="admin-updates-panel" class="admin-updates" aria-busy="{{if eq $status "checking"}}true{{else}}false{{end}}" {{if eq $status "checking"}}hx-get="/admin/atualizacoes/status" hx-trigger="load delay:1s" hx-swap="outerHTML"{{end}}>
+    <section class="ui-panel admin-panel admin-updates__panel" aria-labelledby="adminUpdatesStatus">
+        <header class="admin-panel__head">
+            <div class="admin-panel__heading admin-updates__status-head" role="status" aria-live="polite">
+                <div class="admin-updates__status-copy">
+                    <h2 id="adminUpdatesStatus" class="admin-panel__title">
+                        {{if eq $status "newer"}}
+                            {{if eq $method "source-bootstrap"}}Nova versão publicada; método sem atualização suportada
+                            {{else if eq $method "docker-image"}}Nova versão publicada; atualização em validação
+                            {{else if not $supported}}Nova versão publicada; método não identificado
+                            {{else}}Nova versão disponível{{end}}
+                        {{else if eq $status "current"}}Você está na versão publicada
+                        {{else if eq $status "empty"}}Nenhuma versão publicada no canal
+                        {{else if eq $status "checking"}}Verificando versões…
+                        {{else if eq $status "failed"}}Não foi possível verificar
+                        {{else}}Instalação não identificada{{end}}
+                    </h2>
+                    <p class="admin-panel__desc">
+                        {{if eq $status "newer"}}
+                            {{if eq $method "source-bootstrap"}}A versão publicada não altera o suporte deste método.
+                            {{else if eq $method "docker-image"}}O caminho de atualização por imagem ainda está em validação.
+                            {{else if not $supported}}A versão publicada não identifica o método desta instalação.
+                            {{else}}A publicação não comprova compatibilidade com o método, a arquitetura ou a admissão da versão.{{end}}
+                        {{else if eq $status "current"}}Não há versão mais nova publicada no canal.
+                        {{else if eq $status "empty"}}O canal ainda não tem uma versão publicada.
+                        {{else if eq $status "checking"}}A consulta ocorre em segundo plano; você pode continuar usando o ContaBase.
+                        {{else if eq $status "failed"}}O serviço de versões está indisponível ou retornou uma resposta inválida. Você pode continuar usando o ContaBase.
+                        {{else}}O canal e a versão instalada não foram identificados. Confirme o método no host antes de atualizar.{{end}}
+                    </p>
+                </div>
+                <span class="ui-badge {{$supportClass}}">{{$supportLabel}}</span>
+            </div>
+        </header>
+        <div class="admin-panel__body">
+            <dl class="admin-updates__details">
+                <div><dt>Versão instalada</dt><dd>{{if .Updates.Version}}{{.Updates.Version}}{{else}}Não identificada{{end}}</dd></div>
+                <div><dt>Método</dt><dd>{{$methodLabel}}</dd></div>
+                <div><dt>Canal instalado</dt><dd>{{if eq .Updates.Channel "beta"}}Beta{{else if eq .Updates.Channel "stable"}}Stable{{else}}Canal não identificado{{end}}</dd></div>
+                <div><dt>Última versão publicada</dt><dd>{{if .Updates.Latest}}{{.Updates.Latest}}{{else if eq $status "empty"}}Nenhuma{{else}}Não verificada{{end}}</dd></div>
+                <div><dt>Última consulta ({{.UpdatesLastCheck.Timezone}})</dt><dd>{{if .Updates.CheckedAt.IsZero}}Ainda não realizada{{else}}<time datetime="{{.Updates.CheckedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.UpdatesLastCheck.DateTime}}</time>{{end}}</dd></div>
+            </dl>
+            <div class="admin-updates__actions">
+                <form action="/admin/atualizacoes/verificar" method="post" hx-post="/admin/atualizacoes/verificar" hx-target="#admin-updates-panel" hx-swap="outerHTML" hx-disabled-elt="find button" hx-sync="this:drop">
+                    <input type="hidden" name="csrf_token" value="{{.UpdatesCSRFToken}}">
+                    <button type="submit" class="ui-btn ui-btn--primary" {{if or (eq $status "unknown") (eq $status "checking")}}disabled{{end}}>Verificar novamente</button>
+                </form>
+                {{if .Updates.NotesURL}}<a class="ui-btn ui-btn--secondary" href="{{.Updates.NotesURL}}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">Ver novidades<span class="sr-only"> (abre em nova aba)</span></a>{{end}}
+            </div>
+            <p class="admin-updates__help">Esta página apenas consulta publicações. Nenhuma atualização é executada aqui.</p>
+        </div>
+    </section>
+
+    <section class="ui-panel admin-panel admin-updates__panel" aria-labelledby="adminUpdatesGuideTitle">
+        <header class="admin-panel__head">
+            <div class="admin-panel__heading">
+                <span class="ui-section-icon" aria-hidden="true"><i data-lucide="terminal"></i></span>
+                <div>
+                    <h2 id="adminUpdatesGuideTitle" class="admin-panel__title">Como atualizar</h2>
+                    <p class="admin-panel__desc">Siga somente o método identificado. A publicação de uma versão não comprova compatibilidade.</p>
+                </div>
+            </div>
+        </header>
+        <div class="admin-panel__body">
+            <div class="admin-updates__warning" role="note">
+                <i data-lucide="triangle-alert" aria-hidden="true"></i>
+                <div>
+                    <strong>Faça backup antes de atualizar.</strong>
+                    <p>O backup da interface cobre o banco de dados, mas não inclui uploads, anexos, fotos, logos nem o arquivo de configuração. <a href="/admin/backups">Abrir Backups</a></p>
+                    <p>A atualização não garante restauração ou rollback automático. Preserve banco, WAL, uploads, configuração, chaves e o pacote anterior.</p>
+                </div>
+            </div>
+
+            {{if eq $method "release"}}
+            <h3 class="admin-updates__method-title">Release / systemd</h3>
+            <p class="admin-updates__method-desc">Execute no host que roda o serviço systemd do ContaBase. O comando global usa o canal salvo e recusa downgrade.</p>
+            {{if $showCommand}}
+            <div class="admin-updates__command" data-copy-scope>
+                <code id="adminUpdatesPrimaryCommand">sudo contabase-update</code>
+                <button type="button" class="ui-btn ui-btn--secondary admin-updates__copy" data-copy-target="adminUpdatesPrimaryCommand" aria-label="Copiar comando de atualização Release">Copiar</button>
+                <span class="sr-only" data-copy-status role="status" aria-live="polite"></span>
+            </div>
+            <p class="admin-updates__hint">{{if eq $status "newer"}}O comando usa o canal salvo e recusa downgrade.{{else}}Você já está na versão publicada; o comando não fará downgrade.{{end}}</p>
+            {{else}}
+            <p class="admin-updates__hint">{{$noCommandHint}}</p>
+            {{end}}
+            <ul class="admin-updates__prereq">
+                <li>Execute no host, não dentro de um contêiner.</li>
+                <li>Confirme o serviço e o healthcheck depois da atualização.</li>
+                <li>Não há restauração ou rollback automático.</li>
+            </ul>
+            <div class="admin-updates__verify">
+                <p class="admin-updates__verify-title">Conferir depois</p>
+                <code>systemctl status contabase</code>
+                <code>curl '{{$healthcheckURL}}'</code>
+            </div>
+            <p class="admin-updates__hint">A URL do healthcheck vem de <code>APP_BASE_URL</code>: use 127.0.0.1/localhost no modo Local, o IP ou domínio da LAN, ou o domínio HTTPS do proxy.</p>
+            {{else if eq $method "source"}}
+            <h3 class="admin-updates__method-title">Source legado</h3>
+            <p class="admin-updates__method-desc">Execute no host, a partir do checkout Git persistente. O checkout precisa estar em uma branch com upstream; HEAD destacado não é aceito.</p>
+            {{if $showCommand}}
+            <div class="admin-updates__command" data-copy-scope>
+                <code id="adminUpdatesPrimaryCommand">sudo contabase-update</code>
+                <button type="button" class="ui-btn ui-btn--secondary admin-updates__copy" data-copy-target="adminUpdatesPrimaryCommand" aria-label="Copiar comando de atualização Source legado">Copiar</button>
+                <span class="sr-only" data-copy-status role="status" aria-live="polite"></span>
+            </div>
+            <p class="admin-updates__hint">{{if eq $status "newer"}}O comando usa o canal salvo e recusa downgrade.{{else}}Você já está na versão publicada; o comando não fará downgrade.{{end}}</p>
+            {{else}}
+            <p class="admin-updates__hint">{{$noCommandHint}}</p>
+            {{end}}
+            <ul class="admin-updates__prereq">
+                <li>Confirme o checkout e a branch: <code>git status -sb</code> e <code>git branch -vv</code>.</li>
+                <li>Não use este procedimento em instalações Source Bootstrap.</li>
+                <li>O updater Source legado mantém o comportamento existente; a publicação não comprova suporte.</li>
+            </ul>
+            <div class="admin-updates__verify">
+                <p class="admin-updates__verify-title">Conferir depois</p>
+                <code>systemctl status contabase</code>
+                <code>curl '{{$healthcheckURL}}'</code>
+            </div>
+            <p class="admin-updates__hint">A URL do healthcheck vem de <code>APP_BASE_URL</code>: use 127.0.0.1/localhost no modo Local, o IP ou domínio da LAN, ou o domínio HTTPS do proxy.</p>
+            {{else if eq $method "docker"}}
+            <h3 class="admin-updates__method-title">Docker Compose do instalador</h3>
+            <p class="admin-updates__method-desc">Execute no host que hospeda o contêiner. O comando não existe dentro do contêiner e não deve ser executado nele.</p>
+            {{if $showCommand}}
+            <div class="admin-updates__command" data-copy-scope>
+                <code id="adminUpdatesPrimaryCommand">contabase-update</code>
+                <button type="button" class="ui-btn ui-btn--secondary admin-updates__copy" data-copy-target="adminUpdatesPrimaryCommand" aria-label="Copiar comando de atualização Docker Compose">Copiar</button>
+                <span class="sr-only" data-copy-status role="status" aria-live="polite"></span>
+            </div>
+            <p class="admin-updates__hint">{{if eq $status "newer"}}O comando usa o checkout e o canal registrados pelo instalador.{{else}}Você já está na versão publicada; o comando não fará downgrade.{{end}}</p>
+            {{else}}
+            <p class="admin-updates__hint">{{$noCommandHint}}</p>
+            {{end}}
+            <ul class="admin-updates__prereq">
+                <li>O comando usa o checkout e o estado registrados pelo instalador.</li>
+                <li>Não use este caminho para Compose manual sem estado; nesse caso, siga a atualização manual do Compose.</li>
+                <li>Confirme o contêiner e os logs depois da atualização.</li>
+            </ul>
+            <div class="admin-updates__verify">
+                <p class="admin-updates__verify-title">Conferir depois</p>
+                <code>docker compose ps</code>
+                <code>docker compose logs --tail 100 contabase</code>
+                <code>curl '{{$healthcheckURL}}'</code>
+            </div>
+            <p class="admin-updates__hint">A URL do healthcheck vem de <code>APP_BASE_URL</code>: use 127.0.0.1/localhost no modo Local, o IP ou domínio da LAN, ou o domínio HTTPS do proxy.</p>
+            {{else if eq $method "docker-image"}}
+            <h3 class="admin-updates__method-title">Docker por imagem/digest <span class="ui-badge ui-badge--warning">Em validação</span></h3>
+            <p class="admin-updates__method-desc">Este caminho ainda está em homologação e não está declarado pronto para produção. Não há comando recomendado nesta página.</p>
+            <ul class="admin-updates__prereq">
+                <li>Não trate a versão publicada como autorização para atualizar.</li>
+                <li>Preserve banco, WAL, uploads, configuração e chaves; o consumidor instalado pode falhar fechado.</li>
+                <li>Consulte o administrador e o guia da release antes de qualquer tentativa.</li>
+            </ul>
+            {{else if eq $method "source-bootstrap"}}
+            <h3 class="admin-updates__method-title">Source Bootstrap <span class="ui-badge ui-badge--danger">Não suportada</span></h3>
+            <p class="admin-updates__method-desc">Este método é experimental e não possui atualização suportada.</p>
+            <ul class="admin-updates__prereq">
+                <li>Não execute <code>contabase-update</code>, <code>cb-update</code> nem <code>update-contabase-source.sh</code>.</li>
+                <li>Para novas instalações VPS/LXC, prefira o binário da Release.</li>
+                <li>Não trate essa instalação como produção com dados reais.</li>
+            </ul>
+            {{else}}
+            <h3 class="admin-updates__method-title">Método não identificado</h3>
+            <p class="admin-updates__method-desc">O ContaBase não conseguiu ler o estado canônico desta instalação. Não copie comandos de atualização antes de confirmar o método no host.</p>
+            <div class="admin-updates__command" data-copy-scope>
+                <code id="adminUpdatesIdentifyCommand">sudo grep '^CONTABASE_INSTALL_METHOD=' /etc/contabase/install-state.env</code>
+                <button type="button" class="ui-btn ui-btn--secondary admin-updates__copy" data-copy-target="adminUpdatesIdentifyCommand" aria-label="Copiar comando de identificação da instalação">Copiar</button>
+                <span class="sr-only" data-copy-status role="status" aria-live="polite"></span>
+            </div>
+            <p class="admin-updates__hint">Em Docker, execute no host; o contêiner não lê esse arquivo por padrão. Se o arquivo não existir, a instalação pode ser um Compose manual ou um build local.</p>
+            {{if not $canUpdate}}<p class="admin-updates__hint">A consulta de versões não está concluída. Os comandos de referência abaixo não são uma recomendação de atualização; confirme o método e a versão publicada antes de usá-los.</p>{{end}}
+            <details class="admin-updates__method">
+                <summary>Docker Compose do instalador</summary>
+                <p>Confirme que a instalação foi criada pelo instalador Docker e possui <code>install-state.env</code>. Execute no host.</p>
+                <div class="admin-updates__command" data-copy-scope>
+                    <code id="adminUpdatesUnknownDockerCommand">contabase-update</code>
+                    <button type="button" class="ui-btn ui-btn--secondary admin-updates__copy" data-copy-target="adminUpdatesUnknownDockerCommand" aria-label="Copiar comando de atualização Docker Compose">Copiar</button>
+                    <span class="sr-only" data-copy-status role="status" aria-live="polite"></span>
+                </div>
+            </details>
+            <details class="admin-updates__method">
+                <summary>Docker Compose manual (GHCR)</summary>
+                <p>Somente para Compose manual, sem <code>install-state.env</code> e sem <code>contabase-update</code>. Use uma imagem com tag ou digest fixo; não use <code>latest</code>.</p>
+                <div class="admin-updates__command" data-copy-scope>
+                    <code id="adminUpdatesManualPullCommand">docker compose pull</code>
+                    <button type="button" class="ui-btn ui-btn--secondary admin-updates__copy" data-copy-target="adminUpdatesManualPullCommand" aria-label="Copiar comando docker compose pull">Copiar</button>
+                    <span class="sr-only" data-copy-status role="status" aria-live="polite"></span>
+                </div>
+                <div class="admin-updates__command" data-copy-scope>
+                    <code id="adminUpdatesManualUpCommand">docker compose up -d</code>
+                    <button type="button" class="ui-btn ui-btn--secondary admin-updates__copy" data-copy-target="adminUpdatesManualUpCommand" aria-label="Copiar comando docker compose up">Copiar</button>
+                    <span class="sr-only" data-copy-status role="status" aria-live="polite"></span>
+                </div>
+            </details>
+            <details class="admin-updates__method">
+                <summary>Release / systemd</summary>
+                <p>Se o estado indicar <code>release</code>, execute no host que roda o serviço systemd.</p>
+                <div class="admin-updates__command" data-copy-scope>
+                    <code id="adminUpdatesUnknownReleaseCommand">sudo contabase-update</code>
+                    <button type="button" class="ui-btn ui-btn--secondary admin-updates__copy" data-copy-target="adminUpdatesUnknownReleaseCommand" aria-label="Copiar comando de atualização Release">Copiar</button>
+                    <span class="sr-only" data-copy-status role="status" aria-live="polite"></span>
+                </div>
+            </details>
+            <details class="admin-updates__method">
+                <summary>Source legado</summary>
+                <p>Se o estado indicar <code>source</code>, confirme o checkout persistente, a branch e o upstream antes de executar.</p>
+                <div class="admin-updates__command" data-copy-scope>
+                    <code id="adminUpdatesUnknownSourceCommand">sudo contabase-update</code>
+                    <button type="button" class="ui-btn ui-btn--secondary admin-updates__copy" data-copy-target="adminUpdatesUnknownSourceCommand" aria-label="Copiar comando de atualização Source legado">Copiar</button>
+                    <span class="sr-only" data-copy-status role="status" aria-live="polite"></span>
+                </div>
+            </details>
+            <p class="admin-updates__hint">Se o estado indicar <code>docker-image</code>, o caminho está em validação e não há comando recomendado. Se indicar <code>source-bootstrap</code>, não há atualização suportada.</p>
+            {{end}}
+
+            <p class="admin-updates__footnote">Execute os comandos no host correto. Esta página não executa atualizações, não baixa artefatos e não altera o canal da instalação.</p>
+        </div>
+    </section>
+</div>
+{{end}}

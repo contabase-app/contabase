@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -10,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/contabase-app/contabase/internal/runtimelease"
 )
 
 func TestSecurityAuditFinishesInsideSingleRuntimeLease(t *testing.T) {
@@ -104,7 +105,7 @@ func TestSecurityAuditRecordsAuthenticatedActorAcrossRequestContextCopies(t *tes
 
 	request := func(target string) *http.Request {
 		req := httptest.NewRequest(http.MethodGet, target, nil)
-		req = req.WithContext(context.WithValue(req.Context(), runtimeLeaseContextKey{}, true))
+		req = req.WithContext(runtimelease.WithRelease(req.Context(), func() {}))
 		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionToken})
 		return req
 	}
@@ -163,7 +164,7 @@ func TestSecurityAuditStripsInternalHeadersAndRecordsOverride(t *testing.T) {
 	handler := audit.Middleware(protected)
 
 	req := httptest.NewRequest(http.MethodGet, "/workspace/switch", nil)
-	req = req.WithContext(context.WithValue(req.Context(), runtimeLeaseContextKey{}, true))
+	req = req.WithContext(runtimelease.WithRelease(req.Context(), func() {}))
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sessionToken})
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)

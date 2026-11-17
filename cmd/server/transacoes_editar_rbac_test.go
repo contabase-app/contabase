@@ -39,7 +39,7 @@ func TestTransacoesEditarAliasEnforcesReadPermission(t *testing.T) {
 	signer := &csrfSigner{secret: bytes.Repeat([]byte{23}, 32), ttl: time.Hour}
 	mux := http.NewServeMux()
 	txBase := handlers.TransactionHandler{DB: db, Templates: transacoesEditarStubTemplates{}}
-	registerTransacoesRoutes(mux, db, authService, signer, &txBase)
+	registerTransacoesRoutes(mux, newSQLDBProvider(db), authService, signer, &txBase)
 
 	sessions := map[string]string{
 		models.RoleUser:    createAdminUsersRBACSession(t, authService, "regular-user", models.RoleUser),
