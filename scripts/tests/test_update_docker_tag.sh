@@ -38,10 +38,30 @@ sha_file() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'; else shasum -a 256 "$1" | awk '{print $1}'; fi
 }
 mode_of() {
-  stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+  local value
+  if value="$(stat -c '%a' "$1" 2>/dev/null)" && [[ "$value" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s' "$value"
+    return 0
+  fi
+  if value="$(stat -f '%Lp' "$1" 2>/dev/null)" && [[ "$value" =~ ^[0-7]{3,4}$ ]]; then
+    printf '%s' "$value"
+    return 0
+  fi
+  printf 'mode_of: could not determine octal mode for %s\n' "$1" >&2
+  return 1
 }
 owner_of() {
-  stat -f '%u:%g' "$1" 2>/dev/null || stat -c '%u:%g' "$1"
+  local value
+  if value="$(stat -c '%u:%g' "$1" 2>/dev/null)" && [[ "$value" =~ ^[0-9]+:[0-9]+$ ]]; then
+    printf '%s' "$value"
+    return 0
+  fi
+  if value="$(stat -f '%u:%g' "$1" 2>/dev/null)" && [[ "$value" =~ ^[0-9]+:[0-9]+$ ]]; then
+    printf '%s' "$value"
+    return 0
+  fi
+  printf 'owner_of: could not determine numeric UID:GID for %s\n' "$1" >&2
+  return 1
 }
 state_value() {
   awk -F= -v k="$1" '$1 == k { print substr($0, index($0, "=") + 1); exit }' "$CONF/install-state.env"
