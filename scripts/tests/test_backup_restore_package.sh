@@ -125,19 +125,167 @@ init_test_db() {
 }
 
 init_crash_wal_db() {
-  local db="$1" marker="$2" fifo pid
+  local db="$1" marker="$2" fifo="" pid="" writer_pid="" marker_file="" wait_status=0 start elapsed
+  local timeout_seconds=10 marker_state wal_state shm_state
+  local prev_int="" prev_term="" prev_hup="" crash_wal_cleaning=0
+
+  command -v sqlite3 >/dev/null 2>&1 || {
+    printf 'init_crash_wal_db: sqlite3 ausente\n' >&2
+    return 1
+  }
+
   fifo="$TEST_ROOT/wal-$RANDOM.fifo"
-  mkfifo "$fifo"
+  marker_file="$TEST_ROOT/wal-$RANDOM.marker"
+
+  crash_wal_fail() {
+    local reason="$1"
+    if [ "$crash_wal_cleaning" -eq 1 ]; then
+      return 0
+    fi
+    trap '' INT TERM HUP
+    crash_wal_cleaning=1
+    printf 'init_crash_wal_db: %s\n' "$reason" >&2
+    if [ -n "${pid:-}" ] && kill -0 "$pid" 2>/dev/null; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+    if [ -n "${writer_pid:-}" ] && kill -0 "$writer_pid" 2>/dev/null; then
+      kill -9 "$writer_pid" 2>/dev/null || true
+    fi
+    if [ -n "${pid:-}" ]; then
+      wait "$pid" 2>/dev/null || true
+      pid=""
+    fi
+    if [ -n "${writer_pid:-}" ]; then
+      wait "$writer_pid" 2>/dev/null || true
+      writer_pid=""
+    fi
+    rm -f "$fifo" "$marker_file" 2>/dev/null || true
+    crash_wal_cleaning=0
+  }
+
+  crash_wal_restore_traps() {
+    if [ -n "${prev_int:-}" ]; then
+      eval "$prev_int"
+    else
+      trap - INT
+    fi
+    if [ -n "${prev_term:-}" ]; then
+      eval "$prev_term"
+    else
+      trap - TERM
+    fi
+    if [ -n "${prev_hup:-}" ]; then
+      eval "$prev_hup"
+    else
+      trap - HUP
+    fi
+  }
+
+  crash_wal_signal() {
+    local sig="$1" code="$2"
+    trap '' INT TERM HUP
+    crash_wal_fail "sinal $sig recebido durante o fixture WAL"
+    crash_wal_restore_traps
+    exit "$code"
+  }
+
+  prev_int="$(trap -p INT 2>/dev/null || true)"
+  prev_term="$(trap -p TERM 2>/dev/null || true)"
+  prev_hup="$(trap -p HUP 2>/dev/null || true)"
+  trap 'crash_wal_signal INT 130' INT
+  trap 'crash_wal_signal TERM 143' TERM
+  trap 'crash_wal_signal HUP 129' HUP
+
+  rm -f "$marker_file" 2>/dev/null || true
+  if ! mkfifo "$fifo"; then
+    crash_wal_fail "falha ao criar FIFO"
+    crash_wal_restore_traps
+    return 1
+  fi
   sqlite3 "$db" < "$fifo" >/dev/null 2>&1 &
   pid=$!
-  exec 7> "$fifo"
-  printf '%s\n' "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE schema_migrations(version INTEGER NOT NULL); INSERT INTO schema_migrations VALUES(54); CREATE TABLE t(id INTEGER PRIMARY KEY,v TEXT NOT NULL); BEGIN; INSERT INTO t VALUES(1,'$marker'),(2,'second'); COMMIT;" >&7
-  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$db-wal" ] && break; sleep 0.1; done
-  [ -s "$db-wal" ] && [ -s "$db-shm" ]
-  kill -9 "$pid"
-  exec 7>&-
-  wait "$pid" 2>/dev/null || :
-  rm "$fifo"
+
+  (
+    exec 7> "$fifo"
+    printf '%s\n' \
+      "PRAGMA journal_mode=WAL;" \
+      "PRAGMA wal_autocheckpoint=0;" \
+      "CREATE TABLE schema_migrations(version INTEGER NOT NULL);" \
+      "INSERT INTO schema_migrations VALUES(54);" \
+      "CREATE TABLE t(id INTEGER PRIMARY KEY,v TEXT NOT NULL);" \
+      "BEGIN;" \
+      "INSERT INTO t VALUES(1,'$marker'),(2,'second');" \
+      "COMMIT;" \
+      ".mode list" \
+      ".headers off" \
+      ".once $marker_file" \
+      "SELECT v FROM t WHERE id=1;" >&7
+    exec sleep 3600
+  ) &
+  writer_pid=$!
+
+  start=$SECONDS
+  while :; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      crash_wal_fail "sqlite3 encerrou antes da confirmacao do COMMIT"
+      crash_wal_restore_traps
+      return 1
+    fi
+    if ! kill -0 "$writer_pid" 2>/dev/null; then
+      crash_wal_fail "escritor do FIFO encerrou antes da confirmacao do COMMIT"
+      crash_wal_restore_traps
+      return 1
+    fi
+    if [ -f "$marker_file" ] \
+      && [ "$(cat "$marker_file" 2>/dev/null || true)" = "$marker" ] \
+      && [ -s "$db-wal" ] && [ -s "$db-shm" ]; then
+      break
+    fi
+    elapsed=$((SECONDS - start))
+    if [ "$elapsed" -ge "$timeout_seconds" ]; then
+      marker_state=ausente
+      wal_state=ausente
+      shm_state=ausente
+      if [ -f "$marker_file" ]; then marker_state=presente; fi
+      if [ -s "$db-wal" ]; then wal_state=presente; fi
+      if [ -s "$db-shm" ]; then shm_state=presente; fi
+      crash_wal_fail "timeout aguardando confirmacao do COMMIT (marker=$marker_state wal=$wal_state shm=$shm_state)"
+      crash_wal_restore_traps
+      return 1
+    fi
+    sleep 0.1
+  done
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+    crash_wal_fail "sqlite3 encerrou antes do SIGKILL"
+    crash_wal_restore_traps
+    return 1
+  fi
+  if ! kill -0 "$writer_pid" 2>/dev/null; then
+    crash_wal_fail "escritor do FIFO encerrou antes do SIGKILL"
+    crash_wal_restore_traps
+    return 1
+  fi
+  kill -9 "$pid" 2>/dev/null || true
+  wait_status=0
+  wait "$pid" 2>/dev/null || wait_status=$?
+  pid=""
+  kill -9 "$writer_pid" 2>/dev/null || true
+  wait "$writer_pid" 2>/dev/null || true
+  writer_pid=""
+  rm -f "$fifo" "$marker_file" 2>/dev/null || true
+  if [ "$wait_status" -ne 137 ]; then
+    printf 'init_crash_wal_db: sqlite3 nao terminou por SIGKILL (status=%s)\n' "$wait_status" >&2
+    crash_wal_restore_traps
+    return 1
+  fi
+  if [ ! -s "$db-wal" ] || [ ! -s "$db-shm" ]; then
+    printf 'init_crash_wal_db: WAL/SHM ausente apos SIGKILL\n' >&2
+    crash_wal_restore_traps
+    return 1
+  fi
+  crash_wal_restore_traps
+  return 0
 }
 
 make_package() {
