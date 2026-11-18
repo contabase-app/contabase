@@ -6,7 +6,7 @@
     </picture>
   </h1>
   <p>Gerenciador financeiro self-hosted, privado e de código aberto.</p>
-  <p><strong>v1.0.0-beta.8</strong></p>
+  <p><strong>v1.0.0-beta.9</strong></p>
   <p>
     <a href="https://contabase.pages.dev/"><strong>Acessar a Página Oficial</strong></a><br>
     <a href="https://contabase.pages.dev/setup/"><strong>Guia Completo de Instalação</strong></a>
@@ -30,7 +30,7 @@ Não é SaaS, não possui telemetria e não envia seus dados financeiros para te
 
 ## Instalação
 
-Acesse o [Guia Completo de Instalação](https://contabase.pages.dev/setup/) para escolher o método e a versão distribuída. Antes de executar comandos para a Beta 8, confirme a disponibilidade da tag, da Release e dos artefatos exigidos pelo método; a documentação da versão não comprova sua publicação.
+Acesse o [Guia Completo de Instalação](https://contabase.pages.dev/setup/) para escolher o método e a versão distribuída. Antes de executar comandos para a Beta 9, confirme a disponibilidade da tag, da Release e dos artefatos exigidos pelo método; a documentação da versão não comprova sua publicação.
 
 Os guias técnicos locais detalham [instalação](docs/instalacao.md), [Docker](docs/instalacao-docker.md), [LXC/VPS](docs/instalacao-lxc-vps.md), [atualização](docs/atualizacao.md) e [primeiros passos](docs/primeiros-passos.md).
 
@@ -45,7 +45,8 @@ Os guias técnicos locais detalham [instalação](docs/instalacao.md), [Docker](
 - [Segurança](SECURITY.md)
 - [Privacidade](PRIVACY.md)
 - [Termos de uso](TERMS.md)
-- [ContaBase v1.0.0-beta.8](docs/releases/v1.0.0-beta.8.md)
+- [ContaBase v1.0.0-beta.9](docs/releases/v1.0.0-beta.9.md)
+- [Beta anterior — v1.0.0-beta.8](docs/releases/v1.0.0-beta.8.md)
 - [Histórico da Beta 7 — v1.0.0-beta.7](docs/releases/v1.0.0-beta.7.md)
 - [Beta publicada anterior — v1.0.0-beta.6](docs/releases/v1.0.0-beta.6.md)
 - [Beta publicada anterior — v1.0.0-beta.5](docs/releases/v1.0.0-beta.5.md)
@@ -55,13 +56,17 @@ Os guias técnicos locais detalham [instalação](docs/instalacao.md), [Docker](
 - [Histórico da beta.2](docs/releases/v1.0.0-beta.2.md)
 - [Histórico da primeira beta](docs/releases/v0.1.0-beta.1.md)
 
-## Novidades da Beta 8
+## Novidades da Beta 9
 
-A Beta 8 remove definitivamente o domínio de Reservas e avança o schema para 83. O Dashboard V2 passa a ser a página principal, com um snapshot financeiro consistente para os oito cartões do resumo, shell visual unificado em todas as páginas, notificações interativas com pagamento direto e instalação do PWA restaurada. O Dashboard separa saldo total e obrigações de 30/60 dias, sem saldo reservado nem subtração automática de Reservas. A atualização usa dispatcher autenticado por commit e manifesto, com `flock`, proveniência de instalação e backup pré-migration verificável. A versão também consolida transferências pendentes, logout explícito, revogação de sessões na troca de senha, correções de concorrência no toggle de pagamento e na exclusão recorrente, e o rodapé passa a exibir o link Apoiar o Projeto, com destino na página de apoio do site oficial.
+A Beta 9 corrige a distribuição standalone da linha Beta 8 e endurece o instalador. Os pacotes Release passam a incluir o wrapper autenticado de update, que o instalador standalone exige dentro do bundle; a Beta 8 publicou pacotes sem esse arquivo e a instalação nova por Release ficou impossível, com falha fechada antes de qualquer mutação e downloads íntegros. O instalador valida o wrapper antes de qualquer escrita, confere o SHA-256 antes e depois da instalação, instala o dispatcher de forma atômica, preserva o dispatcher anterior em falha e recusa destino que aponta para diretório. O Bootstrap autenticado executa uma única vez, reexecuta com ambiente sanitizado e não aceita variável externa que contorne a sanitização. A toolchain passa a Go 1.26.11 e o pipeline canônico passa a executar o preflight do instalador e um teste de artifact real.
 
-Reservas citadas nos destaques históricos abaixo foram removidas na Beta 8.
+A versão não altera regra financeira, schema, autenticação, RBAC, workspace ou interface. O schema permanece 83: atualizações da Beta 8 não executam migration; atualizações da Beta 7 aplicam a migration 83 uma vez, com backup pré-migration verificável.
 
-Consulte as [notas da Beta 8](docs/releases/v1.0.0-beta.8.md).
+Consulte as [notas da Beta 9](docs/releases/v1.0.0-beta.9.md).
+
+## Destaques da Beta v1.0.0-beta.8
+
+A Beta 8 removeu definitivamente o domínio de Reservas, avançou o schema para 83 e promoveu o Dashboard V2 a página principal, com um snapshot financeiro consistente para os oito cartões do resumo, shell visual unificado, notificações interativas com pagamento direto, transferências pendentes, logout explícito, revogação de sessões na troca de senha e instalação do PWA restaurada. A atualização passou a usar dispatcher autenticado por commit e manifesto, com `flock`, proveniência de instalação e backup pré-migration verificável. Consulte as [notas da Beta 8](docs/releases/v1.0.0-beta.8.md).
 
 ## Destaques da Beta v1.0.0-beta.7
 

@@ -23,12 +23,10 @@ O **Source Bootstrap** está adiado e indisponível nesta fase: novas execuçõe
 
 Não use `contabase-update`, `cb-update` ou
 `scripts/update-contabase-source.sh` em uma instalação Source Bootstrap. O
-wrapper falha fechado para esse estado. A atualização por tag/commit, a retomada
-manual e as melhorias operacionais estão planejadas para Betas futuras; até
-lá, não trate essa instalação como produção com dados reais.
-
-Para novas instalações VPS/LXC, o caminho recomendado é o binário da Release,
-que possui atualização suportada.
+wrapper falha fechado para esse estado. Essa variante não possui atualização
+automática suportada nesta versão, e o operador deve tratá-la como instalação
+sem caminho de atualização gerenciado. Para novas instalações VPS/LXC, o
+caminho recomendado é o binário da Release, que possui atualização suportada.
 
 ## Método recomendado: comando global
 
@@ -48,6 +46,8 @@ Ele não se aplica a instalações Source Bootstrap.
 - **Dispatcher Beta 8:** valida canal, Release, identidade da tag/commit e manifesto `updater.sha256`; baixa e verifica o bundle antes de delegar ao updater. A versão explícita deve estar autorizada pelo canal ou pelo catálogo de versões. Sem identidade ou manifesto válidos, falha fechado.
 - **Dispatcher Beta 7:** no modo Docker, executa o updater presente no checkout e repassa a versão explícita em `CONTABASE_VERSION`. Com uma versão explícita, seleciona `pinned`; não autentica completamente o bundle antes de executar o helper. Esse é o contrato legado da transição para a Beta 8.
 - A validação da origem e da identidade da tag feita **dentro do helper já iniciado** não equivale à autenticação do bundle antes da execução. A chamada direta do helper também não oferece as garantias do dispatcher Beta 8.
+
+A Beta 9 mantém o mesmo dispatcher autenticado introduzido na Beta 8. Como o comentário do dispatcher afirma, uma versão explícita precisa estar autorizada pelo canal ou pelo catálogo `releases-v1.json`; até a promoção do canal, `sudo contabase-update v1.0.0-beta.9` falha fechado, sem alterar a instalação.
 
 O checkout da tag Beta 8 troca os scripts locais, mas não substitui por si só o comando instalado em `/usr/local/bin/contabase-update`. O dispatcher Beta 8 é reinstalado ao final de uma atualização concluída com sucesso.
 
@@ -235,7 +235,7 @@ Substitua `vX.Y.Z` pela versão publicada desejada. Em checkout por tag, essa va
 
 ### Transição única de checkout por tag (beta.7 → beta.8)
 
-Execute este procedimento somente após a disponibilização oficial da Beta 8 para esse método e da tag `v1.0.0-beta.8`. A existência destas instruções não comprova publicação nem promoção do canal.
+Execute este procedimento somente após a disponibilização oficial da Beta 8 para esse método e da tag `v1.0.0-beta.8`. A existência destas instruções não comprova publicação nem promoção do canal. Este procedimento é histórico: aplica-se a checkouts criados pela tag da Beta 7, e a Beta 9 não exige nova transição por tag.
 
 Se o checkout foi criado com `git clone --branch v1.0.0-beta.7`, ele está com HEAD destacado. O helper Beta 7 recusa esse estado, e o dispatcher Beta 7 executa esse mesmo helper local. Por isso, é necessário trocar primeiro o checkout pela tag Beta 8.
 
@@ -389,6 +389,18 @@ A atualização não deve:
 - reativar uma conta legada com senha pública.
 
 Se precisar restaurar backup, faça isso manualmente e com cuidado.
+
+## Beta 9: distribuição standalone corrigida
+
+A atualização para `v1.0.0-beta.9` não aplica migration nova. O schema permanece 83 e os dados não são reescritos.
+
+- De `v1.0.0-beta.8` (schema 83): nenhuma etapa de banco.
+- De `v1.0.0-beta.7` (schema 82): a migration 83 é aplicada uma vez na inicialização, com backup pré-migration verificável.
+- Docker por tag, updater Release autenticado e update Source por tag continuam sendo os caminhos suportados.
+- O updater global continua autenticando canal, Release, commit e manifesto antes de executar; a versão alvo precisa estar publicada e homologada no catálogo do canal. Enquanto o canal não apontar para a Beta 9, a atualização falha fechado.
+- Faça backup antes de atualizar e não use `docker compose pull && up -d` como substituto do updater.
+
+A Beta 9 corrige os pacotes Release da Beta 8, que não incluíam `contabase/lib/contabase-update-wrapper.sh`. A instalação nova pelo instalador standalone falhava fechada antes de qualquer mutação. Os downloads e checksums da Beta 8 permaneceram íntegros.
 
 ## Beta 8: schema 83 e remoção de Reservas
 

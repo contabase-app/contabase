@@ -284,14 +284,13 @@ bootstrap_release_main
         self.assertFalse((self.root / 'install').exists())
         self.assertFalse((self.root / 'data').exists())
 
-    def test_legacy_validate_only_checks_synthetic_bundle_without_installing(self):
-        fixtures = self.root / 'fixtures'
-        fixtures.mkdir()
+    def write_legacy_bundle(self, fixtures, include_wrapper=True):
         artifact = fixtures / 'contabase-linux-arm64.tar.gz'
         with tarfile.open(artifact, 'w:gz') as archive:
-            for name in ('templates', 'assets'):
+            for name in ('templates', 'assets', 'lib'):
                 member = tarfile.TarInfo('contabase/' + name)
                 member.type = tarfile.DIRTYPE
+                member.mode = 0o755
                 archive.addfile(member)
             for name in ('contabase', 'admin', 'VERSION', 'LICENSE',
                          'contabase.env.example', 'contabase.service.example'):
@@ -299,7 +298,19 @@ bootstrap_release_main
                 member = tarfile.TarInfo('contabase/' + name)
                 member.size = len(payload)
                 archive.addfile(member, io.BytesIO(payload))
+            if include_wrapper:
+                payload = (ROOT / 'scripts/lib/contabase-update-wrapper.sh').read_bytes()
+                member = tarfile.TarInfo('contabase/lib/contabase-update-wrapper.sh')
+                member.size = len(payload)
+                member.mode = 0o755
+                archive.addfile(member, io.BytesIO(payload))
         (fixtures / 'checksums.txt').write_text(digest(artifact.read_bytes()) + '  ' + artifact.name + '\n')
+        return artifact
+
+    def test_legacy_validate_only_checks_synthetic_bundle_without_installing(self):
+        fixtures = self.root / 'fixtures'
+        fixtures.mkdir()
+        self.write_legacy_bundle(fixtures)
         for cmd in ('systemctl', 'install', 'curl'):
             self.stub(cmd, 'printf "unexpected-command\\n" >> "$TEST_CALLS"\nexit 89\n')
         self.env.update(CONTABASE_TEST_MODE='1', CONTABASE_TEST_FIXTURE_DIR=str(fixtures),
@@ -307,6 +318,23 @@ bootstrap_release_main
         result = self.run_shell(RELEASE, ('--validate-only',), trace=True)
         self.assertEqual(result.returncode, 0, 'validate-only legado falhou')
         self.assertTrue(b'Validacao concluida; nenhuma instalacao foi alterada.' in result.stdout)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.config.exists())
+        self.assertFalse((self.root / 'install').exists())
+        self.assertFalse((self.root / 'data').exists())
+        self.assertEqual(list(self.home.iterdir()), [])
+
+    def test_legacy_validate_only_rejects_bundle_without_wrapper(self):
+        fixtures = self.root / 'fixtures'
+        fixtures.mkdir()
+        self.write_legacy_bundle(fixtures, include_wrapper=False)
+        for cmd in ('systemctl', 'install', 'curl'):
+            self.stub(cmd, 'printf "unexpected-command\\n" >> "$TEST_CALLS"\nexit 89\n')
+        self.env.update(CONTABASE_TEST_MODE='1', CONTABASE_TEST_FIXTURE_DIR=str(fixtures),
+                        CONTABASE_TEST_UNAME_M='aarch64', CONTABASE_SETUP_TOKEN=SUPPLIED)
+        result = self.run_shell(RELEASE, ('--validate-only',), trace=True)
+        self.assertNotEqual(result.returncode, 0, 'validate-only aceitou bundle sem wrapper')
+        self.assertTrue(b'wrapper de update ausente' in result.stderr)
         self.assertFalse(self.calls.exists())
         self.assertFalse(self.config.exists())
         self.assertFalse((self.root / 'install').exists())

@@ -1,6 +1,6 @@
 # Investimentos
 
-Este guia descreve o código da `v1.0.0-beta.8`, candidato local ainda não publicado. A disponibilidade no canal de instalação depende da promoção da versão distribuída e da flag da instância. A Beta 8 remove Reservas, mas não promove Investimentos automaticamente no canal público.
+Este guia descreve o código da `v1.0.0-beta.9`. A disponibilidade no canal de instalação depende da promoção da versão distribuída e da flag da instância. Investimentos não é promovido automaticamente no canal público.
 
 ## Disponibilidade
 

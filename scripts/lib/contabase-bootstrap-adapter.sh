@@ -10,6 +10,10 @@ CONTABASE_BOOTSTRAP_MODE_FILE="${CONTABASE_MODE_FILE:-/etc/contabase/install-mod
 CONTABASE_BOOTSTRAP_ENV_FILE="${CONTABASE_ENV_FILE:-/etc/contabase/contabase.env}"
 CONTABASE_BOOTSTRAP_UPDATE_BIN="${CONTABASE_UPDATE_BIN:-/usr/local/bin/contabase-update}"
 CONTABASE_BOOTSTRAP_CB_UPDATE_BIN="${CONTABASE_CB_UPDATE_BIN:-/usr/local/bin/cb-update}"
+# Marcador de origem do reexec saneado: transmitido em argv, canal que o
+# ambiente do chamador nao pode forjar. O literal precisa permanecer sincronizado
+# com o bloco de contrato do install-contabase-release.sh.
+CONTABASE_BOOTSTRAP_REEXEC_ARG="--contabase-sanitized-reexec"
 
 bootstrap_fail() {
   printf 'Erro: %s\n' "$*" >&2
@@ -433,78 +437,154 @@ bootstrap_sha256() {
   fi
 }
 
+bootstrap_path_uid() {
+  stat -c %u "$1" 2>/dev/null || stat -f %u "$1"
+}
+
+bootstrap_path_mode() {
+  stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
+}
+
+# Variaveis do contrato repassadas do chamador para o filho saneado. Fonte unica:
+# o reexec constroi o ambiente a partir desta lista e o atestado a aceita.
+bootstrap_sanitized_pass_through_names() {
+  printf '%s\n' \
+    CONTABASE_BOOTSTRAP_CONTRACT_VERSION \
+    CONTABASE_INSTALL_MODE \
+    CONTABASE_CONFIRM_INSTALL \
+    CONTABASE_BOOTSTRAP_ADAPTER \
+    CONTABASE_VERSION \
+    CONTABASE_CHANNEL \
+    CONTABASE_COMMIT \
+    CONTABASE_INSTALL_METHOD \
+    CONTABASE_FEATURE_INVESTMENTS \
+    CONTABASE_INSTALL_DEPS \
+    CONTABASE_HELPER_SHA256 \
+    CONTABASE_ADAPTER_LIB_SHA256 \
+    CONTABASE_UPDATE_WRAPPER_SHA256 \
+    CONTABASE_ARTIFACT_SHA256 \
+    CONTABASE_CHECKSUMS_SHA256 \
+    CONTABASE_ARTIFACT_NAME \
+    CONTABASE_ARTIFACT_PLATFORM \
+    CONTABASE_ARTIFACT_PATH \
+    CONTABASE_CHECKSUMS_PATH \
+    CONTABASE_SOURCE_ARCHIVE \
+    CONTABASE_SOURCE_ARCHIVE_SHA256 \
+    CONTABASE_SOURCE_ARCHIVE_KIND \
+    CONTABASE_BOOTSTRAP_CHECKOUT \
+    CONTABASE_INSTALL_DIR \
+    CONTABASE_DATA_DIR \
+    CONTABASE_CONFIG_DIR \
+    CONTABASE_PORT \
+    CONTABASE_HOST_BIND \
+    CONTABASE_INTERNAL_PORT \
+    CONTABASE_NETWORK_PROFILE \
+    APP_BASE_URL \
+    ALLOWED_HOSTS \
+    TRUSTED_PROXIES \
+    CONTABASE_ACCESS_MODE \
+    CONTABASE_TIMEZONE \
+    CONTABASE_TEST_SKIP_SYSTEMD \
+    CONTABASE_TEST_SKIP_DEFAULT_PATHS \
+    CONTABASE_TEST_MODE \
+    CONTABASE_TEST_FIXTURE_DIR \
+    CONTABASE_TEST_UNAME_M \
+    CONTABASE_SERVICE_FILE \
+    CONTABASE_STATE_FILE \
+    CONTABASE_MODE_FILE \
+    CONTABASE_ENV_FILE \
+    CONTABASE_UPDATE_BIN \
+    CONTABASE_CB_UPDATE_BIN
+}
+
+# Variaveis com valor fixo definido pelo proprio reexec saneado.
+bootstrap_sanitized_fixed_names() {
+  printf '%s\n' \
+    PATH \
+    HOME \
+    TMPDIR \
+    CURL_HOME \
+    GIT_CONFIG_NOSYSTEM \
+    GIT_CONFIG_GLOBAL \
+    GIT_TERMINAL_PROMPT \
+    LANG \
+    LC_ALL \
+    CONTABASE_BOOTSTRAP_SANITIZED
+}
+
+bootstrap_name_is_sanitized() {
+  case "$1" in
+    PWD|SHLVL|OLDPWD|_) return 0 ;;
+  esac
+  bootstrap_sanitized_fixed_names | grep -Fxq -- "$1" && return 0
+  bootstrap_sanitized_pass_through_names | grep -Fxq -- "$1"
+}
+
+# Atestado de origem do ambiente: comprova que este processo e o filho do reexec
+# saneado, e nao uma entrada direta com ambiente do chamador. Nenhuma variavel de
+# ambiente e aceita como prova; a entrada direta exige o marcador em argv e um
+# ambiente integralmente dentro do perfil saneado. Falha fechado.
+bootstrap_attest_sanitized_environment() {
+  local home="${HOME:-}" name
+
+  [ "${PATH:-}" = "$CONTABASE_BOOTSTRAP_SAFE_PATH" ] \
+    || { bootstrap_fail "PATH divergente do perfil saneado do Bootstrap"; return 1; }
+  [ -n "$home" ] \
+    || { bootstrap_fail "HOME controlado ausente no perfil saneado"; return 1; }
+  [ "$home" = "${TMPDIR:-}" ] && [ "$home" = "${CURL_HOME:-}" ] \
+    || { bootstrap_fail "HOME/TMPDIR/CURL_HOME divergem do perfil saneado"; return 1; }
+  [ "${home#/}" != "$home" ] \
+    || { bootstrap_fail "HOME controlado nao e caminho absoluto"; return 1; }
+  case "${home##*/}" in
+    contabase-bootstrap-home.??????) ;;
+    *) bootstrap_fail "HOME controlado fora do padrao exclusivo do reexec"; return 1 ;;
+  esac
+  [ -d "$home" ] && [ ! -L "$home" ] \
+    || { bootstrap_fail "HOME controlado ausente ou inseguro"; return 1; }
+  [ "$(bootstrap_path_uid "$home")" = "$(id -u)" ] \
+    || { bootstrap_fail "HOME controlado sem dono do processo atual"; return 1; }
+  [ "$(bootstrap_path_mode "$home")" = "700" ] \
+    || { bootstrap_fail "HOME controlado sem modo 0700"; return 1; }
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    bootstrap_name_is_sanitized "$name" \
+      || { bootstrap_fail "variavel exportada fora do perfil saneado: $name"; return 1; }
+  done < <(compgen -e)
+  return 0
+}
+
 bootstrap_sanitized_reexec() {
   local script="${1:-}"
   shift || true
-  [ "${CONTABASE_BOOTSTRAP_SANITIZED:-0}" = "1" ] && return 0
   [ -n "$script" ] && [ -f "$script" ] || { bootstrap_fail "helper ausente para saneamento"; return 1; }
 
-  local home status
+  local home status name
   home="$(mktemp -d "${TMPDIR:-/tmp}/contabase-bootstrap-home.XXXXXX")" \
     || { bootstrap_fail "nao foi possivel criar HOME controlado"; return 1; }
   chmod 0700 "$home" || { rm -rf "$home"; bootstrap_fail "nao foi possivel proteger HOME controlado"; return 1; }
 
+  local -a sanitized_env=(
+    env -i
+    PATH="$CONTABASE_BOOTSTRAP_SAFE_PATH"
+    HOME="$home"
+    TMPDIR="$home"
+    CURL_HOME="$home"
+    GIT_CONFIG_NOSYSTEM=1
+    GIT_CONFIG_GLOBAL=/dev/null
+    GIT_TERMINAL_PROMPT=0
+    LANG=C
+    LC_ALL=C
+    CONTABASE_BOOTSTRAP_SANITIZED=1
+  )
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    sanitized_env+=("$name=${!name:-}")
+  done < <(bootstrap_sanitized_pass_through_names)
+
   (
     trap 'rm -rf "$home"' EXIT
     trap 'exit 2' HUP INT TERM
-    env -i \
-      PATH="$CONTABASE_BOOTSTRAP_SAFE_PATH" \
-      HOME="$home" \
-      TMPDIR="$home" \
-      CURL_HOME="$home" \
-      GIT_CONFIG_NOSYSTEM=1 \
-      GIT_CONFIG_GLOBAL=/dev/null \
-      GIT_TERMINAL_PROMPT=0 \
-      LANG=C \
-      LC_ALL=C \
-      CONTABASE_BOOTSTRAP_SANITIZED=1 \
-      CONTABASE_BOOTSTRAP_CONTRACT_VERSION="${CONTABASE_BOOTSTRAP_CONTRACT_VERSION:-}" \
-      CONTABASE_INSTALL_MODE="${CONTABASE_INSTALL_MODE:-}" \
-      CONTABASE_CONFIRM_INSTALL="${CONTABASE_CONFIRM_INSTALL:-}" \
-      CONTABASE_BOOTSTRAP_ADAPTER="${CONTABASE_BOOTSTRAP_ADAPTER:-}" \
-      CONTABASE_VERSION="${CONTABASE_VERSION:-}" \
-      CONTABASE_CHANNEL="${CONTABASE_CHANNEL:-}" \
-      CONTABASE_COMMIT="${CONTABASE_COMMIT:-}" \
-      CONTABASE_INSTALL_METHOD="${CONTABASE_INSTALL_METHOD:-}" \
-      CONTABASE_FEATURE_INVESTMENTS="${CONTABASE_FEATURE_INVESTMENTS:-}" \
-      CONTABASE_INSTALL_DEPS="${CONTABASE_INSTALL_DEPS:-}" \
-      CONTABASE_HELPER_SHA256="${CONTABASE_HELPER_SHA256:-}" \
-      CONTABASE_ADAPTER_LIB_SHA256="${CONTABASE_ADAPTER_LIB_SHA256:-}" \
-      CONTABASE_UPDATE_WRAPPER_SHA256="${CONTABASE_UPDATE_WRAPPER_SHA256:-}" \
-      CONTABASE_ARTIFACT_SHA256="${CONTABASE_ARTIFACT_SHA256:-}" \
-      CONTABASE_CHECKSUMS_SHA256="${CONTABASE_CHECKSUMS_SHA256:-}" \
-      CONTABASE_ARTIFACT_NAME="${CONTABASE_ARTIFACT_NAME:-}" \
-      CONTABASE_ARTIFACT_PLATFORM="${CONTABASE_ARTIFACT_PLATFORM:-}" \
-      CONTABASE_ARTIFACT_PATH="${CONTABASE_ARTIFACT_PATH:-}" \
-      CONTABASE_CHECKSUMS_PATH="${CONTABASE_CHECKSUMS_PATH:-}" \
-      CONTABASE_SOURCE_ARCHIVE="${CONTABASE_SOURCE_ARCHIVE:-}" \
-      CONTABASE_SOURCE_ARCHIVE_SHA256="${CONTABASE_SOURCE_ARCHIVE_SHA256:-}" \
-      CONTABASE_SOURCE_ARCHIVE_KIND="${CONTABASE_SOURCE_ARCHIVE_KIND:-}" \
-      CONTABASE_BOOTSTRAP_CHECKOUT="${CONTABASE_BOOTSTRAP_CHECKOUT:-}" \
-      CONTABASE_INSTALL_DIR="${CONTABASE_INSTALL_DIR:-}" \
-      CONTABASE_DATA_DIR="${CONTABASE_DATA_DIR:-}" \
-      CONTABASE_CONFIG_DIR="${CONTABASE_CONFIG_DIR:-}" \
-      CONTABASE_PORT="${CONTABASE_PORT:-}" \
-      CONTABASE_HOST_BIND="${CONTABASE_HOST_BIND:-}" \
-      CONTABASE_INTERNAL_PORT="${CONTABASE_INTERNAL_PORT:-}" \
-      CONTABASE_NETWORK_PROFILE="${CONTABASE_NETWORK_PROFILE:-}" \
-      APP_BASE_URL="${APP_BASE_URL:-}" \
-      ALLOWED_HOSTS="${ALLOWED_HOSTS:-}" \
-      TRUSTED_PROXIES="${TRUSTED_PROXIES:-}" \
-      CONTABASE_ACCESS_MODE="${CONTABASE_ACCESS_MODE:-}" \
-      CONTABASE_TIMEZONE="${CONTABASE_TIMEZONE:-}" \
-      CONTABASE_TEST_SKIP_SYSTEMD="${CONTABASE_TEST_SKIP_SYSTEMD:-}" \
-      CONTABASE_TEST_SKIP_DEFAULT_PATHS="${CONTABASE_TEST_SKIP_DEFAULT_PATHS:-}" \
-      CONTABASE_TEST_MODE="${CONTABASE_TEST_MODE:-}" \
-      CONTABASE_TEST_FIXTURE_DIR="${CONTABASE_TEST_FIXTURE_DIR:-}" \
-      CONTABASE_TEST_UNAME_M="${CONTABASE_TEST_UNAME_M:-}" \
-      CONTABASE_SERVICE_FILE="${CONTABASE_SERVICE_FILE:-}" \
-      CONTABASE_STATE_FILE="${CONTABASE_STATE_FILE:-}" \
-      CONTABASE_MODE_FILE="${CONTABASE_MODE_FILE:-}" \
-      CONTABASE_ENV_FILE="${CONTABASE_ENV_FILE:-}" \
-      CONTABASE_UPDATE_BIN="${CONTABASE_UPDATE_BIN:-}" \
-      CONTABASE_CB_UPDATE_BIN="${CONTABASE_CB_UPDATE_BIN:-}" \
-      bash "$script" "$@"
+    "${sanitized_env[@]}" bash "$script" "$CONTABASE_BOOTSTRAP_REEXEC_ARG" "$@"
   )
   status=$?
   rm -rf "$home"

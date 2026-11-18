@@ -62,11 +62,11 @@ Os seguintes recursos estão presentes e operacionais no código atual:
 
 ---
 
-## 🚧 4. Recursos Parciais ou Planejados
+## 🚧 4. Recursos Parciais ou Limitações
 
-As funções abaixo estão **parcialmente implementadas** ou planejadas, devendo ser consideradas instáveis ou residuais nesta versão:
+Os pontos abaixo são limitações reais desta versão e não devem ser tratados como proteções completas:
 
-- **Autenticação em Dois Fatores (2FA TOTP):** Já ativa no motor interno, com recovery codes operacionais e recuperável via Admin CLI, pendendo polimentos finais de UX em UI externa pública.
+- **2FA TOTP:** implementado no motor interno e na interface, com enrollment em Configurações → Segurança, recovery codes operacionais e recuperação administrativa por `admin users disable-2fa`. A cobertura de testes manuais de usabilidade em todos os navegadores não está registrada nesta versão.
 - **Rate limiting distribuído:** os buckets da aplicação são locais a cada processo. Instalações com mais de uma réplica devem aplicar limites compartilhados no proxy/edge para que a cota seja global.
 
 ---

@@ -20,10 +20,11 @@ O ContaBase usa SemVer. A tag pública, o arquivo `VERSION`, o changelog e a not
 - `v1.0.0-beta.5` — quinta candidata da linha 1.0, publicada como prerelease.
 - `v1.0.0-beta.6` — sexta candidata da linha 1.0, publicada como prerelease.
 - `v1.0.0-beta.7` — sétima candidata da linha 1.0, publicada como prerelease com artifacts Linux amd64/arm64, checksums e imagem GHCR; a promoção do canal Beta depende do smoke real de instalação e atualização.
+- `v1.0.0-beta.8` — oitava candidata da linha 1.0, materializada como prerelease com artifacts, GHCR versionada e schema 83. Os tarballs publicados não incluíram `contabase/lib/contabase-update-wrapper.sh`, e a instalação nova pelo instalador standalone ficou bloqueada com falha fechada. A tag, a Release, os artifacts e o histórico permanecem imutáveis.
 
-## ContaBase v1.0.0-beta.8
+## ContaBase v1.0.0-beta.9
 
-- **Novidades da Beta 8:** remoção de Reservas e avanço do schema para 83, com updater autenticado por commit/manifesto, `flock`, proveniência de instalação, backup pré-migration verificável e correções de concorrência. A instalação exige verificar a disponibilidade da tag, GitHub Release, artefatos, GHCR e canal, além da homologação do método; esta seção não comprova publicação.
+- **Novidades da Beta 9:** correção da distribuição standalone da Beta 8, com o wrapper autenticado incluído nos tarballs e validado por SHA-256, instalador Release endurecido com dispatcher atômico, Bootstrap autenticado com execução única e ambiente sanitizado, Go 1.26.11 e preflight do instalador no pipeline canônico. Schema permanece 83, sem migration nova. A instalação exige verificar a disponibilidade da tag, GitHub Release, artefatos, GHCR e canal, além da homologação do método; esta seção não comprova publicação.
 
 ## Processo de publicação
 
@@ -34,8 +35,9 @@ documentação, artifacts, checksums e instalação em ambiente descartável.
 Uma versão é considerada materializada assim que qualquer superfície oficial
 de distribuição existir: Release publicada ou com assets, artifacts finais,
 imagem GHCR, canal ou promoção para instalação. A partir daí, sua tag e seu
-identificador são imutáveis. Uma tag de tentativa que falhou no CI antes de
-qualquer superfície oficial pode ser removida somente após auditoria formal.
+identificador são imutáveis. Toda tag pública `v*` é imutável desde a criação:
+não há remoção, movimentação, force-push nem reutilização de identificador para
+publicar código diferente, inclusive em tentativa que falhou no CI.
 
 ### Preparação pública
 
@@ -129,7 +131,7 @@ Os updates Docker e Release exigem backup canônico e verificam o healthcheck. B
 
 O método `docker-image`, fixado por digest, não realiza rollback automático nem emite ou consome provas de recuperação. O update do Source legado possui script próprio e preserva as mesmas restrições da recuperação histórica.
 
-O Source Bootstrap é experimental e não possui atualização automática suportada; para novas instalações VPS/LXC, prefira o release artifact.
+O Source Bootstrap não possui atualização automática suportada; para novas instalações VPS/LXC, prefira o release artifact.
 
 Após tentativa de startup da candidata, falhas não autorizam executar automaticamente código antigo sobre dados potencialmente migrados. Pode haver indisponibilidade até intervenção administrativa especializada com artefato verificado compatível com o schema atual. Preserve banco, WAL, uploads, configuração, chaves e backup. Restore de dados é uma operação separada, exige decisão explícita e nunca é automático.
 
@@ -139,6 +141,7 @@ Após tentativa de startup da candidata, falhas não autorizam executar automati
 - [Release Notes](../RELEASE_NOTES.md)
 - [GitHub Releases](https://github.com/contabase-app/contabase/releases)
 - [GHCR](https://github.com/contabase-app/contabase/pkgs/container/contabase)
+- [Nota da v1.0.0-beta.9](releases/v1.0.0-beta.9.md)
 - [Nota da v1.0.0-beta.8](releases/v1.0.0-beta.8.md)
 - [Nota da v1.0.0-beta.7 — publicada](releases/v1.0.0-beta.7.md)
 - [Nota da v1.0.0-beta.5 — publicada](releases/v1.0.0-beta.5.md)

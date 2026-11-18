@@ -4,6 +4,14 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
 release_version="${1:-}"
 if [[ -z "$release_version" ]]; then
   echo "usage: $0 <vX.Y.Z[-beta.N]>" >&2
@@ -97,6 +105,9 @@ echo "== F3-C authenticated update dispatcher =="
 echo "== F3-D Release isolated bootstrap =="
 ./scripts/tests/test_release_isolated_bootstrap.sh
 
+echo "== Installer Release preflight =="
+./scripts/tests/test_installer_update_preflight.sh
+
 echo "== R3 workflow hardening contracts =="
 ./scripts/tests/test_workflow_hardening.sh
 
@@ -104,9 +115,15 @@ echo "== Build release packages =="
 rm -rf "$dist_dir" "$work_dir"
 mkdir -p "$dist_dir" "$work_dir"
 
+wrapper_source="scripts/lib/contabase-update-wrapper.sh"
+if [[ ! -f "$wrapper_source" || -L "$wrapper_source" ]]; then
+  echo "release wrapper source is missing or unsafe: $wrapper_source" >&2
+  exit 1
+fi
+
 for arch in amd64 arm64; do
   bundle_root="$work_dir/${arch}/contabase"
-  mkdir -p "$bundle_root"
+  mkdir -p "$bundle_root/lib"
 
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build \
     -trimpath \
@@ -128,9 +145,10 @@ for arch in amd64 arm64; do
   cp LICENSE "$bundle_root/LICENSE"
   cp docs/binario/contabase.env.example "$bundle_root/contabase.env.example"
   cp docs/binario/contabase.service.example "$bundle_root/contabase.service.example"
+  cp "$wrapper_source" "$bundle_root/lib/contabase-update-wrapper.sh"
   printf '%s\n' "$release_version" > "$bundle_root/VERSION"
 
-  tar -czf "$dist_dir/contabase-linux-${arch}.tar.gz" \
+  COPYFILE_DISABLE=1 tar -czf "$dist_dir/contabase-linux-${arch}.tar.gz" \
     -C "$work_dir/${arch}" \
     contabase
 done
@@ -156,6 +174,7 @@ required_paths=(
   contabase/LICENSE
   contabase/contabase.env.example
   contabase/contabase.service.example
+  contabase/lib/contabase-update-wrapper.sh
 )
 
 for arch in amd64 arm64; do
@@ -200,6 +219,17 @@ for arch in amd64 arm64; do
     echo "artifact VERSION mismatch in $archive" >&2
     exit 1
   fi
+
+  extracted_wrapper="$work_dir/wrapper-${arch}.sh"
+  tar -xOzf "$archive" contabase/lib/contabase-update-wrapper.sh > "$extracted_wrapper"
+  if [[ ! -s "$extracted_wrapper" ]]; then
+    echo "artifact wrapper is empty in $archive" >&2
+    exit 1
+  fi
+  if [[ "$(sha256_file "$extracted_wrapper")" != "$(sha256_file "$wrapper_source")" ]]; then
+    echo "artifact wrapper diverges from source in $archive" >&2
+    exit 1
+  fi
 done
 
 expected_names=$'contabase-linux-amd64.tar.gz\ncontabase-linux-arm64.tar.gz'
@@ -218,5 +248,9 @@ fi
   fi
 )
 
+echo "== Installer Release artifact wrapper =="
+./scripts/tests/test_release_artifact_installer_wrapper.sh "$dist_dir"
+
 rm -f "$dist_dir"/contents-*.txt
+rm -f "$work_dir"/wrapper-*.sh
 echo "release validation passed for $release_version"

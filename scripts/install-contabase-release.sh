@@ -29,6 +29,9 @@ BOOTSTRAP_MODE=false
 if [ "${CONTABASE_BOOTSTRAP_CONTRACT_VERSION:-}" = "1" ]; then
   BOOTSTRAP_MODE=true
 fi
+# Prova de sanitizacao vive em argv (marcador do reexec), nunca no ambiente;
+# a inicializacao incondicional descarta valor herdado do chamador.
+BOOTSTRAP_SANITIZED_ENTRY=false
 SETUP_TOKEN_GENERATED_NOW=false
 SETUP_TOKEN_SUPPLIED_BY_ENV=false
 APP_USER="${CONTABASE_USER:-contabase}"
@@ -54,6 +57,27 @@ SERVICE_BACKUP=""
 NEW_BUNDLE_ACTIVE=false
 NEW_RUNTIME_STARTED=false
 RELEASE_BUNDLE_VERIFIED=false
+BUNDLE_WRAPPER_PATH=""
+BUNDLE_WRAPPER_SHA256=""
+RELEASE_WRAPPER_SOURCE=""
+RELEASE_WRAPPER_SHA256=""
+# Protocolo de publicacao atomica do dispatcher e do estado administrativo.
+DISPATCHER_TMP=""
+DISPATCHER_RENAMED=false
+DISPATCHER_PUBLISHED=false
+DISPATCHER_PREV_KIND="other"
+DISPATCHER_PREV_BACKUP=""
+DISPATCHER_PREV_SHA=""
+MODE_RENAMED=false
+MODE_PUBLISHED=false
+MODE_PREV_KIND="other"
+MODE_PREV_BACKUP=""
+MODE_PREV_SHA=""
+STATE_RENAMED=false
+STATE_PUBLISHED=false
+STATE_PREV_KIND="other"
+STATE_PREV_BACKUP=""
+STATE_PREV_SHA=""
 
 # Recovery evidence is administrative state, never imported from a release bundle.
 # === SAFE_RECOVERY_BLOCK_BEGIN ===
@@ -188,6 +212,13 @@ fail() {
 if [ "${CONTABASE_BOOTSTRAP_CONTRACT_VERSION+x}" = x ]; then
   [ "${CONTABASE_BOOTSTRAP_CONTRACT_VERSION}" = 1 ] \
     || fail "versao do contrato Bootstrap invalida."
+  if [ "$#" -gt 0 ] && [ "$1" = "--contabase-sanitized-reexec" ]; then
+    # Marcador transmitido somente pelo reexec saneado do adaptador; o ambiente
+    # do chamador nao pode injeta-lo em argv. Nenhuma variavel de ambiente e
+    # aceita como prova de sanitizacao.
+    BOOTSTRAP_SANITIZED_ENTRY=true
+    shift
+  fi
   [ "$#" -eq 0 ] || fail "adaptador Bootstrap nao aceita argumentos avulsos."
 fi
 
@@ -203,11 +234,20 @@ EOF
 }
 
 cleanup() {
+  # Remove apenas temporarios desta execucao; nunca apaga arquivos preexistentes.
+  if [ -n "$DISPATCHER_TMP" ]; then
+    rm -f "$DISPATCHER_TMP" 2>/dev/null || true
+    DISPATCHER_TMP=""
+  fi
   if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then
     rm -rf "$TMP_DIR"
   fi
 }
 trap cleanup EXIT
+# Sinais tambem precisam acionar o EXIT trap para remover temporarios em voo.
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -691,7 +731,7 @@ validate_tar_entries() {
 
 validate_extracted_bundle() {
   local root="$1"
-  local required
+  local required wrapper
   for required in \
     contabase \
     admin \
@@ -707,6 +747,16 @@ validate_extracted_bundle() {
   [ -z "$(find "$root" -type l -print -quit)" ] || fail "bundle extraido contem symlink."
   [ "$(tr -d '[:space:]' < "$root/VERSION")" = "$TAG" ] \
     || fail "VERSION do artifact nao coincide com a tag $TAG."
+
+  wrapper="$root/lib/contabase-update-wrapper.sh"
+  [ -f "$wrapper" ] && [ ! -L "$wrapper" ] && [ -s "$wrapper" ] \
+    || fail "wrapper de update ausente, vazio ou inseguro no bundle: lib/contabase-update-wrapper.sh"
+  bash -n "$wrapper" 2>/dev/null \
+    || fail "wrapper de update invalido no bundle: lib/contabase-update-wrapper.sh"
+  BUNDLE_WRAPPER_PATH="$wrapper"
+  BUNDLE_WRAPPER_SHA256="$(compute_sha256 "$wrapper")"
+  [ -n "$BUNDLE_WRAPPER_SHA256" ] \
+    || fail "nao foi possivel calcular SHA-256 do wrapper de update."
 }
 
 download_and_validate_bundle() {
@@ -1295,6 +1345,109 @@ record_release_recovery() {
   fi
 }
 
+path_uid() {
+  stat -c %u "$1" 2>/dev/null || stat -f %u "$1"
+}
+
+path_mode() {
+  stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
+}
+
+# Diretorio de destino seguro para publicacao administrativa: real, e quando a
+# execucao e root, de propriedade root e sem escrita por grupo/outros.
+admin_dir_is_secure() {
+  local dir="$1" owner mode
+  [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
+  if [ "$(id -u)" -eq 0 ]; then
+    owner="$(path_uid "$dir")" || return 1
+    [ "$owner" = "0" ] || return 1
+  fi
+  mode="$(path_mode "$dir")" || return 1
+  case "$mode" in
+    ""|*[!0-7]*) return 1 ;;
+  esac
+  if (( (8#$mode & 0022) == 0 )); then
+    return 0
+  fi
+  return 1
+}
+
+# Protege o temporario (modo/ownership) e publica por rename atomico no mesmo
+# diretorio. Nunca escreve in-place no destino; falha anterior ao rename deixa
+# o destino preexistente intocado.
+publish_atomic_tmp() {
+  local tmp="$1"
+  local dest="$2"
+  local mode="$3"
+
+  [ -f "$tmp" ] && [ ! -L "$tmp" ] \
+    || { say "Erro: temporario ausente ou inseguro para ${dest}." >&2; rm -f "$tmp" 2>/dev/null || true; return 1; }
+  # rename sobre diretorio nao substitui o destino: o arquivo seria movido para
+  # dentro dele e a publicacao retornaria sucesso sem persistir o caminho.
+  [ ! -d "$dest" ] \
+    || { say "Erro: destino de publicacao e diretorio: ${dest}." >&2; rm -f "$tmp" 2>/dev/null || true; return 1; }
+  chmod "$mode" "$tmp" \
+    || { say "Erro: falha ao definir modo ${mode} do temporario de ${dest}." >&2; rm -f "$tmp"; return 1; }
+  if [ "$(id -u)" -eq 0 ]; then
+    chown root:root "$tmp" 2>/dev/null \
+      || { say "Erro: falha ao definir ownership root do temporario de ${dest}." >&2; rm -f "$tmp"; return 1; }
+  fi
+  mv -f "$tmp" "$dest" \
+    || { say "Erro: falha no rename atomico de ${dest}." >&2; rm -f "$tmp"; return 1; }
+  return 0
+}
+
+# Copia fonte autenticada para temporario exclusivo no diretorio de destino e
+# publica por rename atomico. SHA-256 conferido antes da copia, no temporario e
+# apos o rename; o destino nunca recebe escrita parcial. DISPATCHER_RENAMED
+# indica se o rename ocorreu (compensacao decide o que desfazer).
+atomic_publish_authenticated_file() {
+  local source="$1"
+  local dest="$2"
+  local expected_sha="$3"
+  local mode="$4"
+  local dest_dir tmp
+
+  DISPATCHER_RENAMED=false
+  dest_dir="$(dirname "$dest")"
+  admin_dir_is_secure "$dest_dir" \
+    || { say "Erro: diretorio inseguro para publicacao atomica: ${dest_dir}" >&2; return 1; }
+  [ ! -d "$dest" ] \
+    || { say "Erro: destino de publicacao e diretorio: ${dest}" >&2; return 1; }
+  [ -f "$source" ] && [ ! -L "$source" ] \
+    || { say "Erro: fonte ausente ou insegura para publicacao: ${source}" >&2; return 1; }
+  [ "$(compute_sha256 "$source")" = "$expected_sha" ] \
+    || { say "Erro: conteudo divergente do autenticado antes da publicacao atomica." >&2; return 1; }
+  tmp="$(mktemp "${dest_dir%/}/.contabase-publish.tmp.XXXXXX")" \
+    || { say "Erro: falha ao criar temporario de publicacao em ${dest_dir}." >&2; return 1; }
+  DISPATCHER_TMP="$tmp"
+  if ! cp -- "$source" "$tmp" || [ "$(compute_sha256 "$tmp")" != "$expected_sha" ]; then
+    rm -f "$tmp" 2>/dev/null || true
+    DISPATCHER_TMP=""
+    say "Erro: copia parcial ou SHA-256 divergente no temporario de ${dest}." >&2
+    return 1
+  fi
+  if ! publish_atomic_tmp "$tmp" "$dest" "$mode"; then
+    rm -f "$tmp" 2>/dev/null || true
+    DISPATCHER_TMP=""
+    say "Erro: falha ao preparar a publicacao atomica de ${dest}." >&2
+    return 1
+  fi
+  DISPATCHER_TMP=""
+  if [ ! -f "$dest" ] || [ -L "$dest" ]; then
+    DISPATCHER_RENAMED=true
+    say "Erro: publicacao atomica resultou em arquivo inseguro: ${dest}" >&2
+    return 1
+  fi
+  if [ "$(compute_sha256 "$dest")" != "$expected_sha" ]; then
+    DISPATCHER_RENAMED=true
+    say "Erro: SHA-256 divergente apos a publicacao atomica de ${dest}." >&2
+    return 1
+  fi
+  DISPATCHER_RENAMED=true
+  return 0
+}
+
 write_install_state() {
   local method="$1"
   local channel="$2"
@@ -1302,9 +1455,15 @@ write_install_state() {
   local repo_path="${4:-}"
   local tmpfile
 
-  mkdir -p "$CONFIG_DIR"
-  tmpfile="$(mktemp "${TMPDIR:-/tmp}/contabase-install-state.XXXXXX")"
-  {
+  STATE_RENAMED=false
+  mkdir -p "$CONFIG_DIR" \
+    || { say "Erro: nao foi possivel preparar ${CONFIG_DIR}." >&2; return 1; }
+  admin_dir_is_secure "$CONFIG_DIR" \
+    || { say "Erro: diretorio do estado inseguro: ${CONFIG_DIR}" >&2; return 1; }
+  # Temporario no mesmo diretorio do destino garante publicacao por rename atomico.
+  tmpfile="$(mktemp "${CONFIG_DIR%/}/.install-state.env.tmp.XXXXXX")" \
+    || { say "Erro: falha ao criar temporario do estado administrativo." >&2; return 1; }
+  if ! {
     printf 'CONTABASE_STATE_VERSION=1\n'
     printf 'CONTABASE_INSTALL_METHOD=%s\n' "$method"
     printf 'CONTABASE_CHANNEL=%s\n' "$channel"
@@ -1328,35 +1487,302 @@ write_install_state() {
       printf 'CONTABASE_CONFIG_DIR=%s\n' "$CONFIG_DIR"
       printf 'CONTABASE_UPDATE_SUPPORT=legacy-release\n'
     fi
-  } > "$tmpfile"
-  install -o root -g root -m 0644 "$tmpfile" "$STATE_FILE"
-  rm -f "$tmpfile"
+  } > "$tmpfile"; then
+    rm -f "$tmpfile" 2>/dev/null || true
+    say "Erro: falha ao gravar o temporario do estado administrativo." >&2
+    return 1
+  fi
+  publish_atomic_tmp "$tmpfile" "$STATE_FILE" 0644 || return 1
+  STATE_RENAMED=true
+  # Commit verificado: o estado so passa a valer se o conteudo publicado conferir.
+  if ! grep -qxF "CONTABASE_INSTALL_METHOD=${method}" "${STATE_FILE:-}" \
+    || ! grep -qxF "CONTABASE_INSTALLED_VERSION=${version}" "${STATE_FILE:-}"; then
+    say "Erro: estado administrativo publicado diverge do esperado." >&2
+    return 1
+  fi
+  return 0
 }
 
 require_release_update_wrapper() {
-  local wrapper_source="${SCRIPT_DIR}/lib/contabase-update-wrapper.sh"
-  [ -f "$wrapper_source" ] && [ ! -L "$wrapper_source" ] \
-    || fail "bundle Release sem wrapper autenticado: ${wrapper_source}; nenhuma alteracao foi executada."
+  local wrapper_source wrapper_sha
+
+  if [ "$BOOTSTRAP_MODE" = true ]; then
+    wrapper_source="${SCRIPT_DIR}/lib/contabase-update-wrapper.sh"
+    [ -f "$wrapper_source" ] && [ ! -L "$wrapper_source" ] && [ -s "$wrapper_source" ] \
+      || fail "bundle Release sem wrapper autenticado: ${wrapper_source}; nenhuma alteracao foi executada."
+    bootstrap_verify_file_digest "$wrapper_source" "$CONTABASE_UPDATE_WRAPPER_SHA256" "wrapper de update" \
+      || fail "wrapper de update divergente do snapshot homologado."
+    wrapper_sha="$(compute_sha256 "$wrapper_source")"
+    if [ -n "$BUNDLE_WRAPPER_PATH" ]; then
+      [ -f "$BUNDLE_WRAPPER_PATH" ] && [ ! -L "$BUNDLE_WRAPPER_PATH" ] \
+        || fail "wrapper de update do artifact ausente ou inseguro."
+      [ "$wrapper_sha" = "$BUNDLE_WRAPPER_SHA256" ] \
+        || fail "wrapper de update do Bootstrap diverge do artifact Release."
+    fi
+  else
+    wrapper_source="$BUNDLE_WRAPPER_PATH"
+    [ -n "$wrapper_source" ] \
+      || fail "bundle Release sem wrapper autenticado; nenhuma alteracao foi executada."
+    [ -f "$wrapper_source" ] && [ ! -L "$wrapper_source" ] && [ -s "$wrapper_source" ] \
+      || fail "wrapper de update ausente, vazio ou inseguro no bundle: ${wrapper_source}"
+    wrapper_sha="$(compute_sha256 "$wrapper_source")"
+    [ -n "$BUNDLE_WRAPPER_SHA256" ] && [ "$wrapper_sha" = "$BUNDLE_WRAPPER_SHA256" ] \
+      || fail "wrapper de update foi alterado apos a validacao do artifact."
+  fi
+
+  RELEASE_WRAPPER_SOURCE="$wrapper_source"
+  RELEASE_WRAPPER_SHA256="$wrapper_sha"
+  say "Wrapper de update validado: ${RELEASE_WRAPPER_SOURCE} (${RELEASE_WRAPPER_SHA256})"
+}
+
+# Registra o estado anterior de um arquivo administrativo para compensacao.
+# Imprime "<kind> <sha256>" onde kind e: absent (nao existia), regular (existia
+# como arquivo; backup em $2 quando o diretorio de trabalho permite) ou other
+# (existia, mas nao e arquivo regular; nao restauravel comprovadamente).
+record_admin_previous() {
+  local file="$1"
+  local backup="$2"
+  local sha
+
+  if [ ! -e "$file" ] && [ ! -L "$file" ]; then
+    printf 'absent \n'
+    return 0
+  fi
+  if [ ! -f "$file" ] || [ -L "$file" ]; then
+    printf 'other \n'
+    return 0
+  fi
+  if [ -z "${TMP_DIR:-}" ] || [ ! -d "$TMP_DIR" ] || ! cp -- "$file" "$backup" 2>/dev/null; then
+    printf 'regular \n'
+    return 0
+  fi
+  sha="$(compute_sha256 "$file")"
+  if [ -n "$sha" ] && [ "$(compute_sha256 "$backup")" = "$sha" ]; then
+    printf 'regular %s\n' "$sha"
+    return 0
+  fi
+  printf 'regular \n'
+  return 0
+}
+
+# Verifica o install-mode publicado: regular, SHA igual ao conteudo gravado e
+# 0644 (em execucao root, ownership root). Rename atomico sozinho nao prova que
+# o caminho final recebeu o arquivo.
+verify_published_install_mode() {
+  local dest="$1"
+  local expected_sha="$2"
+
+  if [ ! -f "$dest" ] || [ -L "$dest" ]; then
+    say "Erro: install-mode publicado ausente ou inseguro: ${dest}" >&2
+    return 1
+  fi
+  if [ -z "$expected_sha" ] || [ "$(compute_sha256 "$dest")" != "$expected_sha" ]; then
+    say "Erro: install-mode publicado diverge do conteudo gravado." >&2
+    return 1
+  fi
+  case "$(path_mode "$dest")" in
+    644|0644) ;;
+    *)
+      say "Erro: install-mode publicado sem modo 0644: ${dest}" >&2
+      return 1
+      ;;
+  esac
+  if [ "$(id -u)" -eq 0 ] && [ "$(path_uid "$dest")" != "0" ]; then
+    say "Erro: install-mode publicado sem ownership root: ${dest}" >&2
+    return 1
+  fi
+  return 0
+}
+
+# Publica o conteudo de install-mode (stdin) por rename atomico.
+write_install_mode_atomic() {
+  local mode_file="$1"
+  local mode_dir tmp expected_sha
+
+  MODE_RENAMED=false
+  mode_dir="$(dirname "$mode_file")"
+  admin_dir_is_secure "$mode_dir" \
+    || { say "Erro: diretorio inseguro para ${mode_file}: ${mode_dir}" >&2; return 1; }
+  tmp="$(mktemp "${mode_dir%/}/.install-mode.tmp.XXXXXX")" \
+    || { say "Erro: falha ao criar temporario de ${mode_file}." >&2; return 1; }
+  if ! cat > "$tmp"; then
+    rm -f "$tmp" 2>/dev/null || true
+    say "Erro: falha ao gravar temporario de ${mode_file}." >&2
+    return 1
+  fi
+  expected_sha="$(compute_sha256 "$tmp")" \
+    || { rm -f "$tmp" 2>/dev/null || true; say "Erro: falha ao medir temporario de ${mode_file}." >&2; return 1; }
+  publish_atomic_tmp "$tmp" "$mode_file" 0644 || return 1
+  MODE_RENAMED=true
+  verify_published_install_mode "$mode_file" "$expected_sha" || return 1
+  return 0
+}
+
+# Verifica o dispatcher publicado: regular, SHA igual ao autenticado, 0755 e,
+# em execucao root, propriedade root.
+verify_published_dispatcher() {
+  local dest="$1"
+  local expected_sha="$2"
+
+  if [ ! -f "$dest" ] || [ -L "$dest" ]; then
+    say "Erro: dispatcher publicado ausente ou inseguro: ${dest}" >&2
+    return 1
+  fi
+  if [ "$(compute_sha256 "$dest")" != "$expected_sha" ]; then
+    say "Erro: dispatcher publicado diverge do bundle autenticado." >&2
+    return 1
+  fi
+  case "$(path_mode "$dest")" in
+    755|0755) ;;
+    *)
+      say "Erro: dispatcher publicado sem modo 0755: ${dest}" >&2
+      return 1
+      ;;
+  esac
+  if [ "$(id -u)" -eq 0 ] && [ "$(path_uid "$dest")" != "0" ]; then
+    say "Erro: dispatcher publicado sem ownership root: ${dest}" >&2
+    return 1
+  fi
+  return 0
+}
+
+# Restaura arquivo administrativo a partir do backup verificado; quando nao
+# havia arquivo antes, remove apenas a publicacao desta propria execucao.
+# Retorna 1 quando a compensacao nao pode ser comprovada.
+restore_admin_file() {
+  local kind="$1"
+  local backup="$2"
+  local expected_sha="$3"
+  local dest="$4"
+  local mode="$5"
+
+  case "$kind" in
+    absent)
+      if rm -f -- "$dest"; then
+        return 0
+      fi
+      say "Erro: falha ao remover a publicacao incompleta: ${dest}" >&2
+      return 1
+      ;;
+    regular)
+      if [ -n "$backup" ] && [ -f "$backup" ] && [ ! -L "$backup" ] \
+        && [ -n "$expected_sha" ] \
+        && [ "$(compute_sha256 "$backup")" = "$expected_sha" ] \
+        && atomic_publish_authenticated_file "$backup" "$dest" "$expected_sha" "$mode"; then
+        return 0
+      fi
+      ;;
+  esac
+  say "Erro: compensacao nao comprovavel para ${dest}; estado anterior indisponivel ou divergente." >&2
+  return 1
+}
+
+# Compensa a publicacao parcial desta execucao na ordem inversa de gravacao
+# (estado -> modo -> dispatcher). Retorna 0 somente quando o estado anterior
+# foi integralmente restaurado.
+compensate_admin_state_failure() {
+  local dispatcher="$1"
+  local mode_file="$2"
+  local compensated=true
+
+  if [ "$STATE_PUBLISHED" = true ]; then
+    restore_admin_file "$STATE_PREV_KIND" "$STATE_PREV_BACKUP" "$STATE_PREV_SHA" "${STATE_FILE:-}" 0644 \
+      || compensated=false
+  fi
+  if [ "$MODE_PUBLISHED" = true ]; then
+    restore_admin_file "$MODE_PREV_KIND" "$MODE_PREV_BACKUP" "$MODE_PREV_SHA" "$mode_file" 0644 \
+      || compensated=false
+  fi
+  if [ "$DISPATCHER_PUBLISHED" = true ]; then
+    restore_admin_file "$DISPATCHER_PREV_KIND" "$DISPATCHER_PREV_BACKUP" "$DISPATCHER_PREV_SHA" "$dispatcher" 0755 \
+      || compensated=false
+  fi
+  [ "$compensated" = true ]
+}
+
+admin_state_recovery_banner() {
+  say "" >&2
+  say "=====================================================================" >&2
+  say "INCONSISTENCIA ADMINISTRATIVA NAO COMPENSADA." >&2
+  say "A instalacao do comando de atualizacao falhou e o estado anterior nao" >&2
+  say "pode ser restaurado com seguranca. Nao confie em install-state.env nem" >&2
+  say "em install-mode ate verificar manualmente:" >&2
+  say "  - /usr/local/bin/contabase-update (sha256sum contra o bundle validado)" >&2
+  say "  - ${STATE_FILE:-<estado administrativo>}" >&2
+  say "Nenhuma atualizacao deve ser executada sem verificacao administrativa." >&2
+  say "=====================================================================" >&2
+}
+
+# Compensa o que foi publicado nesta execucao e encerra com a causa informada.
+abort_admin_state_publication() {
+  local dispatcher="$1"
+  local mode_file="$2"
+  local context="$3"
+
+  if ! compensate_admin_state_failure "$dispatcher" "$mode_file"; then
+    admin_state_recovery_banner
+  fi
+  fail "${context}"
 }
 
 install_update_command() {
   local update_wrapper="/usr/local/bin/contabase-update"
   local mode_file="/etc/contabase/install-mode"
-  local wrapper_source="${SCRIPT_DIR}/lib/contabase-update-wrapper.sh"
+  local mode_dir
+  local wrapper_source
 
   require_release_update_wrapper
+  wrapper_source="$RELEASE_WRAPPER_SOURCE"
+  [ "$(compute_sha256 "$wrapper_source")" = "$RELEASE_WRAPPER_SHA256" ] \
+    || fail "wrapper de update foi alterado antes da instalacao."
 
-  write_install_state "release" "$INSTALL_CHANNEL" "$TAG" ""
+  mode_dir="$(dirname "$mode_file")"
+  mkdir -p "$mode_dir" || fail "nao foi possivel preparar ${mode_dir}."
 
-  mkdir -p "$(dirname "$mode_file")"
-  printf '%s\n' "release" > "$mode_file"
-  chown root:root "$mode_file" 2>/dev/null || true
-  chmod 0644 "$mode_file"
+  # Protocolo de publicacao/compensacao: registra o estado anterior, publica
+  # dispatcher -> install-mode -> install-state.env por rename atomico e
+  # compensa na ordem inversa quando qualquer etapa falhar. O estado
+  # administrativo so e gravado depois do dispatcher comprovado; rename atomico
+  # individual nao torna os tres arquivos uma unica transacao, por isso toda
+  # falha aciona compensacao verificada ou banner de recuperacao manual.
+  DISPATCHER_PREV_BACKUP="${TMP_DIR:-}/dispatcher.previous"
+  read -r DISPATCHER_PREV_KIND DISPATCHER_PREV_SHA \
+    < <(record_admin_previous "$update_wrapper" "$DISPATCHER_PREV_BACKUP") || true
+  MODE_PREV_BACKUP="${TMP_DIR:-}/install-mode.previous"
+  read -r MODE_PREV_KIND MODE_PREV_SHA \
+    < <(record_admin_previous "$mode_file" "$MODE_PREV_BACKUP") || true
+  STATE_PREV_BACKUP="${TMP_DIR:-}/install-state.previous"
+  read -r STATE_PREV_KIND STATE_PREV_SHA \
+    < <(record_admin_previous "${STATE_FILE:-}" "$STATE_PREV_BACKUP") || true
+  DISPATCHER_PUBLISHED=false
+  MODE_PUBLISHED=false
+  STATE_PUBLISHED=false
 
-  install -o root -g root -m 0755 "$wrapper_source" "$update_wrapper"
+  if ! atomic_publish_authenticated_file "$wrapper_source" "$update_wrapper" "$RELEASE_WRAPPER_SHA256" 0755; then
+    [ "$DISPATCHER_RENAMED" != true ] || DISPATCHER_PUBLISHED=true
+    abort_admin_state_publication "$update_wrapper" "$mode_file" \
+      "falha ao publicar o dispatcher autenticado de forma atomica."
+  fi
+  if ! verify_published_dispatcher "$update_wrapper" "$RELEASE_WRAPPER_SHA256"; then
+    DISPATCHER_PUBLISHED=true
+    abort_admin_state_publication "$update_wrapper" "$mode_file" \
+      "dispatcher publicado falhou na verificacao pos-publicacao."
+  fi
+  DISPATCHER_PUBLISHED=true
 
-  chown root:root "$update_wrapper" 2>/dev/null || true
-  chmod 0755 "$update_wrapper"
+  if ! write_install_mode_atomic "$mode_file" <<< "release"; then
+    [ "$MODE_RENAMED" != true ] || MODE_PUBLISHED=true
+    abort_admin_state_publication "$update_wrapper" "$mode_file" \
+      "falha ao publicar ${mode_file} de forma atomica."
+  fi
+  MODE_PUBLISHED=true
+
+  if ! write_install_state "release" "$INSTALL_CHANNEL" "$TAG" ""; then
+    [ "$STATE_RENAMED" != true ] || STATE_PUBLISHED=true
+    abort_admin_state_publication "$update_wrapper" "$mode_file" \
+      "falha ao publicar ${STATE_FILE} de forma atomica."
+  fi
+  STATE_PUBLISHED=true
 
   if [ ! -e /usr/local/bin/cb-update ]; then
     ln -s contabase-update /usr/local/bin/cb-update 2>/dev/null || true
@@ -1371,7 +1797,11 @@ install_update_command() {
 install_bundle() {
   ensure_user_and_directories
   manage_env_file
-  if [ -e "$INSTALL_DIR" ] || [ -f "$SERVICE_FILE" ]; then
+  if [ "$BOOTSTRAP_MODE" = true ]; then
+    # Contrato Bootstrap inicial: nao ha servico nem runtime anterior validado.
+    # O diretorio vazio criado pelo adaptador nao justifica systemctl stop.
+    :
+  elif [ -f "$SERVICE_FILE" ] || [ -f "$INSTALL_DIR/contabase" ]; then
     systemctl stop contabase || fail "nao foi possivel parar o servico antes da troca do bundle."
   fi
   stage_and_swap_bundle
@@ -1488,13 +1918,13 @@ main() {
   fi
 
   download_and_validate_bundle
+  require_release_update_wrapper
 
   if [ "$VALIDATE_ONLY" = true ]; then
     say "Validacao concluida; nenhuma instalacao foi alterada."
     return
   fi
 
-  require_release_update_wrapper
   install_bundle
   say ""
   say "ContaBase ${TAG} instalado e saudavel."
@@ -1509,7 +1939,17 @@ if [ "$BOOTSTRAP_MODE" = true ]; then
   [ -f "$BOOTSTRAP_LIB" ] || fail "biblioteca do adaptador Bootstrap ausente."
   # shellcheck source=lib/contabase-bootstrap-adapter.sh
   . "$BOOTSTRAP_LIB" || fail "falha ao carregar o contrato do adaptador Bootstrap."
-  bootstrap_sanitized_reexec "$SCRIPT_SOURCE" "$@"
+  # Exatamente uma instalacao: o processo nao saneado apenas reexecuta; somente
+  # o filho saneado entra no adaptador. A origem saneada e comprovada pelo
+  # marcador em argv mais o atestado integral do ambiente; o valor herdado de
+  # CONTABASE_BOOTSTRAP_SANITIZED nao e prova de nada. Sem o exit, o pai
+  # repetiria install.
+  if [ "$BOOTSTRAP_SANITIZED_ENTRY" != true ]; then
+    bootstrap_sanitized_reexec "$SCRIPT_SOURCE" "$@"
+    exit $?
+  fi
+  bootstrap_attest_sanitized_environment \
+    || fail "ambiente nao comprovadamente saneado; instalacao bloqueada."
   bootstrap_release_main "$@"
   exit $?
 fi

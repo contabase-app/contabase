@@ -3,6 +3,63 @@
 Este documento é o índice principal das notas de lançamento do ContaBase.
 Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
+## ContaBase v1.0.0-beta.9
+
+A Beta 9 corrige a distribuição standalone da linha Beta 8. Os pacotes `contabase-linux-amd64.tar.gz` e `contabase-linux-arm64.tar.gz` passam a incluir `contabase/lib/contabase-update-wrapper.sh`, que o instalador da mesma tag exige dentro do bundle autenticado. Não há alteração de regra financeira, schema, autenticação da aplicação, RBAC, workspace ou interface.
+
+**Por que a Beta 9 passa a ser a versão recomendada**
+
+Os tarballs publicados de `v1.0.0-beta.8` não continham o wrapper, e o instalador standalone daquela tag exige o arquivo no bundle, sem fallback. A instalação nova pelo caminho Release binário ficou impossível com os artefatos publicados, com falha fechada antes de qualquer mutação. Os downloads e checksums da Beta 8 permaneceram íntegros; nada nesta nota afirma que toda instalação Beta 8 existente esteja comprometida, e instalações concluídas não perdem dados.
+
+**Correções**
+
+- **Bundle Release completo:** o wrapper de update é incluído no pacote e conferido por SHA-256 contra o código-fonte antes de o pacote ser aceito.
+- **Instalador Release:** o wrapper é validado dentro do bundle antes de qualquer escrita, o SHA-256 é conferido antes e depois da instalação, o dispatcher é instalado atomicamente e o dispatcher anterior é preservado em falha. Destino que aponta para diretório é rejeitado, `install-mode` é verificado e a primeira instalação não interrompe serviço inexistente.
+- **Bootstrap autenticado:** executa uma única vez, reexecuta com ambiente sanitizado e recusa variável externa que tente contornar a sanitização. Os pins independentes de commit, versão e checksum são preservados, e não existe fallback para download não autenticado.
+- **Toolchain:** `go.mod` e `Dockerfile` passam a usar Go 1.26.11.
+- **Portabilidade:** o teste F2 usa `stat` compatível com GNU e BSD, e a fixture de crash SQLite/WAL do teste de backup/restore foi estabilizada.
+- **Pipeline:** o release-validation canônico passa a executar o preflight do instalador e um teste de artifact real, e falha quando o wrapper está ausente, vazio ou divergente.
+
+**Instalação**
+
+- Confirme a disponibilidade da tag `v1.0.0-beta.9`, da GitHub Release e dos artefatos do método escolhido.
+- Release binário em LXC/VPS com systemd: helper da tag a partir de um checkout completo, com artifacts `amd64`/`arm64` e verificação de `checksums.txt`.
+- Docker: imagem `ghcr.io/contabase-app/contabase:v1.0.0-beta.9` por tag, ou a entrada Beta do Bootstrap, que despacha Docker e exige admissão no catálogo do canal.
+- Source: build local com Go/Node.
+- Use uma versão fixa; não use `main`, `beta`, `dev`, `stable` ou `latest` como versão de instalação.
+
+**Atualização**
+
+- `v1.0.0-beta.8` (schema 83) → `v1.0.0-beta.9`: nenhuma migration, nenhuma reescrita de dados.
+- `v1.0.0-beta.7` (schema 82) → `v1.0.0-beta.9`: a migration 83 é aplicada uma vez na inicialização, com backup pré-migration verificável.
+- Docker por tag, updater Release autenticado e update Source por tag continuam suportados; `flock` é obrigatório nos caminhos que o exigem.
+- Faça backup antes de atualizar. Não há downgrade automático após o schema 83.
+
+**Compatibilidade e banco**
+
+- Schema 83, sem migration nova.
+- Contas, transações, faturas, pagamentos, recorrências, limites, transferências e Investimentos são preservados.
+- Isolamento por `workspace_id` e separação Personal/Business inalterados.
+- Investimentos continua sujeito à flag da instância: instalações novas nascem com `CONTABASE_FEATURE_INVESTMENTS=false` e atualizações preservam o valor existente.
+
+**Segurança e integridade**
+
+- O instalador falha fechado com wrapper ausente, vazio, inseguro, inválido ou divergente do pin.
+- Checksums dos artifacts são verificados antes da extração; o wrapper é conferido antes e depois da instalação.
+- O backup pré-migration mantém `.manifest.json` com SHA-256, tamanho, schema e data. O checksum do manifesto é evidência de integridade, não autenticação criptográfica contra substituição simultânea de banco e manifesto.
+
+**Limitações**
+
+- A migration 83 não possui down migration; o rollback é um restore explícito do snapshot pré-migration e descarta gravações posteriores.
+- Backups antigos sem `.manifest.json` exigem o modo legado explícito no painel.
+- A homologação dos bytes efetivamente distribuídos e a promoção de `:beta` e do canal são gates separados, posteriores à tag.
+- O link "Apoiar o Projeto" depende da página `/apoiar/` do site oficial; `CONTABASE_SUPPORT_URL` substitui o destino.
+- O Source Bootstrap histórico não possui atualização automática suportada.
+- Testes manuais com leitor de tela e Safari/WebKit não foram executados nesta versão.
+- A pendência herdada da Beta 7 sobre recorrências legadas permanece aberta.
+
+Consulte as [notas da versão](docs/releases/v1.0.0-beta.9.md) e o [Guia Completo de Instalação](https://contabase.pages.dev/setup/).
+
 ## ContaBase v1.0.0-beta.8
 
 A Beta 8 remove definitivamente o domínio de Reservas, avança o schema para 83 e promove o Dashboard V2 a página principal do aplicativo. A migration `reserve_physical_removal` elimina tabelas, histórico, notificações, rotas, serviços e telas de Reservas; os dados financeiros são preservados e a migration aborta se houver vínculo histórico protegido.

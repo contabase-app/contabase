@@ -9,7 +9,37 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Corrigido**: correções de bugs.
 * **Removido**: funcionalidades ou arquivos removidos.
 * **Segurança**: mudanças relacionadas à segurança.
-* **Limitações conhecidas**: pontos ainda não resolvidos ou planejados para versões futuras.
+* **Limitações conhecidas**: pontos ainda não resolvidos nesta versão.
+
+## [v1.0.0-beta.9] — distribuição standalone corrigida e instalador endurecido
+
+### Adicionado
+- **Wrapper autenticado nos pacotes Release:** `contabase-linux-amd64.tar.gz` e `contabase-linux-arm64.tar.gz` passam a incluir `contabase/lib/contabase-update-wrapper.sh`. A Beta 8 publicou pacotes sem esse arquivo, e o instalador standalone da mesma tag exige o wrapper dentro do bundle autenticado, sem fallback; a instalação nova pelo caminho Release ficou impossível com os artefatos publicados.
+- **Teste de artifact real:** `scripts/tests/test_release_artifact_installer_wrapper.sh` valida, sobre o pacote gerado, presença, conteúdo, digest e recusa quando o wrapper está ausente ou divergente.
+- **Preflight do instalador no release-validation:** o pipeline canônico passa a executar `scripts/tests/test_installer_update_preflight.sh`, cobrindo dispatcher atômico, preservação do dispatcher anterior em falha, `install-mode`, rejeição de destino-diretório, primeira instalação sem serviço existente, execução única do Bootstrap, reexec com ambiente sanitizado e pins independentes.
+- **Cobertura de portabilidade do F2:** `test_update_docker_tag.sh` passa a usar `stat` compatível com GNU e BSD.
+
+### Alterado
+- **Instalador Release:** o wrapper é validado dentro do bundle antes de qualquer escrita, com SHA-256 conferido antes e depois da instalação e sem fallback para download não autenticado.
+- **Bootstrap autenticado:** reexec com ambiente sanitizado; variável externa não contorna a sanitização; execução única preservada.
+- **Go 1.26.11:** `go.mod` e `Dockerfile` passam a usar a toolchain 1.26.11.
+- **Fixture de crash SQLite/WAL:** `test_backup_restore_package.sh` estabiliza a fixture de crash e a limpeza de sinais, sem alterar o código de backup ou restore.
+
+### Corrigido
+- **Instalação standalone impossível na Beta 8:** a causa era o bundle Release sem `lib/contabase-update-wrapper.sh`. O instalador falhava fechado antes de qualquer mutação, e os downloads e checksums publicados permaneceram íntegros.
+- **Preflight do instalador fora do pipeline:** a validação do instalador Release passou a integrar o release-validation canônico, em vez de depender de execução manual.
+
+### Compatibilidade
+- Schema permanece 83; nenhuma migration nova é adicionada.
+- Instalações em schema 83 (Beta 8) atualizam sem etapa de banco.
+- Instalações em schema 82 (Beta 7) aplicam a migration 83 uma vez, com backup pré-migration verificável.
+- Nenhuma alteração em cálculo financeiro, autenticação da aplicação, RBAC, workspace, faturas, pagamentos, recorrências ou transferências.
+
+### Limitações conhecidas
+- A migration 83 continua sem down migration; o rollback exige restore do snapshot pré-migration.
+- A promoção de `:beta` e do canal de instalação depende da homologação dos bytes distribuídos e de autorização própria.
+- A pendência herdada da Beta 7 sobre recorrências legadas permanece aberta: a movimentação pode ignorar ocorrências em faturas já pagas.
+- Testes manuais com leitor de tela e Safari/WebKit não foram executados nesta versão.
 
 ## [v1.0.0-beta.8] — Dashboard V2, remoção de Reservas e atualização autenticada
 

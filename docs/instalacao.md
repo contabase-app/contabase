@@ -62,10 +62,10 @@ Use sempre uma versão publicada no GitHub Releases.
 
 ## 2. Use o menu dos scripts de uma tag (fluxo legado)
 
-As etapas seguintes descrevem `scripts/install.sh` de um checkout completo, não o menu do Bootstrap. O exemplo da Beta 8 só deve ser executado após confirmar a tag e os artefatos publicados para o método escolhido, sem alterar instalações existentes:
+As etapas seguintes descrevem `scripts/install.sh` de um checkout completo, não o menu do Bootstrap. O exemplo da Beta 9 só deve ser executado após confirmar a tag e os artefatos publicados para o método escolhido, sem alterar instalações existentes:
 
 ```bash
-export CONTABASE_VERSION=v1.0.0-beta.8
+export CONTABASE_VERSION=v1.0.0-beta.9
 git clone --branch "$CONTABASE_VERSION" --depth 1 https://github.com/contabase-app/contabase.git contabase
 cd contabase
 chmod +x scripts/install.sh

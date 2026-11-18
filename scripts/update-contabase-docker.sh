@@ -262,7 +262,7 @@ done
 # Modo tag:
 #   Instalacoes com checkout detached em tag oficial exigem CONTABASE_VERSION
 #   explicito. Nenhuma busca automatica de "ultima tag" e feita.
-#   Ex.: CONTABASE_VERSION=v1.0.0-beta.8 ./scripts/update-contabase-docker.sh --yes
+#   Ex.: CONTABASE_VERSION=v1.0.0-beta.9 ./scripts/update-contabase-docker.sh --yes
 #
 # Uso:
 #   ./scripts/update-contabase-docker.sh                    # Atualização segura interativa
