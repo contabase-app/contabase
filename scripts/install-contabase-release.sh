@@ -235,6 +235,9 @@ EOF
 
 cleanup() {
   # Remove apenas temporarios desta execucao; nunca apaga arquivos preexistentes.
+  if [ -n "${STAGING_DIR:-}" ] && [ -d "${STAGING_DIR:-}" ]; then
+    rm -rf "$STAGING_DIR"
+  fi
   if [ -n "$DISPATCHER_TMP" ]; then
     rm -f "$DISPATCHER_TMP" 2>/dev/null || true
     DISPATCHER_TMP=""
@@ -607,6 +610,9 @@ require_commands() {
   for cmd in curl tar install openssl awk grep find mktemp cp wc tr; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
+  if [ "${VALIDATE_ONLY:-false}" != true ]; then
+    command -v runuser >/dev/null 2>&1 || missing+=("runuser")
+  fi
   if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
     missing+=("sha256sum ou shasum")
   fi
@@ -1257,17 +1263,69 @@ render_service_file() {
   install -o root -g root -m 0644 "$service_staging" "$SERVICE_FILE" || return 1
 }
 
-stage_and_swap_bundle() {
+# A extracao usa --no-same-permissions. Quando o instalador roda com umask
+# restritivo, diretorios chegam como 0700 e arquivos como 0600. Normalize
+# somente a arvore do bundle e comprove o acesso do usuario do servico antes
+# de parar ou substituir qualquer runtime.
+normalize_bundle_tree() {
+  local root="$1"
+  [ -d "$root" ] && [ ! -L "$root" ] || return 1
+  [ -z "$(find "$root" -xdev -type l -print -quit)" ] || return 1
+  find "$root" -xdev -type d -exec chmod 0755 {} + || return 1
+  find "$root" -xdev -type f -exec chmod 0644 {} + || return 1
+  chmod 0755 "$root" "$root/contabase" "$root/admin" \
+    "$root/lib/contabase-update-wrapper.sh" || return 1
+  return 0
+}
+
+service_user_can_access_bundle() {
+  local root="$1" user="$2" current sample
+  [ -d "$root" ] && [ ! -L "$root" ] || return 1
+  current="$root"
+  while [ "$current" != "/" ]; do
+    runuser -u "$user" -- test -x "$current" || return 1
+    current="$(dirname "$current")"
+  done
+  runuser -u "$user" -- test -x "$root" || return 1
+  runuser -u "$user" -- test -x "$root/assets" || return 1
+  sample="$(find "$root/assets" -xdev -type f -print -quit)"
+  [ -n "$sample" ] || return 1
+  runuser -u "$user" -- test -r "$sample" || return 1
+  runuser -u "$user" -- test -x "$root/templates" || return 1
+  sample="$(find "$root/templates" -xdev -type f -print -quit)"
+  [ -n "$sample" ] || return 1
+  runuser -u "$user" -- test -r "$sample" || return 1
+  runuser -u "$user" -- test -r "$root/VERSION" || return 1
+  runuser -u "$user" -- test -x "$root/contabase" || return 1
+  runuser -u "$user" -- sh -c 'cd "$1"' sh "$root" || return 1
+  return 0
+}
+
+stage_bundle() {
   local bundle_root timestamp
   bundle_root="${EXTRACT_DIR}/contabase"
   timestamp="$(date +%Y%m%d-%H%M%S)"
   STAGING_DIR="${INSTALL_DIR}.staging.${timestamp}.$$"
-  PREVIOUS_DIR="${INSTALL_DIR}.previous.${timestamp}.$$"
 
-  install -d -o root -g root -m 0755 "$STAGING_DIR"
-  cp -a "${bundle_root}/." "$STAGING_DIR/"
-  chown -R root:root "$STAGING_DIR"
-  chmod 0755 "$STAGING_DIR/contabase" "$STAGING_DIR/admin"
+  install -d -o root -g root -m 0755 "$STAGING_DIR" \
+    || fail "nao foi possivel criar o diretorio de staging."
+  cp -a "${bundle_root}/." "$STAGING_DIR/" \
+    || fail "nao foi possivel copiar o bundle para staging."
+  chown -R root:root "$STAGING_DIR" \
+    || fail "nao foi possivel ajustar ownership do staging."
+  normalize_bundle_tree "$STAGING_DIR" \
+    || fail "nao foi possivel normalizar permissoes do bundle em staging."
+  service_user_can_access_bundle "$STAGING_DIR" "$APP_USER" \
+    || fail "bundle em staging nao e acessivel pelo usuario ${APP_USER}; instalacao abortada antes de parar ou substituir o runtime."
+  say "Bundle em staging validado para o usuario ${APP_USER}."
+}
+
+activate_staged_bundle() {
+  local timestamp
+  timestamp="$(date +%Y%m%d-%H%M%S)"
+  PREVIOUS_DIR="${INSTALL_DIR}.previous.${timestamp}.$$"
+  [ -n "$STAGING_DIR" ] && [ -d "$STAGING_DIR" ] && [ ! -L "$STAGING_DIR" ] \
+    || fail "staging do bundle ausente ou inseguro."
 
   if [ -e "$INSTALL_DIR" ]; then
     if [ "$BOOTSTRAP_MODE" = true ]; then
@@ -1796,6 +1854,10 @@ install_update_command() {
 
 install_bundle() {
   ensure_user_and_directories
+  # Prepare and validate the new bundle while any current runtime is still
+  # running. A permission failure aborts before the service is stopped or
+  # before the existing environment is modified.
+  stage_bundle
   manage_env_file
   if [ "$BOOTSTRAP_MODE" = true ]; then
     # Contrato Bootstrap inicial: nao ha servico nem runtime anterior validado.
@@ -1804,7 +1866,7 @@ install_bundle() {
   elif [ -f "$SERVICE_FILE" ] || [ -f "$INSTALL_DIR/contabase" ]; then
     systemctl stop contabase || fail "nao foi possivel parar o servico antes da troca do bundle."
   fi
-  stage_and_swap_bundle
+  activate_staged_bundle
   if ! render_service_file; then
     rollback_bundle || true
     fail "falha ao instalar a unit systemd; rollback do bundle solicitado."

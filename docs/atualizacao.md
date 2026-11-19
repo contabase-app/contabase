@@ -47,7 +47,7 @@ Ele não se aplica a instalações Source Bootstrap.
 - **Dispatcher Beta 7:** no modo Docker, executa o updater presente no checkout e repassa a versão explícita em `CONTABASE_VERSION`. Com uma versão explícita, seleciona `pinned`; não autentica completamente o bundle antes de executar o helper. Esse é o contrato legado da transição para a Beta 8.
 - A validação da origem e da identidade da tag feita **dentro do helper já iniciado** não equivale à autenticação do bundle antes da execução. A chamada direta do helper também não oferece as garantias do dispatcher Beta 8.
 
-A Beta 9 mantém o mesmo dispatcher autenticado introduzido na Beta 8. Como o comentário do dispatcher afirma, uma versão explícita precisa estar autorizada pelo canal ou pelo catálogo `releases-v1.json`; até a promoção do canal, `sudo contabase-update v1.0.0-beta.9` falha fechado, sem alterar a instalação.
+A Beta 10 mantém o mesmo dispatcher autenticado introduzido na Beta 8. Como o comentário do dispatcher afirma, uma versão explícita precisa estar autorizada pelo canal ou pelo catálogo `releases-v1.json`; até a promoção do canal, `sudo contabase-update v1.0.0-beta.10` falha fechado, sem alterar a instalação.
 
 O checkout da tag Beta 8 troca os scripts locais, mas não substitui por si só o comando instalado em `/usr/local/bin/contabase-update`. O dispatcher Beta 8 é reinstalado ao final de uma atualização concluída com sucesso.
 
@@ -389,6 +389,17 @@ A atualização não deve:
 - reativar uma conta legada com senha pública.
 
 Se precisar restaurar backup, faça isso manualmente e com cuidado.
+
+## Beta 10: permissões e preflight antes da troca de runtime
+
+A atualização para `v1.0.0-beta.10` não aplica migration nova. O schema permanece 83 e os dados não são reescritos.
+
+- De `v1.0.0-beta.9` ou `v1.0.0-beta.8` (schema 83): nenhuma etapa de banco.
+- De `v1.0.0-beta.7` (schema 82): a migration 83 é aplicada uma vez na inicialização, com backup pré-migration verificável.
+- O instalador e o updater Release preparam o bundle em staging e validam o acesso do usuário systemd não-root antes de parar o serviço ou substituir o runtime; falha de permissão aborta sem alterar a instalação.
+- Symlinks no bundle são rejeitados; o bundle anterior é preservado em falha e o staging é removido.
+- O estado (`contabase.env` e `install-state.env`) só é publicado após restart, healthcheck e verificação do runtime.
+- Faça backup antes de atualizar e não use `docker compose pull && up -d` como substituto do updater.
 
 ## Beta 9: distribuição standalone corrigida
 

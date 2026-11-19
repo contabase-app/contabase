@@ -11,6 +11,35 @@ Este arquivo organiza as mudanças por versão e por tipo:
 * **Segurança**: mudanças relacionadas à segurança.
 * **Limitações conhecidas**: pontos ainda não resolvidos nesta versão.
 
+## [v1.0.0-beta.10] — permissões do bundle e preflight antes da troca de runtime
+
+### Adicionado
+- **Preflight de acesso pelo usuário do serviço:** instalador e updater Release normalizam a árvore do bundle em staging (diretórios `0755`, arquivos `0644`, binários e wrapper `0755`) e comprovam com `runuser` que o usuário systemd não-root consegue atravessar os ancestrais, abrir o diretório, ler `VERSION`, assets e templates, executar o binário e entrar no bundle antes de qualquer parada.
+- **Testes de regressão de permissões:** `scripts/tests/test_release_bundle_permissions.sh` cobre umasks restritivos, rejeição de symlink e a ordem staging → parada; `scripts/tests/test_release_update_permissions_systemd.sh` cobre o fluxo completo de atualização Beta 7 → Beta 9 com systemd real, usuário não-root e umask 077. O teste de permissões passa a integrar o `release-validation` canônico.
+
+### Alterado
+- **Instalador e updater Release:** o staging é preparado e validado enquanto o runtime atual continua ativo. Falha de permissão aborta antes de parar o serviço ou substituir o bundle.
+- **Ativação do bundle:** o swap só ocorre a partir de staging validado e sem symlink; o bundle anterior é preservado.
+- **Limpeza de staging:** o trap de saída remove o staging desta execução em caso de falha.
+- **Publicação de estado:** `contabase.env` e `install-state.env` continuam sendo gravados somente após restart, healthcheck e verificação do runtime.
+
+### Corrigido
+- **Atualização binária sob umask restritivo:** a extração feita pelo wrapper com umask 077 deixava diretórios `0700` e arquivos `0600`; o serviço não conseguia acessar o bundle e o healthcheck falhava. A Beta 10 normaliza o staging e valida o acesso do usuário do serviço antes da troca.
+
+### Compatibilidade
+- Schema 83; nenhuma migration nova é adicionada.
+- Instalações em schema 83 (Beta 8 e Beta 9) atualizam sem etapa de banco.
+- Instalações em schema 82 (Beta 7) aplicam a migration 83 uma vez, com backup pré-migration verificável.
+- Nenhuma alteração em cálculo financeiro, autenticação da aplicação, RBAC, workspace, faturas, pagamentos, recorrências ou Investimentos.
+- A Beta 9 pública permanece imutável. A Beta 10 é candidata em preparação nesta entrada; esta seção não comprova publicação nem homologação.
+
+### Limitações conhecidas
+- A migration 83 continua sem down migration; o rollback exige restore do snapshot pré-migration.
+- A ativação do Release Bootstrap permanece em gate separado e depende da homologação da Beta 10 e da publicação do canal.
+- A promoção de GHCR `:beta` e do canal de instalação depende da homologação dos bytes distribuídos e de autorização própria.
+- A pendência herdada da Beta 7 sobre recorrências legadas permanece aberta: a movimentação pode ignorar ocorrências em faturas já pagas.
+- Testes manuais com leitor de tela e Safari/WebKit não foram executados nesta versão.
+
 ## [v1.0.0-beta.9] — distribuição standalone corrigida e instalador endurecido
 
 ### Adicionado

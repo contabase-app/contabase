@@ -6,7 +6,7 @@
     </picture>
   </h1>
   <p>Gerenciador financeiro self-hosted, privado e de código aberto.</p>
-  <p><strong>v1.0.0-beta.9</strong></p>
+  <p><strong>v1.0.0-beta.10</strong></p>
   <p>
     <a href="https://contabase.pages.dev/"><strong>Acessar a Página Oficial</strong></a><br>
     <a href="https://contabase.pages.dev/setup/"><strong>Guia Completo de Instalação</strong></a>
@@ -30,7 +30,7 @@ Não é SaaS, não possui telemetria e não envia seus dados financeiros para te
 
 ## Instalação
 
-Acesse o [Guia Completo de Instalação](https://contabase.pages.dev/setup/) para escolher o método e a versão distribuída. Antes de executar comandos para a Beta 9, confirme a disponibilidade da tag, da Release e dos artefatos exigidos pelo método; a documentação da versão não comprova sua publicação.
+Acesse o [Guia Completo de Instalação](https://contabase.pages.dev/setup/) para escolher o método e a versão distribuída. Antes de executar comandos para a Beta 10, confirme a disponibilidade da tag, da Release e dos artefatos exigidos pelo método; a documentação da versão não comprova sua publicação.
 
 Os guias técnicos locais detalham [instalação](docs/instalacao.md), [Docker](docs/instalacao-docker.md), [LXC/VPS](docs/instalacao-lxc-vps.md), [atualização](docs/atualizacao.md) e [primeiros passos](docs/primeiros-passos.md).
 
@@ -45,7 +45,8 @@ Os guias técnicos locais detalham [instalação](docs/instalacao.md), [Docker](
 - [Segurança](SECURITY.md)
 - [Privacidade](PRIVACY.md)
 - [Termos de uso](TERMS.md)
-- [ContaBase v1.0.0-beta.9](docs/releases/v1.0.0-beta.9.md)
+- [ContaBase v1.0.0-beta.10](docs/releases/v1.0.0-beta.10.md)
+- [Beta 9 publicada — v1.0.0-beta.9](docs/releases/v1.0.0-beta.9.md)
 - [Beta anterior — v1.0.0-beta.8](docs/releases/v1.0.0-beta.8.md)
 - [Histórico da Beta 7 — v1.0.0-beta.7](docs/releases/v1.0.0-beta.7.md)
 - [Beta publicada anterior — v1.0.0-beta.6](docs/releases/v1.0.0-beta.6.md)
@@ -56,13 +57,17 @@ Os guias técnicos locais detalham [instalação](docs/instalacao.md), [Docker](
 - [Histórico da beta.2](docs/releases/v1.0.0-beta.2.md)
 - [Histórico da primeira beta](docs/releases/v0.1.0-beta.1.md)
 
-## Novidades da Beta 9
+## Novidades da Beta 10
 
-A Beta 9 corrige a distribuição standalone da linha Beta 8 e endurece o instalador. Os pacotes Release passam a incluir o wrapper autenticado de update, que o instalador standalone exige dentro do bundle; a Beta 8 publicou pacotes sem esse arquivo e a instalação nova por Release ficou impossível, com falha fechada antes de qualquer mutação e downloads íntegros. O instalador valida o wrapper antes de qualquer escrita, confere o SHA-256 antes e depois da instalação, instala o dispatcher de forma atômica, preserva o dispatcher anterior em falha e recusa destino que aponta para diretório. O Bootstrap autenticado executa uma única vez, reexecuta com ambiente sanitizado e não aceita variável externa que contorne a sanitização. A toolchain passa a Go 1.26.11 e o pipeline canônico passa a executar o preflight do instalador e um teste de artifact real.
+A Beta 10 corrige a falha de permissões da distribuição binária que afetava a atualização sob umask restritivo. O instalador e o updater Release normalizam a árvore do bundle em staging e comprovam com `runuser` que o usuário systemd não-root consegue acessar `VERSION`, assets, templates e o binário antes de parar o serviço ou substituir o runtime. Symlinks são rejeitados, o bundle anterior permanece intacto em falha, o staging é removido pelo trap e o estado só é publicado após healthcheck.
 
-A versão não altera regra financeira, schema, autenticação, RBAC, workspace ou interface. O schema permanece 83: atualizações da Beta 8 não executam migration; atualizações da Beta 7 aplicam a migration 83 uma vez, com backup pré-migration verificável.
+A versão não altera regra financeira, schema, autenticação, RBAC, workspace ou interface. O schema permanece 83: atualizações da Beta 8 ou Beta 9 não executam migration; atualizações da Beta 7 aplicam a migration 83 uma vez, com backup pré-migration verificável. A Beta 10 é uma candidata em preparação e ainda não foi publicada nem homologada.
 
-Consulte as [notas da Beta 9](docs/releases/v1.0.0-beta.9.md).
+Consulte as [notas da Beta 10](docs/releases/v1.0.0-beta.10.md).
+
+## Beta 9 publicada
+
+A Beta 9 corrigiu a distribuição standalone da linha Beta 8 e endureceu o instalador Release. Os pacotes passaram a incluir o wrapper autenticado de update, validado por SHA-256 antes e depois da instalação, e o pipeline canônico passou a executar o preflight do instalador e um teste de artifact real. Consulte as [notas da Beta 9](docs/releases/v1.0.0-beta.9.md).
 
 ## Destaques da Beta v1.0.0-beta.8
 

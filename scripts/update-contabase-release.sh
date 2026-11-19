@@ -643,6 +643,9 @@ EOF
 }
 
 cleanup() {
+  if [ -n "${STAGING_DIR:-}" ] && [ -d "${STAGING_DIR:-}" ]; then
+    rm -rf "$STAGING_DIR"
+  fi
   if [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ]; then
     rm -rf "$TMP_DIR"
   fi
@@ -760,6 +763,9 @@ require_commands() {
   for cmd in curl tar install openssl awk sed grep find mktemp cp wc tr sqlite3; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
+  if [ "${VALIDATE_ONLY:-false}" != true ]; then
+    command -v runuser >/dev/null 2>&1 || missing+=("runuser")
+  fi
   if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
     missing+=("sha256sum ou shasum")
   fi
@@ -1718,17 +1724,66 @@ stop_service() {
 # Bundle swap, healthcheck, and rollback
 # ==============================================================================
 
-stage_and_swap_bundle() {
+# O wrapper executa este updater com umask 077. A extracao usa
+# --no-same-permissions, portanto diretorios chegam como 0700 e arquivos como
+# 0600. Normalize somente a arvore do novo bundle e comprove o acesso do
+# usuario real do servico antes de parar ou substituir o runtime.
+normalize_bundle_tree() {
+  local root="$1"
+  [ -d "$root" ] && [ ! -L "$root" ] || return 1
+  [ -z "$(find "$root" -xdev -type l -print -quit)" ] || return 1
+  find "$root" -xdev -type d -exec chmod 0755 {} + || return 1
+  find "$root" -xdev -type f -exec chmod 0644 {} + || return 1
+  chmod 0755 "$root" "$root/contabase" "$root/admin" \
+    "$root/lib/contabase-update-wrapper.sh" || return 1
+  return 0
+}
+
+service_user_can_access_bundle() {
+  local root="$1" user="$2" current sample
+  [ -d "$root" ] && [ ! -L "$root" ] || return 1
+  current="$root"
+  while [ "$current" != "/" ]; do
+    runuser -u "$user" -- test -x "$current" || return 1
+    current="$(dirname "$current")"
+  done
+  runuser -u "$user" -- test -x "$root" || return 1
+  runuser -u "$user" -- test -x "$root/assets" || return 1
+  sample="$(find "$root/assets" -xdev -type f -print -quit)"
+  [ -n "$sample" ] || return 1
+  runuser -u "$user" -- test -r "$sample" || return 1
+  runuser -u "$user" -- test -x "$root/templates" || return 1
+  sample="$(find "$root/templates" -xdev -type f -print -quit)"
+  [ -n "$sample" ] || return 1
+  runuser -u "$user" -- test -r "$sample" || return 1
+  runuser -u "$user" -- test -r "$root/VERSION" || return 1
+  runuser -u "$user" -- test -x "$root/contabase" || return 1
+  runuser -u "$user" -- sh -c 'cd "$1"' sh "$root" || return 1
+  return 0
+}
+
+stage_bundle() {
   local bundle_root timestamp
   bundle_root="${EXTRACT_DIR}/contabase"
   timestamp="$(date +%Y%m%d-%H%M%S)"
   STAGING_DIR="${INSTALL_DIR}.staging.${timestamp}.$$"
 
-  install -d -o root -g root -m 0755 "$STAGING_DIR"
-  cp -a "${bundle_root}/." "$STAGING_DIR/"
-  chown -R root:root "$STAGING_DIR"
-  chmod 0755 "$STAGING_DIR/contabase" "$STAGING_DIR/admin"
+  install -d -o root -g root -m 0755 "$STAGING_DIR" \
+    || fail "nao foi possivel criar o diretorio de staging."
+  cp -a "${bundle_root}/." "$STAGING_DIR/" \
+    || fail "nao foi possivel copiar o bundle para staging."
+  chown -R root:root "$STAGING_DIR" \
+    || fail "nao foi possivel ajustar ownership do staging."
+  normalize_bundle_tree "$STAGING_DIR" \
+    || fail "nao foi possivel normalizar permissoes do bundle em staging."
+  service_user_can_access_bundle "$STAGING_DIR" "$APP_USER" \
+    || fail "bundle em staging nao e acessivel pelo usuario ${APP_USER}; atualizacao abortada antes de parar ou substituir o runtime."
+  say "Bundle em staging validado para o usuario ${APP_USER}."
+}
 
+activate_staged_bundle() {
+  [ -n "$STAGING_DIR" ] && [ -d "$STAGING_DIR" ] && [ ! -L "$STAGING_DIR" ] \
+    || fail "staging do bundle ausente ou inseguro."
   if ! mv "$STAGING_DIR" "$INSTALL_DIR"; then
     rollback_bundle || true
     fail "nao foi possivel ativar o bundle em staging."
@@ -2098,6 +2153,10 @@ perform_update() {
   say "Iniciando atualizacao para ${TAG}..."
   say "====================================================================="
 
+  # Prepare and validate the new bundle while the current runtime is still
+  # running. A permission failure aborts here, before any stop or swap.
+  stage_bundle
+
   # Stop service
   stop_service
   validate_release_installation_contract
@@ -2121,8 +2180,8 @@ perform_update() {
   # Backup existing bundle
   backup_bundle
 
-  # Swap bundle
-  if ! stage_and_swap_bundle; then
+  # Activate the already validated staging bundle.
+  if ! activate_staged_bundle; then
     rollback_env
     fail "falha ao ativar o novo bundle."
   fi

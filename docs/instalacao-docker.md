@@ -173,7 +173,7 @@ Opcional: `sudo contabase-update --yes vX.Y.Z` ou `sudo contabase-update --dry-r
 
 Na Beta 8, o dispatcher autentica canal, Release, identidade da tag/commit e manifesto, verificando o bundle antes da delegação. O dispatcher Beta 7 executa o helper local e repassa a versão, sem essa autenticação completa. Trocar o checkout não troca o comando global instalado; veja a transição abaixo e os [contratos dos dispatchers](atualizacao.md#contratos-dos-dispatchers-beta-7-e-beta-8).
 
-A Beta 9 mantém o mesmo dispatcher autenticado e não aplica migration nova. Para atualizar da Beta 8, informe `v1.0.0-beta.9` somente depois que a versão estiver publicada e homologada no catálogo do canal; até lá o comando falha fechado. A transição por tag descrita abaixo é específica da Beta 7 e não é necessária para instalações que já usam o dispatcher autenticado.
+A Beta 10 mantém o mesmo dispatcher autenticado e não aplica migration nova. Para atualizar de uma Beta anterior no schema 83, informe `v1.0.0-beta.10` somente depois que a versão estiver publicada e homologada no catálogo do canal; até lá o comando falha fechado. A transição por tag descrita abaixo é específica da Beta 7 e não é necessária para instalações que já usam o dispatcher autenticado.
 
 ### Fallback legado sem comando global
 

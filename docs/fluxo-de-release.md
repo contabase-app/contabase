@@ -21,10 +21,12 @@ O ContaBase usa SemVer. A tag pública, o arquivo `VERSION`, o changelog e a not
 - `v1.0.0-beta.6` — sexta candidata da linha 1.0, publicada como prerelease.
 - `v1.0.0-beta.7` — sétima candidata da linha 1.0, publicada como prerelease com artifacts Linux amd64/arm64, checksums e imagem GHCR; a promoção do canal Beta depende do smoke real de instalação e atualização.
 - `v1.0.0-beta.8` — oitava candidata da linha 1.0, materializada como prerelease com artifacts, GHCR versionada e schema 83. Os tarballs publicados não incluíram `contabase/lib/contabase-update-wrapper.sh`, e a instalação nova pelo instalador standalone ficou bloqueada com falha fechada. A tag, a Release, os artifacts e o histórico permanecem imutáveis.
+- `v1.0.0-beta.9` — nona candidata da linha 1.0, publicada como prerelease com artifacts Linux amd64/arm64, checksums, GHCR e canal Beta. Corrigiu a distribuição standalone da Beta 8 e endureceu o instalador Release. A tag e os artifacts permanecem imutáveis.
 
-## ContaBase v1.0.0-beta.9
+## ContaBase v1.0.0-beta.10 (candidata em preparação)
 
-- **Novidades da Beta 9:** correção da distribuição standalone da Beta 8, com o wrapper autenticado incluído nos tarballs e validado por SHA-256, instalador Release endurecido com dispatcher atômico, Bootstrap autenticado com execução única e ambiente sanitizado, Go 1.26.11 e preflight do instalador no pipeline canônico. Schema permanece 83, sem migration nova. A instalação exige verificar a disponibilidade da tag, GitHub Release, artefatos, GHCR e canal, além da homologação do método; esta seção não comprova publicação.
+- **Novidades da Beta 10:** correção das permissões do bundle Release, com normalização da árvore em staging, rejeição de symlinks e preflight de acesso pelo usuário systemd não-root antes de parar o serviço ou substituir o runtime. O bundle anterior é preservado em falha, o staging é removido e o estado só é publicado após healthcheck. Schema permanece 83, sem migration nova. A instalação exige verificar a disponibilidade da tag, GitHub Release, artefatos, GHCR e canal, além da homologação do método; esta seção não comprova publicação.
+- **Beta 9 publicada:** a versão anterior corrigiu os tarballs da Beta 8 com o wrapper autenticado de update e permanece imutável.
 
 ## Processo de publicação
 
@@ -141,7 +143,8 @@ Após tentativa de startup da candidata, falhas não autorizam executar automati
 - [Release Notes](../RELEASE_NOTES.md)
 - [GitHub Releases](https://github.com/contabase-app/contabase/releases)
 - [GHCR](https://github.com/contabase-app/contabase/pkgs/container/contabase)
-- [Nota da v1.0.0-beta.9](releases/v1.0.0-beta.9.md)
+- [Nota da v1.0.0-beta.10](releases/v1.0.0-beta.10.md)
+- [Nota da v1.0.0-beta.9 — publicada](releases/v1.0.0-beta.9.md)
 - [Nota da v1.0.0-beta.8](releases/v1.0.0-beta.8.md)
 - [Nota da v1.0.0-beta.7 — publicada](releases/v1.0.0-beta.7.md)
 - [Nota da v1.0.0-beta.5 — publicada](releases/v1.0.0-beta.5.md)

@@ -102,6 +102,9 @@ echo "== F3-B updater bundle authentication =="
 echo "== F3-C authenticated update dispatcher =="
 ./scripts/tests/test_update_dispatcher.sh
 
+echo "== Release bundle permissions and service-user preflight =="
+./scripts/tests/test_release_bundle_permissions.sh
+
 echo "== F3-D Release isolated bootstrap =="
 ./scripts/tests/test_release_isolated_bootstrap.sh
 

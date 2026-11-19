@@ -74,6 +74,13 @@ bundle() {
   printf 'asset\n' > "$1/assets/main.css"
   chmod 0755 "$1/contabase"
 }
+bundle_with_wrapper() {
+  bundle "$1" "$2"
+  mkdir -p "$1/lib"
+  printf 'synthetic-admin-%s\n' "$2" > "$1/admin"
+  printf 'synthetic-wrapper-%s\n' "$2" > "$1/lib/contabase-update-wrapper.sh"
+  chmod 0755 "$1/admin" "$1/lib/contabase-update-wrapper.sh"
+}
 setup() {
   local name="$1"
   CASE_ROOT="$TMP_ROOT/$name"
@@ -197,16 +204,22 @@ for scenario in verified unverified changed-repo changed-bundle; do
   preserved; ok "release: emissao de prova $scenario"
 done
 
-load_function "$REPO_DIR/scripts/install-contabase-release.sh" stage_and_swap_bundle
+load_function "$REPO_DIR/scripts/install-contabase-release.sh" normalize_bundle_tree
+load_function "$REPO_DIR/scripts/install-contabase-release.sh" service_user_can_access_bundle
+load_function "$REPO_DIR/scripts/install-contabase-release.sh" stage_bundle
+load_function "$REPO_DIR/scripts/install-contabase-release.sh" activate_staged_bundle
 load_function "$REPO_DIR/scripts/install-contabase-release.sh" render_service_file
 load_function "$REPO_DIR/scripts/install-contabase-release.sh" install_bundle
 load_function "$REPO_DIR/scripts/install-contabase-release.sh" rollback_bundle
 ensure_user_and_directories() { :; }
 manage_env_file() { :; }
 install_update_command() { :; }
+# The synthetic user does not exist; the dedicated permissions test exercises
+# the real runuser preflight.
+service_user_can_access_bundle() { :; }
 for scenario in clean clean-health-fail existing-vulnerable existing-safe; do
   setup "installer-flow-$scenario"
-  EXTRACT_DIR="$CASE_ROOT/extract"; bundle "$EXTRACT_DIR/contabase" v1.0.0-beta.6
+  EXTRACT_DIR="$CASE_ROOT/extract"; bundle_with_wrapper "$EXTRACT_DIR/contabase" v1.0.0-beta.6
   TMP_DIR="$CASE_ROOT/tmp"; mkdir -p "$TMP_DIR"
   APP_USER=synthetic-user; ENV_FILE="$CONFIG_DIR/contabase.env"; DATA_DIR="$CASE_ROOT/data"
   PORT=8080; TAG=v1.0.0-beta.6; REPO=https://github.com/contabase-app/contabase; RELEASE_BUNDLE_VERIFIED=true

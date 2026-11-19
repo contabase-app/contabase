@@ -3,6 +3,8 @@
 # Synthetic fixtures and a local HTTP server only. No real installation,
 # database, secret or external network is touched.
 set -u
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+export PATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 WRAPPER="$ROOT_DIR/scripts/lib/contabase-update-wrapper.sh"

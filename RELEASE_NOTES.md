@@ -3,6 +3,53 @@
 Este documento é o índice principal das notas de lançamento do ContaBase.
 Para o histórico técnico detalhado, consulte o [CHANGELOG.md](CHANGELOG.md).
 
+## ContaBase v1.0.0-beta.10
+
+A Beta 10 corrige a falha de permissões da distribuição binária que afetava a atualização sob umask restritivo. O instalador e o updater Release passam a normalizar a árvore do bundle em staging e a comprovar o acesso do usuário systemd não-root antes de parar o serviço ou substituir o runtime. Não há alteração de regra financeira, schema, autenticação da aplicação, RBAC, workspace ou interface.
+
+**Candidata em preparação**
+
+Esta versão ainda não foi publicada nem homologada. A tag, a GitHub Release, os artifacts, a imagem GHCR e o canal só podem avançar após os gates e autorizações próprios.
+
+**Correções**
+
+- **Permissões do bundle:** diretórios são normalizados para `0755`, arquivos para `0644` e binários/wrapper para `0755`, independentemente do umask herdado, e symlinks são rejeitados antes do swap.
+- **Preflight do usuário do serviço:** `runuser` comprova a travessia dos ancestrais, o acesso ao diretório, a leitura de `VERSION`, assets e templates, a execução do binário e o `cd` no bundle antes da parada.
+- **Runtime anterior preservado:** falha de staging aborta antes de parar o serviço; o bundle anterior permanece intacto e o staging é removido pelo trap.
+- **Estado após healthcheck:** `contabase.env` e `install-state.env` continuam sendo publicados somente depois de restart, healthcheck e verificação do runtime.
+- **Regressão:** novos testes cobrem umasks 022/027/077, rejeição de symlink, ordem staging → parada e o fluxo systemd completo Beta 7 → Beta 9 com usuário não-root.
+
+**Instalação**
+
+- Confirme a disponibilidade da tag `v1.0.0-beta.10`, da GitHub Release e dos artefatos do método escolhido antes de instalar.
+- Release binário em LXC/VPS com systemd: helper da tag a partir de um checkout completo, com artifacts `amd64`/`arm64` e verificação de `checksums.txt`.
+- Docker: imagem `ghcr.io/contabase-app/contabase:v1.0.0-beta.10` por tag, após publicação e homologação.
+- Source: build local com Go/Node.
+- Use uma versão fixa; não use `main`, `beta`, `dev`, `stable` ou `latest` como versão de instalação.
+
+**Atualização**
+
+- `v1.0.0-beta.9` ou `v1.0.0-beta.8` (schema 83) → `v1.0.0-beta.10`: nenhuma migration, nenhuma reescrita de dados.
+- `v1.0.0-beta.7` (schema 82) → `v1.0.0-beta.10`: a migration 83 é aplicada uma vez na inicialização, com backup pré-migration verificável.
+- Docker por tag, updater Release autenticado e update Source por tag continuam suportados; `flock` é obrigatório nos caminhos que o exigem.
+- Faça backup antes de atualizar. Não há downgrade automático após o schema 83.
+
+**Compatibilidade e banco**
+
+- Schema 83, sem migration nova.
+- Nenhuma alteração em saldo, faturas, cartões, pagamentos, recorrências, Investimentos, autenticação, RBAC ou isolamento por `workspace_id`.
+- Instalações novas continuam com `CONTABASE_FEATURE_INVESTMENTS=false`; atualizações preservam a configuração existente.
+
+**Limitações**
+
+- A Beta 10 é uma candidata: estas notas não comprovam publicação, artifacts, GHCR, canal ou homologação operacional.
+- O Release Bootstrap permanece desabilitado até a homologação da Beta 10 e a publicação do canal em gate separado.
+- A migration 83 é irreversível por down migration; o rollback exige restore explícito do snapshot pré-migration.
+- A pendência herdada da Beta 7 sobre recorrências legadas permanece aberta.
+- Testes manuais com leitor de tela e Safari/WebKit não foram executados nesta versão.
+
+Consulte as [notas da versão](docs/releases/v1.0.0-beta.10.md) e o [Guia Completo de Instalação](https://contabase.pages.dev/setup/).
+
 ## ContaBase v1.0.0-beta.9
 
 A Beta 9 corrige a distribuição standalone da linha Beta 8. Os pacotes `contabase-linux-amd64.tar.gz` e `contabase-linux-arm64.tar.gz` passam a incluir `contabase/lib/contabase-update-wrapper.sh`, que o instalador da mesma tag exige dentro do bundle autenticado. Não há alteração de regra financeira, schema, autenticação da aplicação, RBAC, workspace ou interface.

@@ -98,7 +98,7 @@ install_stub() {
 NO_FLOCK="${TMP_BASE}/no-flock"
 WITH_FLOCK="${TMP_BASE}/with-flock"
 SOURCE_COMMANDS="git go node npm curl systemctl sqlite3 openssl tar install"
-RELEASE_COMMANDS="curl tar install openssl awk grep find mktemp cp wc tr sha256sum"
+RELEASE_COMMANDS="curl tar install openssl awk grep find mktemp cp wc tr sha256sum runuser"
 make_tool_path "$NO_FLOCK" false $SOURCE_COMMANDS $RELEASE_COMMANDS
 make_tool_path "$WITH_FLOCK" true $SOURCE_COMMANDS $RELEASE_COMMANDS
 
@@ -708,7 +708,8 @@ run_install_bundle_stop() {
     NEW_BUNDLE_ACTIVE=false
     ensure_user_and_directories() { :; }
     manage_env_file() { :; }
-    stage_and_swap_bundle() { :; }
+    stage_bundle() { :; }
+    activate_staged_bundle() { :; }
     render_service_file() { :; }
     wait_for_healthcheck() { :; }
     record_release_recovery() { :; }
